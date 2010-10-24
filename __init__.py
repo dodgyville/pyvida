@@ -183,7 +183,7 @@ class Game(object):
     def __init__(self, name="Untitled Game", fullscreen=False):
         log.debug("game object created at %s"%datetime.now())
         self.game = self
-        self.fps = int(1000.0/12)  #12 fps
+        self.fps = int(1000.0/24)  #12 fps
 
     def add(self, obj):
         """ add objects to the game """
@@ -274,19 +274,24 @@ class Game(object):
         if not self._event: #waiting, so do an immediate process 
             e = self.events.pop(0) #stored as [(function, args))]
             self._event = e
-            e[0](*e[1:]) #call the function with the args        
+            try:
+                e[0](*e[1:]) #call the function with the args        
+            except:
+                import pdb; pdb.set_trace()
     
     def queue_event(self, event, *args):
-#        if type(event) == str: #look on the game object
- #           event = self.__getattribute__(event)
         self.events.append((event, )+(args))
-#        self.handle_events()
-#        event(*args)
         return args[0]
- #       self.process_event()
+
+    def stuff_event(self, event, *args):
+        """ stuff an event near the head of the queue """
+        self.events.insert(0, (event, )+(args))
+        return args[0]
+
 
     def _event_finish(self): #Game.on_event_finish
         """ start the next event in the game scripter """
+#        log.debug("finished event %s, remaining:"%(self._event, self.events)
         self._event = None
         self.handle_events()
     
@@ -332,9 +337,14 @@ class Game(object):
         
     def on_set_menu(self, *args):
         """ add the items in args to the menu """
+        args = list(args)
+        args.reverse()
         log.debug("set menu to %s"%list(args))
         for i in args:
-            self.menu.append(self.items[i])
+            if i in self.items: 
+                self.menu.append(self.items[i])
+            else:
+                log.error("Menu item %s not found in MenuItem collection"%i)
         self._event_finish()        
         
     def on_menu_clear(self):
@@ -348,28 +358,26 @@ class Game(object):
 
     def on_menu_fadeOut(self): 
         """ animate hiding the menu """
-        if "new game" in [x.name for x in self.menu]:
-            import pdb; pdb.set_trace()
-        for i in self.menu: i.goto((i.hx,i.hy))
-        log.debug("fadeOut menu %s"%[x.name for x in self.menu])
+        for i in self.menu: self.stuff_event(i.on_goto, (i.hx,i.hy))
+        log.debug("fadeOut menu using goto %s"%[x.name for x in self.menu])
         self._event_finish()
         
     def on_menu_hide(self):
         """ hide the menu """
-        for i in self.menu: i.place((i.hx, i.hy))
-        log.debug("hide menu %s"%[x.name for x in self.menu])
+        for i in self.menu: self.stuff_event(i.on_place, (i.hx,i.hy))
+        log.debug("hide menu using place %s"%[x.name for x in self.menu])
         self._event_finish()
 
     def on_menu_show(self):
         """ show the menu """
-        for i in self.menu: i.place((i.sx, i.sy))
-        log.debug("show menu %s"%[x.name for x in self.menu])
+        for i in self.menu: self.stuff_event(i.on_place, (i.sx,i.sy))
+        log.debug("show menu using place %s"%[x.name for x in self.menu])
         self._event_finish()
         
     def on_menu_fadeIn(self): 
         """ animate showing the menu """
-        for i in self.menu: i.goto((i.sx, i.sy))
-        log.debug("fadeIn menu %s"%[x.name for x in self.menu])
+        log.debug("fadeIn menu, telling items to goto %s"%[x.name for x in self.menu])
+        for i in self.menu: self.stuff_event(i.on_goto, (i.sx,i.sy))
         self._event_finish()
         
     def on_menu_push(self):
