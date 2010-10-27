@@ -3,14 +3,24 @@ import inspect
 from new import instancemethod 
 import pdb
 from datetime import datetime, timedelta
-import pygame
-from pygame.locals import *#QUIT, K_ESCAPE
 import os
 import sys
 import glob
 from random import choice, randint
 import logging
 import logging.handlers
+
+import pygame
+from pygame.locals import *#QUIT, K_ESCAPE
+
+ENABLE_EDITOR = True
+ENABLE_PROFILING = True
+ENABLE_LOGGING = True
+
+if ENABLE_LOGGING:
+    log_level = logging.DEBUG #what level of debugging
+else:
+    log_level = logging.ERROR
 
 LOG_FILENAME = 'pyvida4.log'
 log = logging.getLogger('pyvida4')
@@ -140,6 +150,17 @@ def get_point(game, destination):
         destination = (destination.sx, destination.sy)
     return destination
 
+#### pyvida helper functions ####
+
+def editor_menu(game):
+    game.menu_fadeOut()
+    game.menu_push() #hide and push old menu to storage
+    game.set_menu("e_save", "e_load", "e_add", "e_prev", "e_next")
+    game.menu_hide()
+    game.menu_fadeIn()
+
+def editor_load(game, menuItem, player):
+    pass
 
 
 #### pyvida classes ####
@@ -168,8 +189,10 @@ class Game(object):
     default_font_speech = None
     
     profiling = False 
+    enabled_profiling = False
     editing = None #which actor are we editing
-
+    enabled_editor = False
+    
     actor_dir = "data/actors"
     item_dir = "data/items"
     menuitem_dir = "data/menu" 
@@ -222,6 +245,24 @@ class Game(object):
                 if i.actions.has_key('down'): i.action = i.actions['down']
                 i.trigger_interact()
                 return
+                
+    def _on_key_press(self, key):
+        print(key)
+        for i in self.menu:
+            if key == i.key: i.trigger_interact() #print("bound to menu item")
+        if ENABLE_EDITOR and key == K_F1:
+            if self.enabled_editor: 
+                self.menu_fadeOut()
+                self.menu_pop()
+                self.menu_fadeIn()
+                self.editing = None
+                self.enabled_editor = False
+            else:
+                print("load edit menu")
+                editor_menu(self)
+                self.enabled_editor = True
+                if self._scene and self._scene.actors: self.editing = self._scene.actors.values[0]
+            
 
     def handle_pygame_events(self):
         for event in pygame.event.get():
@@ -231,6 +272,8 @@ class Game(object):
             elif event.type == MOUSEBUTTONUP:
                 m = pygame.mouse.get_pos()
                 self._on_mouse_press(m[0], m[1], None, None)
+            elif event.type == KEYDOWN:
+                self._on_key_press(event.key)
 #            elif event.key == K_ESCAPE:
  #               self.quit = True
   #              return
@@ -241,6 +284,14 @@ class Game(object):
         if self._scene and self.screen:
            self.screen.blit(self._scene.background(), (0, 0))
         pygame.display.set_caption(self.name)
+        
+        if ENABLE_EDITOR:
+            self.add(MenuItem("e_load", editor_load, (50, 10), (50,-50), "l").smart(self))
+            self.add(MenuItem("e_save", editor_load, (90, 10), (50,-50), "s").smart(self))
+            self.add(MenuItem("e_add", editor_load, (140, 10), (50,-50), "a").smart(self))
+            self.add(MenuItem("e_prev", editor_load, (180, 10), (50,-50), "[").smart(self))
+            self.add(MenuItem("e_next", editor_load, (220, 10), (50,-50), "]").smart(self))
+        
         #pygame.mouse.set_visible(0)        
         if callback: callback(self)
         dt = 12 #time passed
@@ -265,7 +316,9 @@ class Game(object):
 #            pygame.display.update()
             for o in self.menu:
                 o.draw()
-#                screen.draw(o.image, o.pos)
+            if self._scene:
+                for o in self._scene.actors.values():
+                    o.draw()
             pygame.display.flip()            
 
     def handle_events(self):
@@ -303,6 +356,14 @@ class Game(object):
         
 #    def on_move(self, scene, destination):
 #        """ transition to scene, and move player if available """    
+
+    def on_load_state(self, scene, state):
+        """ load a state from a file inside a scene directory """
+        self._event_finish()
+
+    def on_save_state(self, scene, state):
+        """ save a state inside a scene directory """
+        self._event_finish()
 
     def on_scene(self, scene):
         """ change the current scene """
@@ -430,6 +491,7 @@ class Actor(object):
                 self._image = pygame.image.load(os.path.join(d, "%s/idle.png"%self.name)).convert_alpha()
                 self._clickable_area = self._image.get_rect().move(self.x, self.y)
             except:
+                import pdb; pdb.set_trace()
                 log.warning("unable to load idle.png for %s"%self.name)
             log.debug("smart load, %s clickable %s"%(self.name, self._clickable_area))
         return self
@@ -464,7 +526,7 @@ class Actor(object):
             self.game.screen.blit(self._image, r)
 
     def _update(self, dt):
-        """ update this actor with in the game """
+        """ update this actor within the game """
         l = len(self._motion_queue)
         if l > 0:
             d = self._motion_queue.pop(0)
@@ -535,10 +597,36 @@ class Actor(object):
 @use_init_variables        
 class Item(Actor):
     def __init__(self, name="Untitled Item"): pass
+
+@use_init_variables        
+class Collection(Actor):
+    """ An actor which contains subactors (eg an inventory or directory listing)"""
+    def __init__(self, name="Untitled Item"):
+        self.objects = {}
+        self.index = 0
     
+    def add(self, *args):
+        for a in args:
+            if type(a) == str and a in self.game.actors: obj = self.game.actors[a]
+            elif type(a) == str and a in self.game.items: obj = self.game.items[a]
+            else: obj = a
+            self.objects[obj.name] = obj
+
+    def _update(self, dt):
+        Actor._update(self, dt)
+        for i in self.objects.values():
+            i._update(dt)
+
+    def draw(self):
+        Actor.draw(self)
+        for i in self.objects.values():
+            i.draw()
+
+   
 @use_init_variables    
 class MenuItem(Actor):
-    def __init__(self, name="Untitled Menu Item", interact=None, spos=(None, None), hpos=(None, None)): 
+    def __init__(self, name="Untitled Menu Item", interact=None, spos=(None, None), hpos=(None, None), key=None): 
+        if key: self.key = ord(key) if type(key)==str else key #bind menu item to a keyboard key
         self.sx, self.sy = spos
         self.hx, self.hy = hpos #special hide point for menu items
         self.x, self.y = spos
@@ -602,3 +690,4 @@ class Scene(object):
     def remove(self, obj):
         """ remove object from the scene """
         del self.actors[obj.name]
+        return self
