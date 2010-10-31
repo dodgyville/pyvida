@@ -9,6 +9,7 @@ import glob
 from random import choice, randint
 import logging
 import logging.handlers
+from itertools import cycle
 
 import pygame
 from pygame.locals import *#QUIT, K_ESCAPE
@@ -27,7 +28,7 @@ log = logging.getLogger('pyvida4')
 log.setLevel(logging.DEBUG)
 
 handler = logging.handlers.RotatingFileHandler(
-              LOG_FILENAME, maxBytes=20000, backupCount=5)
+              LOG_FILENAME, maxBytes=40000, backupCount=5)
 handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
 log.addHandler(handler)
 
@@ -42,7 +43,10 @@ def use_init_variables(original_class):
     def __init__(self, *args, **kws):
         inspected = inspect.getargspec(self._init_)
         oargs = inspected.args[1:]
-        defaults = dict(zip(oargs, inspected.defaults))
+        try:
+            defaults = dict(zip(oargs, inspected.defaults))
+        except:
+            import pdb; pdb.set_trace()
         for i, value in enumerate(oargs):
             if i < len(args): #use the arg values
                 setattr(self, value, args[i])
@@ -150,17 +154,23 @@ def get_point(game, destination):
         destination = (destination.sx, destination.sy)
     return destination
 
+def relative_position(game, parent, pos):
+    """ Take global pos and work out where that is inside parent """
+    mx,my=pos[0],pos[1]
+    log.warning("relative_position ignores anchor points, scaling and rotation")
+    return parent.x-mx, parent.y-my
+
+
 #### pyvida helper functions ####
 
 def editor_menu(game):
-    game.menu_fadeOut()
-    game.menu_push() #hide and push old menu to storage
-    game.set_menu("e_save", "e_load", "e_add", "e_prev", "e_next")
-    game.menu_hide()
-    game.menu_fadeIn()
+                game.menu_fadeOut()
+                game.menu_push() #hide and push old menu to storage
+                game.set_menu("e_save", "e_load", "e_add", "e_prev", "e_next")
+                game.menu_hide()
+                game.menu_fadeIn()
 
-def editor_load(game, menuItem, player):
-    pass
+
 
 
 #### pyvida classes ####
@@ -216,7 +226,7 @@ class Game(object):
             self.actors[obj.name] = obj
         elif type(obj) == Item:
             self.items[obj.name] = obj
-        elif type(obj) == MenuItem: #menu items are stored in items
+        elif type(obj) in [MenuItem, Collection]: #menu items are stored in items
             self.items[obj.name] = obj
         elif type(obj) == Modal:
             self.modal.append(obj)
@@ -243,6 +253,7 @@ class Game(object):
         for i in self.menu:
             if i.collide(x,y):
                 if i.actions.has_key('down'): i.action = i.actions['down']
+                if type(i) == Collection: print("interact1")
                 i.trigger_interact()
                 return
                 
@@ -251,17 +262,18 @@ class Game(object):
         for i in self.menu:
             if key == i.key: i.trigger_interact() #print("bound to menu item")
         if ENABLE_EDITOR and key == K_F1:
-            if self.enabled_editor: 
+            if self.enabled_editor:  #switch off editor
                 self.menu_fadeOut()
                 self.menu_pop()
                 self.menu_fadeIn()
                 self.editing = None
                 self.enabled_editor = False
+                if hasattr(self, "e_objects"): self.e_objects = None #free add object collection
             else:
                 print("load edit menu")
                 editor_menu(self)
                 self.enabled_editor = True
-                if self._scene and self._scene.actors: self.editing = self._scene.actors.values[0]
+                if self._scene and self._scene.objects: self.editing = self._scene.objects.values()[0]
             
 
     def handle_pygame_events(self):
@@ -286,11 +298,71 @@ class Game(object):
         pygame.display.set_caption(self.name)
         
         if ENABLE_EDITOR:
+            def editor_load(game, menuItem, player):
+                log.debug("editor: load scene not implemented")
+
+            def editor_save(game, menuItem, player):
+                log.debug("editor: save scene not implemented")
+                
+            def _editor_cycle(game, collection, player, v):
+                if game._scene and len(game._scene.objects)>0:
+                    objects = game._scene.objects.values()
+                    if game.editing == None: game.editing = objects[0]
+                    i = (objects.index(game.editing) + v)%len(objects)
+                    log.debug("editor cycle: switch object %s to %s"%(game.editing, objects[i]))
+                    game.editing = objects[i]
+                else:
+                    log.warning("editor cycle: no scene or objects in scene to iterate through")
+
+            def editor_next(game, collection, player):
+                return _editor_cycle(game, collection, player, 1)
+
+            def editor_prev(game, collection, player):
+                return _editor_cycle(game, collection, player, -1)
+
+
+            def editor_select_object(game, collection, player):
+                """ select an object from the collection and add to the scene """
+                m = pygame.mouse.get_pos()
+                mx,my = relative_position(game, collection, m)
+                obj = collection.get_object(m)
+                if obj and game._scene:
+                    obj.x, obj.y = 500,400
+                    game._scene.add(obj)
+                    game.editing = obj
+                    editor_select_object_close(game, collection, player)
+                
+
+            def editor_add(game, menuItem, player):
+                """ set up the collection object """
+                if hasattr(self, "e_objects") and self.e_objects:
+                    e_objects = self.e_objects
+                else: #new object
+                    e_objects = self.items["e_objects"]
+                e_objects.objects = {}
+                for i in game.actors.values():
+                    if type(i) not in [Collection, MenuItem]: e_objects.objects[i.name] = i
+                for i in game.items.values():
+                    if type(i) not in [Collection, MenuItem]: e_objects.objects[i.name] = i
+                game.menu_fadeOut()
+                game.menu_push() #hide and push old menu to storage
+                game.set_menu("e_objects_close", "e_objects")
+                game.menu_hide()
+                game.menu_fadeIn()
+                
+            def editor_select_object_close(game, collection, player):
+                game.menu_fadeOut()
+                game.menu_pop()
+                game.menu_fadeIn()
+            
             self.add(MenuItem("e_load", editor_load, (50, 10), (50,-50), "l").smart(self))
             self.add(MenuItem("e_save", editor_load, (90, 10), (50,-50), "s").smart(self))
-            self.add(MenuItem("e_add", editor_load, (140, 10), (50,-50), "a").smart(self))
-            self.add(MenuItem("e_prev", editor_load, (180, 10), (50,-50), "[").smart(self))
-            self.add(MenuItem("e_next", editor_load, (220, 10), (50,-50), "]").smart(self))
+            self.add(MenuItem("e_add", editor_add, (140, 10), (50,-50), "a").smart(self))
+            self.add(MenuItem("e_prev", editor_prev, (180, 10), (50,-50), "[").smart(self))
+            self.add(MenuItem("e_next", editor_next, (220, 10), (50,-50), "]").smart(self))
+            self.add(Collection("e_objects", editor_select_object, (300, 100), (300,-600), K_ESCAPE).smart(self))
+            self.add(MenuItem("e_objects_close", editor_select_object_close, (800, 600), (800,-100), K_ESCAPE).smart(self))
+            
         
         #pygame.mouse.set_visible(0)        
         if callback: callback(self)
@@ -317,7 +389,7 @@ class Game(object):
             for o in self.menu:
                 o.draw()
             if self._scene:
-                for o in self._scene.actors.values():
+                for o in self._scene.objects.values():
                     o.draw()
             pygame.display.flip()            
 
@@ -476,7 +548,6 @@ class Actor(object):
     _image = None
     _tx, _ty = 0,0 #target for when moving
     
-    
     def __init__(self, name="Untitled Actor"): 
         self._motion_queue = [] #actor's deltas for moving on the screen in the near-future
     
@@ -485,18 +556,23 @@ class Actor(object):
         
     def smart(self, game):
         """ smart load """
-        if type(self) == MenuItem:
+        log.debug("smart load should load non-idle action as default if there is only one action")
+        if type(self) in [MenuItem, Collection]:
             d = game.menuitem_dir
-            try:
+        elif type(self) == Actor:
+            d = game.actor_dir
+        elif type(self) == Item:
+            d = game.item_dir
+        try:
                 self._image = pygame.image.load(os.path.join(d, "%s/idle.png"%self.name)).convert_alpha()
                 self._clickable_area = self._image.get_rect().move(self.x, self.y)
-            except:
-                import pdb; pdb.set_trace()
+        except:
                 log.warning("unable to load idle.png for %s"%self.name)
-            log.debug("smart load, %s clickable %s"%(self.name, self._clickable_area))
+        log.debug("smart load, %s clickable %s"%(self.name, self._clickable_area))
         return self
         
     def trigger_interact(self):
+        """ find an interact function for this actor and call it """
 #        fn = self._get_interact()
  #       if self.interact: fn = self.interact
         if self.interact:
@@ -579,13 +655,15 @@ class Actor(object):
         fuzz = 10
         if x - fuzz < self.x < x + fuzz and y - fuzz < self.y < y + fuzz:
 #            self.action = self.actions['idle']
+            if type(self) in [MenuItem, Collection]:
+                self.x, self.y = self._tx, self._ty
             log.debug("actor %s has arrived at %s"%(self.name, destination))
             self.game._event_finish() #signal to game event queue this event is done
         else: #try to follow the path
-            dx = int((x - self.x) / 10)
-            dy = int((y - self.y) / 10)
+            dx = int((x - self.x) / 2)
+            dy = int((y - self.y) / 2)
 #            import pdb; pdb.set_trace()
-            for i in range(10): self._motion_queue.append((dx+randint(-2,2),dy+randint(-2,2)))
+            for i in range(2): self._motion_queue.append((dx+randint(-2,2),dy+randint(-2,2)))
 
 
     def on_says(self, text, sfx=-1, block=True, modal=True, font=None):
@@ -596,12 +674,28 @@ class Actor(object):
         
 @use_init_variables        
 class Item(Actor):
+    _motion_queue = [] #actor's deltas for moving on the screen in the near-future
+
     def __init__(self, name="Untitled Item"): pass
+   
+@use_init_variables    
+class MenuItem(Actor):
+    def __init__(self, name="Untitled Menu Item", interact=None, spos=(None, None), hpos=(None, None), key=None): 
+        if key: self.key = ord(key) if type(key)==str else key #bind menu item to a keyboard key
+        self.sx, self.sy = spos
+        self.hx, self.hy = hpos #special hide point for menu items
+        self.x, self.y = spos
+        self._motion_queue = [] #actor's deltas for moving on the screen in the near-future
 
 @use_init_variables        
-class Collection(Actor):
+class Collection(MenuItem):
     """ An actor which contains subactors (eg an inventory or directory listing)"""
-    def __init__(self, name="Untitled Item"):
+    def __init__(self, name="Untitled Menu Item", interact=None, spos=(None, None), hpos=(None, None), key=None): 
+        if key: self.key = ord(key) if type(key)==str else key #bind menu item to a keyboard key
+        self.sx, self.sy = spos
+        self.hx, self.hy = hpos #special hide point for menu items
+        self.x, self.y = spos
+        self._motion_queue = [] #actor's deltas for moving on the screen in the near-future
         self.objects = {}
         self.index = 0
     
@@ -615,22 +709,47 @@ class Collection(Actor):
     def _update(self, dt):
         Actor._update(self, dt)
         for i in self.objects.values():
-            i._update(dt)
+            if type(i) != Collection:
+                i._update(dt)
+            else:
+                log.warning("Collection %s trying to update collection %s"%(self.name, i.name))
+
+
+    def get_object(self, pos):
+        """ Return the object at this spot on the screen in the collection """
+        mx,my = pos
+        show = self.objects.values()[self.index:]
+        for i in show:
+            if hasattr(i, "_cr") and collide(i._cr, mx, my): 
+                print("clicked on %s"%i.name)
+                log.debug("Clicked on %s in collection %s"%(i.name, self.name))
+                return i
+        log.debug("Clicked on collection %s, but no object at that point"%(self.name))
+        return None
 
     def draw(self):
         Actor.draw(self)
-        for i in self.objects.values():
-            i.draw()
-
-   
-@use_init_variables    
-class MenuItem(Actor):
-    def __init__(self, name="Untitled Menu Item", interact=None, spos=(None, None), hpos=(None, None), key=None): 
-        if key: self.key = ord(key) if type(key)==str else key #bind menu item to a keyboard key
-        self.sx, self.sy = spos
-        self.hx, self.hy = hpos #special hide point for menu items
-        self.x, self.y = spos
-        self._motion_queue = [] #actor's deltas for moving on the screen in the near-future
+        #TODO use inventory action to render, or else create one
+        sx,sy=20,20 #padding
+        x,y = sx,sy
+        dx,dy=40,40
+        w,h = self._image.get_width(), self._image.get_height()
+        show = self.objects.values()[self.index:]
+        for i in show:
+            if i._image:
+                iw, ih = i._image.get_width(), i._image.get_height()
+ #               ratio = float(dx)/iw
+#                nw, nh = int(iw*ratio), int(ih*ratio)
+                img = pygame.transform.scale(i._image, (dx, dy))
+                r = img.get_rect().move(x+self.x, y+self.y)
+                i._cr = r #temporary collection values
+                self.game.screen.blit(img, r)
+            x += dx
+            if float(x)/(w-sy-dx)>1:
+                x = sx
+                y += dy
+                if float(y)/(h-sy-dy)>1:
+                    break
 
 @use_init_variables    
 class Modal(Actor):
@@ -641,8 +760,8 @@ class Modal(Actor):
 class Scene(object):
     game = None
     _background = None
-    actors = {}
-    items = {}
+    objects = {}
+#    items = {}
     walkarea = None
     cx, cy = 512,384 #camera pointing at position (center of screen)
     def __init__(self, name="Untitled Scene"):
@@ -680,14 +799,12 @@ class Scene(object):
         """ removes obj from current scene it's in, adds to this scene """
         if obj.scene:
             obj.scene.remove(obj)
-        if type(obj) == Actor:
-            self.actors[obj.name] = obj
-        elif type(obj) == Item:
-            self.items[obj.name] = obj
+        self.objects[obj.name] = obj
         obj.scene = self
+        log.debug("Add %s to scene %s"%(obj.name, self.name))
         return self
         
     def remove(self, obj):
         """ remove object from the scene """
-        del self.actors[obj.name]
+        del self.objects[obj.name]
         return self
