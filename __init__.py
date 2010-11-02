@@ -4,8 +4,10 @@ from new import instancemethod
 import pdb
 from datetime import datetime, timedelta
 import os
+import gc
 import sys
 import glob
+from ctypes import c_int
 from random import choice, randint
 import logging
 import logging.handlers
@@ -37,6 +39,7 @@ if not pygame.font: log.warning('Warning, fonts disabled')
 if not pygame.mixer: log.warning('Warning, sound disabled')
 log.warning("game.scene.camera not implemented yet")
 log.warning("broad try excepts around pygame.image.loads")
+log.warning("smart load should load non-idle action as default if there is only one action")
 
 
 # MOUSE ACTIONS 
@@ -201,6 +204,17 @@ def editor_menu(game):
 
 
 
+def editor_point(game, menuItem, player):
+                if type(menuItem) == str: menuItem = game.items[menuItem]
+                points = {"e_location": (game.editing.set_x, game.editing.set_y),
+#                        "e_anchor": (game.editing.set_x, game.editing.set_y),
+                    }
+                if menuItem.name in points:
+                    game.editing_point = points[menuItem.name]
+                else:
+                    game.editing_point = None
+
+
 
 #### pyvida classes ####
 
@@ -230,6 +244,7 @@ class Game(object):
     profiling = False 
     enabled_profiling = False
     editing = None #which actor are we editing
+    editing_point = None
     enabled_editor = False
     
     actor_dir = "data/actors"
@@ -250,28 +265,37 @@ class Game(object):
 
     def add(self, obj):
         """ add objects to the game """
-        if type(obj) == Scene:
+        if isinstance(obj, Scene):
             self.scenes[obj.name] = obj
-        elif type(obj) == Actor:
-            self.actors[obj.name] = obj
-        elif type(obj) == Item:
-            self.items[obj.name] = obj
         elif type(obj) in [MenuItem, Collection]: #menu items are stored in items
             self.items[obj.name] = obj
-        elif type(obj) == Modal:
+        elif isinstance(obj, Modal):
             self.modal.append(obj)
+        elif isinstance(obj, Item):
+            self.items[obj.name] = obj
+        elif isinstance(obj, Actor):
+            self.actors[obj.name] = obj
+        else:
+            log.error("%s is an unknown %s type, so failed to add to game"%(obj.name, type(obj)))
         obj.game = self
         return self
         
-    def smart(self, player=None):
+    def on_smart(self, player=None):
         """ cycle through the actors, items and scenes and load the available objects """
         for obj_cls in [Actor, Item, Scene]:
             dname = "%s_dir"%obj_cls.__name__.lower()
             for name in os.listdir(getattr(self, dname)):
                 log.debug("game.smart loading %s %s"%(obj_cls.__name__.lower(), name))
-                a = obj_cls(name)
-                self.add(a)
-                a.smart(self)
+                if obj_cls == Actor and name in self.actors:
+                    log.warning("game.smart skipping %s, already an actor with this name!"%(name))
+                elif obj_cls == Item and name in self.items:
+                    log.warning("game.smart skipping %s, already an item with this name!"%(name))
+                else:
+                    a = obj_cls(name)
+                    self.add(a)
+                    a.smart(self)
+        if player: self.player = self.actors[player]
+        self._event_finish()
                 
     def on_set_editing(self, obj):
         if self.editing: #free up old object
@@ -309,18 +333,24 @@ class Game(object):
                 if i.actions.has_key('down'): i.action = i.actions['down']
                 i.trigger_interact()
                 return
-        if self.editing and self._scene:
+        if self.enabled_editor and self._scene:
+            if self.editing_point: 
+                self.editing_point = None
+                return
             for i in self._scene.objects.values():
                 if i.collide(x, y):
-                    self.editing = i
+                    if i == self.editing: #assume want to move
+                        editor_point(self, "e_location", self.player)
+                    else:
+                        self.set_editing(i)
                 
         else: #regular game interaction
             pass
 
     def _on_mouse_move(self, x, y, button, modifiers): #single button interface
-        if self.editing:
-            self.editing.x, self.editing.y = x,y
-                
+        if self.enabled_editor and self.editing_point:
+            self.editing_point[0](x)
+            if len(self.editing_point)>1: self.editing_point[1](y)               
                 
     def _on_key_press(self, key):
         for i in self.menu:
@@ -365,7 +395,7 @@ class Game(object):
                     if game.editing == None: game.editing = objects[0]
                     i = (objects.index(game.editing) + v)%len(objects)
                     log.debug("editor cycle: switch object %s to %s"%(game.editing, objects[i]))
-                    game.editing = objects[i]
+                    game.set_editing(objects[i])
                 else:
                     log.warning("editor cycle: no scene or objects in scene to iterate through")
 
@@ -383,6 +413,7 @@ class Game(object):
                 obj = collection.get_object(m)
                 if obj and game._scene:
                     obj.x, obj.y = 500,400
+                    obj._editor_add_to_scene = True #let exported know this is new to this scene
                     game._scene.add(obj)
                     editor_select_object_close(game, collection, player)
                     game.set_editing(obj)
@@ -409,6 +440,7 @@ class Game(object):
                 game.menu_pop()
                 game.menu_fadeIn()
             
+            
             self.add(MenuItem("e_load", editor_load, (50, 10), (50,-50), "l").smart(self))
             self.add(MenuItem("e_save", editor_load, (90, 10), (90,-50), "s").smart(self))
             self.add(MenuItem("e_add", editor_add, (130, 10), (130,-50), "a").smart(self))
@@ -417,7 +449,7 @@ class Game(object):
             self.add(Collection("e_objects", editor_select_object, (300, 100), (300,-600), K_ESCAPE).smart(self))
             self.add(MenuItem("e_objects_close", editor_select_object_close, (800, 600), (800,-100), K_ESCAPE).smart(self))
             for i, v in enumerate(["location", "anchor", "stand", "scale", "walkarea", "talk"]):
-                self.add(MenuItem("e_%s"%v, "editor_%s"%v, (100+i*30, 45), (100+i*30,-50), v[0]).smart(self))
+                self.add(MenuItem("e_%s"%v, editor_point, (100+i*30, 45), (100+i*30,-50), v[0]).smart(self))
             
             
         
@@ -487,6 +519,15 @@ class Game(object):
 
     def on_load_state(self, scene, state):
         """ load a state from a file inside a scene directory """
+        if type(scene) == str: scene = self.scenes[scene]
+        sfname = os.path.join(self.scene_dir, os.path.join(scene.name, state))       
+        sfname = "%s.py"%sfname
+        variables= {}
+        if not os.path.exists(sfname):
+            log.error("load state: state not found: %s"%sfname)
+        else:
+            execfile( sfname, variables)
+            variables['load_state'](self, scene)
         self._event_finish()
 
     def on_save_state(self, scene, state):
@@ -601,9 +642,9 @@ class Actor(object):
     game = None
     visible = 1.0
     default_font_speech = None    
-    x, y = 0,0      # place in scene
-    sx, sy = 0,0    # stand point
-    ax, ay = 0, 0    # anchor point
+    _x, _y = 0,0      # place in scene
+    _sx, _sy = 0,0    # stand point
+    _ax, _ay = 0, 0    # anchor point
     speed = 10 #speed at which actor moves per frame
     inventory = {}
     actions = {}
@@ -621,22 +662,37 @@ class Actor(object):
     
     def _event_finish(self): 
         return self.game._event_finish()
+
+    def get_x(self): return self._x
+    def set_x(self, x): self._x = x
+    x = property(get_x, set_x)
+
+    def get_y(self): return self._y 
+    def set_y(self, y): self._y = y
+    y = property(get_y, set_y)
+
+    def get_ax(self): return self._ax + self.x
+    def set_ax(self, ax): self._ax = ax - self.x
+    ax = property(get_ax, set_ax)
+
+    def get_ay(self): return self._ay + self.y
+    def set_ay(self, ay): self._ay = ay - self.y
+    ay = property(get_ay, set_ay)
         
     def smart(self, game):
         """ smart load """
-        log.debug("smart load should load non-idle action as default if there is only one action")
         if type(self) in [MenuItem, Collection]:
             d = game.menuitem_dir
-        elif type(self) == Actor:
-            d = game.actor_dir
-        elif type(self) == Item:
+        elif isinstance(self, Item):
             d = game.item_dir
+        elif isinstance(self, Actor):
+            d = game.actor_dir
         try:
                 self._image = pygame.image.load(os.path.join(d, "%s/idle.png"%self.name)).convert_alpha()
                 self._clickable_area = self._image.get_rect().move(self.x, self.y)
         except:
                 log.warning("unable to load idle.png for %s"%self.name)
-        log.debug("smart load, %s clickable %s"%(self.name, self._clickable_area))
+        log.debug("smart load %s %s clickable %s"%(type(self), self.name, self._clickable_area))
         return self
         
     def trigger_interact(self):
@@ -663,15 +719,27 @@ class Actor(object):
 #        self.game.screen.blit(self.game._scene.background(), (self.x, self.y), self._image.get_rect())
         if self._rect:
             self.game.screen.blit(self.game._scene.background(), self._rect, self._rect)
+        if self.game.editing == self:
+            r = self._crosshair((255,0,0), (self.ax, self.ay))
+            self.game.screen.blit(self.game._scene.background(), r, r)
 #        if self._image:
  #           r = self._image.get_rect().move(self.x, self.y)    
   #          self.game.screen.blit(self._image, r)
       
+    
+    def _crosshair(self, colour, pt):
+        pygame.draw.line(self.game.screen, colour, (pt[0],pt[1]-5), (pt[0],pt[1]+5))
+        pygame.draw.line(self.game.screen, colour, (pt[0]-5,pt[1]), (pt[0]+5,pt[1]))
+        return Rect(pt[0]-5, pt[1]-5, 11,11)
+
+
     def draw(self):
         if self._image:
             r = self._image.get_rect().move(self.x, self.y)    
             if self.game.editing == self:
-                pygame.draw.rect(self.game.screen, (0,255,0), r, 2)
+                r2 = r.inflate(-2,-2)
+                pygame.draw.rect(self.game.screen, (0,255,0), r2, 2)
+                self._crosshair((255,0,0), (self.ax, self.ay))
             self._rect = self.game.screen.blit(self._image, r)
 
     def _update(self, dt):
@@ -695,14 +763,14 @@ class Actor(object):
 
     def on_interact(self, game, actor):
         """ default interact smethod """
-        if type(self) == Actor:
-            c = ["They're not responding to my hails",
-            "Perhaps they need a good poking.",
-            "They don't want to talk to me."]
-        else:
+        if isinstance(self, Item): #very generic
             c = ["It's not very interesting",
             "I'm not sure what you want me to do with that.",
             "I've already tried using that, it just won't fit."]
+        else: #probably an Actor object
+            c = ["They're not responding to my hails",
+            "Perhaps they need a good poking.",
+            "They don't want to talk to me."]
         if self.game.player: self.game.player.says(choice(c))
         self._event_finish()
             
@@ -714,11 +782,14 @@ class Actor(object):
         log.debug("actor %s placed at %s"%(self.name, destination))
         self._event_finish()
              
-    def on_relocate(self, scene, destination):
+    def on_relocate(self, scene, destination=None):
         # """ relocate this actor to scene at destination instantly """ 
-        pt = get_point(self.game, destination)
-        self.x, self.y = pt
-        self.game.scene(scene)
+        if type(scene) == str:
+            scene = self.game.scenes[scene]
+        if destination:
+            pt = get_point(self.game, destination)
+            self.x, self.y = pt
+#        self.game.scene(scene)
         scene.add(self)
         self._event_finish()
     
@@ -739,7 +810,6 @@ class Actor(object):
         else: #try to follow the path
             dx = int((x - self.x) / 3)
             dy = int((y - self.y) / 3)
-#            import pdb; pdb.set_trace()
             for i in range(3): self._motion_queue.append((dx+randint(-2,2),dy+randint(-2,2)))
 
 
