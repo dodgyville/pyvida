@@ -30,7 +30,7 @@ log = logging.getLogger('pyvida4')
 log.setLevel(logging.DEBUG)
 
 handler = logging.handlers.RotatingFileHandler(
-              LOG_FILENAME, maxBytes=40000, backupCount=5)
+              LOG_FILENAME, maxBytes=60000, backupCount=5)
 handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
 log.addHandler(handler)
 
@@ -58,6 +58,9 @@ DEBUG_ANCHOR = 9
 DEBUG_WALK = 10
 DEBUG_SCALE = 11
 
+#Animation modes
+LOOP = 0
+PINGPONG = 1
 
 def use_init_variables(original_class):
     """ Take the value of the args to the init function and assign them to the objects' attributes """
@@ -278,7 +281,7 @@ class Game(object):
         else:
             log.error("%s is an unknown %s type, so failed to add to game"%(obj.name, type(obj)))
         obj.game = self
-        return self
+        #self._event_finish()
         
     def on_smart(self, player=None):
         """ cycle through the actors, items and scenes and load the available objects """
@@ -294,7 +297,8 @@ class Game(object):
                     a = obj_cls(name)
                     self.add(a)
                     a.smart(self)
-        if player: self.player = self.actors[player]
+        if type(player) == str: player = self.actors[player]
+        if player: self.player = player
         self._event_finish()
                 
     def on_set_editing(self, obj):
@@ -462,12 +466,14 @@ class Game(object):
                 blank = [self._scene.objects.values(), self.menu, self.modal]
             else:
                 blank = [self.menu, self.modal]
-            self.handle_pygame_events()
+
             if self._scene and self.screen:
                 for group in blank:
                     for obj in group: obj.clear()
 
+            self.handle_pygame_events()
             self.handle_events()
+
             if self._scene and self.screen:
                 for group in blank:
                     for obj in group: obj._update(dt)
@@ -486,6 +492,8 @@ class Game(object):
         if len(self.events) == 0: return
         if not self._event: #waiting, so do an immediate process 
             e = self.events.pop(0) #stored as [(function, args))]
+            log.debug("Doing event %s"%e[0])
+
             self._event = e
  #           try:
             e[0](*e[1:]) #call the function with the args        
@@ -494,6 +502,7 @@ class Game(object):
     
     def queue_event(self, event, *args):
         self.events.append((event, )+(args))
+#        log.debug("events %s"%self.events)
         return args[0]
 
     def stuff_event(self, event, *args):
@@ -559,7 +568,11 @@ class Game(object):
         scene = Scene(image)
         scene.background(image)
         #add scene to game, change over to that scene
-        self.add(scene).scene(scene)
+        self.add(scene)
+        self.scene(scene)
+        if self.screen:
+           self.screen.blit(scene.background(), (0, 0))
+        pygame.display.flip()            
         modal = Modal(image)
         #create and add a modal to block input
         modal._clickable_area = [0,0,1024,768]
@@ -633,6 +646,62 @@ class Game(object):
         log.debug("pop menu %s"%[x.name for x in self.menu])
         self._event_finish()
 
+
+@use_init_variables
+class Action(object):
+    def __init__(self, actor=None, name="unknown action", fname=""): 
+        self.images = []
+        self.index = 0
+        self.count = 0
+        self.mode = LOOP
+        self.step = 1
+        
+    @property
+    def image(self): #return the current image
+        if self.images:
+            return self.images[self.index%self.count]
+        else:
+            img = pygame.Surface((10,10))
+            log.debug("action %s has no images"%self.name)
+        return img
+        
+    def update(self, dt):
+        self.index += self.step
+        if self.mode == PINGPONG and self.index == -1: 
+            self.step = 1
+            self.index = 0
+        if self.mode == PINGPONG and self.index == self.count: 
+            self.step = -1
+            self.index =self.count-1
+            
+        
+    def load(self): 
+        """Load an anim from a montage file"""
+        anim = None
+        fname = os.path.splitext(self.fname)[0]
+        if not os.path.isfile(fname+".montage"):
+#            images = pyglet.image.load(fname+".png") #image can't be 9000 wide!
+            self.images = [pygame.image.load(fname+".png").convert_alpha()]
+#            if anchor_x == -1: 
+ #               images.anchor_x = int(images.width/2)
+#            elif anchor_x:
+#                images.anchor_x = anchor_x
+#            if anchor_y == -1: 
+#                images.anchor_y = int(images.height * 0.15)
+#            elif anchor_y:
+#                images.anchor_y = anchor_y
+#            self.anchor_x = images.anchor_x
+#            self.anchor_y = images.anchor_y
+        else:
+            with open(fname+".montage", "r") as f:
+                num, w, h  = [int(i) for i in f.readlines()]
+            master_image = pygame.image.load(fname + ".png").convert_alpha()
+            master_width, master_height = master_image.get_size()
+            for i in xrange(0, num):
+    	        self.images.append(master_image.subsurface((i*w,0,w,h)))
+        self.count = len(self.images)
+        return self
+
  
 
 
@@ -647,7 +716,6 @@ class Actor(object):
     _ax, _ay = 0, 0    # anchor point
     speed = 10 #speed at which actor moves per frame
     inventory = {}
-    actions = {}
     scale = 1.0
     scene = None
     _walk_area = [0,0,0,0]
@@ -659,6 +727,8 @@ class Actor(object):
     
     def __init__(self, name="Untitled Actor"): 
         self._motion_queue = [] #actor's deltas for moving on the screen in the near-future
+        self.action = None
+        self.actions = {}
     
     def _event_finish(self): 
         return self.game._event_finish()
@@ -687,12 +757,17 @@ class Actor(object):
             d = game.item_dir
         elif isinstance(self, Actor):
             d = game.actor_dir
-        try:
-                self._image = pygame.image.load(os.path.join(d, "%s/idle.png"%self.name)).convert_alpha()
-                self._clickable_area = self._image.get_rect().move(self.x, self.y)
-        except:
-                log.warning("unable to load idle.png for %s"%self.name)
-        log.debug("smart load %s %s clickable %s"%(type(self), self.name, self._clickable_area))
+        for action_fname in glob.glob(os.path.join(d, "%s/*.png"%self.name)): #load actions for this actor
+            action_name = os.path.splitext(os.path.basename(action_fname))[0]
+            self.actions[action_name] = Action(self, action_name, action_fname).load()
+            if action_name == "idle": self.action = self.actions[action_name] #default to idle
+        if self.action == None and len(self.actions)>0: self.action = self.actions.values()[0] #or default to first loaded
+#        try:
+#            self._image = pygame.image.load(os.path.join(d, "%s/idle.png"%self.name)).convert_alpha()
+        self._clickable_area = self.action.image.get_rect().move(self.x, self.y)
+#        except:
+#            log.warning("unable to load idle.png for %s"%self.name)
+        log.debug("smart load %s %s clickable %s and actions %s"%(type(self), self.name, self._clickable_area, self.actions.keys()))
         return self
         
     def trigger_interact(self):
@@ -734,13 +809,15 @@ class Actor(object):
 
 
     def draw(self):
-        if self._image:
-            r = self._image.get_rect().move(self.x, self.y)    
+        img = None
+        if self.action: img = self.action.image
+        if img:
+            r = img.get_rect().move(self.x, self.y)    
             if self.game.editing == self:
                 r2 = r.inflate(-2,-2)
                 pygame.draw.rect(self.game.screen, (0,255,0), r2, 2)
                 self._crosshair((255,0,0), (self.ax, self.ay))
-            self._rect = self.game.screen.blit(self._image, r)
+            self._rect = self.game.screen.blit(img, r)
 
     def _update(self, dt):
         """ update this actor within the game """
@@ -755,11 +832,18 @@ class Actor(object):
             if l == 1: #if queue empty, get some more queue
                 self.on_goto((self._tx, self._ty))
         self._clickable_area = Rect(self.x, self.y, self._clickable_area[2], self._clickable_area[3])
+        if self.action: self.action.update(dt)
         if hasattr(self, "update"): #run this actor's personalised update function
             self.update(dt)
         
     def collide(self, x,y):
         return collide(self._clickable_area, x, y)
+        
+    def on_animation_mode(self, action, mode):
+        """ set the animation mode on this action """
+        self.actions[action].mode = mode
+        self._event_finish()
+        
 
     def on_interact(self, game, actor):
         """ default interact smethod """
@@ -772,6 +856,13 @@ class Actor(object):
             "Perhaps they need a good poking.",
             "They don't want to talk to me."]
         if self.game.player: self.game.player.says(choice(c))
+        self._event_finish()
+
+
+    def on_do(self, action):
+        """ start an action """
+        self.action = self.actions[action]
+        log.debug("actor %s does action %s"%(self.name, action))
         self._event_finish()
             
         
@@ -823,7 +914,10 @@ class Actor(object):
 class Item(Actor):
     _motion_queue = [] #actor's deltas for moving on the screen in the near-future
 
-    def __init__(self, name="Untitled Item"): pass
+    def __init__(self, name="Untitled Item"): 
+        self.action = None
+        self.actions = {}
+
 
    
 @use_init_variables    
@@ -834,6 +928,8 @@ class MenuItem(Actor):
         self.hx, self.hy = hpos #special hide point for menu items
         self.x, self.y = spos
         self._motion_queue = [] #actor's deltas for moving on the screen in the near-future
+        self.action = None
+        self.actions = {}
 
 
 @use_init_variables        
@@ -847,6 +943,8 @@ class Collection(MenuItem):
         self._motion_queue = [] #actor's deltas for moving on the screen in the near-future
         self.objects = {}
         self.index = 0
+        self.action = None
+        self.actions = {}
     
     def add(self, *args):
         for a in args:
@@ -906,14 +1004,18 @@ class Modal(Actor):
 
 @use_init_variables
 class Scene(object):
+    __metaclass__ = use_on_events
+
     game = None
     _background = None
-    objects = {}
 #    items = {}
     walkarea = None
     cx, cy = 512,384 #camera pointing at position (center of screen)
     def __init__(self, name="Untitled Scene"):
-        pass
+        self.objects = {}
+
+    def _event_finish(self): 
+        return self.game._event_finish()
 
     def smart(self, game):
         """ smart load """
@@ -937,22 +1039,22 @@ class Scene(object):
 #            self.addWalkarea(walkarea)
         return self
 
-
     def background(self, fname=None):
         if fname:
             self._background = load_image(fname)
         return self._background
 
-    def add(self, obj):
+    def remove(self, obj):
+        """ remove object from the scene """
+        del self.objects[obj.name]
+        return self
+        
+    def on_add(self, obj):
         """ removes obj from current scene it's in, adds to this scene """
         if obj.scene:
             obj.scene.remove(obj)
         self.objects[obj.name] = obj
         obj.scene = self
         log.debug("Add %s to scene %s"%(obj.name, self.name))
-        return self
+        self._event_finish()
         
-    def remove(self, obj):
-        """ remove object from the scene """
-        del self.objects[obj.name]
-        return self
