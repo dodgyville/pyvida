@@ -93,15 +93,20 @@ def use_init_variables(original_class):
 def create_event(q):
     return lambda self, *args, **kwargs: self.game.queue_event(q, self, *args, **kwargs)
 
-
-def use_on_events(name, bases, dict):
+def use_on_events(name, bases, dic):
     """ create a small method for each "on_<x>" queue function """
-    for queue_method in [x for x in dict.keys() if x[:3] == 'on_']:
+    for queue_method in [x for x in dic.keys() if x[:3] == 'on_']:
         qname = queue_method[3:]
         log.debug("class %s has queue function %s available"%(name.lower(), qname))
-        dict[qname] = create_event(dict[queue_method])
-    return type(name, bases, dict)
+        dic[qname] = create_event(dic[queue_method])
+    return type(name, bases, dic)
 
+#def queue_function(f):
+#    """ create a small method for an "on_<x>" queue function """
+#    name = f.__name__[3:]
+#    log.debug("game itself has registered %s as a queue function"%(name))
+#    sys._getframe(1).f_locals[name] = create_event(f)
+#    return f
 
 class Polygon(object):
     def __init__(self, vertexarray = []):
@@ -233,7 +238,7 @@ class Game(object):
     #always on screen
     menu = [] 
     _menus = [] #a stack of menus 
-    modal = []
+    modals = []
     
     events = []
     _event = None
@@ -242,7 +247,7 @@ class Game(object):
     effects_volume = 1.0
     music_volume = 1.0
     mute_all = False
-    default_font_speech = None
+    font_speech = None
     
     profiling = False 
     enabled_profiling = False
@@ -265,22 +270,40 @@ class Game(object):
         self.game = self
         self.mouse_mode = MOUSE_GENERAL
         self.fps = int(1000.0/24)  #12 fps
+        
+    def __getattr__(self, a):
+        if not hasattr(self, a): #possibly set up a queue function
+            q = getattr(self, "on_%s"%a, None)
+            if q: 
+                f = create_event(q)
+                setattr(self, a, f)
+                return f
+        return getattr(self, a)
 
-    def add(self, obj):
+    def add(self, obj, force_cls=None):
         """ add objects to the game """
-        if isinstance(obj, Scene):
-            self.scenes[obj.name] = obj
-        elif type(obj) in [MenuItem, Collection]: #menu items are stored in items
-            self.items[obj.name] = obj
-        elif isinstance(obj, Modal):
-            self.modal.append(obj)
-        elif isinstance(obj, Item):
-            self.items[obj.name] = obj
-        elif isinstance(obj, Actor):
-            self.actors[obj.name] = obj
+        if force_cls:
+            if force_cls == ModalItem:
+                self.modals.append(obj)
+                self.items[obj.name] = obj
+            else:
+                log.error("%s not implement in game.add"%force_cls)
         else:
-            log.error("%s is an unknown %s type, so failed to add to game"%(obj.name, type(obj)))
+            if isinstance(obj, Scene):
+                self.scenes[obj.name] = obj
+            elif type(obj) in [MenuItem, Collection]: #menu items are stored in items
+                self.items[obj.name] = obj
+            elif isinstance(obj, ModalItem):
+                self.modals.append(obj)
+                self.items[obj.name] = obj
+            elif isinstance(obj, Item):
+                self.items[obj.name] = obj
+            elif isinstance(obj, Actor):
+                self.actors[obj.name] = obj
+            else:
+                log.error("%s is an unknown %s type, so failed to add to game"%(obj.name, type(obj)))
         obj.game = self
+        return obj
         #self._event_finish()
         
     def on_smart(self, player=None):
@@ -326,13 +349,13 @@ class Game(object):
                 if self._scene and self._scene.objects: self.set_editing(self._scene.objects.values()[0])
 
     def _on_mouse_press(self, x, y, button, modifiers): #single button interface
-        if len(self.modal) > 0:
-            for i in self.modal:
+        if len(self.modals) > 0: #modals first
+            for i in self.modals:
                 if i.collide(x,y):
                     i.trigger_interact()
                     return
             return
-        for i in self.menu:
+        for i in self.menu: #then menu
             if i.collide(x,y):
                 if i.actions.has_key('down'): i.action = i.actions['down']
                 i.trigger_interact()
@@ -350,17 +373,35 @@ class Game(object):
                 
         else: #regular game interaction
             pass
+        for i in self._scene.objects.values(): #then objects in the scene
+            if i is not self.player and i.collide(x,y):
+#                if i.actions.has_key('down'): i.action = i.actions['down']
+                i.trigger_interact()
+                return
+        #or finally, try and walk the player there.
+        self.player.goto((x,y))
+
+
 
     def _on_mouse_move(self, x, y, button, modifiers): #single button interface
         if self.enabled_editor and self.editing_point:
             self.editing_point[0](x)
             if len(self.editing_point)>1: self.editing_point[1](y)               
+        for i in self.menu: #then menu
+            if i.collide(x,y):
+                if i.actions.has_key('over'): i.action = i.actions['over']
+            else:
+                if i.action and i.action.name == "over":
+                    if i.actions.has_key('idle'): i.action = i.actions['idle']
+
                 
     def _on_key_press(self, key):
         for i in self.menu:
             if key == i.key: i.trigger_interact() #print("bound to menu item")
         if ENABLE_EDITOR and key == K_F1:
             self.toggle_editor()
+        elif ENABLE_EDITOR and key == K_F2:
+            import pdb; pdb.set_trace()
             
 
     def handle_pygame_events(self):
@@ -463,9 +504,9 @@ class Game(object):
         while self.quit == False:
             pygame.time.delay(self.fps)
             if self._scene:
-                blank = [self._scene.objects.values(), self.menu, self.modal]
+                blank = [self._scene.objects.values(), self.menu, self.modals]
             else:
-                blank = [self.menu, self.modal]
+                blank = [self.menu, self.modals]
 
             if self._scene and self.screen:
                 for group in blank:
@@ -474,12 +515,17 @@ class Game(object):
             self.handle_pygame_events()
             self.handle_events()
 
+            if self._scene:
+                blank = [self._scene.objects.values(), self.menu, self.modals]
+            else:
+                blank = [self.menu, self.modals]
+
             if self._scene and self.screen:
                 for group in blank:
                     for obj in group: obj._update(dt)
 #                for o in self._scene.actors.values(): o._update(dt)
 
-#                for o in self.modal:
+#                for o in self.modals:
 #                    screen.blit(self._scene.background(), (o.x, o.y), (o.x, o.y))
 #            pygame.display.update()
             if self._scene and self.screen:
@@ -495,8 +541,9 @@ class Game(object):
             log.debug("Doing event %s"%e[0])
 
             self._event = e
- #           try:
             e[0](*e[1:]) #call the function with the args        
+#            try:
+ #              e[0](*e[1:]) #call the function with the args        
   #          except:
    #             import pdb; pdb.set_trace()
     
@@ -564,7 +611,7 @@ class Game(object):
     def on_splash(self, image, callback, duration, immediately=False):
 #        """ show a splash screen then pass to callback after duration """
  #       self.
-        log.warning("game.splash ignores duration") 
+        log.warning("game.splash ignores duration and clicks")
         scene = Scene(image)
         scene.background(image)
         #add scene to game, change over to that scene
@@ -573,9 +620,9 @@ class Game(object):
         if self.screen:
            self.screen.blit(scene.background(), (0, 0))
         pygame.display.flip()            
-        modal = Modal(image)
         #create and add a modal to block input
-        modal._clickable_area = [0,0,1024,768]
+#        modal = Modal(image)
+#        modal._clickable_area = [0,0,1024,768]
         if callback: callback(self)
 #        def close_splash(self, 
 #        modal.interact = 
@@ -705,30 +752,33 @@ class Action(object):
  
 
 
-@use_init_variables
 class Actor(object):
     __metaclass__ = use_on_events
-    game = None
-    visible = 1.0
-    default_font_speech = None    
-    _x, _y = 0,0      # place in scene
-    _sx, _sy = 0,0    # stand point
-    _ax, _ay = 0, 0    # anchor point
-    speed = 10 #speed at which actor moves per frame
-    inventory = {}
-    scale = 1.0
-    scene = None
-    _walk_area = [0,0,0,0]
-    _solid_area = [0,0,0,0]
-    _clickable_area = [0,0,0,0]
-    _image = None
-    _tx, _ty = 0,0 #target for when moving
-    _rect = None
-    
-    def __init__(self, name="Untitled Actor"): 
+    def __init__(self, name=None): 
+        self.name = name if name else "Unitled %s"%self.__name__
         self._motion_queue = [] #actor's deltas for moving on the screen in the near-future
         self.action = None
         self.actions = {}
+        
+        self._alpha = 255
+        self._alpha_target = 255
+        
+        self.font_speech = None    
+        self._x,     self._y = 0,0      # place in scene
+        self._sx,     self._sy = 0,0    # stand point
+        self._ax,     self._ay = 0, 0    # anchor point
+        self.speed = 10 #speed at which actor moves per frame
+        self.inventory = {}
+        self.scale = 1.0
+        self.scene = None
+        self._walk_area = [0,0,0,0]
+        self._solid_area = [0,0,0,0]
+        self._clickable_area = [0,0,0,0]
+        self._image = None
+        self._tx, _ty = 0,0 #target for when moving
+        self._rect = None
+        self.game = None
+
     
     def _event_finish(self): 
         return self.game._event_finish()
@@ -750,9 +800,11 @@ class Actor(object):
     ay = property(get_ay, set_ay)
         
     def smart(self, game):
-        """ smart load """
+        """ smart actor load """
         if type(self) in [MenuItem, Collection]:
             d = game.menuitem_dir
+        elif isinstance(self, ModalItem):
+            d = game.item_dir
         elif isinstance(self, Item):
             d = game.item_dir
         elif isinstance(self, Actor):
@@ -812,6 +864,7 @@ class Actor(object):
         img = None
         if self.action: img = self.action.image
         if img:
+            img.set_alpha(self._alpha)
             r = img.get_rect().move(self.x, self.y)    
             if self.game.editing == self:
                 r2 = r.inflate(-2,-2)
@@ -832,6 +885,8 @@ class Actor(object):
             if l == 1: #if queue empty, get some more queue
                 self.on_goto((self._tx, self._ty))
         self._clickable_area = Rect(self.x, self.y, self._clickable_area[2], self._clickable_area[3])
+        if self._alpha > self._alpha_target: self._alpha -= 1
+        if self._alpha < self._alpha_target: self._alpha += 1
         if self.action: self.action.update(dt)
         if hasattr(self, "update"): #run this actor's personalised update function
             self.update(dt)
@@ -845,7 +900,7 @@ class Actor(object):
         self._event_finish()
         
 
-    def on_interact(self, game, actor):
+    def on_interact(self, game, actor, player):
         """ default interact smethod """
         if isinstance(self, Item): #very generic
             c = ["It's not very interesting",
@@ -872,7 +927,24 @@ class Actor(object):
         self.x, self.y = pt
         log.debug("actor %s placed at %s"%(self.name, destination))
         self._event_finish()
+        
+    def on_finish_fade(self):
+        print("finish fade %s"%self._alpha)
+        if self._alpha == self._alpha_target:
+            self._event_finish()
              
+    def on_fadeIn(self):
+        self._alpha = 0
+        self._alpha_target = 255
+        self.game.stuff_event(self.finish_fade, self)
+        self._event_finish()
+
+    def on_fadeOut(self):
+        obj._alpha = 255
+        obj._alpha_target = 0
+        self.game.stuff_event(self.finish_fade, self)
+        self._event_finish()
+
     def on_relocate(self, scene, destination=None):
         # """ relocate this actor to scene at destination instantly """ 
         if type(scene) == str:
@@ -907,44 +979,71 @@ class Actor(object):
     def on_says(self, text, sfx=-1, block=True, modal=True, font=None):
         """ if sfx == -1, try and guess sound file """
         log.debug("actor %s says %s"%(self.name, text))
-        log.warning("player.on_says not implemented yet")
+        def close_msgbox(game, actor, player):
+#            game.clearModal()
+            game.modals.remove(game.items["msgbox"])
+            game.modals.remove(game.items["txt"])
+            game.modals.remove(game.items["ok"])
+            self._event_finish()
+        msg = self.game.add(ModalItem("msgbox", close_msgbox,(54,-400)).smart(self.game))
+        self.game.stuff_event(msg.on_goto, (54,40))
+        txt = self.game.add(Text("txt", (100,80), (840,170), text), ModalItem)
+        ok = self.game.add(Item("ok").smart(self.game), ModalItem)
+        ok.place((900,250))
         self._event_finish()
         
-@use_init_variables        
 class Item(Actor):
-    _motion_queue = [] #actor's deltas for moving on the screen in the near-future
+    pass
+#    _motion_queue = [] #actor's deltas for moving on the screen in the near-future
+#    def __init__(self, name="Untitled Item"): 
+        
 
-    def __init__(self, name="Untitled Item"): 
-        self.action = None
-        self.actions = {}
-
-
+class Text(Actor):
+    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 200, 214), size=26):
+        Actor.__init__(self, name)
+        self.x, self.y = pos
+        self.w, self.h = dimensions
+#        fname = "data/fonts/domesticManners.ttf"
+        fname = "data/fonts/vera.ttf"
+        self.font = pygame.font.Font(fname, size)
+        self.img = self.font.render(text, True, colour)
    
-@use_init_variables    
+
+    def draw(self):
+        if self.img:
+            r = self.img.get_rect().move(self.x, self.y)    
+#            if self.game.editing == self:
+#                r2 = r.inflate(-2,-2)
+#                pygame.draw.rect(self.game.screen, (0,255,0), r2, 2)
+#                self._crosshair((255,0,0), (self.ax, self.ay))
+            self._rect = self.game.screen.blit(self.img, r)
+
+
+class ModalItem(Actor):
+    """ blocks interactions with actors, items and menu """
+    def __init__(self, name="Untitled Menu Item", interact=None, pos=(None, None)): 
+        Actor.__init__(self, name)
+        self.x, self.y = pos
+
+    def collide(self, x,y): #modals cover the whole screen?
+        return True
+  
+   
 class MenuItem(Actor):
     def __init__(self, name="Untitled Menu Item", interact=None, spos=(None, None), hpos=(None, None), key=None): 
+        Actor.__init__(self, name)
+        self.interact = interact
         if key: self.key = ord(key) if type(key)==str else key #bind menu item to a keyboard key
         self.sx, self.sy = spos
         self.hx, self.hy = hpos #special hide point for menu items
         self.x, self.y = spos
-        self._motion_queue = [] #actor's deltas for moving on the screen in the near-future
-        self.action = None
-        self.actions = {}
 
-
-@use_init_variables        
 class Collection(MenuItem):
     """ An actor which contains subactors (eg an inventory or directory listing)"""
-    def __init__(self, name="Untitled Menu Item", interact=None, spos=(None, None), hpos=(None, None), key=None): 
-        if key: self.key = ord(key) if type(key)==str else key #bind menu item to a keyboard key
-        self.sx, self.sy = spos
-        self.hx, self.hy = hpos #special hide point for menu items
-        self.x, self.y = spos
-        self._motion_queue = [] #actor's deltas for moving on the screen in the near-future
+    def __init__(self, name="Untitled Collection", interact=None, spos=(None, None), hpos=(None, None), key=None): 
+        MenuItem.__init__(self, name, interact, spos, hpos, key)
         self.objects = {}
         self.index = 0
-        self.action = None
-        self.actions = {}
     
     def add(self, *args):
         for a in args:
@@ -979,14 +1078,14 @@ class Collection(MenuItem):
         sx,sy=20,20 #padding
         x,y = sx,sy
         dx,dy=40,40
-        w,h = self._image.get_width(), self._image.get_height()
+        w,h = self.action.image.get_width(), self.action.image.get_height()
         show = self.objects.values()[self.index:]
         for i in show:
             if i._image:
-                iw, ih = i._image.get_width(), i._image.get_height()
+                iw, ih = i.action.image.get_width(), i.action.image.get_height()
  #               ratio = float(dx)/iw
 #                nw, nh = int(iw*ratio), int(ih*ratio)
-                img = pygame.transform.scale(i._image, (dx, dy))
+                img = pygame.transform.scale(i.action.image, (dx, dy))
                 r = img.get_rect().move(x+self.x, y+self.y)
                 i._cr = r #temporary collection values
                 self.game.screen.blit(img, r)
@@ -997,28 +1096,27 @@ class Collection(MenuItem):
                 if float(y)/(h-sy-dy)>1:
                     break
 
-@use_init_variables    
-class Modal(Actor):
-    def __init__(self, name="Untitled Modal"): pass
+#@use_init_variables    
+#class Modal(Actor):
+#    def __init__(self, name="Untitled Modal"): pass
 
 
-@use_init_variables
 class Scene(object):
     __metaclass__ = use_on_events
-
-    game = None
-    _background = None
-#    items = {}
-    walkarea = None
-    cx, cy = 512,384 #camera pointing at position (center of screen)
     def __init__(self, name="Untitled Scene"):
+        self.name = name
         self.objects = {}
+        self.game = None
+        self._background = None
+        self.walkarea = None
+        self.cx, self.cy = 512,384 #camera pointing at position (center of screen)
+
 
     def _event_finish(self): 
         return self.game._event_finish()
 
     def smart(self, game):
-        """ smart load """
+        """ smart scene load """
         sdir = os.path.join(os.getcwd(),os.path.join(game.scene_dir, self.name))
         bname = os.path.join(sdir, "background.png")
         if os.path.isfile(bname):
