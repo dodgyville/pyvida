@@ -229,20 +229,8 @@ def editor_point(game, menuItem, player):
 @use_init_variables
 class Game(object):
     __metaclass__ = use_on_events
-    _scene = None
-    player = None
-    actors = {}
-    items = {}
-    scenes = {}
-    
-    #always on screen
-    menu = [] 
-    _menus = [] #a stack of menus 
-    modals = []
-    
-    events = []
-    _event = None
-    
+  
+   
     voice_volume = 1.0
     effects_volume = 1.0
     music_volume = 1.0
@@ -254,6 +242,7 @@ class Game(object):
     editing = None #which actor are we editing
     editing_point = None
     enabled_editor = False
+    testing = False
     
     actor_dir = "data/actors"
     item_dir = "data/items"
@@ -268,6 +257,21 @@ class Game(object):
     def __init__(self, name="Untitled Game", fullscreen=False):
         log.debug("game object created at %s"%datetime.now())
         self.game = self
+        self.events = []
+        self._event = None
+
+        self._scene = None
+        self.player = None
+        self.actors = {}
+        self.items = {}
+        self.scenes = {}
+    
+        #always on screen
+        self.menu = [] 
+        self._menus = [] #a stack of menus 
+        self.modals = []
+
+
         self.mouse_mode = MOUSE_GENERAL
         self.fps = int(1000.0/24)  #12 fps
         
@@ -281,6 +285,13 @@ class Game(object):
         return getattr(self, a)
 
     def add(self, obj, force_cls=None):
+        if type(obj) == list:
+            for i in obj: self._add(i, force_cls)
+        else:
+            self._add(obj, force_cls)
+        return obj
+
+    def _add(self, obj, force_cls=None):
         """ add objects to the game """
         if force_cls:
             if force_cls == ModalItem:
@@ -515,21 +526,12 @@ class Game(object):
             self.handle_pygame_events()
             self.handle_events()
 
-            if self._scene:
-                blank = [self._scene.objects.values(), self.menu, self.modals]
-            else:
-                blank = [self.menu, self.modals]
-
             if self._scene and self.screen:
-                for group in blank:
+                for group in [self._scene.objects.values(), self.menu, self.modals]:
                     for obj in group: obj._update(dt)
-#                for o in self._scene.actors.values(): o._update(dt)
 
-#                for o in self.modals:
-#                    screen.blit(self._scene.background(), (o.x, o.y), (o.x, o.y))
-#            pygame.display.update()
             if self._scene and self.screen:
-                for group in blank:
+                for group in [self._scene.objects.values(), self.menu, self.modals]:
                     for obj in group: obj.draw()
             pygame.display.flip()            
 
@@ -616,20 +618,22 @@ class Game(object):
         scene.background(image)
         #add scene to game, change over to that scene
         self.add(scene)
-        self.scene(scene)
+#        self.scene(scene)
+        self.stuff_event(self.on_scene, scene)
         if self.screen:
-           self.screen.blit(scene.background(), (0, 0))
-        pygame.display.flip()            
+            self.screen.blit(scene.background(), (0, 0))
+            pygame.display.flip()            
+        
         #create and add a modal to block input
 #        modal = Modal(image)
 #        modal._clickable_area = [0,0,1024,768]
+        self._event_finish() #finish the event
         if callback: callback(self)
 #        def close_splash(self, 
 #        modal.interact = 
 #        self.add(modal)
         #add timed event for callback
 #        self.
-        self._event_finish()
         
         
     def on_set_menu(self, *args):
@@ -645,6 +649,7 @@ class Game(object):
         self._event_finish()        
         
     def on_menu_clear(self):
+        """ clear all menus """
         log.warning("game.menu_clear should use game.remove")
         #for i in self.menu:
         #    del self.menu[i]
@@ -655,7 +660,7 @@ class Game(object):
 
     def on_menu_fadeOut(self): 
         """ animate hiding the menu """
-        for i in self.menu: self.stuff_event(i.on_goto, (i.hx,i.hy))
+        for i in reversed(self.menu): self.stuff_event(i.on_goto, (i.hx,i.hy))
         log.debug("fadeOut menu using goto %s"%[x.name for x in self.menu])
         self._event_finish()
         
@@ -678,7 +683,7 @@ class Game(object):
     def on_menu_fadeIn(self): 
         """ animate showing the menu """
         log.debug("fadeIn menu, telling items to goto %s"%[x.name for x in self.menu])
-        for i in self.menu: self.stuff_event(i.on_goto, (i.sx,i.sy))
+        for i in reversed(self.menu): self.stuff_event(i.on_goto, (i.sx,i.sy))
         self._event_finish()
         
     def on_menu_push(self):
@@ -816,7 +821,11 @@ class Actor(object):
         if self.action == None and len(self.actions)>0: self.action = self.actions.values()[0] #or default to first loaded
 #        try:
 #            self._image = pygame.image.load(os.path.join(d, "%s/idle.png"%self.name)).convert_alpha()
-        self._clickable_area = self.action.image.get_rect().move(self.x, self.y)
+        if self.action and self.action.image:
+            self._clickable_area = self.action.image.get_rect().move(self.x, self.y)
+        else:
+            log.error("actor %s smart load unable to get clickable area from action image"%self.name)
+            self._clickable_area = Rect(self.x, self.y, 10, 10)
 #        except:
 #            log.warning("unable to load idle.png for %s"%self.name)
         log.debug("smart load %s %s clickable %s and actions %s"%(type(self), self.name, self._clickable_area, self.actions.keys()))
@@ -964,6 +973,7 @@ class Actor(object):
         x,y = self._tx, self._ty = destination
         d = self.speed
         fuzz = 10
+        if self.game.testing == True: self.x, self.y = x, y #skip straight to point
         if x - fuzz < self.x < x + fuzz and y - fuzz < self.y < y + fuzz:
 #            self.action = self.actions['idle']
             if type(self) in [MenuItem, Collection]:
@@ -1005,8 +1015,15 @@ class Text(Actor):
         self.w, self.h = dimensions
 #        fname = "data/fonts/domesticManners.ttf"
         fname = "data/fonts/vera.ttf"
-        self.font = pygame.font.Font(fname, size)
-        self.img = self.font.render(text, True, colour)
+        try:
+            self.font = pygame.font.Font(fname, size)
+        except:
+            self.font = None
+            log.error("text %s unable to load or initialised font"%self.name)
+        if self.font:
+            self.img = self.font.render(text, True, colour)
+        else:
+            self.img = pygame.Surface((10,10))
    
 
     def draw(self):
