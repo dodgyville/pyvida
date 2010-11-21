@@ -213,14 +213,15 @@ def editor_menu(game):
 
 
 def editor_point(game, menuItem, player):
-                if type(menuItem) == str: menuItem = game.items[menuItem]
-                points = {"e_location": (game.editing.set_x, game.editing.set_y),
-#                        "e_anchor": (game.editing.set_x, game.editing.set_y),
+    #click on an editor button for editing a point
+    if type(menuItem) == str: menuItem = game.items[menuItem]
+    points = {"e_location": (game.editing.set_x, game.editing.set_y),
+                        "e_anchor": (game.editing.set_ax, game.editing.set_ay),
                     }
-                if menuItem.name in points:
-                    game.editing_point = points[menuItem.name]
-                else:
-                    game.editing_point = None
+    if menuItem.name in points:
+        game.editing_point = points[menuItem.name]
+    else:
+        game.editing_point = None
 
 
 
@@ -372,32 +373,32 @@ class Game(object):
                 i.trigger_interact()
                 return
         if self.enabled_editor and self._scene:
-            if self.editing_point: 
+            if self.editing_point: #finish editing object point
                 self.editing_point = None
                 return
             for i in self._scene.objects.values():
-                if i.collide(x, y):
+                if collide(i._rect, x, y):
                     if i == self.editing: #assume want to move
                         editor_point(self, "e_location", self.player)
                     else:
                         self.set_editing(i)
-                
-        else: #regular game interaction
-            pass
-        for i in self._scene.objects.values(): #then objects in the scene
-            if i is not self.player and i.collide(x,y):
-#                if i.actions.has_key('down'): i.action = i.actions['down']
-                i.trigger_interact()
                 return
-        #or finally, try and walk the player there.
-        self.player.goto((x,y))
-
+                
+        elif self.player and self._scene and self.player in self._scene.objects.values(): #regular game interaction
+            for i in self._scene.objects.values(): #then objects in the scene
+                if i is not self.player and i.collide(x,y):
+#                   if i.actions.has_key('down'): i.action = i.actions['down']
+                    i.trigger_interact()
+                    return
+            #or finally, try and walk the player there.
+            self.player.goto((x,y))
 
 
     def _on_mouse_move(self, x, y, button, modifiers): #single button interface
         if self.enabled_editor and self.editing_point:
             self.editing_point[0](x)
-            if len(self.editing_point)>1: self.editing_point[1](y)               
+            if len(self.editing_point)>1: self.editing_point[1](y)
+            return
         for i in self.menu: #then menu
             if i.collide(x,y):
                 if i.actions.has_key('over'): i.action = i.actions['over']
@@ -438,7 +439,16 @@ class Game(object):
            self.screen.blit(self._scene.background(), (0, 0))
         pygame.display.set_caption(self.name)
         
-        if ENABLE_EDITOR:
+        if ENABLE_EDITOR: #editor enabled for this game instance
+            #load debug font
+            fname = "data/fonts/vera.ttf"
+            try:
+                self.debug_font = pygame.font.Font(fname, 12)
+            except:
+                self.debug_font = None
+                log.error("font %s unable to load or initialise for game"%fname)
+        
+            #setup editor menu
             def editor_load(game, menuItem, player):
                 log.debug("editor: load scene not implemented")
 
@@ -707,6 +717,8 @@ class Action(object):
         self.count = 0
         self.mode = LOOP
         self.step = 1
+        self.scale = 1.0
+#        self.ax, self.ay = 0,0 #anchor point
         
     @property
     def image(self): #return the current image
@@ -774,7 +786,7 @@ class Actor(object):
         self._ax,     self._ay = 0, 0    # anchor point
         self.speed = 10 #speed at which actor moves per frame
         self.inventory = {}
-        self.scale = 1.0
+        self._scale = 1.0
         self.scene = None
         self._walk_area = [0,0,0,0]
         self._solid_area = [0,0,0,0]
@@ -796,13 +808,29 @@ class Actor(object):
     def set_y(self, y): self._y = y
     y = property(get_y, set_y)
 
-    def get_ax(self): return self._ax + self.x
-    def set_ax(self, ax): self._ax = ax - self.x
+    def get_ax(self):
+        scale = self.action.scale if self.action else 1 
+        return self.x - self._ax * scale
+    def set_ax(self, ax): 
+        scale = (1/self.action.scale) if self.action else 1     
+        self._ax = (self.x - ax)*scale
     ax = property(get_ax, set_ax)
 
-    def get_ay(self): return self._ay + self.y
-    def set_ay(self, ay): self._ay = ay - self.y
+    def get_ay(self): 
+        scale = self.action.scale if self.action else 1 
+        return self.y - self._ay * scale
+    def set_ay(self, ay): 
+        scale = (1/self.action.scale) if self.action else 1     
+        self._ay = (self.y - ay)*scale
     ay = property(get_ay, set_ay)
+    
+    def get_scale(self): return self._scale
+    def set_scale(self, x): 
+        """also change scale of all actions for actor, except talk actions probably"""
+        self._scale = x
+        for i in self.actions.values():
+            i.scale = x
+    scale = property(get_scale, set_scale)    
         
     def smart(self, game):
         """ smart actor load """
@@ -816,8 +844,12 @@ class Actor(object):
             d = game.actor_dir
         for action_fname in glob.glob(os.path.join(d, "%s/*.png"%self.name)): #load actions for this actor
             action_name = os.path.splitext(os.path.basename(action_fname))[0]
-            self.actions[action_name] = Action(self, action_name, action_fname).load()
-            if action_name == "idle": self.action = self.actions[action_name] #default to idle
+            action = self.actions[action_name] = Action(self, action_name, action_fname).load()
+            if action_name == "idle": self.action = action
+            if type(self) == Actor and action_name=="idle":
+                self._ax = int(action.image.get_width()/2)
+                self._ay = int(action.image.get_height() * 0.85)            
+#                print("setting %s ax, ay: (%s, %s) x,y:(%s, %s)"%(self.name, self.ax, self.ay, self.x, self.y))
         if self.action == None and len(self.actions)>0: self.action = self.actions.values()[0] #or default to first loaded
 #        try:
 #            self._image = pygame.image.load(os.path.join(d, "%s/idle.png"%self.name)).convert_alpha()
@@ -869,17 +901,36 @@ class Actor(object):
         return Rect(pt[0]-5, pt[1]-5, 11,11)
 
 
-    def draw(self):
+    def draw(self): #actor.draw
         img = None
-        if self.action: img = self.action.image
-        if img:
+        if self.action:
+            img = self.action.image
+            if self.scale != 1.0:
+                w = int(img.get_width() * self.scale)
+                h = int(img.get_height() * self.scale)
+                img = pygame.transform.smoothscale(img, (w, h))
             img.set_alpha(self._alpha)
-            r = img.get_rect().move(self.x, self.y)    
+            r = img.get_rect().move(self.ax, self.ay)
+#            print("%s (%s, %s) %s"%(self.name, self.y, self._ay, self.ay))
+#            import pdb; pdb.set_trace()
+            self._rect = self.game.screen.blit(img, r)
             if self.game.editing == self:
+                #draw bounding box
                 r2 = r.inflate(-2,-2)
                 pygame.draw.rect(self.game.screen, (0,255,0), r2, 2)
-                self._crosshair((255,0,0), (self.ax, self.ay))
-            self._rect = self.game.screen.blit(img, r)
+                #draw point
+                self._crosshair((0,0,255), (self.x, self.y))
+                stats = self.game.debug_font.render("%0.2f, %0.2f"%(self.x, self.y+12), True, (255,155,0))
+                edit_rect = self.game.screen.blit(stats, stats.get_rect().move(self.x, self.y))
+                self._rect.union_ip(edit_rect)
+                
+                #draw anchor point
+                ax,ay=self.ax, self.ay
+                self._crosshair((255,0,0), (ax-self.x, ay-self.y))
+                stats = self.game.debug_font.render("%0.2f, %0.2f"%(ax-self.x, ay-self.y), True, (255,155,0))
+                edit_rect = self.game.screen.blit(stats, stats.get_rect().move(ax, ay))
+                self._rect.union_ip(edit_rect)
+                
 
     def _update(self, dt):
         """ update this actor within the game """
@@ -893,7 +944,11 @@ class Actor(object):
             self.y += dy
             if l == 1: #if queue empty, get some more queue
                 self.on_goto((self._tx, self._ty))
-        self._clickable_area = Rect(self.x, self.y, self._clickable_area[2], self._clickable_area[3])
+#        if self.action:
+ #           ax,ay=self.ax*self.action.scale, self.ay*self.action.scale
+  #      else:
+   #         ax,ay=self.ax, self.ay
+        self._clickable_area = Rect(self.ax, self.ay, self._clickable_area[2]*self.scale, self._clickable_area[3]*self.scale)
         if self._alpha > self._alpha_target: self._alpha -= 1
         if self._alpha < self._alpha_target: self._alpha += 1
         if self.action: self.action.update(dt)
@@ -925,8 +980,11 @@ class Actor(object):
 
     def on_do(self, action):
         """ start an action """
-        self.action = self.actions[action]
-        log.debug("actor %s does action %s"%(self.name, action))
+        if action in self.actions.keys():
+            self.action = self.actions[action]
+            log.debug("actor %s does action %s"%(self.name, action))
+        else:
+            log.error("actor %s missing action %s"%(self.name, action))
         self._event_finish()
             
         
@@ -975,14 +1033,18 @@ class Actor(object):
         fuzz = 10
         if self.game.testing == True: self.x, self.y = x, y #skip straight to point
         if x - fuzz < self.x < x + fuzz and y - fuzz < self.y < y + fuzz:
-#            self.action = self.actions['idle']
+            self.action = self.actions['idle']
             if type(self) in [MenuItem, Collection]:
                 self.x, self.y = self._tx, self._ty
             log.debug("actor %s has arrived at %s"%(self.name, destination))
+#            print("%s %s %s %s %f"%(self.x, self.y, self.ax, self.ay, self.scale))
             self.game._event_finish() #signal to game event queue this event is done
         else: #try to follow the path
             dx = int((x - self.x) / 3)
             dy = int((y - self.y) / 3)
+            walk_actions = [x for x in self.actions.keys() if x in ["left", "right", "up", "down"]]
+            if len(walk_actions)>0:
+                self.action =self.actions[choice(walk_actions)]
             for i in range(3): self._motion_queue.append((dx+randint(-2,2),dy+randint(-2,2)))
 
 
@@ -1040,6 +1102,7 @@ class ModalItem(Actor):
     """ blocks interactions with actors, items and menu """
     def __init__(self, name="Untitled Menu Item", interact=None, pos=(None, None)): 
         Actor.__init__(self, name)
+        self.interact = interact
         self.x, self.y = pos
 
     def collide(self, x,y): #modals cover the whole screen?
@@ -1050,7 +1113,10 @@ class MenuItem(Actor):
     def __init__(self, name="Untitled Menu Item", interact=None, spos=(None, None), hpos=(None, None), key=None): 
         Actor.__init__(self, name)
         self.interact = interact
-        if key: self.key = ord(key) if type(key)==str else key #bind menu item to a keyboard key
+#        if key: 
+        self.key = ord(key) if type(key)==str else key #bind menu item to a keyboard key
+ #       else:
+  #          self.key = None
         self.sx, self.sy = spos
         self.hx, self.hy = hpos #special hide point for menu items
         self.x, self.y = spos
@@ -1127,6 +1193,7 @@ class Scene(object):
         self._background = None
         self.walkarea = None
         self.cx, self.cy = 512,384 #camera pointing at position (center of screen)
+        self.scales = {} #when an actor is added to this scene, what scale factor to apply? (from scene.scales)
 
 
     def _event_finish(self): 
@@ -1146,10 +1213,11 @@ class Scene(object):
 #                    x, y  = [int(i) for i in f.readlines()]
 #                a = VidaActor(fname, x=x, y=y).createAction("idle", bname+fname)
 #                self.foreground.append(a)
-#        if os.path.isfile(bname+"scene.scale"):
-#            with open(bname+"scene.scale", "r") as f:
-#                actor, factor = f.readline().split("\t")
-#                self.scales[actor] = float(factor)
+        scale_name = os.path.join(sdir, "scene.scale")
+        if os.path.isfile(scale_name):
+            with open(scale_name, "r") as f:
+                actor, factor = f.readline().split("\t")
+                self.scales[actor] = float(factor)
 #        if walkarea != None:
 #            self.addWalkarea(walkarea)
         return self
@@ -1170,6 +1238,8 @@ class Scene(object):
             obj.scene.remove(obj)
         self.objects[obj.name] = obj
         obj.scene = self
+        if obj.name.lower() in self.scales.keys():
+            obj.scale = self.scales[obj.name.lower()]
         log.debug("Add %s to scene %s"%(obj.name, self.name))
         self._event_finish()
         
