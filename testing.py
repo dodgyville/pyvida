@@ -6,7 +6,7 @@ your pyvida game. Tired of having to play your own game to get to
 the "new bits"? Then this module is for you!
 
 It provides functions for duplicating the user clicking through the game.
-There are three functions provided by VidaGame for testing:
+There are three functions provided by pyvida for testing:
 interact, use, look
 These all duplicate the user's interactions with the game.
 
@@ -41,7 +41,8 @@ where the gameplay breaks.
 """
 import sys
 from datetime import date
-from pyglet import clock
+#from pyglet import clock
+#from pygame.time import clock
 
 def interact():
 	print "should never get here!"
@@ -107,38 +108,40 @@ def on_no_exit(game, btn):
 	print "Finished requests, handing back to user!"
 
 def run(tname, suites, setup_fn, exit_fn = on_exit, report = True, wait=10.1):
-	"""
-	This is the main function from this module.
+    """
+    This is the main function from this module.
 
-	tname is the unixname for the project
-	suites are a dictionary of functions that return steps
-	setup_fn = a setup function that generates game object
-	exit_fn = function called to exit game
-	wait = how long to wait before running test suite
-	"""
-	print tname, "testing - testing (suitename) (stopAtstep)"
-	game = setup_fn()
-	game.quitGame = True
-	tstep = -1
-	if len(sys.argv) >= 2: #select and run 1 test suite only
-		tname = sys.argv[1]
-		suites = {tname: suites[tname]}
-	if len(sys.argv) == 3: #stop after step x
-		tstep = sys.argv[2]
-		game.quitGame = False
-		print "Will hand over to user at point",tstep
-	fname = "testing_report_%s%s.txt"%(tname, date.today().strftime("%Y_%m_%d"))
-	print "report name is %s"%fname
-	if report == True: sys.stdout = open(fname,'w')  
-	print "===[TESTING REPORT FOR %s]==="%tname.upper()
+    tname is the unixname for the project
+    suites are a dictionary of functions that return steps
+    setup_fn = a setup function that generates game object
+    exit_fn = function called to exit game
+    wait = how long to wait before running test suite
+    """
+    print tname, "testing - testing (suitename) (stopAtstep)"
+    game = setup_fn()
+    game.quitGame = True
+    tstep = -1
+    if len(sys.argv) >= 2: #select and run 1 test suite only
+	    tname = sys.argv[1]
+	    suites = {tname: suites[tname]}
+    if len(sys.argv) == 3: #stop after step x
+	    tstep = sys.argv[2]
+	    game.quitGame = False
+	    print "Will hand over to user at point",tstep
+    fname = "testing_report_%s%s.txt"%(tname, date.today().strftime("%Y_%m_%d"))
+    print "report name is %s"%fname
+    if report == True: sys.stdout = open(fname,'w')  
+    print "===[TESTING REPORT FOR %s]==="%tname.upper()
 
 
-	game.testing = True
-	clock.schedule_once(run_suites, wait, game, suites, exit_fn, step=tstep)
-	game.run()
+    game.testing = True
+    #	clock.schedule_once(run_suites, wait, game, suites, exit_fn, step=tstep)
+    tstep = -1
+    run_suites(1, game, suites, exit_fn, step=tstep)
+    game.run()
 
-	print "===[FINISHED TESTING]==="
-	if report == True: sys.stdout=sys.__stdout__ 
-	game.testing = False
-	print "Finished."
+    print "===[FINISHED TESTING]==="
+    if report == True: sys.stdout=sys.__stdout__ 
+    game.testing = False
+    print "Finished."
 

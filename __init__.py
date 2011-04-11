@@ -227,505 +227,6 @@ def editor_point(game, menuItem, player):
 
 #### pyvida classes ####
 
-@use_init_variables
-class Game(object):
-    __metaclass__ = use_on_events
-  
-   
-    voice_volume = 1.0
-    effects_volume = 1.0
-    music_volume = 1.0
-    mute_all = False
-    font_speech = None
-    
-    profiling = False 
-    enabled_profiling = False
-    editing = None #which actor are we editing
-    editing_point = None
-    enabled_editor = False
-    testing = False
-    
-    actor_dir = "data/actors"
-    item_dir = "data/items"
-    menuitem_dir = "data/menu" 
-    scene_dir = "data/scenes" 
-    interface_dir = "data/interface" 
-
-    quit = False
-    screen = None
-    existing = False #is there a game in progress (either loaded or saved)
-   
-    def __init__(self, name="Untitled Game", fullscreen=False):
-        log.debug("game object created at %s"%datetime.now())
-        self.game = self
-        self.events = []
-        self._event = None
-
-        self._scene = None
-        self.player = None
-        self.actors = {}
-        self.items = {}
-        self.scenes = {}
-    
-        #always on screen
-        self.menu = [] 
-        self._menus = [] #a stack of menus 
-        self.modals = []
-
-
-        self.mouse_mode = MOUSE_GENERAL
-        self.fps = int(1000.0/24)  #12 fps
-        
-    def __getattr__(self, a):
-        #only called as a last resort, so possibly set up a queue function
-        q = getattr(self, "on_%s"%a, None) if a[:3] != "on_" else None
-        if q:
-            f = create_event(q)
-            setattr(self, a, f)
-            return f
-        raise AttributeError
-#        return self.__getattribute__(self, a)
-
-    def add(self, obj, force_cls=None):
-        if type(obj) == list:
-            for i in obj: self._add(i, force_cls)
-        else:
-            self._add(obj, force_cls)
-        return obj
-
-    def _add(self, obj, force_cls=None):
-        """ add objects to the game """
-        if force_cls:
-            if force_cls == ModalItem:
-                self.modals.append(obj)
-                self.items[obj.name] = obj
-            else:
-                log.error("%s not implement in game.add"%force_cls)
-        else:
-            if isinstance(obj, Scene):
-                self.scenes[obj.name] = obj
-            elif type(obj) in [MenuItem, Collection]: #menu items are stored in items
-                self.items[obj.name] = obj
-            elif isinstance(obj, ModalItem):
-                self.modals.append(obj)
-                self.items[obj.name] = obj
-            elif isinstance(obj, Item):
-                self.items[obj.name] = obj
-            elif isinstance(obj, Actor):
-                self.actors[obj.name] = obj
-            else:
-                log.error("%s is an unknown %s type, so failed to add to game"%(obj.name, type(obj)))
-        obj.game = self
-        return obj
-        #self._event_finish()
-        
-    def on_smart(self, player=None):
-        """ cycle through the actors, items and scenes and load the available objects """
-        for obj_cls in [Actor, Item, Scene]:
-            dname = "%s_dir"%obj_cls.__name__.lower()
-            for name in os.listdir(getattr(self, dname)):
-                log.debug("game.smart loading %s %s"%(obj_cls.__name__.lower(), name))
-                if obj_cls == Actor and name in self.actors:
-                    log.warning("game.smart skipping %s, already an actor with this name!"%(name))
-                elif obj_cls == Item and name in self.items:
-                    log.warning("game.smart skipping %s, already an item with this name!"%(name))
-                else:
-                    a = obj_cls(name)
-                    self.add(a)
-                    a.smart(self)
-        if type(player) == str: player = self.actors[player]
-        if player: self.player = player
-        self._event_finish()
-                
-    def on_set_editing(self, obj):
-        if self.editing: #free up old object
-            pass
-        self.editing = obj
-        if self.items["e_location"] not in self.menu:
-            mitems = ["e_location", "e_anchor", "e_stand", "e_scale", "e_walkarea", "e_talk"]
-            self.set_menu(*mitems)
-            self.menu_hide(mitems)
-            self.menu_fadeIn()
-        self._event_finish()
-            
-    def toggle_editor(self):
-            if self.enabled_editor:  #switch off editor
-                self.menu_fadeOut()
-                self.menu_pop()
-                self.menu_fadeIn()
-                self.editing = None
-                self.enabled_editor = False
-                if hasattr(self, "e_objects"): self.e_objects = None #free add object collection
-            else:
-                editor_menu(self)
-                self.enabled_editor = True
-                if self._scene and self._scene.objects: self.set_editing(self._scene.objects.values()[0])
-
-    def _on_mouse_press(self, x, y, button, modifiers): #single button interface
-        if len(self.modals) > 0: #modals first
-            for i in self.modals:
-                if i.collide(x,y):
-                    i.trigger_interact()
-                    return
-            return
-        for i in self.menu: #then menu
-            if i.collide(x,y):
-                if i.actions.has_key('down'): i.action = i.actions['down']
-                i.trigger_interact()
-                return
-        if self.enabled_editor and self._scene:
-            if self.editing_point: #finish editing object point
-                self.editing_point = None
-                return
-            for i in self._scene.objects.values():
-                if collide(i._rect, x, y):
-                    if i == self.editing: #assume want to move
-                        editor_point(self, "e_location", self.player)
-                    else:
-                        self.set_editing(i)
-                return
-                
-        elif self.player and self._scene and self.player in self._scene.objects.values(): #regular game interaction
-            for i in self._scene.objects.values(): #then objects in the scene
-                if i is not self.player and i.collide(x,y):
-#                   if i.actions.has_key('down'): i.action = i.actions['down']
-                    i.trigger_interact()
-                    return
-            #or finally, try and walk the player there.
-            self.player.goto((x,y))
-
-
-    def _on_mouse_move(self, x, y, button, modifiers): #single button interface
-        if self.enabled_editor and self.editing_point:
-            self.editing_point[0](x)
-            if len(self.editing_point)>1: self.editing_point[1](y)
-            return
-        for i in self.menu: #then menu
-            if i.collide(x,y):
-                if i.actions.has_key('over'): i.action = i.actions['over']
-            else:
-                if i.action and i.action.name == "over":
-                    if i.actions.has_key('idle'): i.action = i.actions['idle']
-
-                
-    def _on_key_press(self, key):
-        for i in self.menu:
-            if key == i.key: i.trigger_interact() #print("bound to menu item")
-        if ENABLE_EDITOR and key == K_F1:
-            self.toggle_editor()
-        elif ENABLE_EDITOR and key == K_F2:
-            import pdb; pdb.set_trace()
-            
-
-    def handle_pygame_events(self):
-        m = pygame.mouse.get_pos()
-        btn1, btn2, btn3 = pygame.mouse.get_pressed()
-        for event in pygame.event.get():
-            if event.type == QUIT:
-                self.quit = True
-                return
-            elif event.type == MOUSEBUTTONUP:
-                self._on_mouse_press(m[0], m[1], btn1, None)
-            elif event.type == KEYDOWN:
-                self._on_key_press(event.key)
-        self._on_mouse_move(m[0], m[1], btn1, None)
-#            elif event.key == K_ESCAPE:
- #               self.quit = True
-  #              return
-        
-    def run(self, callback=None):
-        pygame.init() 
-        self.screen = screen = pygame.display.set_mode((1024, 768))
-        if self._scene and self.screen:
-           self.screen.blit(self._scene.background(), (0, 0))
-        pygame.display.set_caption(self.name)
-        
-        if ENABLE_EDITOR: #editor enabled for this game instance
-            #load debug font
-            fname = "data/fonts/vera.ttf"
-            try:
-                self.debug_font = pygame.font.Font(fname, 12)
-            except:
-                self.debug_font = None
-                log.error("font %s unable to load or initialise for game"%fname)
-        
-            #setup editor menu
-            def editor_load(game, menuItem, player):
-                log.debug("editor: load scene not implemented")
-
-            def editor_save(game, menuItem, player):
-                log.debug("editor: save scene not implemented")
-                print("What is the name of this state?")
-                state = raw_input(">")
-                if state=="": return
-                import pdb; pdb.set_trace()
-                sfname = os.path.join(self.scene_dir, os.path.join(self._scene.name, state))
-                sfname = "%s.py"%sfname
-                with open(sfname, 'w') as f:
-                    f.write("# generated by ingame editor v0.1\n\n")
-                    f.write("def load_state(game, scene):\n")
-                    for name, obj in game._scene.objects.items():
-                        slug = slugify(name)
-                        f.write('\t%s = game.items["%s"]'%(slug, name))
-                        f.write('\t%s.rescale(%0.2f)'%(slug, obj.scale))
-                        f.write('\t%s.reanchor((%i, %i))'%(slug, obj.ax, obj.ay))
-                        f.write('\t%s.restand((%i, %i))'%(slug, obj.sx, obj.sy))
-                        f.write('\t%s.retalk((%i, %i))'%(slug, obj.tx, obj.ty))
-                        f.write('\t%s.relocate(scene, (%i, %i))'%(slug, obj.x, obj.y))
-                
-            def _editor_cycle(game, collection, player, v):
-                if game._scene and len(game._scene.objects)>0:
-                    objects = game._scene.objects.values()
-                    if game.editing == None: game.editing = objects[0]
-                    i = (objects.index(game.editing) + v)%len(objects)
-                    log.debug("editor cycle: switch object %s to %s"%(game.editing, objects[i]))
-                    game.set_editing(objects[i])
-                else:
-                    log.warning("editor cycle: no scene or objects in scene to iterate through")
-
-            def editor_next(game, collection, player):
-                return _editor_cycle(game, collection, player, 1)
-
-            def editor_prev(game, collection, player):
-                return _editor_cycle(game, collection, player, -1)
-
-
-            def editor_select_object(game, collection, player):
-                """ select an object from the collection and add to the scene """
-                m = pygame.mouse.get_pos()
-                mx,my = relative_position(game, collection, m)
-                obj = collection.get_object(m)
-                if obj and game._scene:
-                    obj.x, obj.y = 500,400
-                    obj._editor_add_to_scene = True #let exported know this is new to this scene
-                    game._scene.add(obj)
-                    editor_select_object_close(game, collection, player)
-                    game.set_editing(obj)
-
-            def editor_add(game, menuItem, player):
-                """ set up the collection object """
-                if hasattr(self, "e_objects") and self.e_objects:
-                    e_objects = self.e_objects
-                else: #new object
-                    e_objects = self.items["e_objects"]
-                e_objects.objects = {}
-                for i in game.actors.values():
-                    if type(i) not in [Collection, MenuItem]: e_objects.objects[i.name] = i
-                for i in game.items.values():
-                    if type(i) not in [Collection, MenuItem]: e_objects.objects[i.name] = i
-                game.menu_fadeOut()
-                game.menu_push() #hide and push old menu to storage
-                game.set_menu("e_objects_close", "e_objects")
-                game.menu_hide()
-                game.menu_fadeIn()
-                
-            def editor_select_object_close(game, collection, player):
-                game.menu_fadeOut()
-                game.menu_pop()
-                game.menu_fadeIn()
-            
-            
-            self.add(MenuItem("e_load", editor_load, (50, 10), (50,-50), "l").smart(self))
-            self.add(MenuItem("e_save", editor_save, (90, 10), (90,-50), "s").smart(self))
-            self.add(MenuItem("e_add", editor_add, (130, 10), (130,-50), "a").smart(self))
-            self.add(MenuItem("e_prev", editor_prev, (170, 10), (170,-50), "[").smart(self))
-            self.add(MenuItem("e_next", editor_next, (210, 10), (210,-50), "]").smart(self))
-            self.add(Collection("e_objects", editor_select_object, (300, 100), (300,-600), K_ESCAPE).smart(self))
-            self.add(MenuItem("e_objects_close", editor_select_object_close, (800, 600), (800,-100), K_ESCAPE).smart(self))
-            for i, v in enumerate(["location", "anchor", "stand", "scale", "walkarea", "talk"]):
-                self.add(MenuItem("e_%s"%v, editor_point, (100+i*30, 45), (100+i*30,-50), v[0]).smart(self))
-            
-            
-        
-        #pygame.mouse.set_visible(0)        
-        if callback: callback(self)
-        dt = 12 #time passed
-        while self.quit == False:
-            pygame.time.delay(self.fps)
-            if self._scene:
-                blank = [self._scene.objects.values(), self.menu, self.modals]
-            else:
-                blank = [self.menu, self.modals]
-
-            if self._scene and self.screen:
-                for group in blank:
-                    for obj in group: obj.clear()
-
-            self.handle_pygame_events()
-            self.handle_events()
-
-            if self._scene and self.screen:
-                for group in [self._scene.objects.values(), self.menu, self.modals]:
-                    for obj in group: obj._update(dt)
-
-            if self._scene and self.screen:
-                for group in [self._scene.objects.values(), self.menu, self.modals]:
-                    for obj in group: obj.draw()
-            pygame.display.flip()            
-
-    def handle_events(self):
-        """ check for outstanding events """
-        if len(self.events) == 0: return
-        if not self._event: #waiting, so do an immediate process 
-            e = self.events.pop(0) #stored as [(function, args))]
-            log.debug("Doing event %s"%e[0])
-
-            self._event = e
-            e[0](*e[1:]) #call the function with the args        
-#            try:
- #              e[0](*e[1:]) #call the function with the args        
-  #          except:
-   #             import pdb; pdb.set_trace()
-    
-    def queue_event(self, event, *args):
-        self.events.append((event, )+(args))
-#        log.debug("events %s"%self.events)
-        return args[0]
-
-    def stuff_event(self, event, *args):
-        """ stuff an event near the head of the queue """
-        self.events.insert(0, (event, )+(args))
-        return args[0]
-
-
-    def _event_finish(self): #Game.on_event_finish
-        """ start the next event in the game scripter """
-#        log.debug("finished event %s, remaining:"%(self._event, self.events)
-        self._event = None
-        self.handle_events()
-    
-        
-    def remove(self, obj):
-        """ remove from the game so that garbage collection can free it up """
-        log.warning("game.remove not implemented yet")
-        
-        
-#    def on_move(self, scene, destination):
-#        """ transition to scene, and move player if available """    
-
-    def on_load_state(self, scene, state):
-        """ load a state from a file inside a scene directory """
-        if type(scene) == str: scene = self.scenes[scene]
-        sfname = os.path.join(self.scene_dir, os.path.join(scene.name, state))
-        sfname = "%s.py"%sfname
-        variables= {}
-        if not os.path.exists(sfname):
-            log.error("load state: state not found: %s"%sfname)
-        else:
-            execfile( sfname, variables)
-            variables['load_state'](self, scene)
-        self._event_finish()
-
-    def on_save_state(self, scene, state):
-        """ save a state inside a scene directory """
-        self._event_finish()
-
-    def on_scene(self, scene):
-        """ change the current scene """
-        if type(scene) == str:
-            scene = self.scenes[scene]
-        self._scene = scene
-        log.debug("changing scene to %s"%scene.name)         
-        if self._scene and self.screen:
-           self.screen.blit(self._scene.background(), (0, 0))
-        self._event_finish()
-        
-        
-    def on_click(self, obj):
-        """ helper function to chain mouse clicks """
-        obj.trigger_interact()
-        self._event_finish()
-        
-
-
-    def on_splash(self, image, callback, duration, immediately=False):
-#        """ show a splash screen then pass to callback after duration """
- #       self.
-        log.warning("game.splash ignores duration and clicks")
-        scene = Scene(image)
-        scene.background(image)
-        #add scene to game, change over to that scene
-        self.add(scene)
-#        self.scene(scene)
-        self.stuff_event(self.on_scene, scene)
-        if self.screen:
-            self.screen.blit(scene.background(), (0, 0))
-            pygame.display.flip()            
-        
-        #create and add a modal to block input
-#        modal = Modal(image)
-#        modal._clickable_area = [0,0,1024,768]
-        self._event_finish() #finish the event
-        if callback: callback(self)
-#        def close_splash(self, 
-#        modal.interact = 
-#        self.add(modal)
-        #add timed event for callback
-#        self.
-        
-        
-    def on_set_menu(self, *args):
-        """ add the items in args to the menu """
-        args = list(args)
-        args.reverse()
-        log.debug("set menu to %s"%list(args))
-        for i in args:
-            if i in self.items: 
-                self.menu.append(self.items[i])
-            else:
-                log.error("Menu item %s not found in MenuItem collection"%i)
-        self._event_finish()        
-        
-    def on_menu_clear(self):
-        """ clear all menus """
-        log.warning("game.menu_clear should use game.remove")
-        #for i in self.menu:
-        #    del self.menu[i]
-        log.debug("clear menu %s"%[x.name for x in self.menu])
-        self.menu = []
-        self._menus = []
-        self._event_finish()        
-
-    def on_menu_fadeOut(self): 
-        """ animate hiding the menu """
-        for i in reversed(self.menu): self.stuff_event(i.on_goto, (i.hx,i.hy))
-        log.debug("fadeOut menu using goto %s"%[x.name for x in self.menu])
-        self._event_finish()
-        
-    def on_menu_hide(self, menu_items = None):
-        """ hide the menu (all or partial)"""
-        if not menu_items:
-            menu_items = self.menu
-        for i in menu_items:
-            if type(i) == str: i = self.items[i]
-            self.stuff_event(i.on_place, (i.hx,i.hy))
-        log.debug("hide menu using place %s"%[x.name for x in self.menu])
-        self._event_finish()
-
-    def on_menu_show(self):
-        """ show the menu """
-        for i in self.menu: self.stuff_event(i.on_place, (i.sx,i.sy))
-        log.debug("show menu using place %s"%[x.name for x in self.menu])
-        self._event_finish()
-        
-    def on_menu_fadeIn(self): 
-        """ animate showing the menu """
-        log.debug("fadeIn menu, telling items to goto %s"%[x.name for x in self.menu])
-        for i in reversed(self.menu): self.stuff_event(i.on_goto, (i.sx,i.sy))
-        self._event_finish()
-        
-    def on_menu_push(self):
-        log.debug("push menu %s"%[x.name for x in self.menu])
-        if self.menu:
-            self._menus.append(self.menu)
-            self.menu = []
-        self._event_finish()
-
-    def on_menu_pop(self):
-        if self._menus: self.menu = self._menus.pop()
-        log.debug("pop menu %s"%[x.name for x in self.menu])
-        self._event_finish()
-
 
 @use_init_variables
 class Action(object):
@@ -813,6 +314,7 @@ class Actor(object):
         self._image = None
         self._rect = None
         self.game = None
+        self.facts = []
 
     
     def _event_finish(self): 
@@ -1030,7 +532,7 @@ class Actor(object):
         self._event_finish()
         
     def on_finish_fade(self):
-        print("finish fade %s"%self._alpha)
+        log.debug("finish fade %s"%self._alpha)
         if self._alpha == self._alpha_target:
             self._event_finish()
              
@@ -1067,7 +569,10 @@ class Actor(object):
         self.game.stuff_event(scene.on_add, self)
         self._event_finish()
     
-    def on_goto(self, destination, block=True, modal=False):
+    def on_goto(self, destination, block=True, modal=False, ignore=False):
+        """
+        ignore = [True|False] - ignore walkareas
+        """
         if type(destination) == str:
             destination = (self.game.actors[destination].sx, self.game.actors[destination].sy)
         elif type(destination) == object:
@@ -1091,7 +596,20 @@ class Actor(object):
                 self.action =self.actions[choice(walk_actions)]
             for i in range(3): self._motion_queue.append((dx+randint(-2,2),dy+randint(-2,2)))
 
+    def forget(self, fact):
+        """ forget a fact from the list of facts """
+        self.facts.remove(fact)
+        #self._event_finish()
 
+    def remember(self, fact):
+        """ remember a fact to the list of facts """
+        self.facts.append(fact)
+        #self._event_finish()
+
+    def remembers(self, fact):
+        """ return true if fact in the list of facts """
+        return True if fact in self.facts else False       
+        
     def on_says(self, text, sfx=-1, block=True, modal=True, font=None):
         """ if sfx == -1, try and guess sound file """
         log.debug("actor %s says %s"%(self.name, text))
@@ -1119,6 +637,27 @@ class Item(Actor):
 #    _motion_queue = [] #actor's deltas for moving on the screen in the near-future
 #    def __init__(self, name="Untitled Item"): 
         
+
+class Portal(Actor):
+    def __init__(self, *args, **kwargs):
+        Actor.__init__(self, *args, **kwargs)
+        self.link = None
+        self.ox, self.oy = 0,0 #outpoint
+
+#    def draw(self):
+ #       """ portals are invisible """
+  #      return
+        
+    def on_travel(self):
+        """ default interact method for a portal, march player through portal and change scene """
+        if not self.link:
+            game.player.says("It doesn't look like that goes anywhere")
+            log.error("portal %s has no link"%self.name)
+        game.player.goto((self.sx, self.sy))
+        game.player.goto((self.ox, self.oy), ignore=True)
+        game.relocate(link.scene, (link.ox, link.oy)) #moves player to scene
+        game.scene(link.scene) #change the scene
+        game.player.goto((link.sx, link.sy), ignore=True) #walk into scene        
 
 class Text(Actor):
     def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 200, 214), size=26):
@@ -1270,6 +809,10 @@ class Scene(object):
                 self.scales[actor] = float(factor)
 #        if walkarea != None:
 #            self.addWalkarea(walkarea)
+
+        # if there is an initial state, load that automatically
+        state_name = os.path.join(sdir, "initial.py")
+        if os.path.isfile(state_name): game.load_state(self, "initial")
         return self
 
     def background(self, fname=None):
@@ -1277,10 +820,12 @@ class Scene(object):
             self._background = load_image(fname)
         return self._background
 
-    def remove(self, obj):
+    def on_remove(self, obj):
         """ remove object from the scene """
+        obj.scene = None
         del self.objects[obj.name]
-        return self
+        self._event_finish()
+#        return self
         
     def on_add(self, obj):
         """ removes obj from current scene it's in, adds to this scene """
@@ -1291,5 +836,525 @@ class Scene(object):
         if obj.name.lower() in self.scales.keys():
             obj.scale = self.scales[obj.name.lower()]
         log.debug("Add %s to scene %s"%(obj.name, self.name))
+        self._event_finish()
+
+
+class Camera(object):
+    """ Handles the current viewport, transitions and camera movements """
+    __metaclass__ = use_on_events
+    def on_scene(self, scene):
+        """ change the current scene """
+        if type(scene) == str:
+            scene = self.scenes[scene]
+        self._scene = scene
+        log.debug("changing scene to %s"%scene.name)         
+        if self._scene and self.screen:
+           self.screen.blit(self._scene.background(), (0, 0))
+        self._event_finish()
+    
+    def on_fade_out(self):
+        log.error("camera.fade_out not implement yet")
+        
+    def on_fade_in(self):
+        log.error("camera.fade_in not implement yet")
+
+
+        
+@use_init_variables
+class Game(object):
+    __metaclass__ = use_on_events
+   
+    voice_volume = 1.0
+    effects_volume = 1.0
+    music_volume = 1.0
+    mute_all = False
+    font_speech = None
+    
+    profiling = False 
+    enabled_profiling = False
+    editing = None #which actor are we editing
+    editing_point = None
+    enabled_editor = False
+    testing = False
+    
+    actor_dir = "data/actors"
+    item_dir = "data/items"
+    menuitem_dir = "data/menu" 
+    scene_dir = "data/scenes" 
+    interface_dir = "data/interface" 
+
+    quit = False
+    screen = None
+    existing = False #is there a game in progress (either loaded or saved)
+   
+    def __init__(self, name="Untitled Game", fullscreen=False):
+        log.debug("game object created at %s"%datetime.now())
+        self.game = self
+        self.events = []
+        self._event = None
+
+        self._scene = None
+        self.player = None
+        self.actors = {}
+        self.items = {}
+        self.scenes = {}
+    
+        #always on screen
+        self.menu = [] 
+        self._menus = [] #a stack of menus 
+        self.modals = []
+
+
+        self.mouse_mode = MOUSE_GENERAL
+        self.fps = int(1000.0/24)  #12 fps
+        
+    def __getattr__(self, a):
+        #only called as a last resort, so possibly set up a queue function
+        q = getattr(self, "on_%s"%a, None) if a[:3] != "on_" else None
+        import pdb; pdb.set_trace()
+        if q:
+            f = create_event(q)
+            setattr(self, a, f)
+            return f
+        raise AttributeError
+#        return self.__getattribute__(self, a)
+
+    def add(self, obj, force_cls=None):
+        if type(obj) == list:
+            for i in obj: self._add(i, force_cls)
+        else:
+            self._add(obj, force_cls)
+        return obj
+
+    def _add(self, obj, force_cls=None):
+        """ add objects to the game """
+        if force_cls:
+            if force_cls == ModalItem:
+                self.modals.append(obj)
+                self.items[obj.name] = obj
+            else:
+                log.error("%s not implement in game.add"%force_cls)
+        else:
+            if isinstance(obj, Scene):
+                self.scenes[obj.name] = obj
+            elif type(obj) in [MenuItem, Collection]: #menu items are stored in items
+                self.items[obj.name] = obj
+            elif isinstance(obj, ModalItem):
+                self.modals.append(obj)
+                self.items[obj.name] = obj
+            elif isinstance(obj, Item):
+                self.items[obj.name] = obj
+            elif isinstance(obj, Actor):
+                self.actors[obj.name] = obj
+            else:
+                log.error("%s is an unknown %s type, so failed to add to game"%(obj.name, type(obj)))
+        obj.game = self
+        return obj
+        #self._event_finish()
+        
+    def on_smart(self, player=None, player_class=Actor):
+        """ cycle through the actors, items and scenes and load the available objects 
+            it is very common to have custom methods on the player, so allow smart
+            to use a custom class
+            player is the the first actor the user controls.
+            player_class can be used to override the player class with a custom one.
+        """
+        for obj_cls in [Actor, Item, Scene]:
+            dname = "%s_dir"%obj_cls.__name__.lower()
+            for name in os.listdir(getattr(self, dname)):
+                log.debug("game.smart loading %s %s"%(obj_cls.__name__.lower(), name))
+                if obj_cls == Actor and name in self.actors:
+                    log.warning("game.smart skipping %s, already an actor with this name!"%(name))
+                elif obj_cls == Item and name in self.items:
+                    log.warning("game.smart skipping %s, already an item with this name!"%(name))
+                else:
+                    if type(player)==str and player == name:
+                        a = player_class(name)
+                    else:
+                        a = obj_cls(name)
+                    self.add(a)
+                    a.smart(self)
+        if type(player) == str: player = self.actors[player]
+        if player: self.player = player
+        self._event_finish()
+                
+    def on_set_editing(self, obj):
+        if self.editing: #free up old object
+            pass
+        self.editing = obj
+        if self.items["e_location"] not in self.menu:
+            mitems = ["e_location", "e_anchor", "e_stand", "e_scale", "e_walkarea", "e_talk"]
+            self.set_menu(*mitems)
+            self.menu_hide(mitems)
+            self.menu_fadeIn()
+        self._event_finish()
+            
+    def toggle_editor(self):
+            if self.enabled_editor:  #switch off editor
+                self.menu_fadeOut()
+                self.menu_pop()
+                self.menu_fadeIn()
+                self.editing = None
+                self.enabled_editor = False
+                if hasattr(self, "e_objects"): self.e_objects = None #free add object collection
+            else:
+                editor_menu(self)
+                self.enabled_editor = True
+                if self._scene and self._scene.objects: self.set_editing(self._scene.objects.values()[0])
+
+    def _on_mouse_press(self, x, y, button, modifiers): #single button interface
+        if len(self.modals) > 0: #modals first
+            for i in self.modals:
+                if i.collide(x,y):
+                    i.trigger_interact()
+                    return
+            return
+        for i in self.menu: #then menu
+            if i.collide(x,y):
+                if i.actions.has_key('down'): i.action = i.actions['down']
+                i.trigger_interact()
+                return
+        if self.enabled_editor and self._scene:
+            if self.editing_point: #finish editing object point
+                self.editing_point = None
+                return
+            for i in self._scene.objects.values():
+                if collide(i._rect, x, y):
+                    if i == self.editing: #assume want to move
+                        editor_point(self, "e_location", self.player)
+                    else:
+                        self.set_editing(i)
+                return
+                
+        elif self.player and self._scene and self.player in self._scene.objects.values(): #regular game interaction
+            for i in self._scene.objects.values(): #then objects in the scene
+                if i is not self.player and i.collide(x,y):
+#                   if i.actions.has_key('down'): i.action = i.actions['down']
+                    i.trigger_interact()
+                    return
+            #or finally, try and walk the player there.
+            self.player.goto((x,y))
+
+
+    def _on_mouse_move(self, x, y, button, modifiers): #single button interface
+        if self.enabled_editor and self.editing_point:
+            self.editing_point[0](x)
+            if len(self.editing_point)>1: self.editing_point[1](y)
+            return
+        for i in self.menu: #then menu
+            if i.collide(x,y):
+                if i.actions.has_key('over'): i.action = i.actions['over']
+            else:
+                if i.action and i.action.name == "over":
+                    if i.actions.has_key('idle'): i.action = i.actions['idle']
+
+                
+    def _on_key_press(self, key):
+        for i in self.menu:
+            if key == i.key: i.trigger_interact() #print("bound to menu item")
+        if ENABLE_EDITOR and key == K_F1:
+            self.toggle_editor()
+        elif ENABLE_EDITOR and key == K_F2:
+            import pdb; pdb.set_trace()
+            
+
+    def handle_pygame_events(self):
+        m = pygame.mouse.get_pos()
+        btn1, btn2, btn3 = pygame.mouse.get_pressed()
+        for event in pygame.event.get():
+            if event.type == QUIT:
+                self.quit = True
+                return
+            elif event.type == MOUSEBUTTONUP:
+                self._on_mouse_press(m[0], m[1], btn1, None)
+            elif event.type == KEYDOWN:
+                self._on_key_press(event.key)
+        self._on_mouse_move(m[0], m[1], btn1, None)
+#            elif event.key == K_ESCAPE:
+ #               self.quit = True
+  #              return
+        
+    def run(self, callback=None):
+        pygame.init() 
+        self.screen = screen = pygame.display.set_mode((1024, 768))
+        if self._scene and self.screen:
+           self.screen.blit(self._scene.background(), (0, 0))
+        pygame.display.set_caption(self.name)
+        
+        if ENABLE_EDITOR: #editor enabled for this game instance
+            #load debug font
+            fname = "data/fonts/vera.ttf"
+            try:
+                self.debug_font = pygame.font.Font(fname, 12)
+            except:
+                self.debug_font = None
+                log.error("font %s unable to load or initialise for game"%fname)
+        
+            #setup editor menu
+            def editor_load(game, menuItem, player):
+                log.debug("editor: load scene not implemented")
+
+            def editor_save(game, menuItem, player):
+                log.debug("editor: save scene not implemented")
+                print("What is the name of this state?")
+                state = raw_input(">")
+                if state=="": return
+                import pdb; pdb.set_trace()
+                sfname = os.path.join(self.scene_dir, os.path.join(self._scene.name, state))
+                sfname = "%s.py"%sfname
+                with open(sfname, 'w') as f:
+                    f.write("# generated by ingame editor v0.1\n\n")
+                    f.write("def load_state(game, scene):\n")
+                    for name, obj in game._scene.objects.items():
+                        slug = slugify(name).lower()
+                        f.write('\t%s = game.items["%s"]\n'%(slug, name))
+                        f.write('\t%s.rescale(%0.2f)\n'%(slug, obj.scale))
+                        f.write('\t%s.reanchor((%i, %i))\n'%(slug, obj.ax, obj.ay))
+                        f.write('\t%s.restand((%i, %i))\n'%(slug, obj.sx, obj.sy))
+                        f.write('\t%s.retalk((%i, %i))\n'%(slug, obj.tx, obj.ty))
+                        f.write('\t%s.relocate(scene, (%i, %i))\n'%(slug, obj.x, obj.y))
+                
+            def _editor_cycle(game, collection, player, v):
+                if game._scene and len(game._scene.objects)>0:
+                    objects = game._scene.objects.values()
+                    if game.editing == None: game.editing = objects[0]
+                    i = (objects.index(game.editing) + v)%len(objects)
+                    log.debug("editor cycle: switch object %s to %s"%(game.editing, objects[i]))
+                    game.set_editing(objects[i])
+                else:
+                    log.warning("editor cycle: no scene or objects in scene to iterate through")
+
+            def editor_next(game, collection, player):
+                return _editor_cycle(game, collection, player, 1)
+
+            def editor_prev(game, collection, player):
+                return _editor_cycle(game, collection, player, -1)
+
+
+            def editor_select_object(game, collection, player):
+                """ select an object from the collection and add to the scene """
+                m = pygame.mouse.get_pos()
+                mx,my = relative_position(game, collection, m)
+                obj = collection.get_object(m)
+                if obj and game._scene:
+                    obj.x, obj.y = 500,400
+                    obj._editor_add_to_scene = True #let exported know this is new to this scene
+                    game._scene.add(obj)
+                    editor_select_object_close(game, collection, player)
+                    game.set_editing(obj)
+
+            def editor_add(game, menuItem, player):
+                """ set up the collection object """
+                if hasattr(self, "e_objects") and self.e_objects:
+                    e_objects = self.e_objects
+                else: #new object
+                    e_objects = self.items["e_objects"]
+                e_objects.objects = {}
+                for i in game.actors.values():
+                    if type(i) not in [Collection, MenuItem]: e_objects.objects[i.name] = i
+                for i in game.items.values():
+                    if type(i) not in [Collection, MenuItem]: e_objects.objects[i.name] = i
+                game.menu_fadeOut()
+                game.menu_push() #hide and push old menu to storage
+                game.set_menu("e_objects_close", "e_objects")
+                game.menu_hide()
+                game.menu_fadeIn()
+                
+            def editor_select_object_close(game, collection, player):
+                game.menu_fadeOut()
+                game.menu_pop()
+                game.menu_fadeIn()
+            
+            
+            self.add(MenuItem("e_load", editor_load, (50, 10), (50,-50), "l").smart(self))
+            self.add(MenuItem("e_save", editor_save, (90, 10), (90,-50), "s").smart(self))
+            self.add(MenuItem("e_add", editor_add, (130, 10), (130,-50), "a").smart(self))
+            self.add(MenuItem("e_prev", editor_prev, (170, 10), (170,-50), "[").smart(self))
+            self.add(MenuItem("e_next", editor_next, (210, 10), (210,-50), "]").smart(self))
+            self.add(Collection("e_objects", editor_select_object, (300, 100), (300,-600), K_ESCAPE).smart(self))
+            self.add(MenuItem("e_objects_close", editor_select_object_close, (800, 600), (800,-100), K_ESCAPE).smart(self))
+            for i, v in enumerate(["location", "anchor", "stand", "scale", "walkarea", "talk"]):
+                self.add(MenuItem("e_%s"%v, editor_point, (100+i*30, 45), (100+i*30,-50), v[0]).smart(self))
+            
+            
+        
+        #pygame.mouse.set_visible(0)        
+        if callback: callback(self)
+        dt = 12 #time passed
+        while self.quit == False:
+            pygame.time.delay(self.fps)
+            if self._scene:
+                blank = [self._scene.objects.values(), self.menu, self.modals]
+            else:
+                blank = [self.menu, self.modals]
+
+            if self._scene and self.screen:
+                for group in blank:
+                    for obj in group: obj.clear()
+
+            self.handle_pygame_events()
+            self.handle_events()
+
+            if self._scene and self.screen:
+                for group in [self._scene.objects.values(), self.menu, self.modals]:
+                    for obj in group: obj._update(dt)
+
+            if self._scene and self.screen:
+                for group in [self._scene.objects.values(), self.menu, self.modals]:
+                    for obj in group: obj.draw()
+            pygame.display.flip()            
+
+    def handle_events(self):
+        """ check for outstanding events """
+        if len(self.events) == 0: return
+        if not self._event: #waiting, so do an immediate process 
+            e = self.events.pop(0) #stored as [(function, args))]
+            log.debug("Doing event %s"%e[0])
+
+            self._event = e
+            e[0](*e[1:]) #call the function with the args        
+#            try:
+ #              e[0](*e[1:]) #call the function with the args        
+  #          except:
+   #             import pdb; pdb.set_trace()
+    
+    def queue_event(self, event, *args):
+        self.events.append((event, )+(args))
+#        log.debug("events %s"%self.events)
+        return args[0]
+
+    def stuff_event(self, event, *args):
+        """ stuff an event near the head of the queue """
+        self.events.insert(0, (event, )+(args))
+        return args[0]
+
+
+    def _event_finish(self): #Game.on_event_finish
+        """ start the next event in the game scripter """
+#        log.debug("finished event %s, remaining:"%(self._event, self.events)
+        self._event = None
+        self.handle_events()
+    
+        
+    def remove(self, obj):
+        """ remove from the game so that garbage collection can free it up """
+        log.warning("game.remove not implemented yet")
+        
+        
+#    def on_move(self, scene, destination):
+#        """ transition to scene, and move player if available """    
+
+    def on_load_state(self, scene, state):
+        """ load a state from a file inside a scene directory """
+        if type(scene) == str: scene = self.scenes[scene]
+        sfname = os.path.join(self.scene_dir, os.path.join(scene.name, state))
+        sfname = "%s.py"%sfname
+        variables= {}
+        if not os.path.exists(sfname):
+            log.error("load state: state not found: %s"%sfname)
+        else:
+            execfile( sfname, variables)
+            variables['load_state'](self, scene)
+        self._event_finish()
+
+    def on_save_state(self, scene, state):
+        """ save a state inside a scene directory """
+        self._event_finish()
+
+        
+        
+    def on_click(self, obj):
+        """ helper function to chain mouse clicks """
+        obj.trigger_interact()
+        self._event_finish()
+        
+
+
+    def on_splash(self, image, callback, duration, immediately=False):
+#        """ show a splash screen then pass to callback after duration """
+ #       self.
+        log.warning("game.splash ignores duration and clicks")
+        scene = Scene(image)
+        scene.background(image)
+        #add scene to game, change over to that scene
+        self.add(scene)
+#        self.scene(scene)
+        self.stuff_event(self.on_scene, scene)
+        if self.screen:
+            self.screen.blit(scene.background(), (0, 0))
+            pygame.display.flip()            
+        
+        #create and add a modal to block input
+#        modal = Modal(image)
+#        modal._clickable_area = [0,0,1024,768]
+        self._event_finish() #finish the event
+        if callback: callback(self)
+#        def close_splash(self, 
+#        modal.interact = 
+#        self.add(modal)
+        #add timed event for callback
+#        self.
+        
+        
+    def on_set_menu(self, *args):
+        """ add the items in args to the menu """
+        args = list(args)
+        args.reverse()
+        log.debug("set menu to %s"%list(args))
+        for i in args:
+            if i in self.items: 
+                self.menu.append(self.items[i])
+            else:
+                log.error("Menu item %s not found in MenuItem collection"%i)
+        self._event_finish()        
+        
+    def on_menu_clear(self):
+        """ clear all menus """
+        log.warning("game.menu_clear should use game.remove")
+        #for i in self.menu:
+        #    del self.menu[i]
+        log.debug("clear menu %s"%[x.name for x in self.menu])
+        self.menu = []
+        self._menus = []
+        self._event_finish()        
+
+    def on_menu_fadeOut(self): 
+        """ animate hiding the menu """
+        for i in reversed(self.menu): self.stuff_event(i.on_goto, (i.hx,i.hy))
+        log.debug("fadeOut menu using goto %s"%[x.name for x in self.menu])
+        self._event_finish()
+        
+    def on_menu_hide(self, menu_items = None):
+        """ hide the menu (all or partial)"""
+        if not menu_items:
+            menu_items = self.menu
+        for i in menu_items:
+            if type(i) == str: i = self.items[i]
+            self.stuff_event(i.on_place, (i.hx,i.hy))
+        log.debug("hide menu using place %s"%[x.name for x in self.menu])
+        self._event_finish()
+
+    def on_menu_show(self):
+        """ show the menu """
+        for i in self.menu: self.stuff_event(i.on_place, (i.sx,i.sy))
+        log.debug("show menu using place %s"%[x.name for x in self.menu])
+        self._event_finish()
+        
+    def on_menu_fadeIn(self): 
+        """ animate showing the menu """
+        log.debug("fadeIn menu, telling items to goto %s"%[x.name for x in self.menu])
+        for i in reversed(self.menu): self.stuff_event(i.on_goto, (i.sx,i.sy))
+        self._event_finish()
+        
+    def on_menu_push(self):
+        log.debug("push menu %s"%[x.name for x in self.menu])
+        if self.menu:
+            self._menus.append(self.menu)
+            self.menu = []
+        self._event_finish()
+
+    def on_menu_pop(self):
+        if self._menus: self.menu = self._menus.pop()
+        log.debug("pop menu %s"%[x.name for x in self.menu])
         self._event_finish()
         
