@@ -842,15 +842,18 @@ class Scene(object):
 class Camera(object):
     """ Handles the current viewport, transitions and camera movements """
     __metaclass__ = use_on_events
+    def __init__(self, game=None):
+        self.game = game
+        
     def on_scene(self, scene):
         """ change the current scene """
         if type(scene) == str:
-            scene = self.scenes[scene]
-        self._scene = scene
-        log.debug("changing scene to %s"%scene.name)         
-        if self._scene and self.screen:
-           self.screen.blit(self._scene.background(), (0, 0))
-        self._event_finish()
+            scene = self.game.scenes[scene]
+        self.game._scene = scene
+        log.debug("changing scene to %s"%scene.name)
+        if self.game._scene and self.game.screen:
+           self.game.screen.blit(self.game._scene.background(), (0, 0))
+        self.game._event_finish()
     
     def on_fade_out(self):
         log.error("camera.fade_out not implement yet")
@@ -890,6 +893,8 @@ class Game(object):
     def __init__(self, name="Untitled Game", fullscreen=False):
         log.debug("game object created at %s"%datetime.now())
         self.game = self
+        self.camera = Camera(self) #the camera object
+
         self.events = []
         self._event = None
 
@@ -904,14 +909,12 @@ class Game(object):
         self._menus = [] #a stack of menus 
         self.modals = []
 
-
         self.mouse_mode = MOUSE_GENERAL
         self.fps = int(1000.0/24)  #12 fps
         
     def __getattr__(self, a):
         #only called as a last resort, so possibly set up a queue function
         q = getattr(self, "on_%s"%a, None) if a[:3] != "on_" else None
-        import pdb; pdb.set_trace()
         if q:
             f = create_event(q)
             setattr(self, a, f)
@@ -1279,7 +1282,7 @@ class Game(object):
         #add scene to game, change over to that scene
         self.add(scene)
 #        self.scene(scene)
-        self.stuff_event(self.on_scene, scene)
+        self.stuff_event(self.camera.on_scene, scene)
         if self.screen:
             self.screen.blit(scene.background(), (0, 0))
             pygame.display.flip()            
