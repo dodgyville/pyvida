@@ -17,20 +17,21 @@ For example, if in your game the user has to pick up a piece
 of paper, talk to a policeman and then give the policeman the 
 paper, a suite would look like this:
 
-from pyvida.testing import run
+from pyvida.testing import run, interact, use, look
 from mygame import setup_game, exit_game
 
-def test_myGame(game):
-	return [[game.interact, "paper"],
-		[game.interact, "policeman"],
-		[game.use, "policeman", "paper"],
+test_suite = [[interact, "paper"],
+		[interact, "policeman"],
+		[use, "policeman", "paper"],
 		]
 
-if __name__ == "__main__":
-	suites = {"myGame":test_myGame,
-		}
-	run("mygame", suites, setup_game, exit_game)
+There is an optional variable at the end of a step which is the name of the step, useful for debugging
 
+[interact, "policeman", "first_encounter"],
+
+if __name__ == "__main__":
+	suites = [test_suite,]
+	run(game, suites, log_file="hello.world", user_control="first_encounter")
 
 Running this suite will load up your game and run these 
 steps (at an accelerated speed) as if the user was 
@@ -44,21 +45,31 @@ from datetime import date
 #from pyglet import clock
 #from pygame.time import clock
 
-def interact():
-	print "should never get here!"
-	pass
+def interact(): pass #stub
 
-def use():
-	pass
+def use(): pass #stub
 
-def look():
-	pass
+def look(): pass #stub
 
 class TestSuite(object):
 	def __init__(self, suite):
 		self.suite = suite
+		
+		
+def process_step(game, step):
+    #modals first, then menu, then regular objects
+    function_name = step.__name__ 
+    actions = {
+        "interact":trigger_interact,
+    }
+    for i in game.modals:
+#        if i.name == "heelo
+ #       if function_name
+        i.trigger_interact()
+#    for i in game.menu: #then menu
+ #   for i in game._scene.objects.values():
 
-def run_suite(game, steps, step = -1):  #step stops after x steps
+def run_suite(game, suite): 
 	"""
 	Runs a suite of instructions (a list of steps) 
 
@@ -66,11 +77,11 @@ def run_suite(game, steps, step = -1):  #step stops after x steps
 	eg [game.interact, "paper"]
 	There are three functions provided by game: interact, use, look
 	"""
-	step = int(step)
-	nsteps = len(steps)
-	if step == -1: step = nsteps
-	if step > nsteps: step = nsteps
-	print "This suite has %i steps"%(step)
+#	step = int(step)
+#	nsteps = len(steps)
+#	if step == -1: step = nsteps
+#	if step > nsteps: step = nsteps
+	log.debug("This suite has %i steps"%len(suite))
 	for i in range(0, step):
 		fname = steps[i][0].__name__ 
 		if fname == 'use':
@@ -85,19 +96,16 @@ def run_suite(game, steps, step = -1):  #step stops after x steps
 		fn(*steps[i][1:])
 
 
-def run_suites(dt, game, suites, exit_fn, step=-1):
-	"""
-	Run the requested suites
-	"""
-	for key, value in suites.items():
-		print "****RUNNING SUITES %s****"%key.upper()
-		steps = value.suite
-		run_suite(game, steps, step=step)
-		print
-	if game.quitGame == True:
-        	game.queue_event(exit_fn, game, None)
-	else:
-        	game.queue_event(on_no_exit, game, None)
+def run_suites(game, suites, user_control):
+	""" Run the requested suites in order, possibly returning control at point 'user_control' """
+	log.warn("pyvida: user_control not implemented yet")
+	for i, suite in enumerate(suites):
+		log.debug("****RUNNING SUITE %s****"%i)
+		run_suite(game, suite)
+#	if game.quit == True:
+ #       	game.queue_event(exit_fn, game, None)
+	#else:
+     #   	game.queue_event(on_no_exit, game, None)
 
 def on_exit(game, btn):
 	game.window.close()
@@ -107,41 +115,29 @@ def on_no_exit(game, btn):
 	game.testing = False
 	print "Finished requests, handing back to user!"
 
-def run(tname, suites, setup_fn, exit_fn = on_exit, report = True, wait=10.1):
+def run(game, suites, log_file=None, user_control=None):#, setup_fn, exit_fn = on_exit, report = True, wait=10.1):
     """
     This is the main function from this module.
-
-    tname is the unixname for the project
-    suites are a dictionary of functions that return steps
-    setup_fn = a setup function that generates game object
-    exit_fn = function called to exit game
-    wait = how long to wait before running test suite
+    
+    If user_control is an integer <n> or a string <s>, try and pause at step <n> in the suite or at command with name <s>
     """
-    print tname, "testing - testing (suitename) (stopAtstep)"
-    game = setup_fn()
-    game.quitGame = True
-    tstep = -1
-    if len(sys.argv) >= 2: #select and run 1 test suite only
-	    tname = sys.argv[1]
-	    suites = {tname: suites[tname]}
-    if len(sys.argv) == 3: #stop after step x
-	    tstep = sys.argv[2]
-	    game.quitGame = False
-	    print "Will hand over to user at point",tstep
-    fname = "testing_report_%s%s.txt"%(tname, date.today().strftime("%Y_%m_%d"))
-    print "report name is %s"%fname
-    if report == True: sys.stdout = open(fname,'w')  
-    print "===[TESTING REPORT FOR %s]==="%tname.upper()
+    log = logging.getLogger(game.name)
+    log.setLevel(logging.DEBUG)
 
-
+    if log: #push log to file
+        LOG_FILENAME = log
+        handler = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=60000, backupCount=5)
+        handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+        log.addHandler(handler)    
+    
+    game.quit = True
+    log.debug("===[TESTING REPORT FOR %s]==="%game.name.upper())
+    log.debug("%s"%date.today().strftime("%Y_%m_%d"))
     game.testing = True
-    #	clock.schedule_once(run_suites, wait, game, suites, exit_fn, step=tstep)
-    tstep = -1
-    run_suites(1, game, suites, exit_fn, step=tstep)
+    run_suites(game, suites, user_control)
     game.run()
 
-    print "===[FINISHED TESTING]==="
-    if report == True: sys.stdout=sys.__stdout__ 
+    log.debug("===[FINISHED TESTING]===")
     game.testing = False
     print "Finished."
 

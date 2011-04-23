@@ -398,6 +398,13 @@ class Actor(object):
 #            log.warning("unable to load idle.png for %s"%self.name)
         log.debug("smart load %s %s clickable %s and actions %s"%(type(self), self.name, self._clickable_area, self.actions.keys()))
         return self
+
+    def trigger_look(self):
+        log.warn("looking at %s not implemented"%self.name)
+        self.game.player.says("Looking at %s"%self.name)
+
+    def trigger_use(self, obj):
+        log.warn("using objects on %s not implemented"%self.name)
         
     def trigger_interact(self):
         """ find an interact function for this actor and call it """
@@ -580,7 +587,7 @@ class Actor(object):
         x,y = self._tx, self._ty = destination
         d = self.speed
         fuzz = 10
-        if self.game.testing == True: self.x, self.y = x, y #skip straight to point
+        if self.game.testing == True: self.x, self.y = x, y #skip straight to point for testing
         if x - fuzz < self.x < x + fuzz and y - fuzz < self.y < y + fuzz:
             self.action = self.actions['idle']
             if type(self) in [MenuItem, Collection]:
@@ -893,6 +900,7 @@ class Game(object):
     def __init__(self, name="Untitled Game", fullscreen=False):
         log.debug("game object created at %s"%datetime.now())
         self.game = self
+        self.name = name
         self.camera = Camera(self) #the camera object
 
         self.events = []
@@ -1005,17 +1013,26 @@ class Game(object):
                 self.enabled_editor = True
                 if self._scene and self._scene.objects: self.set_editing(self._scene.objects.values()[0])
 
+    def _trigger(self, obj):
+        """ trigger use, look or interact, depending on mouse_mode """
+        if self.mouse_mode in [MOUSE_LOOK, MOUSE_GENERAL]:
+           obj.trigger_look()
+        elif self.mouse_mode == MOUSE_INTERACT:
+           obj.trigger_interact()
+        else:
+           obj.trigger_use()
+
     def _on_mouse_press(self, x, y, button, modifiers): #single button interface
         if len(self.modals) > 0: #modals first
             for i in self.modals:
-                if i.collide(x,y):
+                if i.collide(x,y): #always trigger interact on modals
                     i.trigger_interact()
                     return
             return
         for i in self.menu: #then menu
             if i.collide(x,y):
                 if i.actions.has_key('down'): i.action = i.actions['down']
-                i.trigger_interact()
+                i.trigger_interact() #always trigger interact on menu items
                 return
         if self.enabled_editor and self._scene:
             if self.editing_point: #finish editing object point
@@ -1033,7 +1050,7 @@ class Game(object):
             for i in self._scene.objects.values(): #then objects in the scene
                 if i is not self.player and i.collide(x,y):
 #                   if i.actions.has_key('down'): i.action = i.actions['down']
-                    i.trigger_interact()
+                    self._trigger(i) #trigger look, use or interact
                     return
             #or finally, try and walk the player there.
             self.player.goto((x,y))
