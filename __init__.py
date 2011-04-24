@@ -170,7 +170,6 @@ def process_step(game, step):
     elif function_name == "use": 
         game.mouse_mode = MOUSE_USE
         actee = step[2]
-#    import pdb; pdb.set_trace()
     for i in game.modals:
         if actor == i.name:
             i.trigger_interact()
@@ -883,18 +882,24 @@ class Scene(object):
             self._background = load_image(fname)
         return self._background
 
-    def on_remove(self, obj):
+    def _remove(self, obj):
         """ remove object from the scene """
 #        if obj.name == "spare uniform": import pdb; pdb.set_trace()
         obj.scene = None
         del self.objects[obj.name]
         self._event_finish()
-#        return self
+
+
+    def on_remove(self, obj):
+        """ queued function for removing object from the scene """
+        self._remove(obj)
+        self._event_finish()
         
     def on_add(self, obj):
         """ removes obj from current scene it's in, adds to this scene """
+#        if obj.name == "spare uniform": import pdb; pdb.set_trace()
         if obj.scene:
-            obj.scene.remove(obj)
+            obj.scene._remove(obj)
         self.objects[obj.name] = obj
         obj.scene = self
         if obj.name.lower() in self.scales.keys():
@@ -1178,7 +1183,6 @@ class Game(object):
                 print("What is the name of this state (no directory or .py)?")
                 state = raw_input(">")
                 if state=="": return
-                import pdb; pdb.set_trace()
                 sfname = os.path.join(self.scene_dir, os.path.join(self._scene.name, state))
                 sfname = "%s.py"%sfname
                 with open(sfname, 'w') as f:
@@ -1399,7 +1403,7 @@ class Game(object):
         
     def on_menu_clear(self):
         """ clear all menus """
-        log.warning("game.menu_clear should use game.remove")
+        log.warning("game.menu_clear should use game.remove --- why???")
         #for i in self.menu:
         #    del self.menu[i]
         log.debug("clear menu %s"%[x.name for x in self.menu])

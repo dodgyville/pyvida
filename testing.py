@@ -48,7 +48,8 @@ from pyvida import MOUSE_GENERAL, MOUSE_USE, MOUSE_LOOK, MOUSE_INTERACT
 import pyvida
 
 log = logging.getLogger("testing")
-log.setLevel(logging.INFO)
+#log.setLevel(logging.INFO)
+log.setLevel(logging.DEBUG)
 
 #from pyglet import clock
 #from pygame.time import clock
