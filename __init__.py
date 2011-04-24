@@ -150,6 +150,44 @@ class Polygon(object):
             j = i
             i += 1
         return c
+
+#### pygame testing functions ####
+
+def process_step(game, step):
+    """
+    Emulate a mouse press event when game.test == True
+    """
+    #modals first, then menu, then regular objects
+    function_name = step[0].__name__ 
+    actor = step[1]
+    actee = None
+    game.mouse_mode = MOUSE_GENERAL
+    log.info("TEST SUITE step %s"%step)
+    if function_name == "interact":
+        game.mouse_mode = MOUSE_INTERACT
+    elif function_name == "look":
+        game.mouse_mode = MOUSE_LOOK
+    elif function_name == "use": 
+        game.mouse_mode = MOUSE_USE
+        actee = step[2]
+#    import pdb; pdb.set_trace()
+    for i in game.modals:
+        if actor == i.name:
+            i.trigger_interact()
+            return
+    for i in game.menu: #then menu
+        if actor == i.name:
+            i.trigger_interact()
+            return
+    if actor == "spare uniform": import pdb; pdb.set_trace()
+    if game._scene:
+        for i in game._scene.objects.values():
+            if actor == i.name:
+                game._trigger(i)
+                return
+    log.error("Unable to find actor %s in modals, menu or scene objects"%actor)
+
+
         
 #### pygame util functions ####        
 
@@ -303,7 +341,7 @@ class Actor(object):
         self._x, self._y = 0,0      # place in scene
         self._sx, self._sy = 0,0    # stand point
         self._ax, self._ay = 0, 0    # anchor point
-        self._tx, _ty = 0,0 #target for when moving
+        self._tx, self._ty = 0,0 #target for when moving
         self.speed = 10 #speed at which actor moves per frame
         self.inventory = {}
         self._scale = 1.0
@@ -404,6 +442,7 @@ class Actor(object):
         self.game.player.says("Looking at %s"%self.name)
 
     def trigger_use(self, obj):
+        log.warn("should look for def %s_use_%s"%(slugify(self.name),slugify(obj.name)))
         log.warn("using objects on %s not implemented"%self.name)
         
     def trigger_interact(self):
@@ -411,6 +450,7 @@ class Actor(object):
 #        fn = self._get_interact()
  #       if self.interact: fn = self.interact
 #        if self.name == "e_objects": import pdb; pdb.set_trace()
+        log.debug("player interact with %s"%self.name)
         if self.interact:
             self.interact(self.game, self, self.game.player)
         else: #else, search several namespaces or use a default
@@ -561,7 +601,18 @@ class Actor(object):
 
     def on_reanchor(self, pt):
         """ queue event for changing the anchor points """
-        self.ax, self.ay = pt.ax, pt.ay
+        self.ax, self.ay = pt[0], pt[1]
+        self._event_finish()
+
+    def on_retalk(self, pt):
+        """ queue event for changing the talk anchor points """
+#        self.ax, self.ay = pt[0], pt[1]
+        log.warning("object.retalk not implemented, talk anchor points non-existent")
+        self._event_finish()
+
+    def on_restand(self, pt):
+        """ queue event for changing the stand points """
+        self.sx, self.sy = pt[0], pt[1]
         self._event_finish()
 
     def on_relocate(self, scene, destination=None):
@@ -619,7 +670,11 @@ class Actor(object):
         
     def on_says(self, text, sfx=-1, block=True, modal=True, font=None):
         """ if sfx == -1, try and guess sound file """
-        log.debug("actor %s says %s"%(self.name, text))
+        log.info("actor %s says %s"%(self.name, text))
+        if self.game.testing: 
+            self._event_finish()
+            return
+
         self.game.stuff_event(self.on_wait, None)
         def close_msgbox(game, actor, player):
 #            game.clearModal()
@@ -753,14 +808,15 @@ class Collection(MenuItem):
 
     def draw(self):
         Actor.draw(self)
-        #TODO use inventory action to render, or else create one
+        #XXX use inventory action to render, or else create one
         sx,sy=20,20 #padding
         x,y = sx,sy
         dx,dy=40,40
         w,h = self.action.image.get_width(), self.action.image.get_height()
         show = self.objects.values()[self.index:]
+#        import pdb; pdb.set_trace()
         for i in show:
-            if i._image:
+            if i.action and i.action.image:
                 iw, ih = i.action.image.get_width(), i.action.image.get_height()
  #               ratio = float(dx)/iw
 #                nw, nh = int(iw*ratio), int(ih*ratio)
@@ -829,6 +885,7 @@ class Scene(object):
 
     def on_remove(self, obj):
         """ remove object from the scene """
+#        if obj.name == "spare uniform": import pdb; pdb.set_trace()
         obj.scene = None
         del self.objects[obj.name]
         self._event_finish()
@@ -864,9 +921,11 @@ class Camera(object):
     
     def on_fade_out(self):
         log.error("camera.fade_out not implement yet")
+        self.game._event_finish()
         
     def on_fade_in(self):
         log.error("camera.fade_in not implement yet")
+        self.game._event_finish()
 
 
         
@@ -930,7 +989,7 @@ class Game(object):
         raise AttributeError
 #        return self.__getattribute__(self, a)
 
-    def add(self, obj, force_cls=None):
+    def add(self, obj, force_cls=None): #game.add (not a queuing function)
         if type(obj) == list:
             for i in obj: self._add(i, force_cls)
         else:
@@ -949,6 +1008,7 @@ class Game(object):
             if isinstance(obj, Scene):
                 self.scenes[obj.name] = obj
             elif type(obj) in [MenuItem, Collection]: #menu items are stored in items
+                obj.x, obj.y = obj.hx, obj.hy #menu starts hidden by default
                 self.items[obj.name] = obj
             elif isinstance(obj, ModalItem):
                 self.modals.append(obj)
@@ -1100,7 +1160,6 @@ class Game(object):
         if self._scene and self.screen:
            self.screen.blit(self._scene.background(), (0, 0))
         pygame.display.set_caption(self.name)
-        
         if ENABLE_EDITOR: #editor enabled for this game instance
             #load debug font
             fname = "data/fonts/vera.ttf"
@@ -1116,7 +1175,7 @@ class Game(object):
 
             def editor_save(game, menuItem, player):
                 log.debug("editor: save scene not implemented")
-                print("What is the name of this state?")
+                print("What is the name of this state (no directory or .py)?")
                 state = raw_input(">")
                 if state=="": return
                 import pdb; pdb.set_trace()
@@ -1201,6 +1260,7 @@ class Game(object):
         #pygame.mouse.set_visible(0)        
         if callback: callback(self)
         dt = 12 #time passed
+#        if self.testing == True: return
         while self.quit == False:
             pygame.time.delay(self.fps)
             if self._scene:
@@ -1224,9 +1284,19 @@ class Game(object):
                     for obj in group: obj.draw()
             pygame.display.flip()            
 
+            #if testing, instead of user input, pull an event off the test suite
+            if self.testing and len(self.events) == 0 and not self._event: 
+                if len(self.tests) == 0: #no more tests, so exit
+                    self.quit = True
+                else:
+                    step = self.tests.pop(0)
+                    process_step(self, step)
+            
+
     def handle_events(self):
         """ check for outstanding events """
-        if len(self.events) == 0: return
+        if len(self.events) == 0:  return #wait for user
+                
         if not self._event: #waiting, so do an immediate process 
             e = self.events.pop(0) #stored as [(function, args))]
             log.debug("Doing event %s"%e[0])
@@ -1253,7 +1323,7 @@ class Game(object):
         """ start the next event in the game scripter """
 #        log.debug("finished event %s, remaining:"%(self._event, self.events)
         self._event = None
-        self.handle_events()
+#        self.handle_events()
     
         
     def remove(self, obj):
@@ -1264,8 +1334,10 @@ class Game(object):
 #    def on_move(self, scene, destination):
 #        """ transition to scene, and move player if available """    
 
-    def on_load_state(self, scene, state):
+    def load_state(self, scene, state):
+        """ a queuing function, not a queued function (ie it adds events but is not one """
         """ load a state from a file inside a scene directory """
+        """ stuff load state events into the start of the queue """
         if type(scene) == str: scene = self.scenes[scene]
         sfname = os.path.join(self.scene_dir, os.path.join(scene.name, state))
         sfname = "%s.py"%sfname
@@ -1275,13 +1347,10 @@ class Game(object):
         else:
             execfile( sfname, variables)
             variables['load_state'](self, scene)
-        self._event_finish()
 
     def on_save_state(self, scene, state):
         """ save a state inside a scene directory """
-        self._event_finish()
-
-        
+        self._event_finish()      
         
     def on_click(self, obj):
         """ helper function to chain mouse clicks """

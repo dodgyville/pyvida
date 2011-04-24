@@ -42,6 +42,14 @@ where the gameplay breaks.
 """
 import sys
 from datetime import date
+import logging
+import logging.handlers
+from pyvida import MOUSE_GENERAL, MOUSE_USE, MOUSE_LOOK, MOUSE_INTERACT
+import pyvida
+
+log = logging.getLogger("testing")
+log.setLevel(logging.INFO)
+
 #from pyglet import clock
 #from pygame.time import clock
 
@@ -57,17 +65,36 @@ class TestSuite(object):
 		
 		
 def process_step(game, step):
+    """
+    Emulate a mouse press event
+    """
     #modals first, then menu, then regular objects
-    function_name = step.__name__ 
-    actions = {
-        "interact":trigger_interact,
-    }
+    function_name = step[0].__name__ 
+    actor = step[1]
+    actee = None
+    game.mouse_mode = MOUSE_GENERAL
+    if function_name == "interact":
+        game.mouse_mode = MOUSE_INTERACT
+    elif function_name == "look":
+        game.mouse_mode = MOUSE_LOOK
+    elif function_name == "use": 
+        game.mouse_mode = MOUSE_USE
+        actee = step[2]
+    import pdb; pdb.set_trace()
     for i in game.modals:
-#        if i.name == "heelo
- #       if function_name
-        i.trigger_interact()
-#    for i in game.menu: #then menu
- #   for i in game._scene.objects.values():
+        if actor == i.name:
+            i.trigger_interact()
+            return
+    for i in game.menu: #then menu
+        if actor == i.name:
+            i.trigger_interact()
+            return
+    if game._scene:
+        for i in game._scene.objects.values():
+            if actor == i.name:
+                game._trigger(i)
+                return
+    log.error("Unable to find actor %s in modals, menu or scene objects"%actor)
 
 def run_suite(game, suite): 
 	"""
@@ -77,24 +104,10 @@ def run_suite(game, suite):
 	eg [game.interact, "paper"]
 	There are three functions provided by game: interact, use, look
 	"""
-#	step = int(step)
-#	nsteps = len(steps)
-#	if step == -1: step = nsteps
-#	if step > nsteps: step = nsteps
 	log.debug("This suite has %i steps"%len(suite))
-	for i in range(0, step):
-		fname = steps[i][0].__name__ 
-		if fname == 'use':
-			fn = game.use
-		elif fname == 'look':
-			fn = game.look
-		elif fname == 'interact':
-			fn = game.interact
-		else:
-			print " ERROR: test suite doesn't know function %s",fname
-		print i+1, fn.__name__, steps[i][1:]
-		fn(*steps[i][1:])
-
+	for i, step in enumerate(suite):
+	    log.debug(step)
+	    process_step(game, step)
 
 def run_suites(game, suites, user_control):
 	""" Run the requested suites in order, possibly returning control at point 'user_control' """
@@ -115,29 +128,31 @@ def on_no_exit(game, btn):
 	game.testing = False
 	print "Finished requests, handing back to user!"
 
-def run(game, suites, log_file=None, user_control=None):#, setup_fn, exit_fn = on_exit, report = True, wait=10.1):
+def prepare_tests(game, suites, log_file=None, user_control=None):#, setup_fn, exit_fn = on_exit, report = True, wait=10.1):
     """
     This is the main function from this module.
     
     If user_control is an integer <n> or a string <s>, try and pause at step <n> in the suite or at command with name <s>
+    
+    Call it before the game.run function
     """
-    log = logging.getLogger(game.name)
-    log.setLevel(logging.DEBUG)
 
-    if log: #push log to file
-        LOG_FILENAME = log
+    if log_file: #push log to file
+        LOG_FILENAME = log_file
         handler = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=60000, backupCount=5)
         handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
         log.addHandler(handler)    
-    
-    game.quit = True
-    log.debug("===[TESTING REPORT FOR %s]==="%game.name.upper())
-    log.debug("%s"%date.today().strftime("%Y_%m_%d"))
-    game.testing = True
-    run_suites(game, suites, user_control)
-    game.run()
 
-    log.debug("===[FINISHED TESTING]===")
-    game.testing = False
-    print "Finished."
+    pyvida.log = log    
+#    game.quit = True
+    pyvida.log.info("===[TESTING REPORT FOR %s]==="%game.name.upper())
+    pyvida.log.debug("%s"%date.today().strftime("%Y_%m_%d"))
+    game.testing = True
+    game.tests = [i for sublist in suites for i in sublist]  #all tests, flattened in order
+    #run_suites(game, suites, user_control)
+    #game.run(callback)
+
+    #log.debug("===[FINISHED TESTING]===")
+    #game.testing = False
+    #print "Finished."
 
