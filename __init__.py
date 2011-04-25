@@ -457,7 +457,6 @@ class Actor(object):
 
     def trigger_look(self):
         log.debug("Player looks at %s"%self.name)
-#        self.game.player.says("Looking at %s"%self.name)
         if self.look: #if user has supplied a look override
             self.look(self.game, self, self.game.player)
         else: #else, search several namespaces or use a default
@@ -470,9 +469,26 @@ class Actor(object):
                 log.warning("no look script for %s (write an look_%s)"%(self.name, basic))
                 self._look_default(self.game, self, self.game.player)
 
-    def trigger_use(self, obj):
-        log.warn("should look for def %s_use_%s"%(slugify(self.name),slugify(obj.name)))
-        log.warn("using objects on %s not implemented"%self.name)
+    def trigger_use(self, actor):
+        #user actor on this actee
+#        log.warn("should look for def %s_use_%s"%(slugify(self.name),slugify(obj.name)))
+#        log.warn("using objects on %s not implemented"%self.name)
+         log.info("Player uses %s on %s"%(actor.name, self.name))
+#        if self.use: #if user has supplied a look override
+#           self.use(self.game, self, self.game.player)
+#        else: #else, search several namespaces or use a default
+         slug_actor = slugify(actor.name)
+         slug_actee = slugify(self.name)
+         basic = "%s_use_%s"%(slug_actee, slug_actor)
+         script = get_function(basic)
+         import pdb; pdb.set_trace()
+         if script:
+                script(self.game, self, actor)
+         else:
+                 #warn if using default vida look
+                log.warning("no use script for using %s with %s (write an %s function)"%(actor.name, self.name, basic))
+                self._use_default(self.game, self, actor)
+
         
     def trigger_interact(self):
         """ find an interact function for this actor and call it """
@@ -589,11 +605,22 @@ class Actor(object):
         self._event_finish()
 
 
+    def _use_default(self, game, actor, actee):
+        """ default queuing use method """
+        c = [
+            "I don't think if that will work.",
+            "It's not designed to do that.",
+            "It won't fit, trust me, I know.",
+        ]
+        if self.game.player: self.game.player.says(choice(c))
+        self._event_finish()
+
+
     def _look_default(self, game, actor, player):
         """ default queuing look method """
         if isinstance(self, Item): #very generic
-            c = ["It's not very interesting",
-            "There's nothing cool about that",
+            c = ["It's not very interesting.",
+            "There's nothing cool about that.",
             "It looks unremarkable to me."]
         else: #probably an Actor object
             c = ["They're not very interesting",
@@ -1133,8 +1160,10 @@ class Game(object):
            obj.trigger_look()
         elif self.mouse_mode == MOUSE_INTERACT:
            obj.trigger_interact()
-        else:
-           obj.trigger_use()
+        elif self.mouse_mode == MOUSE_USE:
+           obj.trigger_use(self.mouse_cursor)
+           self.mouse_cursor = MOUSE_POINTER
+           self.mouse_mode = MOUSE_GENERAL
 
     def _on_mouse_press(self, x, y, button, modifiers): #single button interface
         if len(self.modals) > 0: #modals first
@@ -1171,7 +1200,10 @@ class Game(object):
 
 
     def _on_mouse_move(self, x, y, button, modifiers): #single button interface
-        self.mouse_cursor = MOUSE_POINTER
+        if self.mouse_mode != MOUSE_USE: #only update the mouse if not in "use" mode
+            self.mouse_cursor = MOUSE_POINTER
+        else:
+            return
         if self.enabled_editor and self.editing_point:
             self.editing_point[0](x)
             if len(self.editing_point)>1: self.editing_point[1](y)
