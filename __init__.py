@@ -342,8 +342,9 @@ class Actor(object):
         self.font_speech = None    
         self._x, self._y = 0,0      # place in scene
         self._sx, self._sy = 0,0    # stand point
-        self._ax, self._ay = 0, 0    # anchor point
-        self._tx, self._ty = 0,0 #target for when moving
+        self._ax, self._ay = 0, 0   # displacement anchor point
+        self._tx, self._ty = 0,0    # target for when this actor is mid-movement
+        self._nx, self._ny = 0,0    # displacement point for name
         self.speed = 10 #speed at which actor moves per frame
         self.inventory = {}
         self._scale = 1.0
@@ -357,6 +358,9 @@ class Actor(object):
         self.facts = []
         
         self.editable = True #affected by editor?
+
+        self.interact = None #special queuing function for interacts
+        self.look = None #override queuing function for look
 
     
     def _event_finish(self): 
@@ -401,6 +405,15 @@ class Actor(object):
         scale = (1/self.action.scale) if self.action else 1     
         self._ay = (self.y - ay)*scale
     ay = property(get_ay, set_ay)
+
+    def get_nx(self): return self._nx
+    def set_nx(self, nx): self._nx = nx
+    nx = property(get_nx, set_nx)
+
+    def get_ny(self): return self._ny 
+    def set_ny(self, ny): self._ny = ny
+    ny = property(get_ny, set_ny)
+
     
     def get_scale(self): return self._scale
     def set_scale(self, x): 
@@ -442,8 +455,20 @@ class Actor(object):
         return self
 
     def trigger_look(self):
-        log.warn("looking at %s not implemented"%self.name)
-        self.game.player.says("Looking at %s"%self.name)
+        log.debug("Player looks at %s"%self.name)
+#        self.game.player.says("Looking at %s"%self.name)
+
+        if self.look: #if user has supplied a look override
+            self.look(self.game, self, self.game.player)
+        else: #else, search several namespaces or use a default
+            basic = "look_%s"%slugify(self.name)
+            script = get_function(basic)
+            if script:
+                script(self.game, self, self.game.player)
+            else:
+                 #warn if using default vida look
+                log.warning("no look script for %s (write an look_%s)"%(self.name, basic))
+                self.on_look_default(self.game, self, self.game.player)
 
     def trigger_use(self, obj):
         log.warn("should look for def %s_use_%s"%(slugify(self.name),slugify(obj.name)))
@@ -455,7 +480,7 @@ class Actor(object):
  #       if self.interact: fn = self.interact
 #        if self.name == "e_objects": import pdb; pdb.set_trace()
         log.debug("player interact with %s"%self.name)
-        if self.interact:
+        if self.interact: #if user has supplied an interact override
             self.interact(self.game, self, self.game.player)
         else: #else, search several namespaces or use a default
             basic = "interact_%s"%slugify(self.name)
@@ -463,10 +488,9 @@ class Actor(object):
             if script:
                 script(self.game, self, self.game.player)
             else:
-#                if self.on_interact == self._on_interact: #and type(self) != VidaPortal:
-                    #warn if using default vida interact and NOT a portal
+                #warn if using default vida interact
                 log.warning("no interact script for %s (write an interact_%s)"%(self.name, basic))
-                self.on_interact(self.game, self)
+                self.on_interact_default(self.game, self, self.game.player)
 
 
     def clear(self):
@@ -551,8 +575,8 @@ class Actor(object):
         self._event_finish()
         
 
-    def on_interact(self, game, actor, player):
-        """ default interact smethod """
+    def _interact_default(self, game, actor, player):
+        """ default queuing interact smethod """
         if isinstance(self, Item): #very generic
             c = ["It's not very interesting",
             "I'm not sure what you want me to do with that.",
@@ -561,6 +585,20 @@ class Actor(object):
             c = ["They're not responding to my hails",
             "Perhaps they need a good poking.",
             "They don't want to talk to me."]
+        if self.game.player: self.game.player.says(choice(c))
+        self._event_finish()
+
+
+    def _look_default(self, game, actor, player):
+        """ default queuing look method """
+        if isinstance(self, Item): #very generic
+            c = ["It's not very interesting",
+            "There's nothing cool about that",
+            "It looks unremarkable to me."]
+        else: #probably an Actor object
+            c = ["They're not very interesting",
+            "I prefer to look at the good looking",
+            ]
         if self.game.player: self.game.player.says(choice(c))
         self._event_finish()
 
@@ -707,7 +745,7 @@ class Item(Actor):
 class Portal(Actor):
     def __init__(self, *args, **kwargs):
         Actor.__init__(self, *args, **kwargs)
-        self.link = None
+        self.link = None #which Portal does it link to?
         self.ox, self.oy = 0,0 #outpoint
 
 #    def draw(self):
