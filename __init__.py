@@ -49,6 +49,9 @@ MOUSE_USE = 1
 MOUSE_LOOK = 2
 MOUSE_INTERACT = 3
 
+MOUSE_POINTER = 0
+MOUSE_CROSSHAIR = 1
+
 DEBUG_LOCATION = 4
 DEBUG_TEXT = 5
 DEBUG_STAND = 6
@@ -178,7 +181,7 @@ def process_step(game, step):
         if actor == i.name:
             i.trigger_interact()
             return
-    if actor == "spare uniform": import pdb; pdb.set_trace()
+#    if actor == "spare uniform": import pdb; pdb.set_trace()
     if game._scene:
         for i in game._scene.objects.values():
             if actor == i.name:
@@ -352,6 +355,8 @@ class Actor(object):
         self._rect = None
         self.game = None
         self.facts = []
+        
+        self.editable = True #affected by editor?
 
     
     def _event_finish(self): 
@@ -981,7 +986,10 @@ class Game(object):
         self._menus = [] #a stack of menus 
         self.modals = []
 
-        self.mouse_mode = MOUSE_GENERAL
+        self.mouse_mode = MOUSE_GENERAL #what activity does a mouse click trigger?
+        self.mouse_cursors = {} #available mouse images
+        self.mouse_cursor = MOUSE_POINTER #which image to use
+        
         self.fps = int(1000.0/24)  #12 fps
         
     def __getattr__(self, a):
@@ -1122,16 +1130,25 @@ class Game(object):
 
 
     def _on_mouse_move(self, x, y, button, modifiers): #single button interface
+        self.mouse_cursor = MOUSE_POINTER
         if self.enabled_editor and self.editing_point:
             self.editing_point[0](x)
             if len(self.editing_point)>1: self.editing_point[1](y)
             return
         for i in self.menu: #then menu
             if i.collide(x,y):
-                if i.actions.has_key('over'): i.action = i.actions['over']
+                if i.actions.has_key('over'):
+                    i.action = i.actions['over']
+#                    return
             else:
                 if i.action and i.action.name == "over":
-                    if i.actions.has_key('idle'): i.action = i.actions['idle']
+                    if i.actions.has_key('idle'): 
+                        i.action = i.actions['idle']
+        if self.player and self._scene:
+            for i in self._scene.objects.values(): #then objects in the scene
+                if i is not self.player and i.collide(x,y):
+                    self.mouse_cursor = MOUSE_CROSSHAIR
+                    return
 
                 
     def _on_key_press(self, key):
@@ -1158,14 +1175,24 @@ class Game(object):
 #            elif event.key == K_ESCAPE:
  #               self.quit = True
   #              return
-        
-    def run(self, callback=None):
-        pygame.init() 
-        self.screen = screen = pygame.display.set_mode((1024, 768))
-        if self._scene and self.screen:
-           self.screen.blit(self._scene.background(), (0, 0))
-        pygame.display.set_caption(self.name)
-        if ENABLE_EDITOR: #editor enabled for this game instance
+    
+    def _load_mouse_cursors(self):
+        """ called by Game after display initialised to load mouse cursor images """
+        try: #use specific mouse cursors or use pyvida defaults
+            cursor_pwd = os.path.join(os.getcwd(), os.path.join(self.interface_dir, 'c_pointer.png'))
+            self.mouse_cursors[MOUSE_POINTER] = pygame.image.load(cursor_pwd).convert_alpha()
+        except:
+            log.warning("Can't find game's pointer cursor, so defaulting to unimplemented pyvida one")
+#            self.mouse_cursors[MOUSE_POINTER] = pyglet.image.load(os.path.join(sys.prefix, "defaults/c_pointer.png"))
+        try:
+            cursor_pwd = os.path.join(os.getcwd(), os.path.join(self.interface_dir, 'c_cross.png'))
+            self.mouse_cursors[MOUSE_CROSSHAIR] = pygame.image.load(cursor_pwd).convert_alpha()
+        except:
+            log.warning("Can't find game's cross cursor, so defaulting to unimplemented pyvida one")
+#            self.mousec_ursors[MOUSE_CROSSHAIR] = pyglet.image.load(os.path.join(sys.prefix, "defaults/c_cross.png"))
+    
+    def _load_editor(self):
+            """ Load the ingame edit menu """
             #load debug font
             fname = "data/fonts/vera.ttf"
             try:
@@ -1234,9 +1261,9 @@ class Game(object):
                     e_objects = self.items["e_objects"]
                 e_objects.objects = {}
                 for i in game.actors.values():
-                    if type(i) not in [Collection, MenuItem]: e_objects.objects[i.name] = i
+                    if i.editable and type(i) not in [Collection, MenuItem]: e_objects.objects[i.name] = i
                 for i in game.items.values():
-                    if type(i) not in [Collection, MenuItem]: e_objects.objects[i.name] = i
+                    if i.editable and type(i) not in [Collection, MenuItem]: e_objects.objects[i.name] = i
                 game.menu_fadeOut()
                 game.menu_push() #hide and push old menu to storage
                 game.set_menu("e_objects_close", "e_objects")
@@ -1259,12 +1286,24 @@ class Game(object):
             for i, v in enumerate(["location", "anchor", "stand", "scale", "walkarea", "talk"]):
                 self.add(MenuItem("e_%s"%v, editor_point, (100+i*30, 45), (100+i*30,-50), v[0]).smart(self))
             
-            
         
-        #pygame.mouse.set_visible(0)        
+    def run(self, callback=None):
+        pygame.init() 
+        self.screen = screen = pygame.display.set_mode((1024, 768))
+        pygame.mouse.set_visible(False) #hide system mouse cursor
+        self._load_mouse_cursors()
+        
+        if self._scene and self.screen:
+           self.screen.blit(self._scene.background(), (0, 0))
+
+        pygame.display.set_caption(self.name)
+
+        if ENABLE_EDITOR: #editor enabled for this game instance
+            self._load_editor()
+        
         if callback: callback(self)
         dt = 12 #time passed
-#        if self.testing == True: return
+        
         while self.quit == False:
             pygame.time.delay(self.fps)
             if self._scene:
@@ -1286,7 +1325,18 @@ class Game(object):
             if self._scene and self.screen:
                 for group in [self._scene.objects.values(), self.menu, self.modals]:
                     for obj in group: obj.draw()
-            pygame.display.flip()            
+            #draw mouse
+            m = pygame.mouse.get_pos()
+            if type(self.mouse_cursor) == int: #use a mouse cursor image
+                mouse_image = self.mouse_cursors[self.mouse_cursor]
+            else: #use an object (actor or item) image
+                mouse_image = self.mouse_cursor.action.image
+            cursor_rect = self.screen.blit(mouse_image, m)
+            
+            pygame.display.flip() #show updated display to user
+            
+            #hide mouse
+            if self._scene: self.screen.blit(self._scene.background(), cursor_rect, cursor_rect)
 
             #if testing, instead of user input, pull an event off the test suite
             if self.testing and len(self.events) == 0 and not self._event: 
@@ -1295,6 +1345,7 @@ class Game(object):
                 else:
                     step = self.tests.pop(0)
                     process_step(self, step)
+        pygame.mouse.set_visible(True)
             
 
     def handle_events(self):
