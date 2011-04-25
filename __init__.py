@@ -1,17 +1,18 @@
 from __future__ import print_function
-import inspect
-from new import instancemethod 
-import pdb
+
 from datetime import datetime, timedelta
-import os
-import gc
-import sys
 import glob
-from ctypes import c_int
-from random import choice, randint
+import gc
+import inspect
+from itertools import cycle
 import logging
 import logging.handlers
-from itertools import cycle
+from new import instancemethod 
+from optparse import OptionParser
+import os
+import pdb
+from random import choice, randint
+import sys
 
 import pygame
 from pygame.locals import *#QUIT, K_ESCAPE
@@ -468,7 +469,7 @@ class Actor(object):
             else:
                  #warn if using default vida look
                 log.warning("no look script for %s (write an look_%s)"%(self.name, basic))
-                self.on_look_default(self.game, self, self.game.player)
+                self._look_default(self.game, self, self.game.player)
 
     def trigger_use(self, obj):
         log.warn("should look for def %s_use_%s"%(slugify(self.name),slugify(obj.name)))
@@ -490,7 +491,7 @@ class Actor(object):
             else:
                 #warn if using default vida interact
                 log.warning("no interact script for %s (write an interact_%s)"%(self.name, basic))
-                self.on_interact_default(self.game, self, self.game.player)
+                self._interact_default(self.game, self, self.game.player)
 
 
     def clear(self):
@@ -1028,6 +1029,8 @@ class Game(object):
         self.mouse_cursors = {} #available mouse images
         self.mouse_cursor = MOUSE_POINTER #which image to use
         
+        self._walkthroughts = []
+        
         self.fps = int(1000.0/24)  #12 fps
         
     def __getattr__(self, a):
@@ -1326,6 +1329,19 @@ class Game(object):
             
         
     def run(self, callback=None):
+        parser = OptionParser()
+        parser.add_option("-s", "--step", dest="step", help="Jump to step in walkthrough")
+#        parser.add_option("-q", "--quiet",
+ #                 action="store_false", dest="verbose", default=True,
+  #                help="don't print status messages to stdout")
+
+        (options, args) = parser.parse_args()    
+        jump_to_step = None
+        if options.step: #switch on test runner to step through walkthrough
+            self.testing = True
+            self.tests = self._walkthroughs
+            jump_to_step = int(options.step) #automatically run to <step> in walkthrough
+
         pygame.init() 
         self.screen = screen = pygame.display.set_mode((1024, 768))
         pygame.mouse.set_visible(False) #hide system mouse cursor
@@ -1383,6 +1399,13 @@ class Game(object):
                 else:
                     step = self.tests.pop(0)
                     process_step(self, step)
+                    if jump_to_step:
+                        jump_to_step -= 1
+                        if jump_to_step == 0: #hand control back to player
+                            self.testing = False
+                            self.tests = None
+                            if self.player: self.player.says("Handing back control to you")
+                    
         pygame.mouse.set_visible(True)
             
 
@@ -1418,11 +1441,13 @@ class Game(object):
         self._event = None
 #        self.handle_events()
     
-        
+    def walkthroughs(self, suites):
+        """ use test suites to enable jumping forward """
+        self._walkthroughs = [i for sublist in suites for i in sublist]  #all tests, flattened in order
+            
     def remove(self, obj):
         """ remove from the game so that garbage collection can free it up """
-        log.warning("game.remove not implemented yet")
-        
+        log.warning("game.remove not implemented yet")        
         
 #    def on_move(self, scene, destination):
 #        """ transition to scene, and move player if available """    
