@@ -183,8 +183,8 @@ def process_step(game, step):
             i.trigger_interact()
             return
 #    if actor == "spare uniform": import pdb; pdb.set_trace()
-    if game._scene:
-        for i in game._scene.objects.values():
+    if game.scene:
+        for i in game.scene.objects.values():
             if actor == i.name:
                 game._trigger(i)
                 return
@@ -458,7 +458,6 @@ class Actor(object):
     def trigger_look(self):
         log.debug("Player looks at %s"%self.name)
 #        self.game.player.says("Looking at %s"%self.name)
-
         if self.look: #if user has supplied a look override
             self.look(self.game, self, self.game.player)
         else: #else, search several namespaces or use a default
@@ -496,12 +495,12 @@ class Actor(object):
 
     def clear(self):
 #        print(self._image.get_rect())
-#        self.game.screen.blit(self.game._scene.background(), (self.x, self.y), self._image.get_rect())
+#        self.game.screen.blit(self.game.scene.background(), (self.x, self.y), self._image.get_rect())
         if self._rect:
-            self.game.screen.blit(self.game._scene.background(), self._rect, self._rect)
+            self.game.screen.blit(self.game.scene.background(), self._rect, self._rect)
         if self.game.editing == self:
             r = self._crosshair((255,0,0), (self.ax, self.ay))
-            self.game.screen.blit(self.game._scene.background(), r, r)
+            self.game.screen.blit(self.game.scene.background(), r, r)
 #        if self._image:
  #           r = self._image.get_rect().move(self.x, self.y)    
   #          self.game.screen.blit(self._image, r)
@@ -936,6 +935,8 @@ class Scene(object):
 
     def on_remove(self, obj):
         """ queued function for removing object from the scene """
+        if type(obj) == str and obj in self.objects:
+            obj = self.objects[obj]
         self._remove(obj)
         self._event_finish()
         
@@ -962,10 +963,10 @@ class Camera(object):
         """ change the current scene """
         if type(scene) == str:
             scene = self.game.scenes[scene]
-        self.game._scene = scene
+        self.game.scene = scene
         log.debug("changing scene to %s"%scene.name)
-        if self.game._scene and self.game.screen:
-           self.game.screen.blit(self.game._scene.background(), (0, 0))
+        if self.game.scene and self.game.screen:
+           self.game.screen.blit(self.game.scene.background(), (0, 0))
         self.game._event_finish()
     
     def on_fade_out(self):
@@ -975,7 +976,6 @@ class Camera(object):
     def on_fade_in(self):
         log.error("camera.fade_in not implement yet")
         self.game._event_finish()
-
 
         
 @use_init_variables
@@ -1014,7 +1014,7 @@ class Game(object):
         self.events = []
         self._event = None
 
-        self._scene = None
+        self.scene = None
         self.player = None
         self.actors = {}
         self.items = {}
@@ -1125,7 +1125,7 @@ class Game(object):
             else:
                 editor_menu(self)
                 self.enabled_editor = True
-                if self._scene and self._scene.objects: self.set_editing(self._scene.objects.values()[0])
+                if self.scene and self.scene.objects: self.set_editing(self.scene.objects.values()[0])
 
     def _trigger(self, obj):
         """ trigger use, look or interact, depending on mouse_mode """
@@ -1148,11 +1148,11 @@ class Game(object):
                 if i.actions.has_key('down'): i.action = i.actions['down']
                 i.trigger_interact() #always trigger interact on menu items
                 return
-        if self.enabled_editor and self._scene:
+        if self.enabled_editor and self.scene:
             if self.editing_point: #finish editing object point
                 self.editing_point = None
                 return
-            for i in self._scene.objects.values():
+            for i in self.scene.objects.values():
                 if collide(i._rect, x, y):
                     if i == self.editing: #assume want to move
                         editor_point(self, "e_location", self.player)
@@ -1160,8 +1160,8 @@ class Game(object):
                         self.set_editing(i)
                 return
                 
-        elif self.player and self._scene and self.player in self._scene.objects.values(): #regular game interaction
-            for i in self._scene.objects.values(): #then objects in the scene
+        elif self.player and self.scene and self.player in self.scene.objects.values(): #regular game interaction
+            for i in self.scene.objects.values(): #then objects in the scene
                 if i is not self.player and i.collide(x,y):
 #                   if i.actions.has_key('down'): i.action = i.actions['down']
                     self._trigger(i) #trigger look, use or interact
@@ -1185,8 +1185,8 @@ class Game(object):
                 if i.action and i.action.name == "over":
                     if i.actions.has_key('idle'): 
                         i.action = i.actions['idle']
-        if self.player and self._scene:
-            for i in self._scene.objects.values(): #then objects in the scene
+        if self.player and self.scene:
+            for i in self.scene.objects.values(): #then objects in the scene
                 if i is not self.player and i.collide(x,y):
                     self.mouse_cursor = MOUSE_CROSSHAIR
                     return
@@ -1251,23 +1251,23 @@ class Game(object):
                 print("What is the name of this state (no directory or .py)?")
                 state = raw_input(">")
                 if state=="": return
-                sfname = os.path.join(self.scene_dir, os.path.join(self._scene.name, state))
+                sfname = os.path.join(self.scene_dir, os.path.join(self.scene.name, state))
                 sfname = "%s.py"%sfname
                 with open(sfname, 'w') as f:
                     f.write("# generated by ingame editor v0.1\n\n")
                     f.write("def load_state(game, scene):\n")
-                    for name, obj in game._scene.objects.items():
+                    for name, obj in game.scene.objects.items():
                         slug = slugify(name).lower()
                         f.write('\t%s = game.items["%s"]\n'%(slug, name))
                         f.write('\t%s.rescale(%0.2f)\n'%(slug, obj.scale))
-                        f.write('\t%s.reanchor((%i, %i))\n'%(slug, obj.ax, obj.ay))
+                        f.write('\t%s.reanchor((%i, %i))\n'%(slug, obj._ax, obj._ay))
                         f.write('\t%s.restand((%i, %i))\n'%(slug, obj.sx, obj.sy))
                         f.write('\t%s.retalk((%i, %i))\n'%(slug, obj.tx, obj.ty))
                         f.write('\t%s.relocate(scene, (%i, %i))\n'%(slug, obj.x, obj.y))
                 
             def _editor_cycle(game, collection, player, v):
-                if game._scene and len(game._scene.objects)>0:
-                    objects = game._scene.objects.values()
+                if game.scene and len(game.scene.objects)>0:
+                    objects = game.scene.objects.values()
                     if game.editing == None: game.editing = objects[0]
                     i = (objects.index(game.editing) + v)%len(objects)
                     log.debug("editor cycle: switch object %s to %s"%(game.editing, objects[i]))
@@ -1287,10 +1287,10 @@ class Game(object):
                 m = pygame.mouse.get_pos()
                 mx,my = relative_position(game, collection, m)
                 obj = collection.get_object(m)
-                if obj and game._scene:
+                if obj and game.scene:
                     obj.x, obj.y = 500,400
                     obj._editor_add_to_scene = True #let exported know this is new to this scene
-                    game._scene.add(obj)
+                    game.scene.add(obj)
                     editor_select_object_close(game, collection, player)
                     game.set_editing(obj)
 
@@ -1347,8 +1347,8 @@ class Game(object):
         pygame.mouse.set_visible(False) #hide system mouse cursor
         self._load_mouse_cursors()
         
-        if self._scene and self.screen:
-           self.screen.blit(self._scene.background(), (0, 0))
+        if self.scene and self.screen:
+           self.screen.blit(self.scene.background(), (0, 0))
 
         pygame.display.set_caption(self.name)
 
@@ -1360,24 +1360,24 @@ class Game(object):
         
         while self.quit == False:
             pygame.time.delay(self.fps)
-            if self._scene:
-                blank = [self._scene.objects.values(), self.menu, self.modals]
+            if self.scene:
+                blank = [self.scene.objects.values(), self.menu, self.modals]
             else:
                 blank = [self.menu, self.modals]
 
-            if self._scene and self.screen:
+            if self.scene and self.screen:
                 for group in blank:
                     for obj in group: obj.clear()
 
             self.handle_pygame_events()
             self.handle_events()
 
-            if self._scene and self.screen:
-                for group in [self._scene.objects.values(), self.menu, self.modals]:
+            if self.scene and self.screen:
+                for group in [self.scene.objects.values(), self.menu, self.modals]:
                     for obj in group: obj._update(dt)
 
-            if self._scene and self.screen:
-                for group in [self._scene.objects.values(), self.menu, self.modals]:
+            if self.scene and self.screen:
+                for group in [self.scene.objects.values(), self.menu, self.modals]:
                     for obj in group: obj.draw()
             #draw mouse
             m = pygame.mouse.get_pos()
@@ -1390,7 +1390,7 @@ class Game(object):
             pygame.display.flip() #show updated display to user
             
             #hide mouse
-            if self._scene: self.screen.blit(self._scene.background(), cursor_rect, cursor_rect)
+            if self.scene: self.screen.blit(self.scene.background(), cursor_rect, cursor_rect)
 
             #if testing, instead of user input, pull an event off the test suite
             if self.testing and len(self.events) == 0 and not self._event: 
