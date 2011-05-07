@@ -247,7 +247,7 @@ def get_function(basic):
 def editor_menu(game):
                 game.menu_fadeOut()
                 game.menu_push() #hide and push old menu to storage
-                game.set_menu("e_load", "e_save", "e_add", "e_prev", "e_next")
+                game.set_menu("e_load", "e_save", "e_add", "e_prev", "e_next", "e_portal")
                 game.menu_hide()
                 game.menu_fadeIn()
 
@@ -344,8 +344,8 @@ class Actor(object):
         self._x, self._y = 0,0      # place in scene
         self._sx, self._sy = 0,0    # stand point
         self._ax, self._ay = 0, 0   # displacement anchor point
-        self._tx, self._ty = 0,0    # target for when this actor is mid-movement
         self._nx, self._ny = 0,0    # displacement point for name
+        self._tx, self._ty = 0,0    # target for when this actor is mid-movement
         self.speed = 10 #speed at which actor moves per frame
         self.inventory = {}
         self._scale = 1.0
@@ -353,7 +353,6 @@ class Actor(object):
         self._walk_area = [0,0,0,0]
         self._solid_area = [0,0,0,0]
         self._clickable_area = [0,0,0,0]
-        self._image = None
         self._rect = None
         self.game = None
         self.facts = []
@@ -407,11 +406,11 @@ class Actor(object):
         self._ay = (self.y - ay)*scale
     ay = property(get_ay, set_ay)
 
-    def get_nx(self): return self._nx
+    def get_nx(self): return self._nx + self.x
     def set_nx(self, nx): self._nx = nx
     nx = property(get_nx, set_nx)
 
-    def get_ny(self): return self._ny 
+    def get_ny(self): return self._ny + self.y
     def set_ny(self, ny): self._ny = ny
     ny = property(get_ny, set_ny)
 
@@ -454,6 +453,11 @@ class Actor(object):
 #            log.warning("unable to load idle.png for %s"%self.name)
         log.debug("smart load %s %s clickable %s and actions %s"%(type(self), self.name, self._clickable_area, self.actions.keys()))
         return self
+
+    def _on_mouse_move(self, x, y, button, modifiers): #actor.mouse_move
+        """ stub for doing special things with mouse overs (eg collections) """
+        pass
+
 
     def trigger_look(self):
         log.debug("Player looks at %s"%self.name)
@@ -527,11 +531,16 @@ class Actor(object):
         pygame.draw.line(self.game.screen, colour, (pt[0]-5,pt[1]), (pt[0]+5,pt[1]))
         return Rect(pt[0]-5, pt[1]-5, 11,11)
 
+    def _image(self):
+        """ return an image for this actor """
+        img = None
+        if self.action: 
+            img = self.action.image
+        return img
 
     def draw(self): #actor.draw
-        img = None
-        if self.action:
-            img = self.action.image
+        img = self._image()
+        if img: 
             if self.scale != 1.0:
                 w = int(img.get_width() * self.scale)
                 h = int(img.get_height() * self.scale)
@@ -545,6 +554,8 @@ class Actor(object):
                 #draw bounding box
                 r2 = r.inflate(-2,-2)
                 pygame.draw.rect(self.game.screen, (0,255,0), r2, 2)
+            
+        if self.game and self.game.editing and self.game.editing == self:
                 #draw point
                 self._crosshair((0,0,255), (self.x, self.y))
                 stats = self.game.debug_font.render("%0.2f, %0.2f"%(self.x, self.y+12), True, (255,155,0))
@@ -709,7 +720,7 @@ class Actor(object):
         fuzz = 10
         if self.game.testing == True: self.x, self.y = x, y #skip straight to point for testing
         if x - fuzz < self.x < x + fuzz and y - fuzz < self.y < y + fuzz:
-            self.action = self.actions['idle']
+            if "idle" in self.actions: self.action = self.actions['idle'] #XXX: magical variables, special cases, urgh
             if type(self) in [MenuItem, Collection]:
                 self.x, self.y = self._tx, self._ty
             log.debug("actor %s has arrived at %s"%(self.name, destination))
@@ -801,7 +812,7 @@ class Text(Actor):
             self.font = pygame.font.Font(fname, size)
         except:
             self.font = None
-            log.error("text %s unable to load or initialised font"%self.name)
+            log.error("text %s unable to load or initialise font"%self.name)
         if self.font:
             self.img = self.font.render(text, True, colour)
         else:
@@ -842,7 +853,10 @@ class MenuItem(Actor):
         self.x, self.y = spos
 
 class Collection(MenuItem):
-    """ An actor which contains subactors (eg an inventory or directory listing)"""
+    """ 
+    An actor which contains subactors (eg an inventory or directory listing)
+    interact: function to call when an item is clicked 
+    """
     def __init__(self, name="Untitled Collection", interact=None, spos=(None, None), hpos=(None, None), key=None): 
         MenuItem.__init__(self, name, interact, spos, hpos, key)
         self.objects = {}
@@ -874,29 +888,42 @@ class Collection(MenuItem):
                 return i
         log.debug("Clicked on collection %s, but no object at that point"%(self.name))
         return None
+        
+        
+    def _on_mouse_move(self, x, y, button, modifiers): #collection.mouse_move single button interface
+        """ when hovering over an object in the collection, show the item name """
+        m = pygame.mouse.get_pos()
+        obj = self.get_object(m)
+        if obj:
+            self.game.info(obj.name, x, y)
 
     def draw(self):
         Actor.draw(self)
-        #XXX use inventory action to render, or else create one
+        #XXX padding not implemented, ratios not implemented
         sx,sy=20,20 #padding
         x,y = sx,sy
         dx,dy=40,40
-        w,h = self.action.image.get_width(), self.action.image.get_height()
+        if self.action:
+            w,h = self.action.image.get_width(), self.action.image.get_height()
+        else:
+            w,h = 0, 0
+            log.warning("Collection %s missing an action"%self.name)
         show = self.objects.values()[self.index:]
 #        import pdb; pdb.set_trace()
         for i in show:
-            if i.action and i.action.image:
-                iw, ih = i.action.image.get_width(), i.action.image.get_height()
+            img = i._image()
+            if img:
+                iw, ih = img.get_width(), img.get_height()
  #               ratio = float(dx)/iw
 #                nw, nh = int(iw*ratio), int(ih*ratio)
-                img = pygame.transform.scale(i.action.image, (dx, dy))
+                img = pygame.transform.scale(img, (dx, dy))
                 r = img.get_rect().move(x+self.x, y+self.y)
                 i._cr = r #temporary collection values
                 self.game.screen.blit(img, r)
-            x += dx
+            x += dx+2
             if float(x)/(w-sy-dx)>1:
                 x = sx
-                y += dy
+                y += dy+2
                 if float(y)/(h-sy-dy)>1:
                     break
 
@@ -915,7 +942,7 @@ class Scene(object):
         self.walkarea = None
         self.cx, self.cy = 512,384 #camera pointing at position (center of screen)
         self.scales = {} #when an actor is added to this scene, what scale factor to apply? (from scene.scales)
-
+        self.editable = True #will it appear in the editor (eg portals list)
 
     def _event_finish(self): 
         return self.game._event_finish()
@@ -946,6 +973,20 @@ class Scene(object):
         state_name = os.path.join(sdir, "initial.py")
         if os.path.isfile(state_name): game.load_state(self, "initial")
         return self
+
+    def _update(self, dt):
+        """ update this scene within the game (normally empty) """
+        if hasattr(self, "update"): #run this scene's personalised update function
+            self.update(dt)
+
+    draw = Actor.draw #scene.draw
+       
+    def clear(self): #scene.clear
+        img = None
+
+    def _image(self):
+        """ return an image for this object """
+        return self.background()
 
     def background(self, fname=None):
         if fname:
@@ -1058,6 +1099,12 @@ class Game(object):
         
         self._walkthroughts = []
         
+
+        #set up text overlay image
+        self.info_colour = (255,255,200)
+        self.info_image = None
+        self.info_position = None
+        
         self.fps = int(1000.0/24)  #12 fps
         
     def __getattr__(self, a):
@@ -1104,6 +1151,15 @@ class Game(object):
         return obj
         #self._event_finish()
         
+    def info(self, text, x, y):
+        """ On screen at one time can be an info text (eg an object name or menu hover) 
+            Set that here.
+        """
+        colour = (255,200,200)
+        if self.font:
+            self.info_image = self.font.render(text, True, colour)
+        self.info_position = (x,y)
+
     def on_smart(self, player=None, player_class=Actor):
         """ cycle through the actors, items and scenes and load the available objects 
             it is very common to have custom methods on the player, so allow smart
@@ -1210,6 +1266,7 @@ class Game(object):
             return
         for i in self.menu: #then menu
             if i.collide(x,y):
+                i._on_mouse_move(x, y, button, modifiers)
                 if i.actions.has_key('over'):
                     i.action = i.actions['over']
 #                    return
@@ -1221,6 +1278,8 @@ class Game(object):
             for i in self.scene.objects.values(): #then objects in the scene
                 if i is not self.player and i.collide(x,y):
                     self.mouse_cursor = MOUSE_CROSSHAIR
+                    self.info(i.name, i.nx,i.ny)
+#                   self.text_image = self.font.render(i.name, True, self.text_colour)
                     return
 
                 
@@ -1323,7 +1382,7 @@ class Game(object):
                     obj.x, obj.y = 500,400
                     obj._editor_add_to_scene = True #let exported know this is new to this scene
                     game.scene.add(obj)
-                    editor_select_object_close(game, collection, player)
+                    editor_collection_close(game, collection, player)
                     game.set_editing(obj)
 
             def editor_add(game, menuItem, player):
@@ -1339,25 +1398,62 @@ class Game(object):
                     if i.editable and type(i) not in [Collection, MenuItem]: e_objects.objects[i.name] = i
                 game.menu_fadeOut()
                 game.menu_push() #hide and push old menu to storage
-                game.set_menu("e_objects_close", "e_objects")
+                game.set_menu("e_close", "e_objects")
                 game.menu_hide()
                 game.menu_fadeIn()
                 
-            def editor_select_object_close(game, collection, player):
+            def editor_portal(game, menuItem, player):
+                """ set up the collection object for portals """
+                if hasattr(self, "e_portals") and self.e_portals: #existing collection
+                    e_portals = self.e_portals
+                else: #new object
+                    e_portals = self.items["e_portals"]
+                e_portals.objects = {}
+                for i in game.scenes.values():
+                    if i.editable: e_portals.objects[i.name] = i
+                game.menu_fadeOut()
+                game.menu_push() #hide and push old menu to storage
+                game.set_menu("e_close", "e_portals")
+                game.menu_hide()
+                game.menu_fadeIn()                
+
+            def editor_select_portal(game, collection, player):
+                """ select an scene from the collection and add to the scene as a portal """
+                m = pygame.mouse.get_pos()
+                mx,my = relative_position(game, collection, m)
+                scene = collection.get_object(m)
+                if not scene: return
+                obj = Portal("%s To %s"%(game.scene.name, scene.name))
+                if obj and game.scene:
+                    obj.x, obj.y = 500,400
+                    obj._editor_add_to_scene = True #let exported know this is new to this scene
+                    game.scene.add(obj)
+                    editor_collection_close(game, collection, player)
+                    game.set_editing(obj)
+                
+            def editor_collection_close(game, collection, player):
+                """ close an collection object in the editor, shared with e_portals and e_objects """
                 game.menu_fadeOut()
                 game.menu_pop()
                 game.menu_fadeIn()
-            
             
             self.add(MenuItem("e_load", editor_load, (50, 10), (50,-50), "l").smart(self))
             self.add(MenuItem("e_save", editor_save, (90, 10), (90,-50), "s").smart(self))
             self.add(MenuItem("e_add", editor_add, (130, 10), (130,-50), "a").smart(self))
             self.add(MenuItem("e_prev", editor_prev, (170, 10), (170,-50), "[").smart(self))
             self.add(MenuItem("e_next", editor_next, (210, 10), (210,-50), "]").smart(self))
+            self.add(MenuItem("e_portal", editor_portal, (250, 10), (250,-50), "p").smart(self))
+
+            #a collection widget for adding objects to a scene
             self.add(Collection("e_objects", editor_select_object, (300, 100), (300,-600), K_ESCAPE).smart(self))
-            self.add(MenuItem("e_objects_close", editor_select_object_close, (800, 600), (800,-100), K_ESCAPE).smart(self))
+            self.add(MenuItem("e_close", editor_collection_close, (800, 600), (800,-100), K_ESCAPE).smart(self))
             for i, v in enumerate(["location", "anchor", "stand", "scale", "walkarea", "talk"]):
                 self.add(MenuItem("e_%s"%v, editor_point, (100+i*30, 45), (100+i*30,-50), v[0]).smart(self))
+
+            #collection widget for adding portals to other scenes
+            self.add(Collection("e_portals", editor_select_portal, (300, 100), (300,-600), K_ESCAPE).smart(self))
+            self.add(MenuItem("e_close", editor_collection_close, (800, 600), (800,-100), K_ESCAPE).smart(self))
+
             
         
     def run(self, callback=None):
@@ -1376,8 +1472,21 @@ class Game(object):
 
         pygame.init() 
         self.screen = screen = pygame.display.set_mode((1024, 768))
+        
+        #do post pygame init loading
+        #set up mouse cursors
         pygame.mouse.set_visible(False) #hide system mouse cursor
         self._load_mouse_cursors()
+        
+        #set up default game font
+        fname = "data/fonts/vera.ttf"
+        size = 10
+        try:
+            self.font = pygame.font.Font(fname, size)
+        except:
+            self.font = None
+            log.error("game unable to load or initialise font %s"%fname)
+        
         
         if self.scene and self.screen:
            self.screen.blit(self.scene.background(), (0, 0))
@@ -1411,6 +1520,11 @@ class Game(object):
             if self.scene and self.screen:
                 for group in [self.scene.objects.values(), self.menu, self.modals]:
                     for obj in group: obj.draw()
+                    
+            #draw info text if available
+            if self.info_image:
+                info_rect = self.screen.blit(self.info_image, self.info_position)
+                                
             #draw mouse
             m = pygame.mouse.get_pos()
             if type(self.mouse_cursor) == int: #use a mouse cursor image
@@ -1423,6 +1537,7 @@ class Game(object):
             
             #hide mouse
             if self.scene: self.screen.blit(self.scene.background(), cursor_rect, cursor_rect)
+            if self.info_image: self.screen.blit(self.scene.background(), info_rect, info_rect)
 
             #if testing, instead of user input, pull an event off the test suite
             if self.testing and len(self.events) == 0 and not self._event: 
