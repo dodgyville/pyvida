@@ -44,7 +44,7 @@ import sys
 from datetime import date
 import logging
 import logging.handlers
-from pyvida import MOUSE_GENERAL, MOUSE_USE, MOUSE_LOOK, MOUSE_INTERACT
+from pyvida import MOUSE_USE, MOUSE_LOOK, MOUSE_INTERACT
 import pyvida
 
 log = logging.getLogger("testing")
@@ -59,6 +59,8 @@ def interact(): pass #stub
 def use(): pass #stub
 
 def look(): pass #stub
+
+def location(): pass #stub
 
 class TestSuite(object):
 	def __init__(self, suite):

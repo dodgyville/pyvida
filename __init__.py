@@ -45,7 +45,7 @@ log.warning("smart load should load non-idle action as default if there is only 
 
 # MOUSE ACTIONS 
 
-MOUSE_GENERAL = 0
+#MOUSE_GENERAL = 0
 MOUSE_USE = 1
 MOUSE_LOOK = 2
 MOUSE_INTERACT = 3
@@ -165,7 +165,7 @@ def process_step(game, step):
     function_name = step[0].__name__ 
     actor = step[1]
     actee = None
-    game.mouse_mode = MOUSE_GENERAL
+    game.mouse_mode = MOUSE_LOOK
     log.info("TEST SUITE step %s"%step)
     if function_name == "interact":
         game.mouse_mode = MOUSE_INTERACT
@@ -174,6 +174,10 @@ def process_step(game, step):
     elif function_name == "use": 
         game.mouse_mode = MOUSE_USE
         actee = step[2]
+    elif function_name == "location": #check current location matches scene "actor"
+        if game.scene.name != actor:
+            log.error("Current scene should be %s, but is currently %s"%(actor, game.scene.name))
+        return
     for i in game.modals:
         if actor == i.name:
             i.trigger_interact()
@@ -341,7 +345,8 @@ class Actor(object):
         self._alpha_target = 255
         
         self.font_speech = None    
-        self._x, self._y = 0,0      # place in scene
+  #      self._x, self._y = -1000,-1000  # place in scene, offscreen at start
+        self._x, self._y = 0,0
         self._sx, self._sy = 0,0    # stand point
         self._ax, self._ay = 0, 0   # displacement anchor point
         self._nx, self._ny = 0,0    # displacement point for name
@@ -366,7 +371,7 @@ class Actor(object):
     def _event_finish(self): 
         return self.game._event_finish()
 
-    def get_x(self): return self._x
+    def get_x(self): return self._x #position
     def set_x(self, x): self._x = x
     x = property(get_x, set_x)
 
@@ -374,7 +379,7 @@ class Actor(object):
     def set_y(self, y): self._y = y
     y = property(get_y, set_y)
     
-    def get_sx(self): return self._sx
+    def get_sx(self): return self._sx #stand points
     def set_sx(self, sx): self._sx = sx
     sx = property(get_sx, set_sx)
 
@@ -382,7 +387,7 @@ class Actor(object):
     def set_sy(self, sy): self._sy = sy
     sy = property(get_sy, set_sy)
     
-    def get_tx(self): return self._tx
+    def get_tx(self): return self._tx #travel points
     def set_tx(self, tx): self._tx = tx
     tx = property(get_tx, set_tx)
 
@@ -390,7 +395,7 @@ class Actor(object):
     def set_ty(self, ty): self._ty = ty
     ty = property(get_ty, set_ty)
 
-    def get_ax(self):
+    def get_ax(self): #anchor points
         scale = self.action.scale if self.action else 1 
         return self.x - self._ax * scale
     def set_ax(self, ax): 
@@ -423,7 +428,7 @@ class Actor(object):
             i.scale = x
     scale = property(get_scale, set_scale)    
         
-    def smart(self, game):
+    def smart(self, game): #actor.smart
         """ smart actor load """
         if type(self) in [MenuItem, Collection]:
             d = game.menuitem_dir
@@ -461,6 +466,7 @@ class Actor(object):
 
     def trigger_look(self):
         log.debug("Player looks at %s"%self.name)
+        self.game.mouse_mode = MOUSE_LOOK #reset mouse mode
         if self.look: #if user has supplied a look override
             self.look(self.game, self, self.game.player)
         else: #else, search several namespaces or use a default
@@ -473,6 +479,7 @@ class Actor(object):
                 log.warning("no look script for %s (write an look_%s)"%(self.name, basic))
                 self._look_default(self.game, self, self.game.player)
 
+
     def trigger_use(self, actor):
         #user actor on this actee
 #        log.warn("should look for def %s_use_%s"%(slugify(self.name),slugify(obj.name)))
@@ -481,6 +488,7 @@ class Actor(object):
 #        if self.use: #if user has supplied a look override
 #           self.use(self.game, self, self.game.player)
 #        else: #else, search several namespaces or use a default
+         self.game.mouse_mode = MOUSE_LOOK
          slug_actor = slugify(actor.name)
          slug_actee = slugify(self.name)
          basic = "%s_use_%s"%(slug_actee, slug_actor)
@@ -500,6 +508,7 @@ class Actor(object):
  #       if self.interact: fn = self.interact
 #        if self.name == "e_objects": import pdb; pdb.set_trace()
         log.debug("player interact with %s"%self.name)
+        self.game.mouse_mode = MOUSE_LOOK #reset mouse mode
         if self.interact: #if user has supplied an interact override
             self.interact(self.game, self, self.game.player)
         else: #else, search several namespaces or use a default
@@ -681,7 +690,7 @@ class Actor(object):
 
     def on_reanchor(self, pt):
         """ queue event for changing the anchor points """
-        self.ax, self.ay = pt[0], pt[1]
+        self._ax, self._ay = pt[0], pt[1]
         self._event_finish()
 
     def on_retalk(self, pt):
@@ -750,7 +759,7 @@ class Actor(object):
         
     def on_says(self, text, sfx=-1, block=True, modal=True, font=None):
         """ if sfx == -1, try and guess sound file """
-        log.info("actor %s says %s"%(self.name, text))
+        log.info("Actor %s says: %s"%(self.name, text))
         if self.game.testing: 
             self._event_finish()
             return
@@ -762,11 +771,14 @@ class Actor(object):
             game.modals.remove(game.items["txt"])
             game.modals.remove(game.items["ok"])
             self._event_finish()
+        txt = self.game.add(Text("txt", (100,-80), (840,170), text), False, ModalItem)
+        txt.ay = -200
+        ok = self.game.add(Item("ok").smart(self.game), False, ModalItem)
+        self.game.stuff_event(ok.on_place, (900,250))
+        self.game.stuff_event(txt.on_place, (100,80))
         msg = self.game.add(ModalItem("msgbox", close_msgbox,(54,-400)).smart(self.game))
         self.game.stuff_event(msg.on_goto, (54,40))
-        txt = self.game.add(Text("txt", (100,80), (840,170), text), ModalItem)
-        ok = self.game.add(Item("ok").smart(self.game), ModalItem)
-        self.game.stuff_event(ok.on_place, (900,250))
+
         self._event_finish()
         
     def on_wait(self, data):
@@ -947,7 +959,7 @@ class Scene(object):
     def _event_finish(self): 
         return self.game._event_finish()
 
-    def smart(self, game):
+    def smart(self, game): #scene.smart
         """ smart scene load """
         sdir = os.path.join(os.getcwd(),os.path.join(game.scene_dir, self.name))
         bname = os.path.join(sdir, "background.png")
@@ -1093,7 +1105,7 @@ class Game(object):
         self._menus = [] #a stack of menus 
         self.modals = []
 
-        self.mouse_mode = MOUSE_GENERAL #what activity does a mouse click trigger?
+        self.mouse_mode = MOUSE_LOOK #what activity does a mouse click trigger?
         self.mouse_cursors = {} #available mouse images
         self.mouse_cursor = MOUSE_POINTER #which image to use
         
@@ -1219,14 +1231,14 @@ class Game(object):
 
     def _trigger(self, obj):
         """ trigger use, look or interact, depending on mouse_mode """
-        if self.mouse_mode in [MOUSE_LOOK, MOUSE_GENERAL]:
+        if self.mouse_mode == MOUSE_LOOK:
            obj.trigger_look()
         elif self.mouse_mode == MOUSE_INTERACT:
            obj.trigger_interact()
         elif self.mouse_mode == MOUSE_USE:
            obj.trigger_use(self.mouse_cursor)
            self.mouse_cursor = MOUSE_POINTER
-           self.mouse_mode = MOUSE_GENERAL
+           self.mouse_mode = MOUSE_LOOK
 
     def _on_mouse_press(self, x, y, button, modifiers): #single button interface
         if len(self.modals) > 0: #modals first
@@ -1288,7 +1300,8 @@ class Game(object):
                     self.info(i.name, i.nx,i.ny)
 #                   self.text_image = self.font.render(i.name, True, self.text_colour)
                     return
-
+        #not hovering over anything, so clear info text
+        self.info_image = None
                 
     def _on_key_press(self, key):
         for i in self.menu:
@@ -1356,12 +1369,12 @@ class Game(object):
                     f.write("def load_state(game, scene):\n")
                     for name, obj in game.scene.objects.items():
                         slug = slugify(name).lower()
-                        f.write('\t%s = game.items["%s"]\n'%(slug, name))
-                        f.write('\t%s.rescale(%0.2f)\n'%(slug, obj.scale))
-                        f.write('\t%s.reanchor((%i, %i))\n'%(slug, obj._ax, obj._ay))
-                        f.write('\t%s.restand((%i, %i))\n'%(slug, obj.sx, obj.sy))
-                        f.write('\t%s.retalk((%i, %i))\n'%(slug, obj.tx, obj.ty))
-                        f.write('\t%s.relocate(scene, (%i, %i))\n'%(slug, obj.x, obj.y))
+                        f.write('    %s = game.items["%s"]\n'%(slug, name))
+                        f.write('    %s.rescale(%0.2f)\n'%(slug, obj.scale))
+                        f.write('    %s.reanchor((%i, %i))\n'%(slug, obj._ax, obj._ay))
+                        f.write('    %s.restand((%i, %i))\n'%(slug, obj.sx, obj.sy))
+                        f.write('    %s.retalk((%i, %i))\n'%(slug, obj.tx, obj.ty))
+                        f.write('    %s.relocate(scene, (%i, %i))\n'%(slug, obj.x, obj.y))
                 
             def _editor_cycle(game, collection, player, v):
                 if game.scene and len(game.scene.objects)>0:
@@ -1520,12 +1533,13 @@ class Game(object):
             self.handle_pygame_events()
             self.handle_events()
 
-            if self.scene and self.screen:
+            if self.scene and self.screen: #update objects
                 for group in [self.scene.objects.values(), self.menu, self.modals]:
                     for obj in group: obj._update(dt)
 
-            if self.scene and self.screen:
-                for group in [self.scene.objects.values(), self.menu, self.modals]:
+            if self.scene and self.screen: #draw objects
+                objects = sorted(self.scene.objects.values(), key=lambda x: x.y, reverse=False)
+                for group in [objects, self.menu, self.modals]:
                     for obj in group: obj.draw()
                     
             #draw info text if available
