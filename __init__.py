@@ -560,14 +560,14 @@ class Actor(object):
                 self._crosshair((0,0,255), (self.x, self.y))
                 stats = self.game.debug_font.render("%0.2f, %0.2f"%(self.x, self.y+12), True, (255,155,0))
                 edit_rect = self.game.screen.blit(stats, stats.get_rect().move(self.x, self.y))
-                self._rect.union_ip(edit_rect)
+                if self._rect: self._rect.union_ip(edit_rect)
                 
                 #draw anchor point
                 ax,ay=self.ax, self.ay
                 self._crosshair((255,0,0), (ax-self.x, ay-self.y))
                 stats = self.game.debug_font.render("%0.2f, %0.2f"%(ax-self.x, ay-self.y), True, (255,155,0))
                 edit_rect = self.game.screen.blit(stats, stats.get_rect().move(ax, ay))
-                self._rect.union_ip(edit_rect)
+                if self._rect: self._rect.union_ip(edit_rect)
                 
 
     def _update(self, dt):
@@ -1117,21 +1117,28 @@ class Game(object):
         raise AttributeError
 #        return self.__getattribute__(self, a)
 
-    def add(self, obj, force_cls=None): #game.add (not a queuing function)
+    def add(self, obj, replace=False, force_cls=None): #game.add (not a queuing function)
         if type(obj) == list:
-            for i in obj: self._add(i, force_cls)
+            for i in obj: self._add(i, replace, force_cls)
         else:
-            self._add(obj, force_cls)
+            self._add(obj, replace, force_cls)
         return obj
 
-    def _add(self, obj, force_cls=None):
-        """ add objects to the game """
+    def _add(self, obj, replace=False, force_cls=None):
+        """ 
+        add objects to the game 
+        if replace is true, then replace existing objects
+        force_cls allows you to override how it is added
+        """
+        if replace == False:
+           if obj.name in self.items or obj.name in self.actors:
+                log.error("%s already in game dictionary"%obj.name)
         if force_cls:
             if force_cls == ModalItem:
                 self.modals.append(obj)
                 self.items[obj.name] = obj
             else:
-                log.error("%s not implement in game.add"%force_cls)
+                log.error("forcing objects to type %s not implement in game.add"%force_cls)
         else:
             if isinstance(obj, Scene):
                 self.scenes[obj.name] = obj
