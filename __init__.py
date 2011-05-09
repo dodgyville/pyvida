@@ -1,9 +1,10 @@
 from __future__ import print_function
 
 from datetime import datetime, timedelta
-import glob
 import gc
+import glob
 import inspect
+from itertools import chain
 from itertools import cycle
 import logging
 import logging.handlers
@@ -345,8 +346,8 @@ class Actor(object):
         self._alpha_target = 255
         
         self.font_speech = None    
-  #      self._x, self._y = -1000,-1000  # place in scene, offscreen at start
-        self._x, self._y = 0,0
+        self._x, self._y = -1000,-1000  # place in scene, offscreen at start
+  #      self._x, self._y = 0,0
         self._sx, self._sy = 0,0    # stand point
         self._ax, self._ay = 0, 0   # displacement anchor point
         self._nx, self._ny = 0,0    # displacement point for name
@@ -757,9 +758,11 @@ class Actor(object):
         """ return true if fact in the list of facts """
         return True if fact in self.facts else False       
         
-    def on_says(self, text, sfx=-1, block=True, modal=True, font=None):
+    def on_says(self, text, sfx=-1, block=True, modal=True, font=None, action=None):
         """ if sfx == -1, try and guess sound file """
         log.info("Actor %s says: %s"%(self.name, text))
+        log.warning("on_says: Passing in action should display action in corner (not implemented yet)")
+#        log.warning("")
         if self.game.testing: 
             self._event_finish()
             return
@@ -771,12 +774,11 @@ class Actor(object):
             game.modals.remove(game.items["txt"])
             game.modals.remove(game.items["ok"])
             self._event_finish()
-        txt = self.game.add(Text("txt", (100,-80), (840,170), text), False, ModalItem)
-        txt.ay = -200
+        msg = self.game.add(ModalItem("msgbox", close_msgbox,(54,-400)).smart(self.game))
+        txt = self.game.add(Text("txt", (100,-80), (840,170), text, wrap=800), False, ModalItem)
         ok = self.game.add(Item("ok").smart(self.game), False, ModalItem)
         self.game.stuff_event(ok.on_place, (900,250))
         self.game.stuff_event(txt.on_place, (100,80))
-        msg = self.game.add(ModalItem("msgbox", close_msgbox,(54,-400)).smart(self.game))
         self.game.stuff_event(msg.on_goto, (54,40))
 
         self._event_finish()
@@ -813,8 +815,42 @@ class Portal(Actor):
         game.scene(link.scene) #change the scene
         game.player.goto((link.sx, link.sy), ignore=True) #walk into scene        
 
+
+#wrapline courtesy http://www.pygame.org/wiki/TextWrapping 
+def truncline(text, font, maxwidth):
+        real=len(text)       
+        stext=text           
+        l=font.size(text)[0]
+        cut=0
+        a=0                  
+        done=1
+        old = None
+        while l > maxwidth:
+            a=a+1
+            n=text.rsplit(None, a)[0]
+            if stext == n:
+                cut += 1
+                stext= n[:-cut]
+            else:
+                stext = n
+            l=font.size(stext)[0]
+            real=len(stext)               
+            done=0                        
+        return real, done, stext             
+        
+def wrapline(text, font, maxwidth): 
+    done=0                      
+    wrapped=[]                  
+                               
+    while not done:             
+        nl, done, stext=truncline(text, font, maxwidth) 
+        wrapped.append(stext.strip())                  
+        text=text[nl:]                                 
+    return wrapped
+ 
+
 class Text(Actor):
-    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 200, 214), size=26):
+    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 200, 214), size=26, wrap=2000):
         Actor.__init__(self, name)
         self.x, self.y = pos
         self.w, self.h = dimensions
@@ -825,10 +861,23 @@ class Text(Actor):
         except:
             self.font = None
             log.error("text %s unable to load or initialise font"%self.name)
-        if self.font:
-            self.img = self.font.render(text, True, colour)
-        else:
+            
+        if not self.font:
             self.img = pygame.Surface((10,10))
+            return
+        
+        text = wrapline(text, self.font, wrap)
+        if len(text) == 1:
+            self.img = self.font.render(text[0], True, colour)
+            return
+        
+        h=self.font.size(text[0])[1]
+        self.img = pygame.Surface((wrap + 20,len(text)*h + 20), SRCALPHA, 32)
+        self.img = self.img.convert_alpha()
+        
+        for i, t in enumerate(text):
+            img = self.font.render(t, True, colour)
+            self.img.blit(img, (10, i * h + 10))
    
 
     def draw(self):
@@ -1113,7 +1162,7 @@ class Game(object):
         
 
         #set up text overlay image
-        self.info_colour = (255,255,200)
+        self.info_colour = (255,255,220)
         self.info_image = None
         self.info_position = None
         
@@ -1500,7 +1549,7 @@ class Game(object):
         
         #set up default game font
         fname = "data/fonts/vera.ttf"
-        size = 10
+        size = 14
         try:
             self.font = pygame.font.Font(fname, size)
         except:
@@ -1539,6 +1588,7 @@ class Game(object):
 
             if self.scene and self.screen: #draw objects
                 objects = sorted(self.scene.objects.values(), key=lambda x: x.y, reverse=False)
+#                menu_objects = sorted(self.menu, key=lambda x: x.y, reverse=False)
                 for group in [objects, self.menu, self.modals]:
                     for obj in group: obj.draw()
                     
