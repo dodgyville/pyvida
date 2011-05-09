@@ -39,9 +39,10 @@ log.addHandler(handler)
 log.debug("\n\n======== STARTING RUN ===========")
 if not pygame.font: log.warning('Warning, fonts disabled')
 if not pygame.mixer: log.warning('Warning, sound disabled')
-log.warning("game.scene.camera not implemented yet")
+log.warning("game.scene.camera panning not implemented yet")
 log.warning("broad try excepts around pygame.image.loads")
 log.warning("smart load should load non-idle action as default if there is only one action")
+log.warning("on_says: Passing in action should display action in corner (not implemented yet)")
 
 
 # MOUSE ACTIONS 
@@ -193,7 +194,7 @@ def process_step(game, step):
             if actor == i.name:
                 game._trigger(i)
                 return
-    log.error("Unable to find actor %s in modals, menu or scene objects"%actor)
+    log.error("Unable to find actor %s in modals, menu or current scene (%s) objects"%(actor, game.scene.name))
 
 
         
@@ -494,7 +495,7 @@ class Actor(object):
          slug_actee = slugify(self.name)
          basic = "%s_use_%s"%(slug_actee, slug_actor)
          script = get_function(basic)
-         import pdb; pdb.set_trace()
+#         import pdb; pdb.set_trace()
          if script:
                 script(self.game, self, actor)
          else:
@@ -519,7 +520,7 @@ class Actor(object):
                 script(self.game, self, self.game.player)
             else:
                 #warn if using default vida interact
-                log.warning("no interact script for %s (write an interact_%s)"%(self.name, basic))
+                log.warning("no interact script for %s (write an %s)"%(self.name, basic))
                 self._interact_default(self.game, self, self.game.player)
 
 
@@ -761,7 +762,6 @@ class Actor(object):
     def on_says(self, text, sfx=-1, block=True, modal=True, font=None, action=None):
         """ if sfx == -1, try and guess sound file """
         log.info("Actor %s says: %s"%(self.name, text))
-        log.warning("on_says: Passing in action should display action in corner (not implemented yet)")
 #        log.warning("")
         if self.game.testing: 
             self._event_finish()
@@ -794,7 +794,7 @@ class Item(Actor):
 #    def __init__(self, name="Untitled Item"): 
         
 
-class Portal(Actor):
+class Portal(Item):
     def __init__(self, *args, **kwargs):
         Actor.__init__(self, *args, **kwargs)
         self.link = None #which Portal does it link to?
@@ -804,7 +804,10 @@ class Portal(Actor):
  #       """ portals are invisible """
   #      return
         
-    def on_travel(self):
+    def interact(self, game, tmat, player):
+        return self.travel()
+        
+    def travel(self):
         """ default interact method for a portal, march player through portal and change scene """
         if not self.link:
             game.player.says("It doesn't look like that goes anywhere")
@@ -1069,7 +1072,7 @@ class Scene(object):
         self._remove(obj)
         self._event_finish()
         
-    def on_add(self, obj):
+    def on_add(self, obj): #scene.add
         """ removes obj from current scene it's in, adds to this scene """
 #        if obj.name == "spare uniform": import pdb; pdb.set_trace()
         if obj.scene:
@@ -1185,7 +1188,7 @@ class Game(object):
             self._add(obj, replace, force_cls)
         return obj
 
-    def _add(self, obj, replace=False, force_cls=None):
+    def _add(self, obj, replace=False, force_cls=None): #game.add
         """ 
         add objects to the game 
         if replace is true, then replace existing objects
@@ -1193,7 +1196,8 @@ class Game(object):
         """
         if replace == False:
            if obj.name in self.items or obj.name in self.actors:
-                log.error("%s already in game dictionary"%obj.name)
+                existing_obj = self.items[obj.name] if obj.name in self.items else self.actors[obj.name]
+                log.error("Adding %s (%s), but already in item or actor dictionary as %s"%(obj.name, obj.__class__, existing_obj.__class__))
         if force_cls:
             if force_cls == ModalItem:
                 self.modals.append(obj)
@@ -1228,7 +1232,7 @@ class Game(object):
             self.info_image = self.font.render(text, True, colour)
         self.info_position = (x,y)
 
-    def on_smart(self, player=None, player_class=Actor):
+    def on_smart(self, player=None, player_class=Actor): #game.smart
         """ cycle through the actors, items and scenes and load the available objects 
             it is very common to have custom methods on the player, so allow smart
             to use a custom class
@@ -1239,9 +1243,10 @@ class Game(object):
             dname = "%s_dir"%obj_cls.__name__.lower()
             for name in os.listdir(getattr(self, dname)):
                 log.debug("game.smart loading %s %s"%(obj_cls.__name__.lower(), name))
-                if obj_cls == Actor and name in self.actors:
+                #if there is already a non-custom Actor or Item with that name, warn!
+                if obj_cls == Actor and name in self.actors and self.actors[name].__class__ == Actor:
                     log.warning("game.smart skipping %s, already an actor with this name!"%(name))
-                elif obj_cls == Item and name in self.items:
+                elif obj_cls == Item and name in self.items  and self.actors[name].__class__ == Item:
                     log.warning("game.smart skipping %s, already an item with this name!"%(name))
                 else:
                     if type(player)==str and player == name:
@@ -1521,7 +1526,7 @@ class Game(object):
 
             #collection widget for adding portals to other scenes
             self.add(Collection("e_portals", editor_select_portal, (300, 100), (300,-600), K_ESCAPE).smart(self))
-            self.add(MenuItem("e_close", editor_collection_close, (800, 600), (800,-100), K_ESCAPE).smart(self))
+#            self.add(MenuItem("e_close", editor_collection_close, (800, 600), (800,-100), K_ESCAPE).smart(self))
 
             
         
