@@ -374,6 +374,7 @@ class Actor(object):
         self.interact = None #special queuing function for interacts
         self.look = None #override queuing function for look
 
+ 
     
     def _event_finish(self): 
         return self.game._event_finish()
@@ -441,6 +442,8 @@ class Actor(object):
             d = game.menuitem_dir
         elif isinstance(self, ModalItem):
             d = game.item_dir
+        elif isinstance(self, Portal):
+            d = game.portal_dir
         elif isinstance(self, Item):
             d = game.item_dir
         elif isinstance(self, Actor):
@@ -459,7 +462,7 @@ class Actor(object):
         if self.action and self.action.image:
             self._clickable_area = self.action.image.get_rect().move(self.x, self.y)
         else:
-            log.error("actor %s smart load unable to get clickable area from action image"%self.name)
+            log.error("%s %s smart load unable to get clickable area from action image"%(self.__class__, self.name))
             self._clickable_area = Rect(self.x, self.y, 10, 10)
 #        except:
 #            log.warning("unable to load idle.png for %s"%self.name)
@@ -804,23 +807,27 @@ class Portal(Item):
         Actor.__init__(self, *args, **kwargs)
         self.link = None #which Portal does it link to?
         self.ox, self.oy = 0,0 #outpoint
+#        self.interact = self._interact
+#        self.look = self._look
 
 #    def draw(self):
  #       """ portals are invisible """
   #      return
+    def trigger_look(self): #portal look is the same as portal interact
+        return self.trigger_interact()        
         
-    def interact(self, game, tmat, player):
+    def _interact(self, game, tmat, player):
         return self.travel()
 
-    def look(self, game, tmat, player):
-        return self.travel()
+#    def _look(self, game, tmat, player):
+ #       return self.travel()
         
     def travel(self):
         """ default interact method for a portal, march player through portal and change scene """
         if not self.link:
             self.game.player.says("It doesn't look like that goes anywhere")
             log.error("portal %s has no link"%self.name)
-        log.info("Actor %s goes from scene %s to %s"%(self.game.player.name, self.scene.name, self.link,name))
+        log.info("Actor %s goes from scene %s to %s"%(self.game.player.name, self.scene.name, self.link.name))
         self.game.player.goto((self.sx, self.sy))
         self.game.player.goto((self.ox, self.oy), ignore=True)
         self.game.player.relocate(self.link.scene, (self.link.ox, self.link.oy)) #moves player to scene
@@ -1139,8 +1146,9 @@ class Game(object):
     actor_dir = "data/actors"
     item_dir = "data/items"
     menuitem_dir = "data/menu" 
-    scene_dir = "data/scenes" 
-    interface_dir = "data/interface" 
+    scene_dir = "data/scenes"
+    interface_dir = "data/interface"
+    portal_dir = "data/portals"
 
     quit = False
     screen = None
@@ -1222,6 +1230,8 @@ class Game(object):
             elif isinstance(obj, ModalItem):
                 self.modals.append(obj)
                 self.items[obj.name] = obj
+            elif isinstance(obj, Portal):
+                self.items[obj.name] = obj
             elif isinstance(obj, Item):
                 self.items[obj.name] = obj
             elif isinstance(obj, Actor):
@@ -1248,7 +1258,8 @@ class Game(object):
             player is the the first actor the user controls.
             player_class can be used to override the player class with a custom one.
         """
-        for obj_cls in [Actor, Item, Scene]:
+        portals = []
+        for obj_cls in [Actor, Item, Portal, Scene]:
             dname = "%s_dir"%obj_cls.__name__.lower()
             for name in os.listdir(getattr(self, dname)):
                 log.debug("game.smart loading %s %s"%(obj_cls.__name__.lower(), name))
@@ -1264,6 +1275,17 @@ class Game(object):
                         a = obj_cls(name)
                     self.add(a)
                     a.smart(self)
+                    if a.__class__ == Portal: portals.append(a.name)
+                    
+                    
+#            if obj_cls == Portal: #guess portal links based on name, do before scene loads
+        for pname in portals:
+                    links = pname.split("_To_")
+                    guess_link = "%s_To_%s"%(links[1], links[0])
+                    if guess_link in self.items:
+                        self.items[pname].link = self.items[guess_link]
+                    else:
+                        log.warning("game.smart unable to guess link for %s"%pname)
         if type(player) == str: player = self.actors[player]
         if player: self.player = player
         self._event_finish()
