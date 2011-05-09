@@ -168,12 +168,14 @@ def process_step(game, step):
     actor = step[1]
     actee = None
     game.mouse_mode = MOUSE_LOOK
-    log.info("TEST SUITE step %s"%step)
     if function_name == "interact":
+        log.info("TEST SUITE: %s with %s"%(function_name, actor))
         game.mouse_mode = MOUSE_INTERACT
     elif function_name == "look":
+        log.info("TEST SUITE: %s at %s"%(function_name, actor))
         game.mouse_mode = MOUSE_LOOK
     elif function_name == "use": 
+        log.info("TEST SUITE: %s %s on %s"%(function_name, actor, actee))
         game.mouse_mode = MOUSE_USE
         actee = step[2]
     elif function_name == "location": #check current location matches scene "actor"
@@ -195,6 +197,9 @@ def process_step(game, step):
                 game._trigger(i)
                 return
     log.error("Unable to find actor %s in modals, menu or current scene (%s) objects"%(actor, game.scene.name))
+    game.errors += 1
+    if game.errors == 2:
+        log.warning("TEST SUITE SUGGESTS GAME HAS GONE OFF THE RAILS AT THIS POINT")
 
 
         
@@ -478,7 +483,7 @@ class Actor(object):
                 script(self.game, self, self.game.player)
             else:
                  #warn if using default vida look
-                log.warning("no look script for %s (write an look_%s)"%(self.name, basic))
+                log.warning("no look script for %s (write %s)"%(self.name, basic))
                 self._look_default(self.game, self, self.game.player)
 
 
@@ -806,17 +811,21 @@ class Portal(Item):
         
     def interact(self, game, tmat, player):
         return self.travel()
+
+    def look(self, game, tmat, player):
+        return self.travel()
         
     def travel(self):
         """ default interact method for a portal, march player through portal and change scene """
         if not self.link:
-            game.player.says("It doesn't look like that goes anywhere")
+            self.game.player.says("It doesn't look like that goes anywhere")
             log.error("portal %s has no link"%self.name)
-        game.player.goto((self.sx, self.sy))
-        game.player.goto((self.ox, self.oy), ignore=True)
-        game.relocate(link.scene, (link.ox, link.oy)) #moves player to scene
-        game.scene(link.scene) #change the scene
-        game.player.goto((link.sx, link.sy), ignore=True) #walk into scene        
+        log.info("Actor %s goes from scene %s to %s"%(self.game.player.name, self.scene.name, self.link,name))
+        self.game.player.goto((self.sx, self.sy))
+        self.game.player.goto((self.ox, self.oy), ignore=True)
+        self.game.player.relocate(self.link.scene, (self.link.ox, self.link.oy)) #moves player to scene
+        self.game.camera.scene(self.link.scene) #change the scene
+        self.game.player.goto((self.link.sx, self.link.sy), ignore=True) #walk into scene        
 
 
 #wrapline courtesy http://www.pygame.org/wiki/TextWrapping 
@@ -1161,8 +1170,8 @@ class Game(object):
         self.mouse_cursors = {} #available mouse images
         self.mouse_cursor = MOUSE_POINTER #which image to use
         
-        self._walkthroughts = []
-        
+        self._walkthroughs = []
+        self.errors = 0 #used by walkthrough runner
 
         #set up text overlay image
         self.info_colour = (255,255,220)
@@ -1647,7 +1656,7 @@ class Game(object):
   #          except:
    #             import pdb; pdb.set_trace()
     
-    def queue_event(self, event, *args):
+    def queue_event(self, event, *args, **kwargs):
         self.events.append((event, )+(args))
 #        log.debug("events %s"%self.events)
         return args[0]
