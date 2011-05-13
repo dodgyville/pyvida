@@ -373,8 +373,7 @@ class Actor(object):
 
         self.interact = None #special queuing function for interacts
         self.look = None #override queuing function for look
-
- 
+        self.hidden = False
     
     def _event_finish(self): 
         return self.game._event_finish()
@@ -558,6 +557,7 @@ class Actor(object):
         return img
 
     def draw(self): #actor.draw
+        if self.hidden: return
         img = self._image()
         if img: 
             if self.scale != 1.0:
@@ -591,6 +591,7 @@ class Actor(object):
 
     def _update(self, dt):
         """ update this actor within the game """
+        if self.hidden: return
         l = len(self._motion_queue)
         dx = 0
         dy = 0
@@ -692,6 +693,14 @@ class Actor(object):
         obj._alpha = 255
         obj._alpha_target = 0
         self.game.stuff_event(self.finish_fade, self)
+        self._event_finish()
+
+    def on_hide(self):
+        self.hidden = True
+        self._event_finish()
+        
+    def on_show(self):
+        self.hidden = False
         self._event_finish()
         
     def on_rescale(self, scale):
@@ -807,7 +816,7 @@ class Portal(Item):
         Actor.__init__(self, *args, **kwargs)
         self.link = None #which Portal does it link to?
         self.ox, self.oy = 0,0 #outpoint
-#        self.interact = self._interact
+#        self.interact = self._interact_default
 #        self.look = self._look
 
 #    def draw(self):
@@ -816,7 +825,7 @@ class Portal(Item):
     def trigger_look(self): #portal look is the same as portal interact
         return self.trigger_interact()        
         
-    def _interact(self, game, tmat, player):
+    def _interact_default(self, game, tmat, player):
         return self.travel()
 
 #    def _look(self, game, tmat, player):
@@ -825,8 +834,9 @@ class Portal(Item):
     def travel(self):
         """ default interact method for a portal, march player through portal and change scene """
         if not self.link:
-            self.game.player.says("It doesn't look like that goes anywhere")
+            self.game.player.says("It doesn't look like that goes anywhere.")
             log.error("portal %s has no link"%self.name)
+            return
         log.info("Actor %s goes from scene %s to %s"%(self.game.player.name, self.scene.name, self.link.name))
         self.game.player.goto((self.sx, self.sy))
         self.game.player.goto((self.ox, self.oy), ignore=True)
@@ -1281,8 +1291,10 @@ class Game(object):
 #            if obj_cls == Portal: #guess portal links based on name, do before scene loads
         for pname in portals:
                     links = pname.split("_To_")
-                    guess_link = "%s_To_%s"%(links[1], links[0])
-                    if guess_link in self.items:
+                    guess_link = None
+                    if len(links)>1:
+                        guess_link = "%s_To_%s"%(links[1], links[0])
+                    if guess_link and guess_link in self.items:
                         self.items[pname].link = self.items[guess_link]
                     else:
                         log.warning("game.smart unable to guess link for %s"%pname)
@@ -1326,6 +1338,9 @@ class Game(object):
            self.mouse_mode = MOUSE_LOOK
 
     def _on_mouse_press(self, x, y, button, modifiers): #single button interface
+ #       btn1, btn2, btn3 = pygame.mouse.get_pressed()
+#        import pdb; pdb.set_trace()
+        if button==0: self.mouse_mode = MOUSE_INTERACT
         if len(self.modals) > 0: #modals first
             for i in self.modals:
                 if i.collide(x,y): #always trigger interact on modals
@@ -1573,7 +1588,10 @@ class Game(object):
         if options.step: #switch on test runner to step through walkthrough
             self.testing = True
             self.tests = self._walkthroughs
-            jump_to_step = int(options.step) #automatically run to <step> in walkthrough
+            if options.step.isdigit():
+                jump_to_step = int(options.step) #automatically run to <step> in walkthrough
+            else:
+                jump_to_step = options.step
 
         pygame.init() 
         self.screen = screen = pygame.display.set_mode((1024, 768))
@@ -1654,11 +1672,17 @@ class Game(object):
                     step = self.tests.pop(0)
                     process_step(self, step)
                     if jump_to_step:
-                        jump_to_step -= 1
-                        if jump_to_step == 0: #hand control back to player
+                        return_to_player = False
+                        if type(jump_to_step) == int: #integer step provided
+                            jump_to_step -= 1
+                            if jump_to_step == 0: return_to_player = True
+                        else: #assume step name has been given
+                            if step[-1] == jump_to_step: return_to_player = True
+                        if return_to_player: #hand control back to player
                             self.testing = False
                             self.tests = None
                             if self.player: self.player.says("Handing back control to you")
+
                     
         pygame.mouse.set_visible(True)
             
