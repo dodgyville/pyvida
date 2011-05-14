@@ -150,6 +150,7 @@ def prepare_tests(game, suites, log_file=None, user_control=None):#, setup_fn, e
 #    game.quit = True
     pyvida.log.info("===[TESTING REPORT FOR %s]==="%game.name.upper())
     pyvida.log.debug("%s"%date.today().strftime("%Y_%m_%d"))
+    game.log = log
     game.testing = True
     game.tests = [i for sublist in suites for i in sublist]  #all tests, flattened in order
     #run_suites(game, suites, user_control)

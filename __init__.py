@@ -725,6 +725,9 @@ class Actor(object):
 
     def on_relocate(self, scene, destination=None):
         # """ relocate this actor to scene at destination instantly """ 
+        if scene == None:
+            log.error("Unable to relocate %s to non-existent scene, relocating on current scene"%self.name)
+            scene = self.game.scene
         if type(scene) == str:
             scene = self.game.scenes[scene]
         if destination:
@@ -837,7 +840,10 @@ class Portal(Item):
             self.game.player.says("It doesn't look like that goes anywhere.")
             log.error("portal %s has no link"%self.name)
             return
-        log.info("Actor %s goes from scene %s to %s"%(self.game.player.name, self.scene.name, self.link.name))
+        if self.link.scene == None:
+            log.error("Unable to travel through portal %s"%self.name)
+        else:
+            log.info("Actor %s goes from scene %s to %s"%(self.game.player.name, self.scene.name, self.link.scene.name))
         self.game.player.goto((self.sx, self.sy))
         self.game.player.goto((self.ox, self.oy), ignore=True)
         self.game.player.relocate(self.link.scene, (self.link.ox, self.link.oy)) #moves player to scene
@@ -1119,6 +1125,9 @@ class Camera(object):
         
     def on_scene(self, scene):
         """ change the current scene """
+        if scene == None:
+            log.error("Can't change to non-existent scene, staying on current scene")
+            scene = self.game.scene
         if type(scene) == str:
             scene = self.game.scenes[scene]
         self.game.scene = scene
@@ -1166,6 +1175,7 @@ class Game(object):
    
     def __init__(self, name="Untitled Game", fullscreen=False):
         log.debug("game object created at %s"%datetime.now())
+        self.log = log
         self.game = self
         self.name = name
         self.camera = Camera(self) #the camera object
