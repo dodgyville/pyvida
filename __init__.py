@@ -200,7 +200,9 @@ def process_step(game, step):
     log.error("Unable to find actor %s in modals, menu or current scene (%s) objects"%(actor, game.scene.name))
     game.errors += 1
     if game.errors == 2:
-        log.warning("TEST SUITE SUGGESTS GAME HAS GONE OFF THE RAILS AT THIS POINT")
+        game.log.warning("TEST SUITE SUGGESTS GAME HAS GONE OFF THE RAILS AT THIS POINT")
+        t = game.steps_complete * 30 #30 seconds per step
+        game.log.info("This occurred at %s steps, estimated at %s.%s minutes"%(game.steps_complete, t/60, t%60))
 
 
         
@@ -730,7 +732,11 @@ class Actor(object):
             log.error("Unable to relocate %s to non-existent scene, relocating on current scene"%self.name)
             scene = self.game.scene
         if type(scene) == str:
-            scene = self.game.scenes[scene]
+            if scene in self.game.scenes[scene]
+                scene = self.game.scenes[scene]
+            else:
+                log.error("Unable to relocate %s to non-existent scene %s, relocating on current scene"%(self.name, scene))
+                scene = self.game.scene
         if destination:
             pt = get_point(self.game, destination)
             self.x, self.y = pt
@@ -1630,6 +1636,7 @@ class Game(object):
 
         (options, args) = parser.parse_args()    
         jump_to_step = None
+        self.steps_complete = 0
         if options.step: #switch on test runner to step through walkthrough
             self.testing = True
             self.tests = self._walkthroughs
@@ -1717,8 +1724,11 @@ class Game(object):
             if self.testing and len(self.events) == 0 and not self._event: 
                 if len(self.tests) == 0: #no more tests, so exit
                     self.quit = True
+                    t = self.steps_complete * 30 #30 seconds per step
+                    self.log.info("Finished %s steps, estimated at %s.%s minutes"%(self.steps_complete, t/60, t%60))
                 else:
                     step = self.tests.pop(0)
+                    self.steps_complete += 1
                     process_step(self, step)
                     if jump_to_step:
                         return_to_player = False
@@ -1731,6 +1741,8 @@ class Game(object):
                             self.testing = False
                             self.tests = None
                             if self.player: self.player.says("Handing back control to you")
+                            t = self.steps_complete * 30 #30 seconds per step
+                            self.log.info("Finished %s steps, estimated at %s.%s minutes"%(self.steps_complete, t/60, t%60))
 
                     
         pygame.mouse.set_visible(True)
