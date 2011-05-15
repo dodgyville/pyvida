@@ -43,6 +43,7 @@ log.warning("game.scene.camera panning not implemented yet")
 log.warning("broad try excepts around pygame.image.loads")
 log.warning("smart load should load non-idle action as default if there is only one action")
 log.warning("on_says: Passing in action should display action in corner (not implemented yet)")
+log.warning("game.wait not implemented yet")
 
 
 # MOUSE ACTIONS 
@@ -258,7 +259,7 @@ def get_function(basic):
 def editor_menu(game):
                 game.menu_fadeOut()
                 game.menu_push() #hide and push old menu to storage
-                game.set_menu("e_load", "e_save", "e_add", "e_prev", "e_next", "e_portal")
+                game.set_menu("e_load", "e_save", "e_add", "e_prev", "e_next", "e_scene", "e_portal")
                 game.menu_hide()
                 game.menu_fadeIn()
 
@@ -406,7 +407,7 @@ class Actor(object):
         scale = self.action.scale if self.action else 1 
         return self.x - self._ax * scale
     def set_ax(self, ax): 
-        scale = (1/self.action.scale) if self.action else 1     
+        scale = (1.0/self.action.scale) if self.action else 1     
         self._ax = (self.x - ax)*scale
     ax = property(get_ax, set_ax)
 
@@ -414,7 +415,7 @@ class Actor(object):
         scale = self.action.scale if self.action else 1 
         return self.y - self._ay * scale
     def set_ay(self, ay): 
-        scale = (1/self.action.scale) if self.action else 1     
+        scale = (1.0/self.action.scale) if self.action else 1     
         self._ay = (self.y - ay)*scale
     ay = property(get_ay, set_ay)
 
@@ -779,7 +780,7 @@ class Actor(object):
         """ return true if fact in the list of facts """
         return True if fact in self.facts else False       
         
-    def on_says(self, text, sfx=-1, block=True, modal=True, font=None, action=None):
+    def on_says(self, text, sfx=-1, block=True, modal=True, font=None, action=None, background="msgbox"):
         """ if sfx == -1, try and guess sound file """
         log.info("Actor %s says: %s"%(self.name, text))
 #        log.warning("")
@@ -790,17 +791,22 @@ class Actor(object):
         self.game.stuff_event(self.on_wait, None)
         def close_msgbox(game, actor, player):
 #            game.clearModal()
-            game.modals.remove(game.items["msgbox"])
+            game.modals.remove(game.items[background])
             game.modals.remove(game.items["txt"])
             game.modals.remove(game.items["ok"])
             self._event_finish()
-        msg = self.game.add(ModalItem("msgbox", close_msgbox,(54,-400)).smart(self.game))
+        msg = self.game.add(ModalItem(background, close_msgbox,(54,-400)).smart(self.game))
         txt = self.game.add(Text("txt", (100,-80), (840,170), text, wrap=800), False, ModalItem)
         ok = self.game.add(Item("ok").smart(self.game), False, ModalItem)
         self.game.stuff_event(ok.on_place, (900,250))
         self.game.stuff_event(txt.on_place, (100,80))
         self.game.stuff_event(msg.on_goto, (54,40))
 
+        self._event_finish()
+        
+    def on_remove(self): #remove this actor from its scene
+        if self.scene:
+            self.scene._remove(self)
         self._event_finish()
         
     def on_wait(self, data):
@@ -1094,7 +1100,7 @@ class Scene(object):
 #        if obj.name == "spare uniform": import pdb; pdb.set_trace()
         obj.scene = None
         del self.objects[obj.name]
-        self._event_finish()
+#        self._event_finish()
 
 
     def on_remove(self, obj):
@@ -1385,6 +1391,9 @@ class Game(object):
 
 
     def _on_mouse_move(self, x, y, button, modifiers): #single button interface
+        #not hovering over anything, so clear info text
+        self.info_image = None
+
         if self.mouse_mode != MOUSE_USE: #only update the mouse if not in "use" mode
             self.mouse_cursor = MOUSE_POINTER
         else:
@@ -1410,8 +1419,6 @@ class Game(object):
                     self.info(i.name, i.nx,i.ny)
 #                   self.text_image = self.font.render(i.name, True, self.text_colour)
                     return
-        #not hovering over anything, so clear info text
-        self.info_image = None
                 
     def _on_key_press(self, key):
         for i in self.menu:
@@ -1479,7 +1486,8 @@ class Game(object):
                     f.write("def load_state(game, scene):\n")
                     for name, obj in game.scene.objects.items():
                         slug = slugify(name).lower()
-                        f.write('    %s = game.items["%s"]\n'%(slug, name))
+                        txt = "actors" if type(obj) == Actor else "items"
+                        f.write('    %s = game.%s["%s"]\n'%(slug, txt, name))
                         f.write('    %s.rescale(%0.2f)\n'%(slug, obj.scale))
                         f.write('    %s.reanchor((%i, %i))\n'%(slug, obj._ax, obj._ay))
                         f.write('    %s.restand((%i, %i))\n'%(slug, obj.sx, obj.sy))
@@ -1547,6 +1555,22 @@ class Game(object):
                 game.menu_hide()
                 game.menu_fadeIn()                
 
+            def editor_scene(game, menuItem, player):
+                """ set up the collection object for scenes """
+                if hasattr(self, "e_scenes") and self.e_scenes: #existing collection
+                    e_scenes = self.e_scenes
+                else: #new object
+                    e_scenes = self.items["e_scenes"]
+                e_scenes.objects = {}
+                for i in game.scenes.values():
+                    if i.editable: e_scenes.objects[i.name] = i
+                game.menu_fadeOut()
+                game.menu_push() #hide and push old menu to storage
+                game.set_menu("e_close", "e_scenes")
+                game.menu_hide()
+                game.menu_fadeIn()                
+
+
             def editor_select_portal(game, collection, player):
                 """ select an scene from the collection and add to the scene as a portal """
                 m = pygame.mouse.get_pos()
@@ -1560,6 +1584,16 @@ class Game(object):
                     game.scene.add(obj)
                     editor_collection_close(game, collection, player)
                     game.set_editing(obj)
+
+            def editor_select_scene(game, collection, player):
+                """ select an scene from the collection and switch current scene to that scene """
+                m = pygame.mouse.get_pos()
+                mx,my = relative_position(game, collection, m)
+                scene = collection.get_object(m)
+                if not scene: return
+                game.camera.scene(scene)
+                game.player.relocate(scene)
+                editor_collection_close(game, collection, player)
                 
             def editor_collection_close(game, collection, player):
                 """ close an collection object in the editor, shared with e_portals and e_objects """
@@ -1572,19 +1606,20 @@ class Game(object):
             self.add(MenuItem("e_add", editor_add, (130, 10), (130,-50), "a").smart(self))
             self.add(MenuItem("e_prev", editor_prev, (170, 10), (170,-50), "[").smart(self))
             self.add(MenuItem("e_next", editor_next, (210, 10), (210,-50), "]").smart(self))
-            self.add(MenuItem("e_portal", editor_portal, (250, 10), (250,-50), "p").smart(self))
+            self.add(MenuItem("e_scene", editor_scene, (250, 10), (250,-50), "i").smart(self))
+            self.add(MenuItem("e_portal", editor_portal, (290, 10), (290,-50), "p").smart(self))
 
             #a collection widget for adding objects to a scene
             self.add(Collection("e_objects", editor_select_object, (300, 100), (300,-600), K_ESCAPE).smart(self))
-            self.add(MenuItem("e_close", editor_collection_close, (800, 600), (800,-100), K_ESCAPE).smart(self))
-            for i, v in enumerate(["location", "anchor", "stand", "scale", "walkarea", "talk"]):
-                self.add(MenuItem("e_%s"%v, editor_point, (100+i*30, 45), (100+i*30,-50), v[0]).smart(self))
-
             #collection widget for adding portals to other scenes
             self.add(Collection("e_portals", editor_select_portal, (300, 100), (300,-600), K_ESCAPE).smart(self))
-#            self.add(MenuItem("e_close", editor_collection_close, (800, 600), (800,-100), K_ESCAPE).smart(self))
+            #collection widget for selecting the scene to edit
+            self.add(Collection("e_scenes", editor_select_scene, (300, 100), (300,-600), K_ESCAPE).smart(self))
 
-            
+            #close button for all editor collections
+            self.add(MenuItem("e_close", editor_collection_close, (800, 600), (800,-100), K_ESCAPE).smart(self))
+            for i, v in enumerate(["location", "anchor", "stand", "scale", "walkarea", "talk"]):
+                self.add(MenuItem("e_%s"%v, editor_point, (100+i*30, 45), (100+i*30,-50), v[0]).smart(self))            
         
     def run(self, callback=None):
         parser = OptionParser()
@@ -1664,9 +1699,13 @@ class Game(object):
             m = pygame.mouse.get_pos()
             if type(self.mouse_cursor) == int: #use a mouse cursor image
                 mouse_image = self.mouse_cursors[self.mouse_cursor]
-            else: #use an object (actor or item) image
+            elif self.mouse_cursor != None: #use an object (actor or item) image
                 mouse_image = self.mouse_cursor.action.image
-            cursor_rect = self.screen.blit(mouse_image, m)
+            cursor_rect = self.screen.blit(mouse_image, (m[0]-15, m[1]-15))
+            #pt = m
+            #colour = (255,0,0)
+            #pygame.draw.line(self.screen, colour, (pt[0],pt[1]-5), (pt[0],pt[1]+5))
+            #pygame.draw.line(self.screen, colour, (pt[0]-5,pt[1]), (pt[0]+5,pt[1]))
             
             pygame.display.flip() #show updated display to user
             
@@ -1763,7 +1802,8 @@ class Game(object):
         obj.trigger_interact()
         self._event_finish()
         
-
+    def on_wait(self, seconds):
+        self._event_finish()
 
     def on_splash(self, image, callback, duration, immediately=False):
 #        """ show a splash screen then pass to callback after duration """
