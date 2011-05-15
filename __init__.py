@@ -732,7 +732,7 @@ class Actor(object):
             log.error("Unable to relocate %s to non-existent scene, relocating on current scene"%self.name)
             scene = self.game.scene
         if type(scene) == str:
-            if scene in self.game.scenes[scene]
+            if scene in self.game.scenes:
                 scene = self.game.scenes[scene]
             else:
                 log.error("Unable to relocate %s to non-existent scene %s, relocating on current scene"%(self.name, scene))
