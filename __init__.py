@@ -8,6 +8,7 @@ from itertools import chain
 from itertools import cycle
 import logging
 import logging.handlers
+from math import sqrt
 from new import instancemethod 
 from optparse import OptionParser
 import os
@@ -215,6 +216,12 @@ def load_image(fname):
     except:
         log.warning("unable to load image %s"%fname)
     return im
+
+def crosshair(screen, pt, colour=(255,100,100)):
+    """ draw a crosshair """
+    pygame.draw.line(screen, colour, (pt[0],pt[1]-5), (pt[0],pt[1]+5))
+    pygame.draw.line(screen, colour, (pt[0]-5,pt[1]), (pt[0]+5,pt[1]))
+    return Rect(pt[0]-5, pt[1]-5, 11,11)
         
 
 ##### generic helper functions ####
@@ -261,7 +268,7 @@ def get_function(basic):
 def editor_menu(game):
                 game.menu_fadeOut()
                 game.menu_push() #hide and push old menu to storage
-                game.set_menu("e_load", "e_save", "e_add", "e_prev", "e_next", "e_scene", "e_portal")
+                game.set_menu("e_load", "e_save", "e_add", "e_prev", "e_next", "e_walk", "e_scene", "e_portal")
                 game.menu_hide()
                 game.menu_fadeIn()
 
@@ -270,8 +277,11 @@ def editor_menu(game):
 def editor_point(game, menuItem, player):
     #click on an editor button for editing a point
     if type(menuItem) == str: menuItem = game.items[menuItem]
+    if type(game.editing) == WalkArea: return
     points = {"e_location": (game.editing.set_x, game.editing.set_y),
-                        "e_anchor": (game.editing.set_ax, game.editing.set_ay),
+              "e_anchor": (game.editing.set_ax, game.editing.set_ay),
+              "e_stand": (game.editing.set_sx, game.editing.set_sy),
+              "e_talk": (game.editing.set_tx, game.editing.set_ty),
                     }
     if menuItem.name in points:
         game.editing_point = points[menuItem.name]
@@ -279,6 +289,9 @@ def editor_point(game, menuItem, player):
         game.editing_point = None
 
 
+def editor_add_walkareapoint(game, menuItem, player):
+     if game.editing:
+            game.editing.polygon.vertexarray.append((512,316))
 
 #### pyvida classes ####
 
@@ -340,7 +353,33 @@ class Action(object):
         self.count = len(self.images)
         return self
 
- 
+
+class WalkArea(object):
+    """ Used by scenes to define where the player can walk """
+    def __init__(self, points=[]):
+        self.polygon = Polygon(points) #points in the walkarea
+        self.game = None
+        self.active = True
+        self._rect = None
+        self.editing_index = None #point in the polygon we are editing
+        
+    def smart(self, game, points=[(100,600),(900,560),(920,700),(80,720)]): #walkarea.smart
+        self.polygon = Polygon(points)
+        self.game = game
+        return self
+
+    def clear(self):
+        if self.active == False: return
+        if self._rect:
+            self.game.screen.blit(self.game.scene.background(), self._rect, self._rect)
+
+    def draw(self): #walkarea.draw
+        if self.game and self.game.editing and self.game.editing == self:
+            self._rect = pygame.draw.polygon(self.game.screen, (255,255,255), self.polygon.vertexarray, 1)
+            for pt in self.polygon.vertexarray:
+                pt_rect = crosshair(self.game.screen, pt, (200,0,255))
+                self._rect.union_ip(pt_rect)
+
 
 
 class Actor(object):
@@ -365,7 +404,7 @@ class Actor(object):
         self.inventory = {}
         self._scale = 1.0
         self.scene = None
-        self._walk_area = [0,0,0,0]
+#        self._walk_area = [0,0,0,0]
         self._solid_area = [0,0,0,0]
         self._clickable_area = [0,0,0,0]
         self._rect = None
@@ -389,11 +428,11 @@ class Actor(object):
     def set_y(self, y): self._y = y
     y = property(get_y, set_y)
     
-    def get_sx(self): return self._sx #stand points
+    def get_sx(self): return self._sx #+ self._x#stand points
     def set_sx(self, sx): self._sx = sx
     sx = property(get_sx, set_sx)
 
-    def get_sy(self): return self._sy 
+    def get_sy(self): return self._sy #+ self._y
     def set_sy(self, sy): self._sy = sy
     sy = property(get_sy, set_sy)
     
@@ -745,6 +784,11 @@ class Actor(object):
         self.game.stuff_event(scene.on_add, self)
         self._event_finish()
     
+    def moveto(self, delta):
+        """ move relative to the current position """
+        destination = (self.x + delta[0], self.y + delta[1])
+        self.on_goto(destination)
+    
     def on_goto(self, destination, block=True, modal=False, ignore=False):
         """
         ignore = [True|False] - ignore walkareas
@@ -756,7 +800,7 @@ class Actor(object):
         x,y = self._tx, self._ty = destination
         d = self.speed
         fuzz = 10
-        if self.game.testing == True: self.x, self.y = x, y #skip straight to point for testing
+        if self.game.testing == True or self.game.enabled_editor: self.x, self.y = x, y #skip straight to point for testing/editing
         if x - fuzz < self.x < x + fuzz and y - fuzz < self.y < y + fuzz:
             if "idle" in self.actions: self.action = self.actions['idle'] #XXX: magical variables, special cases, urgh
             if type(self) in [MenuItem, Collection]:
@@ -956,7 +1000,7 @@ class MenuItem(Actor):
         self.key = ord(key) if type(key)==str else key #bind menu item to a keyboard key
  #       else:
   #          self.key = None
-        self.sx, self.sy = spos
+        self.sx, self.sy = spos #use stand point for reentry point
         self.hx, self.hy = hpos #special hide point for menu items
         self.x, self.y = spos
 
@@ -1047,7 +1091,7 @@ class Scene(object):
         self.objects = {}
         self.game = None
         self._background = None
-        self.walkarea = None
+        self.walkareas = [] #a list of WalkArea objects
         self.cx, self.cy = 512,384 #camera pointing at position (center of screen)
         self.scales = {} #when an actor is added to this scene, what scale factor to apply? (from scene.scales)
         self.editable = True #will it appear in the editor (eg portals list)
@@ -1074,7 +1118,8 @@ class Scene(object):
             with open(scale_name, "r") as f:
                 actor, factor = f.readline().split("\t")
                 self.scales[actor] = float(factor)
-#        if walkarea != None:
+        if len(self.walkareas) == 0:
+            self.walkareas.append(WalkArea().smart(game))
 #            self.addWalkarea(walkarea)
 
         # if there is an initial state, load that automatically
@@ -1103,7 +1148,6 @@ class Scene(object):
 
     def _remove(self, obj):
         """ remove object from the scene """
-#        if obj.name == "spare uniform": import pdb; pdb.set_trace()
         obj.scene = None
         del self.objects[obj.name]
 #        self._event_finish()
@@ -1118,7 +1162,6 @@ class Scene(object):
         
     def on_add(self, obj): #scene.add
         """ removes obj from current scene it's in, adds to this scene """
-#        if obj.name == "spare uniform": import pdb; pdb.set_trace()
         if obj.scene:
             obj.scene._remove(obj)
         self.objects[obj.name] = obj
@@ -1169,8 +1212,9 @@ class Game(object):
     
     profiling = False 
     enabled_profiling = False
-    editing = None #which actor are we editing
-    editing_point = None
+    editing = None #which actor or walkarea are we editing
+    editing_point = None #which point are we editing
+    editing_objects = [] #which items or walkareas or points are we cycling/clicking on through
     enabled_editor = False
     testing = False
     
@@ -1324,12 +1368,16 @@ class Game(object):
         if player: self.player = player
         self._event_finish()
                 
-    def on_set_editing(self, obj):
+    def on_set_editing(self, obj, objects=None):
         if self.editing: #free up old object
             pass
         self.editing = obj
+        if objects: #maybe override with walkarea edit points
+            self.editing_objects = objects
+        elif self.scene:
+            self.editing_objects = self.scene.objects.values()
         if self.items["e_location"] not in self.menu:
-            mitems = ["e_location", "e_anchor", "e_stand", "e_scale", "e_walkarea", "e_talk"]
+            mitems = ["e_location", "e_anchor", "e_stand", "e_scale", "e_talk", "e_clickable", "e_add_walkareapoint"]
             self.set_menu(*mitems)
             self.menu_hide(mitems)
             self.menu_fadeIn()
@@ -1374,17 +1422,31 @@ class Game(object):
                 if i.actions.has_key('down'): i.action = i.actions['down']
                 i.trigger_interact() #always trigger interact on menu items
                 return
-        if self.enabled_editor and self.scene:
+        if self.enabled_editor and self.scene: #select edit point
             if self.editing_point: #finish editing object point
                 self.editing_point = None
                 return
-            for i in self.scene.objects.values():
-                if collide(i._rect, x, y):
-                    if i == self.editing: #assume want to move
-                        editor_point(self, "e_location", self.player)
-                    else:
-                        self.set_editing(i)
-                return
+            if self.editing and type(self.editing) == WalkArea: #perhaps finish move, or change point
+#                r = pygame.Rect(x-4,y-4,8,8)
+                if self.editing.editing_index != None: #move existing point
+#                    self.editing.polygon.vertexarray[self.editing.editing_index] = (x,y)
+                    self.editing.editing_index = None
+                    return
+                closest_distance = 10000.0
+                for i,pt in enumerate(self.editing.polygon.vertexarray): #possible select new point
+                    dist = sqrt( (pt[0] - x)**2 + (pt[1] - y)**2 )
+                    if dist<closest_distance:
+                        self.editing.editing_index = i
+                        closest_distance = dist
+                if self.editing.editing_index != None: return
+            else:        
+                for i in self.scene.objects.values():
+                    if collide(i._rect, x, y):
+                        if i == self.editing: #assume want to move
+                            editor_point(self, "e_location", self.player)
+                        else:
+                            self.set_editing(i)
+                    return
                 
         elif self.player and self.scene and self.player in self.scene.objects.values(): #regular game interaction
             for i in self.scene.objects.values(): #then objects in the scene
@@ -1404,6 +1466,9 @@ class Game(object):
             self.mouse_cursor = MOUSE_POINTER
         else:
             return
+        if self.editing and type(self.editing) == WalkArea and self.editing.editing_index != None: #move existing point
+            self.editing.polygon.vertexarray[self.editing.editing_index] = (x,y)
+
         if self.enabled_editor and self.editing_point:
             self.editing_point[0](x)
             if len(self.editing_point)>1: self.editing_point[1](y)
@@ -1490,18 +1555,28 @@ class Game(object):
                 with open(sfname, 'w') as f:
                     f.write("# generated by ingame editor v0.1\n\n")
                     f.write("def load_state(game, scene):\n")
+                    f.write('    from pyvida import WalkArea\n')
+                    f.write('    scene.walkareas = [')
+                    for w in game.scene.walkareas:
+                        walkarea = str(w.polygon.vertexarray)
+                        f.write('WalkArea().smart(game, %s),'%(walkarea))
+                    f.write(']\n')
                     for name, obj in game.scene.objects.items():
                         slug = slugify(name).lower()
                         txt = "actors" if type(obj) == Actor else "items"
                         f.write('    %s = game.%s["%s"]\n'%(slug, txt, name))
                         f.write('    %s.rescale(%0.2f)\n'%(slug, obj.scale))
                         f.write('    %s.reanchor((%i, %i))\n'%(slug, obj._ax, obj._ay))
-                        f.write('    %s.restand((%i, %i))\n'%(slug, obj.sx, obj.sy))
+                        f.write('    %s.restand((%i, %i))\n'%(slug, obj._sx, obj._sy))
                         f.write('    %s.retalk((%i, %i))\n'%(slug, obj.tx, obj.ty))
                         f.write('    %s.relocate(scene, (%i, %i))\n'%(slug, obj.x, obj.y))
                 
             def _editor_cycle(game, collection, player, v):
+                if type(game.editing) == WalkArea: game.editing = None #reset to scene objects
                 if game.scene and len(game.scene.objects)>0:
+  #                  if game.editing_objects:
+ #                       objects = game.editing_objects
+#                    else:    
                     objects = game.scene.objects.values()
                     if game.editing == None: game.editing = objects[0]
                     i = (objects.index(game.editing) + v)%len(objects)
@@ -1516,6 +1591,10 @@ class Game(object):
             def editor_prev(game, collection, player):
                 return _editor_cycle(game, collection, player, -1)
 
+            def editor_walk(game, menu_item, player):
+                """ start editing the scene's walkarea """
+                game.set_editing(game.scene.walkareas[0])
+                
 
             def editor_select_object(game, collection, player):
                 """ select an object from the collection and add to the scene """
@@ -1612,8 +1691,9 @@ class Game(object):
             self.add(MenuItem("e_add", editor_add, (130, 10), (130,-50), "a").smart(self))
             self.add(MenuItem("e_prev", editor_prev, (170, 10), (170,-50), "[").smart(self))
             self.add(MenuItem("e_next", editor_next, (210, 10), (210,-50), "]").smart(self))
-            self.add(MenuItem("e_scene", editor_scene, (250, 10), (250,-50), "i").smart(self))
+            self.add(MenuItem("e_walk", editor_walk, (250, 10), (250,-50), "w").smart(self))
             self.add(MenuItem("e_portal", editor_portal, (290, 10), (290,-50), "p").smart(self))
+            self.add(MenuItem("e_scene", editor_scene, (350, 10), (350,-50), "i").smart(self))
 
             #a collection widget for adding objects to a scene
             self.add(Collection("e_objects", editor_select_object, (300, 100), (300,-600), K_ESCAPE).smart(self))
@@ -1621,11 +1701,12 @@ class Game(object):
             self.add(Collection("e_portals", editor_select_portal, (300, 100), (300,-600), K_ESCAPE).smart(self))
             #collection widget for selecting the scene to edit
             self.add(Collection("e_scenes", editor_select_scene, (300, 100), (300,-600), K_ESCAPE).smart(self))
-
             #close button for all editor collections
             self.add(MenuItem("e_close", editor_collection_close, (800, 600), (800,-100), K_ESCAPE).smart(self))
-            for i, v in enumerate(["location", "anchor", "stand", "scale", "walkarea", "talk"]):
+            #add menu items for actor editor
+            for i, v in enumerate(["location", "anchor", "stand", "scale", "clickable", "talk"]):
                 self.add(MenuItem("e_%s"%v, editor_point, (100+i*30, 45), (100+i*30,-50), v[0]).smart(self))            
+            self.add(MenuItem("e_add_walkareapoint", editor_add_walkareapoint, (310, 45), (310,-50), v[0]).smart(self))            
         
     def run(self, callback=None):
         parser = OptionParser()
@@ -1684,6 +1765,7 @@ class Game(object):
             if self.scene and self.screen:
                 for group in blank:
                     for obj in group: obj.clear()
+                for w in self.scene.walkareas: w.clear() #clear walkarea if editing
 
             self.handle_pygame_events()
             self.handle_events()
@@ -1697,6 +1779,7 @@ class Game(object):
 #                menu_objects = sorted(self.menu, key=lambda x: x.y, reverse=False)
                 for group in [objects, self.menu, self.modals]:
                     for obj in group: obj.draw()
+                for w in self.scene.walkareas: w.draw() #draw walkarea if editing
                     
             #draw info text if available
             if self.info_image:
