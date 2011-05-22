@@ -166,6 +166,7 @@ def process_step(game, step):
     Emulate a mouse press event when game.test == True
     """
     #modals first, then menu, then regular objects
+    fail = False #walkthrough runner can force fail if conditions are bad
     function_name = step[0].__name__ 
     actor = step[1]
     actee = None
@@ -180,12 +181,19 @@ def process_step(game, step):
         actee = step[2]
         log.info("TEST SUITE: %s %s on %s"%(function_name, actor, actee))
         game.mouse_mode = MOUSE_USE
-        game.mouse_cursor = actee
+        if actee in game.items: 
+            actee = game.items[actee]
+        elif actee in game.actors:
+            actee = game.actors[actee]
+        else:
+            log.error("Can't do test suite trigger use, unable to find %s in game objects"%actee)
+            fail = True
+        if not fail: game.mouse_cursor = actee
     elif function_name == "location": #check current location matches scene "actor"
         if game.scene.name != actor:
             log.error("Current scene should be %s, but is currently %s"%(actor, game.scene.name))
         return
-    for i in game.modals:
+    for i in game.modals: #try modals first
         if actor == i.name:
             i.trigger_interact()
             return
@@ -194,12 +202,12 @@ def process_step(game, step):
             i.trigger_interact()
             return
 #    if actor == "spare uniform": import pdb; pdb.set_trace()
-    if game.scene:
+    if game.scene and fail == False:
         for i in game.scene.objects.values():
             if actor == i.name:
                 game._trigger(i)
                 return
-    log.error("Unable to find actor %s in modals, menu or current scene (%s) objects"%(actor, game.scene.name))
+    if not fail: log.error("Unable to find actor %s in modals, menu or current scene (%s) objects"%(actor, game.scene.name))
     game.errors += 1
     if game.errors == 2:
         game.log.warning("TEST SUITE SUGGESTS GAME HAS GONE OFF THE RAILS AT THIS POINT")
@@ -230,7 +238,7 @@ def crosshair(screen, pt, colour=(255,100,100)):
 def slugify(txt):
     """ slugify a piece of text """
     txt = txt.replace(" ", "_")
-    return txt.replace("'", "_")
+    return txt.replace("'", "")
 
 def collide(rect, x,y):
         """ text is point x,y is inside rectangle """
@@ -543,7 +551,12 @@ class Actor(object):
         #user actor on this actee
 #        log.warn("should look for def %s_use_%s"%(slugify(self.name),slugify(obj.name)))
 #        log.warn("using objects on %s not implemented"%self.name)
-         if type(actor) == str: actor = self.game.items[actor]
+         if type(actor) == str: 
+            if actor in self.game.items: actor = self.game.items[actor]
+            if actor in self.game.actors: actor = self.game.actors[actor]
+            if type(actor) == str: 
+                log.error("%s trigger use unable to find %s in game objects"%(self.name, actor))
+                return
          log.info("Player uses %s on %s"%(actor.name, self.name))
 #        if self.use: #if user has supplied a look override
 #           self.use(self.game, self, self.game.player)
