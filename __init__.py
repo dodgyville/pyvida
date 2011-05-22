@@ -770,6 +770,12 @@ class Actor(object):
         self._clickable_area = area
         self._event_finish(False)
 
+        
+    def on_resolid(self, area):
+        self._solid_area = area
+        self._event_finish(False)
+
+
     def on_reanchor(self, pt):
         """ queue event for changing the anchor points """
         self._ax, self._ay = pt[0], pt[1]
@@ -1088,7 +1094,7 @@ class Collection(MenuItem):
         #XXX padding not implemented, ratios not implemented
         sx,sy=20,20 #padding
         x,y = sx,sy
-        dx,dy=40,40
+        dx,dy=50,50
         if self.action:
             w,h = self.action.image.get_width(), self.action.image.get_height()
         else:
@@ -1099,9 +1105,15 @@ class Collection(MenuItem):
             img = i._image()
             if img:
                 iw, ih = img.get_width(), img.get_height()
- #               ratio = float(dx)/iw
-#                nw, nh = int(iw*ratio), int(ih*ratio)
-                img = pygame.transform.scale(img, (dx, dy))
+                ratio_w = float(dx)/iw
+                ratio_h = float(dy)/ih
+                nw1, nh1 = int(iw*ratio_w), int(ih*ratio_w)
+                nw2, nh2 = int(iw*ratio_h), int(ih*ratio_h)
+                if nh1>dy:
+                    ndx,ndy = nw2, nh2
+                else:
+                    ndx,ndy = nw1, nh1
+                img = pygame.transform.scale(img, (ndx, ndy))
                 r = img.get_rect().move(x+self.x, y+self.y)
                 i._cr = r #temporary collection values
                 self.game.screen.blit(img, r)
@@ -1300,7 +1312,8 @@ class Game(object):
         self.info_image = None
         self.info_position = None
         
-        self.fps = int(1000.0/50)  #12 fps
+        fps = 100 #normally 12 fps 
+        self.fps = int(1000.0/fps)
         
     def __getattr__(self, a):
         #only called as a last resort, so possibly set up a queue function
@@ -1607,7 +1620,13 @@ class Game(object):
         
             #setup editor menu
             def editor_load(game, menuItem, player):
-                log.debug("editor: load scene not implemented")
+                log.debug("editor: save scene not implemented")
+                print("What is the name of this state (no directory or .py)?")
+                state = raw_input(">")
+                if state=="": return
+#                sfname = os.path.join(self.scene_dir, os.path.join(self.scene.name, state))
+                self.load_state(game.scene, state)
+
 
             def editor_save(game, menuItem, player):
                 log.debug("editor: save scene not implemented")
@@ -1629,15 +1648,17 @@ class Game(object):
                         slug = slugify(name).lower()
                         txt = "actors" if type(obj) == Actor else "items"
                         f.write('    %s = game.%s["%s"]\n'%(slug, txt, name))
-                        f.write('    %s.reclickable(%s)\n'%(slug, str(obj._clickable_area)))
-                        f.write('    %s.resolid(%s)\n'%(slug, str(obj._solid_area)))                        
+                        r = obj._clickable_area
+                        f.write('    %s.reclickable(Rect(%s, %s, %s, %s))\n'%(slug, r.left, r.top, r.w, r.h))
+                        r = obj._solid_area
+                        f.write('    %s.resolid(%s)\n'%(slug, r.left, r.top, r.w, r.h))
                         f.write('    %s.rescale(%0.2f)\n'%(slug, obj.scale))
                         f.write('    %s.reanchor((%i, %i))\n'%(slug, obj._ax, obj._ay))
                         f.write('    %s.restand((%i, %i))\n'%(slug, obj._sx, obj._sy))
                         f.write('    %s.retalk((%i, %i))\n'%(slug, obj._tx, obj._ty))
                         f.write('    %s.relocate(scene, (%i, %i))\n'%(slug, obj.x, obj.y))
                         if obj == self.player:
-                            f.write('    scene.scales[%s] = %0.2f\n'%(name, obj.scale))
+                            f.write('    scene.scales["%s"] = %0.2f\n'%(name, obj.scale))
                     
             def _editor_cycle(game, collection, player, v):
                 if type(game.editing) == WalkArea: game.editing = None 
@@ -1738,7 +1759,12 @@ class Game(object):
                 mx,my = relative_position(game, collection, m)
                 scene = collection.get_object(m)
                 if not scene: return
-                obj = Portal("%s To %s"%(game.scene.name, scene.name))
+                name = "%s_To_%s"%(game.scene.name.title(), scene.name.title())
+                d = os.path.join(game.portal_dir, name)
+                if not os.path.exists(d):
+                    os.makedirs(d)
+                obj = Portal(name)
+                obj.game = game
                 if obj and game.scene:
                     obj.x, obj.y = 500,400
                     obj._editor_add_to_scene = True #let exported know this is new to this scene
@@ -1752,6 +1778,10 @@ class Game(object):
                 mx,my = relative_position(game, collection, m)
                 scene = collection.get_object(m)
                 if not scene: return
+                #reset editor
+                game.editing = None
+                game.editing_index = None
+                game.editing_point = None
                 game.camera.scene(scene)
                 game.player.relocate(scene)
                 editor_collection_close(game, collection, player)
@@ -1931,7 +1961,7 @@ class Game(object):
     def stuff_event(self, event, *args):
         """ stuff an event near the head of the queue """
         self.events.insert(0, (event, )+(args))
-        return args[0]
+        return args[0] if len(args)>0 else None
 
 
     def _event_finish(self, block=True): #Game.on_event_finish
