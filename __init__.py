@@ -276,6 +276,7 @@ def editor_menu(game):
 
 def editor_point(game, menuItem, player):
     #click on an editor button for editing a point
+    print("setting editor point")
     if type(menuItem) == str: menuItem = game.items[menuItem]
     if type(game.editing) == WalkArea: return
     points = {"e_location": (game.editing.set_x, game.editing.set_y),
@@ -285,7 +286,9 @@ def editor_point(game, menuItem, player):
                     }
     if menuItem.name in points:
         game.editing_point = points[menuItem.name]
+        print(game.editing_point)
     else:
+        print("unsetting editor point")
         game.editing_point = None
 
 
@@ -353,6 +356,7 @@ class Action(object):
         self.count = len(self.images)
         return self
 
+DEFAULT_WALKAREA = [(100,600),(900,560),(920,700),(80,720)]
 
 class WalkArea(object):
     """ Used by scenes to define where the player can walk """
@@ -361,9 +365,8 @@ class WalkArea(object):
         self.game = None
         self.active = True
         self._rect = None
-        self.editing_index = None #point in the polygon we are editing
         
-    def smart(self, game, points=[(100,600),(900,560),(920,700),(80,720)]): #walkarea.smart
+    def smart(self, game, points=DEFAULT_WALKAREA): #walkarea.smart
         self.polygon = Polygon(points)
         self.game = game
         return self
@@ -395,7 +398,6 @@ class Actor(object):
         
         self.font_speech = None    
         self._x, self._y = -1000,-1000  # place in scene, offscreen at start
-  #      self._x, self._y = 0,0
         self._sx, self._sy = 0,0    # stand point
         self._ax, self._ay = 0, 0   # displacement anchor point
         self._nx, self._ny = 0,0    # displacement point for name
@@ -404,9 +406,8 @@ class Actor(object):
         self.inventory = {}
         self._scale = 1.0
         self.scene = None
-#        self._walk_area = [0,0,0,0]
-        self._solid_area = [0,0,0,0]
-        self._clickable_area = [0,0,0,0]
+        self._solid_area = Rect(0,0,0,0)
+        self._clickable_area = Rect(0,0,0,0)
         self._rect = None
         self.game = None
         self.facts = []
@@ -417,8 +418,8 @@ class Actor(object):
         self.look = None #override queuing function for look
         self.hidden = False
     
-    def _event_finish(self): 
-        return self.game._event_finish()
+    def _event_finish(self, block=True): 
+        return self.game._event_finish(block)
 
     def get_x(self): return self._x #position
     def set_x(self, x): self._x = x
@@ -428,11 +429,11 @@ class Actor(object):
     def set_y(self, y): self._y = y
     y = property(get_y, set_y)
     
-    def get_sx(self): return self._sx #+ self._x#stand points
+    def get_sx(self): return self._sx + self._x#stand points
     def set_sx(self, sx): self._sx = sx
     sx = property(get_sx, set_sx)
 
-    def get_sy(self): return self._sy #+ self._y
+    def get_sy(self): return self._sy + self._y
     def set_sy(self, sy): self._sy = sy
     sy = property(get_sy, set_sy)
     
@@ -475,7 +476,15 @@ class Actor(object):
         self._scale = x
         for i in self.actions.values():
             i.scale = x
-    scale = property(get_scale, set_scale)    
+    scale = property(get_scale, set_scale)  
+    
+    @property
+    def clickable_area(self):
+        return self._clickable_area.move(self.ax, self.ay)
+
+    @property
+    def solid_area(self):
+        return self._solid_area.move(self.x, self.y)  
         
     def smart(self, game): #actor.smart
         """ smart actor load """
@@ -501,10 +510,12 @@ class Actor(object):
 #        try:
 #            self._image = pygame.image.load(os.path.join(d, "%s/idle.png"%self.name)).convert_alpha()
         if self.action and self.action.image:
-            self._clickable_area = self.action.image.get_rect().move(self.x, self.y)
+            r = self.action.image.get_rect()
+            self._clickable_area = Rect(0, 0, r.w, r.h)
+            log.debug("Setting %s _clickable area to %s"%(self.name, self._clickable_area))
         else:
-            log.error("%s %s smart load unable to get clickable area from action image"%(self.__class__, self.name))
-            self._clickable_area = Rect(self.x, self.y, 10, 10)
+            log.warning("%s %s smart load unable to get clickable area from action image, using default"%(self.__class__, self.name))
+            self._clickable_area = Rect(0, 0, 100, 120)
 #        except:
 #            log.warning("unable to load idle.png for %s"%self.name)
         log.debug("smart load %s %s clickable %s and actions %s"%(type(self), self.name, self._clickable_area, self.actions.keys()))
@@ -544,7 +555,6 @@ class Actor(object):
          slug_actee = slugify(self.name)
          basic = "%s_use_%s"%(slug_actee, slug_actor)
          script = get_function(basic)
-#         import pdb; pdb.set_trace()
          if script:
                 script(self.game, self, actor)
          else:
@@ -557,7 +567,6 @@ class Actor(object):
         """ find an interact function for this actor and call it """
 #        fn = self._get_interact()
  #       if self.interact: fn = self.interact
-#        if self.name == "e_objects": import pdb; pdb.set_trace()
         log.debug("player interact with %s"%self.name)
         self.game.mouse_mode = MOUSE_LOOK #reset mouse mode
         if self.interact: #if user has supplied an interact override
@@ -609,29 +618,35 @@ class Actor(object):
             img.set_alpha(self._alpha)
             r = img.get_rect().move(self.ax, self.ay)
 #            print("%s (%s, %s) %s"%(self.name, self.y, self._ay, self.ay))
-#            import pdb; pdb.set_trace()
             self._rect = self.game.screen.blit(img, r)
-            if self.game.editing == self:
-                #draw bounding box
+            if self.game.editing == self: #draw bounding box
                 r2 = r.inflate(-2,-2)
                 pygame.draw.rect(self.game.screen, (0,255,0), r2, 2)
+        else:
+            self._rect = pygame.Rect(self.x, self.y,0,0)
             
         if self.game and self.game.editing and self.game.editing == self:
-                #draw point
-                self._crosshair((0,0,255), (self.x, self.y))
-                stats = self.game.debug_font.render("%0.2f, %0.2f"%(self.x, self.y+12), True, (255,155,0))
-                edit_rect = self.game.screen.blit(stats, stats.get_rect().move(self.x, self.y))
-                if self._rect: self._rect.union_ip(edit_rect)
+            if type(self.game.editing_point) == str: #edit a rect
+               r = getattr(self, self.game.editing_point, None)
+               if r:
+                   edit_rect = pygame.draw.rect(self.game.screen, (200,150,180), r, 2)
+                   self._rect.union_ip(edit_rect)
                 
-                #draw anchor point
-                ax,ay=self.ax, self.ay
-                self._crosshair((255,0,0), (ax-self.x, ay-self.y))
-                stats = self.game.debug_font.render("%0.2f, %0.2f"%(ax-self.x, ay-self.y), True, (255,155,0))
-                edit_rect = self.game.screen.blit(stats, stats.get_rect().move(ax, ay))
-                if self._rect: self._rect.union_ip(edit_rect)
+            #draw location point
+            self._crosshair((0,0,255), (self.x, self.y))
+            stats = self.game.debug_font.render("%0.2f, %0.2f"%(self.x, self.y+12), True, (255,155,0))
+            edit_rect = self.game.screen.blit(stats, stats.get_rect().move(self.x, self.y))
+            self._rect.union_ip(edit_rect)
+            
+            #draw anchor point
+            ax,ay=self.ax, self.ay
+            self._crosshair((255,0,0), (ax-self.x, ay-self.y))
+            stats = self.game.debug_font.render("%0.2f, %0.2f"%(ax-self.x, ay-self.y), True, (255,155,0))
+            edit_rect = self.game.screen.blit(stats, stats.get_rect().move(ax, ay))
+            self._rect.union_ip(edit_rect)
                 
 
-    def _update(self, dt):
+    def _update(self, dt): #actor.update
         """ update this actor within the game """
         if self.hidden: return
         l = len(self._motion_queue)
@@ -648,7 +663,7 @@ class Actor(object):
  #           ax,ay=self.ax*self.action.scale, self.ay*self.action.scale
   #      else:
    #         ax,ay=self.ax, self.ay
-        self._clickable_area = Rect(self.ax, self.ay, self._clickable_area[2]*self.scale, self._clickable_area[3]*self.scale)
+#        self._clickable_area = Rect(self.ax, self.ay, self._clickable_area[2]*self.scale, self._clickable_area[3]*self.scale)
         if self._alpha > self._alpha_target: self._alpha -= 1
         if self._alpha < self._alpha_target: self._alpha += 1
         if self.action: self.action.update(dt)
@@ -656,7 +671,8 @@ class Actor(object):
             self.update(dt)
         
     def collide(self, x,y):
-        return collide(self._clickable_area, x, y)
+        return self.clickable_area.collidepoint(x,y)
+#        return collide(self._clickable_area, x, y)
         
     def on_animation_mode(self, action, mode):
         """ set the animation mode on this action """
@@ -744,26 +760,29 @@ class Actor(object):
     def on_show(self):
         self.hidden = False
         self._event_finish()
-        
+
     def on_rescale(self, scale):
         self.scale = scale
-        self._event_finish()
+        self._event_finish(False)
+        
+    def on_reclickable(self, area):
+        self._clickable_area = area
+        self._event_finish(False)
 
     def on_reanchor(self, pt):
         """ queue event for changing the anchor points """
         self._ax, self._ay = pt[0], pt[1]
-        self._event_finish()
+        self._event_finish(False)
 
     def on_retalk(self, pt):
         """ queue event for changing the talk anchor points """
-#        self.ax, self.ay = pt[0], pt[1]
-        log.warning("object.retalk not implemented, talk anchor points non-existent")
-        self._event_finish()
+        self._nx, self._ny = pt[0], pt[1]
+        self._event_finish(False)
 
     def on_restand(self, pt):
         """ queue event for changing the stand points """
-        self.sx, self.sy = pt[0], pt[1]
-        self._event_finish()
+        self._sx, self._sy = pt[0], pt[1]
+        self._event_finish(False)
 
     def on_relocate(self, scene, destination=None):
         # """ relocate this actor to scene at destination instantly """ 
@@ -1061,7 +1080,6 @@ class Collection(MenuItem):
             w,h = 0, 0
             log.warning("Collection %s missing an action"%self.name)
         show = self.objects.values()[self.index:]
-#        import pdb; pdb.set_trace()
         for i in show:
             img = i._image()
             if img:
@@ -1096,8 +1114,8 @@ class Scene(object):
         self.scales = {} #when an actor is added to this scene, what scale factor to apply? (from scene.scales)
         self.editable = True #will it appear in the editor (eg portals list)
 
-    def _event_finish(self): 
-        return self.game._event_finish()
+    def _event_finish(self, block=True): 
+        return self.game._event_finish(block)
 
     def smart(self, game): #scene.smart
         """ smart scene load """
@@ -1199,6 +1217,9 @@ class Camera(object):
         log.error("camera.fade_in not implement yet")
         self.game._event_finish()
 
+
+EDIT_CLICKABLE = "clickable_area"
+EDIT_SOLID = "solid_area"
         
 @use_init_variables
 class Game(object):
@@ -1213,8 +1234,9 @@ class Game(object):
     profiling = False 
     enabled_profiling = False
     editing = None #which actor or walkarea are we editing
-    editing_point = None #which point are we editing
-    editing_objects = [] #which items or walkareas or points are we cycling/clicking on through
+    editing_point = None #which point or rect are we editing
+    editing_index = None #point in the polygon or rect we are editing
+    
     enabled_editor = False
     testing = False
     
@@ -1249,6 +1271,7 @@ class Game(object):
         self.menu = [] 
         self._menus = [] #a stack of menus 
         self.modals = []
+        self.menu_mouse_pressed = False #stop editor from using menu clicks as edit flags
 
         self.mouse_mode = MOUSE_LOOK #what activity does a mouse click trigger?
         self.mouse_cursors = {} #available mouse images
@@ -1369,19 +1392,13 @@ class Game(object):
         self._event_finish()
                 
     def on_set_editing(self, obj, objects=None):
-        if self.editing: #free up old object
-            pass
         self.editing = obj
-        if objects: #maybe override with walkarea edit points
-            self.editing_objects = objects
-        elif self.scene:
-            self.editing_objects = self.scene.objects.values()
         if self.items["e_location"] not in self.menu:
             mitems = ["e_location", "e_anchor", "e_stand", "e_scale", "e_talk", "e_clickable", "e_add_walkareapoint"]
             self.set_menu(*mitems)
             self.menu_hide(mitems)
             self.menu_fadeIn()
-        self._event_finish()
+        self._event_finish(False)
             
     def toggle_editor(self):
             if self.enabled_editor:  #switch off editor
@@ -1407,7 +1424,39 @@ class Game(object):
            self.mouse_cursor = MOUSE_POINTER
            self.mouse_mode = MOUSE_LOOK
 
-    def _on_mouse_press(self, x, y, button, modifiers): #single button interface
+    def _on_mouse_down(self, x, y, button, modifiers): #single button interface
+#        if self.menu_mouse_pressed == True: return
+#        import pdb; pdb.set_trace()
+        if self.enabled_editor and self.scene: #select edit point
+            if self.editing and type(self.editing) == WalkArea: #select point in walkarea to change
+                closest_distance = 10000.0
+                for i,pt in enumerate(self.editing.polygon.vertexarray): #possible select new point
+                    dist = sqrt( (pt[0] - x)**2 + (pt[1] - y)**2 )
+                    if dist<closest_distance:
+                        self.editing_index = i
+                        closest_distance = dist
+                if self.editing_index != None: return
+            elif self.editing and type(self.editing_point) == str: #editing a rect
+                closest_distance = 10000.0
+                r = getattr(self.editing, self.editing_point, None)
+                for i,pt in enumerate([(r.left, r.top), (r.right, r.bottom)]): #possible select new point
+                    dist = sqrt( (pt[0] - x)**2 + (pt[1] - y)**2 )
+                    if dist<closest_distance:
+                        self.editing_index = i
+                        closest_distance = dist
+                if self.editing_index != None: return
+            else:        #edit single point (eg location, stand, anchor) 
+                self.editing_index = 0 #must be not-None to trigger drag
+            
+ #               for i in self.scene.objects.values():
+  #                  if collide(i._rect, x, y):
+   #                     if i == self.editing: #assume want to move
+    #                        editor_point(self, "e_location", self.player)
+     #                   else:
+      #                      self.set_editing(i)
+       #             return
+
+    def _on_mouse_up(self, x, y, button, modifiers): #single button interface
  #       btn1, btn2, btn3 = pygame.mouse.get_pressed()
 #        import pdb; pdb.set_trace()
         if button==0: self.mouse_mode = MOUSE_INTERACT
@@ -1421,32 +1470,16 @@ class Game(object):
             if i.collide(x,y):
                 if i.actions.has_key('down'): i.action = i.actions['down']
                 i.trigger_interact() #always trigger interact on menu items
+                self.menu_mouse_pressed = True
                 return
-        if self.enabled_editor and self.scene: #select edit point
-            if self.editing_point: #finish editing object point
-                self.editing_point = None
+#        self.menu_mouse_pressed = False
+                
+        if self.enabled_editor and self.scene: #finish edit point or rect or walkarea point
+            if self.editing: #finish move
+#                self.editing_point = None
+                self.editing_index = None
+#                print("unsetting editor point")
                 return
-            if self.editing and type(self.editing) == WalkArea: #perhaps finish move, or change point
-#                r = pygame.Rect(x-4,y-4,8,8)
-                if self.editing.editing_index != None: #move existing point
-#                    self.editing.polygon.vertexarray[self.editing.editing_index] = (x,y)
-                    self.editing.editing_index = None
-                    return
-                closest_distance = 10000.0
-                for i,pt in enumerate(self.editing.polygon.vertexarray): #possible select new point
-                    dist = sqrt( (pt[0] - x)**2 + (pt[1] - y)**2 )
-                    if dist<closest_distance:
-                        self.editing.editing_index = i
-                        closest_distance = dist
-                if self.editing.editing_index != None: return
-            else:        
-                for i in self.scene.objects.values():
-                    if collide(i._rect, x, y):
-                        if i == self.editing: #assume want to move
-                            editor_point(self, "e_location", self.player)
-                        else:
-                            self.set_editing(i)
-                    return
                 
         elif self.player and self.scene and self.player in self.scene.objects.values(): #regular game interaction
             for i in self.scene.objects.values(): #then objects in the scene
@@ -1465,13 +1498,25 @@ class Game(object):
         if self.mouse_mode != MOUSE_USE: #only update the mouse if not in "use" mode
             self.mouse_cursor = MOUSE_POINTER
         else:
+            print("exit move")
             return
-        if self.editing and type(self.editing) == WalkArea and self.editing.editing_index != None: #move existing point
-            self.editing.polygon.vertexarray[self.editing.editing_index] = (x,y)
-
-        if self.enabled_editor and self.editing_point:
-            self.editing_point[0](x)
-            if len(self.editing_point)>1: self.editing_point[1](y)
+        if self.editing and type(self.editing) == WalkArea and self.editing_index != None: #move walkarea point
+            self.editing.polygon.vertexarray[self.editing_index] = (x,y)
+        elif self.editing and self.editing_index !=None: #move point
+            if type(self.editing_point) == str:  #moving a rect point
+                r = getattr(self.editing, "_%s"%self.editing_point, None) #base relative to object
+                r2 = getattr(self.editing, self.editing_point, None) #relative to screen
+                if r:
+                    if self.editing_index == 0:
+                        r.left = x - self.editing._x
+                        r.top = y - self.editing._y
+                    else:
+                        r.w = x - r2.x
+                        r.h = y - r2.y
+#                        r.inflate_ip(r.w - self._x, r. - self._y)
+            elif self.editing_point != None: #move single point
+                self.editing_point[0](x)
+                if len(self.editing_point)>1: self.editing_point[1](y)
             return
         for i in self.menu: #then menu
             if i.collide(x,y):
@@ -1507,8 +1552,10 @@ class Game(object):
             if event.type == QUIT:
                 self.quit = True
                 return
+            elif event.type == MOUSEBUTTONDOWN:
+                self._on_mouse_down(m[0], m[1], btn1, None)
             elif event.type == MOUSEBUTTONUP:
-                self._on_mouse_press(m[0], m[1], btn1, None)
+                self._on_mouse_up(m[0], m[1], btn1, None)
             elif event.type == KEYDOWN:
                 self._on_key_press(event.key)
         self._on_mouse_move(m[0], m[1], btn1, None)
@@ -1565,6 +1612,7 @@ class Game(object):
                         slug = slugify(name).lower()
                         txt = "actors" if type(obj) == Actor else "items"
                         f.write('    %s = game.%s["%s"]\n'%(slug, txt, name))
+                        f.write('    %s.reclickable(%s)'%obj._clickable_area)
                         f.write('    %s.rescale(%0.2f)\n'%(slug, obj.scale))
                         f.write('    %s.reanchor((%i, %i))\n'%(slug, obj._ax, obj._ay))
                         f.write('    %s.restand((%i, %i))\n'%(slug, obj._sx, obj._sy))
@@ -1574,9 +1622,6 @@ class Game(object):
             def _editor_cycle(game, collection, player, v):
                 if type(game.editing) == WalkArea: game.editing = None #reset to scene objects
                 if game.scene and len(game.scene.objects)>0:
-  #                  if game.editing_objects:
- #                       objects = game.editing_objects
-#                    else:    
                     objects = game.scene.objects.values()
                     if game.editing == None: game.editing = objects[0]
                     i = (objects.index(game.editing) + v)%len(objects)
@@ -1595,6 +1640,14 @@ class Game(object):
                 """ start editing the scene's walkarea """
                 game.set_editing(game.scene.walkareas[0])
                 
+            def editor_edit_rect(game, menu_item, player):
+                if not game.editing:
+                    return
+                rects = { #which rects we can edit in editor
+                    'e_clickable': EDIT_CLICKABLE,
+                    'e_solid': EDIT_SOLID,
+                }
+                game.editing_point = rects[menu_item.name]
 
             def editor_select_object(game, collection, player):
                 """ select an object from the collection and add to the scene """
@@ -1706,6 +1759,7 @@ class Game(object):
             #add menu items for actor editor
             for i, v in enumerate(["location", "anchor", "stand", "scale", "clickable", "talk"]):
                 self.add(MenuItem("e_%s"%v, editor_point, (100+i*30, 45), (100+i*30,-50), v[0]).smart(self))            
+            self.items['e_clickable'].interact = editor_edit_rect
             self.add(MenuItem("e_add_walkareapoint", editor_add_walkareapoint, (310, 45), (310,-50), v[0]).smart(self))            
         
     def run(self, callback=None):
@@ -1857,11 +1911,11 @@ class Game(object):
         return args[0]
 
 
-    def _event_finish(self): #Game.on_event_finish
+    def _event_finish(self, block=True): #Game.on_event_finish
         """ start the next event in the game scripter """
 #        log.debug("finished event %s, remaining:"%(self._event, self.events)
         self._event = None
-#        self.handle_events()
+        if block==False: self.handle_events()
     
     def walkthroughs(self, suites):
         """ use test suites to enable jumping forward """
