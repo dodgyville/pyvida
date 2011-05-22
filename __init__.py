@@ -276,7 +276,6 @@ def editor_menu(game):
 
 def editor_point(game, menuItem, player):
     #click on an editor button for editing a point
-    print("setting editor point")
     if type(menuItem) == str: menuItem = game.items[menuItem]
     if type(game.editing) == WalkArea: return
     points = {"e_location": (game.editing.set_x, game.editing.set_y),
@@ -286,9 +285,7 @@ def editor_point(game, menuItem, player):
                     }
     if menuItem.name in points:
         game.editing_point = points[menuItem.name]
-        print(game.editing_point)
     else:
-        print("unsetting editor point")
         game.editing_point = None
 
 
@@ -430,11 +427,11 @@ class Actor(object):
     y = property(get_y, set_y)
     
     def get_sx(self): return self._sx + self._x#stand points
-    def set_sx(self, sx): self._sx = sx
+    def set_sx(self, sx): self._sx = sx - self._x
     sx = property(get_sx, set_sx)
 
     def get_sy(self): return self._sy + self._y
-    def set_sy(self, sy): self._sy = sy
+    def set_sy(self, sy): self._sy = sy - self._y
     sy = property(get_sy, set_sy)
     
     def get_tx(self): return self._tx #travel points
@@ -505,7 +502,6 @@ class Actor(object):
             if type(self) == Actor and action_name=="idle":
                 self._ax = int(action.image.get_width()/2)
                 self._ay = int(action.image.get_height() * 0.85)            
-#                print("setting %s ax, ay: (%s, %s) x,y:(%s, %s)"%(self.name, self.ax, self.ay, self.x, self.y))
         if self.action == None and len(self.actions)>0: self.action = self.actions.values()[0] #or default to first loaded
 #        try:
 #            self._image = pygame.image.load(os.path.join(d, "%s/idle.png"%self.name)).convert_alpha()
@@ -583,7 +579,6 @@ class Actor(object):
 
 
     def clear(self):
-#        print(self._image.get_rect())
 #        self.game.screen.blit(self.game.scene.background(), (self.x, self.y), self._image.get_rect())
         if self._rect:
             self.game.screen.blit(self.game.scene.background(), self._rect, self._rect)
@@ -617,33 +612,39 @@ class Actor(object):
                 img = pygame.transform.smoothscale(img, (w, h))
             img.set_alpha(self._alpha)
             r = img.get_rect().move(self.ax, self.ay)
-#            print("%s (%s, %s) %s"%(self.name, self.y, self._ay, self.ay))
             self._rect = self.game.screen.blit(img, r)
             if self.game.editing == self: #draw bounding box
                 r2 = r.inflate(-2,-2)
                 pygame.draw.rect(self.game.screen, (0,255,0), r2, 2)
         else:
             self._rect = pygame.Rect(self.x, self.y,0,0)
-            
+        
+        #draw the edit overlay    
         if self.game and self.game.editing and self.game.editing == self:
-            if type(self.game.editing_point) == str: #edit a rect
-               r = getattr(self, self.game.editing_point, None)
-               if r:
-                   edit_rect = pygame.draw.rect(self.game.screen, (200,150,180), r, 2)
-                   self._rect.union_ip(edit_rect)
+            self._rect.union_ip(pygame.draw.rect(self.game.screen, (200,150,180), self.clickable_area, 2))
+            self._rect.union_ip(pygame.draw.rect(self.game.screen, (100,150,180), self.clickable_area, 2))
                 
             #draw location point
-            self._crosshair((0,0,255), (self.x, self.y))
+            self._rect.union_ip(crosshair(self.game.screen, (self.x, self.y), (0,0,255)))
             stats = self.game.debug_font.render("%0.2f, %0.2f"%(self.x, self.y+12), True, (255,155,0))
             edit_rect = self.game.screen.blit(stats, stats.get_rect().move(self.x, self.y))
             self._rect.union_ip(edit_rect)
             
             #draw anchor point
-            ax,ay=self.ax, self.ay
-            self._crosshair((255,0,0), (ax-self.x, ay-self.y))
-            stats = self.game.debug_font.render("%0.2f, %0.2f"%(ax-self.x, ay-self.y), True, (255,155,0))
-            edit_rect = self.game.screen.blit(stats, stats.get_rect().move(ax, ay))
-            self._rect.union_ip(edit_rect)
+            self._rect.union_ip(crosshair(self.game.screen, (self.ax, self.ay), (255,0,0)))
+            stats = self.game.debug_font.render("%0.2f, %0.2f"%(self._ax, self._ay), True, (255,155,0))
+            self._rect.union_ip(self.game.screen.blit(stats, stats.get_rect().move(self.ax, self.ay)))
+
+            #draw stand point
+            self._rect.union_ip(crosshair(self.game.screen, (self.sx, self.sy), (255,0,0)))
+            stats = self.game.debug_font.render("%0.2f, %0.2f"%(self._sx, self._sy), True, (205,155,100))
+            self._rect.union_ip(self.game.screen.blit(stats, stats.get_rect().move(self.sx, self.sy)))
+
+            #draw name/text point
+            self._rect.union_ip(crosshair(self.game.screen, (self.nx, self.ny), (255,0,0)))
+            stats = self.game.debug_font.render("%0.2f, %0.2f"%(self._nx, self._ny), True, (255,155,255))
+            self._rect.union_ip(self.game.screen.blit(stats, stats.get_rect().move(self.nx, self.ny)))
+
                 
 
     def _update(self, dt): #actor.update
@@ -814,7 +815,7 @@ class Actor(object):
         """
         if type(destination) == str:
             destination = (self.game.actors[destination].sx, self.game.actors[destination].sy)
-        elif type(destination) == object:
+        elif type(destination) != tuple:
             destination = (destination.sx, destination.sy)
         x,y = self._tx, self._ty = destination
         d = self.speed
@@ -825,7 +826,6 @@ class Actor(object):
             if type(self) in [MenuItem, Collection]:
                 self.x, self.y = self._tx, self._ty
             log.debug("actor %s has arrived at %s"%(self.name, destination))
-#            print("%s %s %s %s %f"%(self.x, self.y, self.ax, self.ay, self.scale))
             self.game._event_finish() #signal to game event queue this event is done
         else: #try to follow the path
             dx = int((x - self.x) / 3)
@@ -890,12 +890,21 @@ class Item(Actor):
         
 
 class Portal(Item):
+    __metaclass__ = use_on_events
     def __init__(self, *args, **kwargs):
         Actor.__init__(self, *args, **kwargs)
         self.link = None #which Portal does it link to?
-        self.ox, self.oy = 0,0 #outpoint
+        self._ox, self._oy = 0,0 #outpoint
 #        self.interact = self._interact_default
 #        self.look = self._look
+
+    def get_oy(self): return self._oy + self._y
+    def set_oy(self, oy): self._oy = oy - self._oy
+    oy = property(get_oy, set_oy)
+
+    def get_ox(self): return self._ox + self._x
+    def set_ox(self, ox): self._ox = ox - self._ox
+    ox = property(get_ox, set_ox)
 
 #    def draw(self):
  #       """ portals are invisible """
@@ -908,6 +917,12 @@ class Portal(Item):
 
 #    def _look(self, game, tmat, player):
  #       return self.travel()
+
+    def on_reout(self, pt):
+        """ queue event for changing the portal out points """
+        self._ox, self._oy = pt[0], pt[1]
+        self._event_finish(False)
+
         
     def travel(self):
         """ default interact method for a portal, march player through portal and change scene """
@@ -1019,9 +1034,9 @@ class MenuItem(Actor):
         self.key = ord(key) if type(key)==str else key #bind menu item to a keyboard key
  #       else:
   #          self.key = None
-        self.sx, self.sy = spos #use stand point for reentry point
-        self.hx, self.hy = hpos #special hide point for menu items
         self.x, self.y = spos
+        self.in_x, self.in_y = spos #special in point reentry point
+        self.out_x, self.out_y = hpos #special hide point for menu items
 
 class Collection(MenuItem):
     """ 
@@ -1184,8 +1199,8 @@ class Scene(object):
             obj.scene._remove(obj)
         self.objects[obj.name] = obj
         obj.scene = self
-        if obj.name.lower() in self.scales.keys():
-            obj.scale = self.scales[obj.name.lower()]
+        if obj.name in self.scales.keys():
+            obj.scale = self.scales[obj.name]
         log.debug("Add %s to scene %s"%(obj.name, self.name))
         self._event_finish()
 
@@ -1285,7 +1300,7 @@ class Game(object):
         self.info_image = None
         self.info_position = None
         
-        self.fps = int(1000.0/24)  #12 fps
+        self.fps = int(1000.0/50)  #12 fps
         
     def __getattr__(self, a):
         #only called as a last resort, so possibly set up a queue function
@@ -1324,7 +1339,7 @@ class Game(object):
             if isinstance(obj, Scene):
                 self.scenes[obj.name] = obj
             elif type(obj) in [MenuItem, Collection]: #menu items are stored in items
-                obj.x, obj.y = obj.hx, obj.hy #menu starts hidden by default
+                obj.x, obj.y = obj.out_x, obj.out_y #menu starts hidden by default
                 self.items[obj.name] = obj
             elif isinstance(obj, ModalItem):
                 self.modals.append(obj)
@@ -1415,6 +1430,7 @@ class Game(object):
 
     def _trigger(self, obj):
         """ trigger use, look or interact, depending on mouse_mode """
+        if self.player: self.player.goto(obj)
         if self.mouse_mode == MOUSE_LOOK:
            obj.trigger_look()
         elif self.mouse_mode == MOUSE_INTERACT:
@@ -1427,6 +1443,9 @@ class Game(object):
     def _on_mouse_down(self, x, y, button, modifiers): #single button interface
 #        if self.menu_mouse_pressed == True: return
 #        import pdb; pdb.set_trace()
+        for i in self.menu: 
+            if i.collide(x,y): return #let mouse_up have a go at menu
+
         if self.enabled_editor and self.scene: #select edit point
             if self.editing and type(self.editing) == WalkArea: #select point in walkarea to change
                 closest_distance = 10000.0
@@ -1478,7 +1497,6 @@ class Game(object):
             if self.editing: #finish move
 #                self.editing_point = None
                 self.editing_index = None
-#                print("unsetting editor point")
                 return
                 
         elif self.player and self.scene and self.player in self.scene.objects.values(): #regular game interaction
@@ -1498,7 +1516,6 @@ class Game(object):
         if self.mouse_mode != MOUSE_USE: #only update the mouse if not in "use" mode
             self.mouse_cursor = MOUSE_POINTER
         else:
-            print("exit move")
             return
         if self.editing and type(self.editing) == WalkArea and self.editing_index != None: #move walkarea point
             self.editing.polygon.vertexarray[self.editing_index] = (x,y)
@@ -1602,7 +1619,7 @@ class Game(object):
                 with open(sfname, 'w') as f:
                     f.write("# generated by ingame editor v0.1\n\n")
                     f.write("def load_state(game, scene):\n")
-                    f.write('    from pyvida import WalkArea\n')
+                    f.write('    from pyvida import WalkArea, Rect\n')
                     f.write('    scene.walkareas = [')
                     for w in game.scene.walkareas:
                         walkarea = str(w.polygon.vertexarray)
@@ -1612,15 +1629,21 @@ class Game(object):
                         slug = slugify(name).lower()
                         txt = "actors" if type(obj) == Actor else "items"
                         f.write('    %s = game.%s["%s"]\n'%(slug, txt, name))
-                        f.write('    %s.reclickable(%s)'%obj._clickable_area)
+                        f.write('    %s.reclickable(%s)\n'%(slug, str(obj._clickable_area)))
+                        f.write('    %s.resolid(%s)\n'%(slug, str(obj._solid_area)))                        
                         f.write('    %s.rescale(%0.2f)\n'%(slug, obj.scale))
                         f.write('    %s.reanchor((%i, %i))\n'%(slug, obj._ax, obj._ay))
                         f.write('    %s.restand((%i, %i))\n'%(slug, obj._sx, obj._sy))
-                        f.write('    %s.retalk((%i, %i))\n'%(slug, obj.tx, obj.ty))
+                        f.write('    %s.retalk((%i, %i))\n'%(slug, obj._tx, obj._ty))
                         f.write('    %s.relocate(scene, (%i, %i))\n'%(slug, obj.x, obj.y))
-                
+                        if obj == self.player:
+                            f.write('    scene.scales[%s] = %0.2f\n'%(name, obj.scale))
+                    
             def _editor_cycle(game, collection, player, v):
-                if type(game.editing) == WalkArea: game.editing = None #reset to scene objects
+                if type(game.editing) == WalkArea: game.editing = None 
+                #reset to scene objects
+                game.editing_point = None
+                game.editing_index = None
                 if game.scene and len(game.scene.objects)>0:
                     objects = game.scene.objects.values()
                     if game.editing == None: game.editing = objects[0]
@@ -1758,7 +1781,7 @@ class Game(object):
             self.add(MenuItem("e_close", editor_collection_close, (800, 600), (800,-100), K_ESCAPE).smart(self))
             #add menu items for actor editor
             for i, v in enumerate(["location", "anchor", "stand", "scale", "clickable", "talk"]):
-                self.add(MenuItem("e_%s"%v, editor_point, (100+i*30, 45), (100+i*30,-50), v[0]).smart(self))            
+                self.add(MenuItem("e_%s"%v, editor_point, (100+i*30, 45), (100+i*30,-50), v[0]).smart(self))
             self.items['e_clickable'].interact = editor_edit_rect
             self.add(MenuItem("e_add_walkareapoint", editor_add_walkareapoint, (310, 45), (310,-50), v[0]).smart(self))            
         
@@ -2004,7 +2027,7 @@ class Game(object):
 
     def on_menu_fadeOut(self): 
         """ animate hiding the menu """
-        for i in reversed(self.menu): self.stuff_event(i.on_goto, (i.hx,i.hy))
+        for i in reversed(self.menu): self.stuff_event(i.on_goto, (i.out_x,i.out_y))
         log.debug("fadeOut menu using goto %s"%[x.name for x in self.menu])
         self._event_finish()
         
@@ -2014,20 +2037,20 @@ class Game(object):
             menu_items = self.menu
         for i in menu_items:
             if type(i) == str: i = self.items[i]
-            self.stuff_event(i.on_place, (i.hx,i.hy))
+            self.stuff_event(i.on_place, (i.out_x, i.out_y))
         log.debug("hide menu using place %s"%[x.name for x in self.menu])
         self._event_finish()
 
     def on_menu_show(self):
         """ show the menu """
-        for i in self.menu: self.stuff_event(i.on_place, (i.sx,i.sy))
+        for i in self.menu: self.stuff_event(i.on_place, (i.in_x,i.in_y))
         log.debug("show menu using place %s"%[x.name for x in self.menu])
         self._event_finish()
         
     def on_menu_fadeIn(self): 
         """ animate showing the menu """
         log.debug("fadeIn menu, telling items to goto %s"%[x.name for x in self.menu])
-        for i in reversed(self.menu): self.stuff_event(i.on_goto, (i.sx,i.sy))
+        for i in reversed(self.menu): self.stuff_event(i.on_goto, (i.in_x,i.in_y))
         self._event_finish()
         
     def on_menu_push(self):
