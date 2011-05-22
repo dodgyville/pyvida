@@ -177,9 +177,10 @@ def process_step(game, step):
         log.info("TEST SUITE: %s at %s"%(function_name, actor))
         game.mouse_mode = MOUSE_LOOK
     elif function_name == "use": 
+        actee = step[2]
         log.info("TEST SUITE: %s %s on %s"%(function_name, actor, actee))
         game.mouse_mode = MOUSE_USE
-        actee = step[2]
+        game.mouse_cursor = actee
     elif function_name == "location": #check current location matches scene "actor"
         if game.scene.name != actor:
             log.error("Current scene should be %s, but is currently %s"%(actor, game.scene.name))
@@ -268,7 +269,7 @@ def get_function(basic):
 def editor_menu(game):
                 game.menu_fadeOut()
                 game.menu_push() #hide and push old menu to storage
-                game.set_menu("e_load", "e_save", "e_add", "e_prev", "e_next", "e_walk", "e_scene", "e_portal")
+                game.set_menu("e_load", "e_save", "e_add", "e_prev", "e_next", "e_walk", "e_portal", "e_scene", "e_step")
                 game.menu_hide()
                 game.menu_fadeIn()
 
@@ -542,6 +543,7 @@ class Actor(object):
         #user actor on this actee
 #        log.warn("should look for def %s_use_%s"%(slugify(self.name),slugify(obj.name)))
 #        log.warn("using objects on %s not implemented"%self.name)
+         if type(actor) == str: actor = self.game.items[actor]
          log.info("Player uses %s on %s"%(actor.name, self.name))
 #        if self.use: #if user has supplied a look override
 #           self.use(self.game, self, self.game.player)
@@ -1306,6 +1308,7 @@ class Game(object):
         
         self._walkthroughs = []
         self.errors = 0 #used by walkthrough runner
+        self.testing_message = True #show a message alerting user they are back in control
 
         #set up text overlay image
         self.info_colour = (255,255,220)
@@ -1651,7 +1654,7 @@ class Game(object):
                         r = obj._clickable_area
                         f.write('    %s.reclickable(Rect(%s, %s, %s, %s))\n'%(slug, r.left, r.top, r.w, r.h))
                         r = obj._solid_area
-                        f.write('    %s.resolid(%s)\n'%(slug, r.left, r.top, r.w, r.h))
+                        f.write('    %s.resolid(Rect(%s, %s, %s, %s))\n'%(slug, r.left, r.top, r.w, r.h))
                         f.write('    %s.rescale(%0.2f)\n'%(slug, obj.scale))
                         f.write('    %s.reanchor((%i, %i))\n'%(slug, obj._ax, obj._ay))
                         f.write('    %s.restand((%i, %i))\n'%(slug, obj._sx, obj._sy))
@@ -1683,6 +1686,12 @@ class Game(object):
             def editor_walk(game, menu_item, player):
                 """ start editing the scene's walkarea """
                 game.set_editing(game.scene.walkareas[0])
+
+            def editor_step(game, menu_item, player):
+                """ step through the walkthrough """
+                game.testing = True
+                game.jump_to_step = 1
+                game.testing_message = False
                 
             def editor_edit_rect(game, menu_item, player):
                 if not game.editing:
@@ -1800,6 +1809,7 @@ class Game(object):
             self.add(MenuItem("e_walk", editor_walk, (250, 10), (250,-50), "w").smart(self))
             self.add(MenuItem("e_portal", editor_portal, (290, 10), (290,-50), "p").smart(self))
             self.add(MenuItem("e_scene", editor_scene, (350, 10), (350,-50), "i").smart(self))
+            self.add(MenuItem("e_step", editor_step, (390, 10), (390,-50), "n").smart(self))
 
             #a collection widget for adding objects to a scene
             self.add(Collection("e_objects", editor_select_object, (300, 100), (300,-600), K_ESCAPE).smart(self))
@@ -1823,15 +1833,15 @@ class Game(object):
   #                help="don't print status messages to stdout")
 
         (options, args) = parser.parse_args()    
-        jump_to_step = None
+        self.jump_to_step = None
         self.steps_complete = 0
         if options.step: #switch on test runner to step through walkthrough
             self.testing = True
             self.tests = self._walkthroughs
             if options.step.isdigit():
-                jump_to_step = int(options.step) #automatically run to <step> in walkthrough
+                self.jump_to_step = int(options.step) #automatically run to <step> in walkthrough
             else:
-                jump_to_step = options.step
+                self.jump_to_step = options.step
 
         pygame.init() 
         self.screen = screen = pygame.display.set_mode((1024, 768))
@@ -1920,17 +1930,17 @@ class Game(object):
                     step = self.tests.pop(0)
                     self.steps_complete += 1
                     process_step(self, step)
-                    if jump_to_step:
+                    if self.jump_to_step:
                         return_to_player = False
-                        if type(jump_to_step) == int: #integer step provided
-                            jump_to_step -= 1
-                            if jump_to_step == 0: return_to_player = True
+                        if type(self.jump_to_step) == int: #integer step provided
+                            self.jump_to_step -= 1
+                            if self.jump_to_step == 0: return_to_player = True
                         else: #assume step name has been given
-                            if step[-1] == jump_to_step: return_to_player = True
+                            if step[-1] == self.jump_to_step: return_to_player = True
                         if return_to_player: #hand control back to player
                             self.testing = False
-                            self.tests = None
-                            if self.player: self.player.says("Handing back control to you")
+                            #self.tests = None
+                            if self.player and self.testing_message: self.player.says("Handing back control to you")
                             t = self.steps_complete * 30 #30 seconds per step
                             self.log.info("Finished %s steps, estimated at %s.%s minutes"%(self.steps_complete, t/60, t%60))
 
