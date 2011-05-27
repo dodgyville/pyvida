@@ -363,6 +363,7 @@ class Action(object):
         return self
 
 DEFAULT_WALKAREA = [(100,600),(900,560),(920,700),(80,720)]
+DEFAULT_CLICKABLE = Rect(0,0,80,150)
 
 class WalkArea(object):
     """ Used by scenes to define where the player can walk """
@@ -520,7 +521,7 @@ class Actor(object):
             log.debug("Setting %s _clickable area to %s"%(self.name, self._clickable_area))
         else:
             log.warning("%s %s smart load unable to get clickable area from action image, using default"%(self.__class__, self.name))
-            self._clickable_area = Rect(0, 0, 100, 120)
+            self._clickable_area = DEFAULT_CLICKABLE
 #        except:
 #            log.warning("unable to load idle.png for %s"%self.name)
         log.debug("smart load %s %s clickable %s and actions %s"%(type(self), self.name, self._clickable_area, self.actions.keys()))
@@ -770,6 +771,7 @@ class Actor(object):
         self._event_finish()
 
     def on_hide(self):
+        """ hide the actor from all click and hover events """
         self.hidden = True
         self._event_finish()
         
@@ -1789,6 +1791,7 @@ class Game(object):
                 obj.game = game
                 if obj and game.scene:
                     obj.x, obj.y = 500,400
+                    obj._clickable_area = DEFAULT_CLICKABLE
                     obj._editor_add_to_scene = True #let exported know this is new to this scene
                     game.scene.add(obj)
                     editor_collection_close(game, collection, player)
