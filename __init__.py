@@ -19,6 +19,11 @@ import sys
 import pygame
 from pygame.locals import *#QUIT, K_ESCAPE
 
+try:
+    import android
+except ImportError:
+    android = None
+
 ENABLE_EDITOR = True
 ENABLE_PROFILING = True
 ENABLE_LOGGING = True
@@ -1890,6 +1895,9 @@ class Game(object):
         
         while self.quit == False:
             pygame.time.delay(self.fps)
+            if android is not None and android.check_pause():
+                android.wait_for_resume()
+            
             if self.scene:
                 blank = [self.scene.objects.values(), self.menu, self.modals]
             else:
