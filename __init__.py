@@ -192,6 +192,7 @@ def process_step(game, step):
             actee = game.actors[actee]
         else:
             log.error("Can't do test suite trigger use, unable to find %s in game objects"%actee)
+            if actee not in game.missing_actors: game.missing_actors.append(actee)
             fail = True
         if not fail: game.mouse_cursor = actee
     elif function_name == "location": #check current location matches scene "actor"
@@ -212,7 +213,9 @@ def process_step(game, step):
             if actor == i.name:
                 game._trigger(i)
                 return
-    if not fail: log.error("Unable to find actor %s in modals, menu or current scene (%s) objects"%(actor, game.scene.name))
+    if not fail: 
+        log.error("Unable to find actor %s in modals, menu or current scene (%s) objects"%(actor, game.scene.name))
+        if actor not in game.missing_actors and actor not in game.actors and actor not in game.items: game.missing_actors.append(actor)
     game.errors += 1
     if game.errors == 2:
         game.log.warning("TEST SUITE SUGGESTS GAME HAS GONE OFF THE RAILS AT THIS POINT")
@@ -1074,7 +1077,7 @@ class Collection(MenuItem):
     def __init__(self, name="Untitled Collection", interact=None, spos=(None, None), hpos=(None, None), key=None): 
         MenuItem.__init__(self, name, interact, spos, hpos, key)
         self.objects = {}
-        self.index = 0
+        self.index = 0 #where in the index to start showing
     
     def add(self, *args):
         for a in args:
@@ -1326,9 +1329,11 @@ class Game(object):
         self.mouse_cursors = {} #available mouse images
         self.mouse_cursor = MOUSE_POINTER #which image to use
         
+        #walkthrough and test runner
         self._walkthroughs = []
         self.errors = 0 #used by walkthrough runner
         self.testing_message = True #show a message alerting user they are back in control
+        self.missing_actors = [] #list of actors mentioned in walkthrough that are never loaded
 
         #set up text overlay image
         self.info_colour = (255,255,220)
@@ -1571,16 +1576,19 @@ class Game(object):
                 self.editing_point[0](x)
                 if len(self.editing_point)>1: self.editing_point[1](y)
             return
+        menu_capture = False #has the mouse found an item in the menu
         for i in self.menu: #then menu
-            if i.collide(x,y):
+            if i.collide(x,y): #hovering
                 i._on_mouse_move(x, y, button, modifiers)
                 if i.actions.has_key('over'):
                     i.action = i.actions['over']
-#                    return
-            else:
+                    self.info(i.name, i.nx,i.ny)
+                    menu_capture = True
+            else: #unhover over menu item
                 if i.action and i.action.name == "over":
                     if i.actions.has_key('idle'): 
                         i.action = i.actions['idle']
+        if menu_capture == True: return
         if self.player and self.scene:
             for i in self.scene.objects.values(): #then objects in the scene
                 if i is not self.player and i.collide(x,y):
@@ -1669,7 +1677,7 @@ class Game(object):
                     f.write(']\n')
                     for name, obj in game.scene.objects.items():
                         slug = slugify(name).lower()
-                        txt = "actors" if type(obj) == Actor else "items"
+                        txt = "items" if isinstance(obj, Item) else "actors"
                         f.write('    %s = game.%s["%s"]\n'%(slug, txt, name))
                         r = obj._clickable_area
                         f.write('    %s.reclickable(Rect(%s, %s, %s, %s))\n'%(slug, r.left, r.top, r.w, r.h))
@@ -1747,7 +1755,7 @@ class Game(object):
                     if i.editable and type(i) not in [Collection, MenuItem]: e_objects.objects[i.name] = i
                 game.menu_fadeOut()
                 game.menu_push() #hide and push old menu to storage
-                game.set_menu("e_close", "e_objects")
+                game.set_menu("e_close", "e_objects_next", "e_objects_prev", "e_objects")
                 game.menu_hide()
                 game.menu_fadeIn()
                 
@@ -1815,6 +1823,16 @@ class Game(object):
                 game.camera.scene(scene)
                 game.player.relocate(scene)
                 editor_collection_close(game, collection, player)
+
+            def editor_collection_next(game, btn, player):
+                """ move an index in a collection object in the editor, shared with e_portals and e_objects """
+                if btn.collection.index < len(btn.collection.objects)-10:
+                    btn.collection.index += 10
+
+            def editor_collection_prev(game, btn, player):
+                """ move an index in a collection object in the editor, shared with e_portals and e_objects """
+                btn.collection.index -= 10
+                if btn.collection.index <= 0: btn.collection.index = 0
                 
             def editor_collection_close(game, collection, player):
                 """ close an collection object in the editor, shared with e_portals and e_objects """
@@ -1833,7 +1851,11 @@ class Game(object):
             self.add(MenuItem("e_step", editor_step, (390, 10), (390,-50), "n").smart(self))
 
             #a collection widget for adding objects to a scene
-            self.add(Collection("e_objects", editor_select_object, (300, 100), (300,-600), K_ESCAPE).smart(self))
+            c = self.add(Collection("e_objects", editor_select_object, (300, 100), (300,-600), K_ESCAPE).smart(self))
+            n = self.add(MenuItem("e_objects_next", editor_collection_next, (700, 610), (700,-100), K_ESCAPE).smart(self))            
+            p = self.add(MenuItem("e_objects_prev", editor_collection_prev, (740, 610), (740,-100), K_ESCAPE).smart(self))            
+            n.collection = p.collection = c
+
             #collection widget for adding portals to other scenes
             self.add(Collection("e_portals", editor_select_portal, (300, 100), (300,-600), K_ESCAPE).smart(self))
             #collection widget for selecting the scene to edit
@@ -1845,6 +1867,15 @@ class Game(object):
                 self.add(MenuItem("e_%s"%v, editor_point, (100+i*30, 45), (100+i*30,-50), v[0]).smart(self))
             self.items['e_clickable'].interact = editor_edit_rect
             self.add(MenuItem("e_add_walkareapoint", editor_add_walkareapoint, (310, 45), (310,-50), v[0]).smart(self))            
+
+    def finish_tests(self):
+        """ called when test runner is ending or handing back control """
+        t = self.steps_complete * 30 #30 seconds per step
+        if len(self.missing_actors)>0:
+            self.log.error("The following actors were never loaded:")
+            for i in self.missing_actors: self.log.error(i)
+        self.log.info("Finished %s steps, estimated at %s.%s minutes"%(self.steps_complete, t/60, t%60))
+    
         
     def run(self, callback=None):
         parser = OptionParser()
@@ -1948,8 +1979,7 @@ class Game(object):
             if self.testing and len(self.events) == 0 and not self._event: 
                 if len(self.tests) == 0: #no more tests, so exit
                     self.quit = True
-                    t = self.steps_complete * 30 #30 seconds per step
-                    self.log.info("Finished %s steps, estimated at %s.%s minutes"%(self.steps_complete, t/60, t%60))
+                    self.finish_tests()
                 else:
                     step = self.tests.pop(0)
                     self.steps_complete += 1
@@ -1965,9 +1995,7 @@ class Game(object):
                             self.testing = False
                             #self.tests = None
                             if self.player and self.testing_message: self.player.says("Handing back control to you")
-                            t = self.steps_complete * 30 #30 seconds per step
-                            self.log.info("Finished %s steps, estimated at %s.%s minutes"%(self.steps_complete, t/60, t%60))
-
+                            self.finish_tests()
                     
         pygame.mouse.set_visible(True)
             
