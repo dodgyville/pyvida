@@ -186,6 +186,8 @@ def process_step(game, step):
         actee = step[2]
         log.info("TEST SUITE: %s %s on %s"%(function_name, actor, actee))
         game.mouse_mode = MOUSE_USE
+        if actee not in game.player.inventory:
+            log.warning("Item %s not in player's inventory"%actee)
         if actee in game.items: 
             actee = game.items[actee]
         elif actee in game.actors:
@@ -528,7 +530,8 @@ class Actor(object):
             self._clickable_area = Rect(0, 0, r.w, r.h)
             log.debug("Setting %s _clickable area to %s"%(self.name, self._clickable_area))
         else:
-            log.warning("%s %s smart load unable to get clickable area from action image, using default"%(self.__class__, self.name))
+            if not isinstance(self, Portal):
+                log.warning("%s %s smart load unable to get clickable area from action image, using default"%(self.__class__, self.name))
             self._clickable_area = DEFAULT_CLICKABLE
 #        except:
 #            log.warning("unable to load idle.png for %s"%self.name)
@@ -598,7 +601,8 @@ class Actor(object):
                 script(self.game, self, self.game.player)
             else:
                 #warn if using default vida interact
-                log.warning("no interact script for %s (write an %s)"%(self.name, basic))
+                if not isinstance(self, Portal):
+                    log.warning("no interact script for %s (write an %s)"%(self.name, basic))
                 self._interact_default(self.game, self, self.game.player)
 
 
@@ -851,7 +855,13 @@ class Actor(object):
         x,y = self._tx, self._ty = destination
         d = self.speed
         fuzz = 10
-        if self.game.testing == True or self.game.enabled_editor: self.x, self.y = x, y #skip straight to point for testing/editing
+        if self.game.testing == True or self.game.enabled_editor: 
+            if self.scene: #test point will be inside a walkarea
+                walkarea_fail = True
+                for w in self.scene.walkareas:
+                    if w.polygon.collide(x,y): walkarea_fail = False
+                if walkarea_fail: log.warning("Destination point (%s, %s) not inside walkarea "%(x,y))                
+            self.x, self.y = x, y #skip straight to point for testing/editing
         if x - fuzz < self.x < x + fuzz and y - fuzz < self.y < y + fuzz:
             if "idle" in self.actions: self.action = self.actions['idle'] #XXX: magical variables, special cases, urgh
             if type(self) in [MenuItem, Collection]:
@@ -964,7 +974,7 @@ class Portal(Item):
         if self.link.scene == None:
             log.error("Unable to travel through portal %s"%self.name)
         else:
-            log.info("Actor %s goes from scene %s to %s"%(self.game.player.name, self.scene.name, self.link.scene.name))
+            log.info("Portal - actor %s goes from scene %s to %s"%(self.game.player.name, self.scene.name, self.link.scene.name))
         self.game.player.goto((self.sx, self.sy))
         self.game.player.goto((self.ox, self.oy), ignore=True)
         self.game.player.relocate(self.link.scene, (self.link.ox, self.link.oy)) #moves player to scene
@@ -1108,7 +1118,8 @@ class Collection(MenuItem):
         
         
     def _on_mouse_move(self, x, y, button, modifiers): #collection.mouse_move single button interface
-        """ when hovering over an object in the collection, show the item name """
+        """ when hovering over an object in the collection, show the item name 
+        """
         m = pygame.mouse.get_pos()
         obj = self.get_object(m)
         if obj:
@@ -1127,7 +1138,9 @@ class Collection(MenuItem):
             log.warning("Collection %s missing an action"%self.name)
         show = self.objects.values()[self.index:]
         for i in show:
+            i._cr = Rect(x+self.x, y+self.y, dx, dy) #temporary collection values
             img = i._image()
+            if not img: img = Text("tmp", (0,0), (200,200), i.name, wrap=200).img
             if img:
                 iw, ih = img.get_width(), img.get_height()
                 ratio_w = float(dx)/iw
@@ -1140,7 +1153,6 @@ class Collection(MenuItem):
                     ndx,ndy = nw1, nh1
                 img = pygame.transform.scale(img, (ndx, ndy))
                 r = img.get_rect().move(x+self.x, y+self.y)
-                i._cr = r #temporary collection values
                 self.game.screen.blit(img, r)
             x += dx+2
             if float(x)/(w-sy-dx)>1:
@@ -1434,15 +1446,15 @@ class Game(object):
                     
                     
 #            if obj_cls == Portal: #guess portal links based on name, do before scene loads
-        for pname in portals:
-                    links = pname.split("_To_")
-                    guess_link = None
-                    if len(links)>1:
-                        guess_link = "%s_To_%s"%(links[1], links[0])
-                    if guess_link and guess_link in self.items:
-                        self.items[pname].link = self.items[guess_link]
-                    else:
-                        log.warning("game.smart unable to guess link for %s"%pname)
+        for pname in portals: #try and guess portal links
+            links = pname.split("_To_")
+            guess_link = None
+            if len(links)>1: #name format matches guess
+                guess_link = "%s_To_%s"%(links[1], links[0])
+            if guess_link and guess_link in self.items:
+                self.items[pname].link = self.items[guess_link]
+            else:
+                log.warning("game.smart unable to guess link for %s"%pname)
         if type(player) == str: player = self.actors[player]
         if player: self.player = player
         self._event_finish()
@@ -1579,11 +1591,11 @@ class Game(object):
         menu_capture = False #has the mouse found an item in the menu
         for i in self.menu: #then menu
             if i.collide(x,y): #hovering
-                i._on_mouse_move(x, y, button, modifiers)
                 if i.actions.has_key('over'):
                     i.action = i.actions['over']
-                    self.info(i.name, i.nx,i.ny)
-                    menu_capture = True
+                self.info(i.name, i.nx,i.ny)
+                i._on_mouse_move(x, y, button, modifiers)
+                menu_capture = True
             else: #unhover over menu item
                 if i.action and i.action.name == "over":
                     if i.actions.has_key('idle'): 
