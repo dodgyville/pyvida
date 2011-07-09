@@ -5,12 +5,21 @@ pyvida
 ### Features ###
 
 * cross platform - windows, mac and linux
+* open source
 * clean scripting language (python) allows full control of actors and menu
+* in-game scene editor
 * unlimited scenes and actors
+* actors have unlimited animations
 * full logging for errors, warning and debug 
 * smart loading for handling art assets so you can concentrate of your plotting
 * menus and inventories built in
 * fully scriptable menus
+* easily switch between playable characters
+* supports any image and sound formats supported by SDL (we recommend PNG for images and OGG for sound)
+* supports any screen size (default is 1024x768)
+* supports any colour depth
+* alpha blending on graphics
+* walkareas, hotspots, walk behinds, etc
 
 ### Installation ###
 
