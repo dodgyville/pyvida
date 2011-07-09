@@ -2002,7 +2002,9 @@ class Game(object):
                             self.jump_to_step -= 1
                             if self.jump_to_step == 0: return_to_player = True
                         else: #assume step name has been given
-                            if step[-1] == self.jump_to_step: return_to_player = True
+                            if step[-1] == self.jump_to_step:
+                                return_to_player = True
+                                if self.jump_to_step == "set_trace": import pdb; pdb.set_trace()
                         if return_to_player: #hand control back to player
                             self.testing = False
                             #self.tests = None
