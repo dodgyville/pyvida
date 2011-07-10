@@ -176,6 +176,9 @@ def process_step(game, step):
     actor = step[1]
     actee = None
     game.mouse_mode = MOUSE_LOOK
+    if game.scene and game.errors < 2 and function_name != "location": #increment time spent in current scene
+        game.scene.analytics_count += 1
+    
     if function_name == "interact":
         log.info("TEST SUITE: %s with %s"%(function_name, actor))
         game.mouse_mode = MOUSE_INTERACT
@@ -1177,6 +1180,7 @@ class Scene(object):
         self.cx, self.cy = 512,384 #camera pointing at position (center of screen)
         self.scales = {} #when an actor is added to this scene, what scale factor to apply? (from scene.scales)
         self.editable = True #will it appear in the editor (eg portals list)
+        self.analytics_count = 0 #used by test runner to measure how "popular" a scene is.
 
     def _event_finish(self, block=True): 
         return self.game._event_finish(block)
@@ -1882,10 +1886,15 @@ class Game(object):
 
     def finish_tests(self):
         """ called when test runner is ending or handing back control """
-        t = self.steps_complete * 30 #30 seconds per step
         if len(self.missing_actors)>0:
             self.log.error("The following actors were never loaded:")
             for i in self.missing_actors: self.log.error(i)
+        scenes = sorted(self.scenes.values(), key=lambda x: x.analytics_count, reverse=True)        
+        self.log.info("Scenes listed in order of time spent")
+        for s in scenes:
+            t = s.analytics_count * 30
+            self.log.info("%s - %s steps (%s.%s minutes)"%(s.name, s.analytics_count, t/60, t%60))
+        t = self.steps_complete * 30 #30 seconds per step
         self.log.info("Finished %s steps, estimated at %s.%s minutes"%(self.steps_complete, t/60, t%60))
     
         
