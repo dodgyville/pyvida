@@ -406,6 +406,9 @@ class WalkArea(object):
 
 
 class Actor(object):
+    """
+    The class for all objects in the game.
+    """
     __metaclass__ = use_on_events
     def __init__(self, name=None): 
         self.name = name if name else "Unitled %s"%self.__name__
@@ -507,7 +510,13 @@ class Actor(object):
         return self._solid_area.move(self.x, self.y)  
         
     def smart(self, game): #actor.smart
-        """ smart actor load """
+        """ 
+        Intelligently load as many animations and details about this actor/item.
+        
+        Most of the information is derived from the file structure.
+        
+        So smart will load all .PNG files in data/actors/<Actor Name> as actions available for this actor.
+        """
         if type(self) in [MenuItem, Collection]:
             d = game.menuitem_dir
         elif isinstance(self, ModalItem):
@@ -707,7 +716,11 @@ class Actor(object):
 #        return collide(self._clickable_area, x, y)
         
     def on_animation_mode(self, action, mode):
-        """ set the animation mode on this action """
+        """ 
+        A queuing function:
+        
+        Sets the animation mode on this action (eg ping pong, reversed, looped)
+        """
         self.actions[action].mode = mode
         self._event_finish()
         
@@ -752,7 +765,11 @@ class Actor(object):
 
 
     def on_do(self, action):
-        """ start an action """
+        """ 
+        A queuing function:
+        
+        Make this actor do an action
+        """
         if action in self.actions.keys():
             self.action = self.actions[action]
             log.debug("actor %s does action %s"%(self.name, action))
@@ -762,7 +779,11 @@ class Actor(object):
             
         
     def on_place(self, destination):
-        # """ place an actor at this location instantly """
+        """ 
+        A queuing function:
+        
+        Place this actor at this location instantly 
+        """
         pt = get_point(self.game, destination)
         self.x, self.y = pt
         log.debug("actor %s placed at %s"%(self.name, destination))
@@ -773,20 +794,30 @@ class Actor(object):
         if self._alpha == self._alpha_target:
             self._event_finish()
              
-    def on_fadeIn(self):
+    def on_fade_in(self):
+        """
+        A queuing function:
+        
+        Fade this actor in.
+        """
         self._alpha = 0
         self._alpha_target = 255
         self.game.stuff_event(self.finish_fade, self)
         self._event_finish()
 
-    def on_fadeOut(self):
+    def on_fade_out(self):
+        """
+        A queuing function:
+        
+        Fade this actor out.
+        """
         obj._alpha = 255
         obj._alpha_target = 0
         self.game.stuff_event(self.finish_fade, self)
         self._event_finish()
 
     def on_hide(self):
-        """ hide the actor from all click and hover events """
+        """ A queuing function: hide the actor, including from all click and hover events """
         self.hidden = True
         self._event_finish()
         
@@ -841,6 +872,18 @@ class Actor(object):
 #        scene.add(self)
         self.game.stuff_event(scene.on_add, self)
         self._event_finish()
+    
+    
+    def on_resize(self, start, end, duration):
+        """ animate resizing of character """
+        log.debug("actor.resize not implemented yet")
+        self._event_finish()
+
+    def on_rotate(self, start, end, duration):
+        """ animate rotation of character """
+        log.debug("actor.rotation not implemented yet")
+        self._event_finish()
+        
     
     def moveto(self, delta):
         """ move relative to the current position """
@@ -1901,6 +1944,7 @@ class Game(object):
     def run(self, callback=None):
         parser = OptionParser()
         parser.add_option("-s", "--step", dest="step", help="Jump to step in walkthrough")
+#        parser.add_option("-a", "--artreactor", dest="artreactor", help="Save images from each scene")
 #        parser.add_option("-q", "--quiet",
  #                 action="store_false", dest="verbose", default=True,
   #                help="don't print status messages to stdout")
@@ -2075,7 +2119,7 @@ class Game(object):
         sfname = "%s.py"%sfname
         variables= {}
         if not os.path.exists(sfname):
-            log.error("load state: state not found: %s"%sfname)
+            log.error("load state: state not found for scene %s: %s"%(scene.name, sfname))
         else:
             execfile( sfname, variables)
             variables['load_state'](self, scene)

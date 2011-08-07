@@ -23,6 +23,7 @@ Contents:
    sceneedit.rst
    assets.rst
    technical.rst
+   reference.rst
 
 Indices and tables
 ==================
