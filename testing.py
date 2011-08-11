@@ -1,4 +1,5 @@
 """
+DEPRECATED AUGUST 2011
 Testing suite for pyvida games.
 
 This is a module that provides an easy way to test the gameplay of 

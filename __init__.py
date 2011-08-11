@@ -1,6 +1,6 @@
 from __future__ import print_function
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import gc
 import glob
 import inspect
@@ -228,6 +228,28 @@ def process_step(game, step):
         game.log.info("This occurred at %s steps, estimated at %s.%s minutes"%(game.steps_complete, t/60, t%60))
 
 
+def prepare_tests(game, suites, log_file=None, user_control=None):#, setup_fn, exit_fn = on_exit, report = True, wait=10.1):
+    """
+    If user_control is an integer <n> or a string <s>, try and pause at step <n> in the suite or at command with name <s>
+    
+    Call it before the game.run function
+    """
+    global log
+    if log_file: #push log to file
+        LOG_FILENAME = log_file
+        handler = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=60000, backupCount=5)
+        handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+        log.addHandler(handler)    
+
+    log = log    
+#    game.quit = True
+    log.info("===[TESTING REPORT FOR %s]==="%game.name.upper())
+    log.debug("%s"%date.today().strftime("%Y_%m_%d"))
+    game.log = log
+    game.testing = True
+    game.tests = [i for sublist in suites for i in sublist]  #all tests, flattened in order
+
+
         
 #### pygame util functions ####        
 
@@ -277,6 +299,7 @@ def relative_position(game, parent, pos):
     return parent.x-mx, parent.y-my
 
 def get_function(basic):
+    """ Search memory for a function that matches this name """
     script = None
     if hasattr(sys.modules['__main__'], basic):
           script = getattr(sys.modules['__main__'], basic)
@@ -870,6 +893,14 @@ class Actor(object):
             self.x, self.y = pt
 #        self.game.scene(scene)
 #        scene.add(self)
+        if self.game and self.game.scene and self == self.game.player and self.game.test_inventory: #test player's inventory against scene        
+            for inventory_item in self.inventory.values():
+                for scene_item in self.scene.objects.values():
+                    if type(scene_item) != Portal:
+                        basic = "%s_use_%s"%(scene_item.name, inventory_item.name)
+                        if get_function(basic) == None: #would use default if player tried this combo
+                            log.warning("%s: Possible default function: %s"%(self.scene.name, basic))
+
         self.game.stuff_event(scene.on_add, self)
         self._event_finish()
     
@@ -1313,7 +1344,11 @@ class Camera(object):
             log.error("Can't change to non-existent scene, staying on current scene")
             scene = self.game.scene
         if type(scene) == str:
-            scene = self.game.scenes[scene]
+            if scene in self.game.scenes:
+                scene = self.game.scenes[scene]
+            else:
+                log.error("camera on_scene: unable to find scene %s"%scene)
+                scene = self.game.scene
         self.game.scene = scene
         log.debug("changing scene to %s"%scene.name)
         if self.game.scene and self.game.screen:
@@ -1393,6 +1428,7 @@ class Game(object):
         self.errors = 0 #used by walkthrough runner
         self.testing_message = True #show a message alerting user they are back in control
         self.missing_actors = [] #list of actors mentioned in walkthrough that are never loaded
+        self.test_inventory = False #heavy duty testing of inventory against scene objects
 
         #set up text overlay image
         self.info_colour = (255,255,220)
@@ -1944,7 +1980,8 @@ class Game(object):
     def run(self, callback=None):
         parser = OptionParser()
         parser.add_option("-s", "--step", dest="step", help="Jump to step in walkthrough")
-#        parser.add_option("-a", "--artreactor", dest="artreactor", help="Save images from each scene")
+        parser.add_option("-a", "--artreactor", dest="artreactor", help="Save images from each scene")
+        parser.add_option("-i", "--inventory", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
 #        parser.add_option("-q", "--quiet",
  #                 action="store_false", dest="verbose", default=True,
   #                help="don't print status messages to stdout")
@@ -1952,6 +1989,8 @@ class Game(object):
         (options, args) = parser.parse_args()    
         self.jump_to_step = None
         self.steps_complete = 0
+        if options.test_inventory:
+            self.test_inventory = True
         if options.step: #switch on test runner to step through walkthrough
             self.testing = True
             self.tests = self._walkthroughs
@@ -2114,7 +2153,12 @@ class Game(object):
         """ a queuing function, not a queued function (ie it adds events but is not one """
         """ load a state from a file inside a scene directory """
         """ stuff load state events into the start of the queue """
-        if type(scene) == str: scene = self.scenes[scene]
+        if type(scene) == str:
+            if scene in self.scenes:
+                scene = self.scenes[scene]
+            else:
+                log.error("load state: unable to find scene %s"%scene)
+                return
         sfname = os.path.join(self.scene_dir, os.path.join(scene.name, state))
         sfname = "%s.py"%sfname
         variables= {}
