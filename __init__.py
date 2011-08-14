@@ -628,6 +628,7 @@ class Actor(object):
         log.debug("player interact with %s"%self.name)
         self.game.mouse_mode = MOUSE_LOOK #reset mouse mode
         if self.interact: #if user has supplied an interact override
+            if type(self.interact) == str: self.interact = get_function(self.interact)
             self.interact(self.game, self, self.game.player)
         else: #else, search several namespaces or use a default
             basic = "interact_%s"%slugify(self.name)
@@ -1330,6 +1331,8 @@ class Scene(object):
 
     def _remove(self, obj):
         """ remove object from the scene """
+        if type(obj) == str and obj in self.objects:
+            obj = self.objects[obj]
         obj.scene = None
         del self.objects[obj.name]
 #        self._event_finish()
@@ -1337,9 +1340,10 @@ class Scene(object):
 
     def on_remove(self, obj):
         """ queued function for removing object from the scene """
-        if type(obj) == str and obj in self.objects:
-            obj = self.objects[obj]
-        self._remove(obj)
+        if type(obj) == list:
+            for i in obj: self._remove(i)
+        else:
+            self._remove(obj)
         self._event_finish()
         
     def on_add(self, obj): #scene.add
