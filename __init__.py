@@ -38,7 +38,7 @@ log = logging.getLogger('pyvida4')
 log.setLevel(logging.DEBUG)
 
 handler = logging.handlers.RotatingFileHandler(
-              LOG_FILENAME, maxBytes=60000, backupCount=5)
+              LOG_FILENAME, maxBytes=2000000, backupCount=5)
 handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
 log.addHandler(handler)
 
@@ -1161,6 +1161,8 @@ class MenuItem(Actor):
         self.in_x, self.in_y = spos #special in point reentry point
         self.out_x, self.out_y = hpos #special hide point for menu items
 
+ALPHABETICAL = 0
+
 class Collection(MenuItem):
     """ 
     An actor which contains subactors (eg an inventory or directory listing)
@@ -1169,7 +1171,9 @@ class Collection(MenuItem):
     def __init__(self, name="Untitled Collection", interact=None, spos=(None, None), hpos=(None, None), key=None): 
         MenuItem.__init__(self, name, interact, spos, hpos, key)
         self.objects = {}
+        self._sorted_objects = None
         self.index = 0 #where in the index to start showing
+        self.sort_by = ALPHABETICAL
     
     def add(self, *args):
         for a in args:
@@ -1177,6 +1181,7 @@ class Collection(MenuItem):
             elif type(a) == str and a in self.game.items: obj = self.game.items[a]
             else: obj = a
             self.objects[obj.name] = obj
+            self._sorted_objects = None
 
     def _update(self, dt):
         Actor._update(self, dt)
@@ -1186,11 +1191,18 @@ class Collection(MenuItem):
             else:
                 log.warning("Collection %s trying to update collection %s"%(self.name, i.name))
 
+    def _get_sorted(self):
+        if self._sorted_objects == None:
+            show = self.objects.values()
+            self._sorted_objects = sorted(show, key=lambda x: x.name.lower(), reverse=False)
+        return self._sorted_objects
+        
 
     def get_object(self, pos):
         """ Return the object at this spot on the screen in the collection """
         mx,my = pos
-        show = self.objects.values()[self.index:]
+
+        show = self._get_sorted()[self.index:]
         for i in show:
             if hasattr(i, "_cr") and collide(i._cr, mx, my): 
                 log.debug("Clicked on %s in collection %s"%(i.name, self.name))
@@ -1218,7 +1230,8 @@ class Collection(MenuItem):
         else:
             w,h = 0, 0
             log.warning("Collection %s missing an action"%self.name)
-        show = self.objects.values()[self.index:]
+
+        show = self._get_sorted()[self.index:]
         for i in show:
             i._cr = Rect(x+self.x, y+self.y, dx, dy) #temporary collection values
             img = i._image()
@@ -1852,7 +1865,7 @@ class Game(object):
                 for i in game.actors.values():
                     if i.editable and type(i) not in [Collection, MenuItem]: e_objects.objects[i.name] = i
                 for i in game.items.values():
-                    if i.editable and type(i) not in [Collection, MenuItem]: e_objects.objects[i.name] = i
+                    if i.editable and type(i) not in [Portal, Collection, MenuItem]: e_objects.objects[i.name] = i
                 game.menu_fadeOut()
                 game.menu_push() #hide and push old menu to storage
                 game.set_menu("e_close", "e_objects_next", "e_objects_prev", "e_objects")
@@ -1927,7 +1940,7 @@ class Game(object):
 
             def editor_collection_next(game, btn, player):
                 """ move an index in a collection object in the editor, shared with e_portals and e_objects """
-                if btn.collection.index < len(btn.collection.objects)-10:
+                if btn.collection.index < len(btn.collection._get_sorted())-10:
                     btn.collection.index += 10
 
             def editor_collection_prev(game, btn, player):
