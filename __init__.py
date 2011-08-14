@@ -900,7 +900,6 @@ class Actor(object):
                         basic = "%s_use_%s"%(scene_item.name, inventory_item.name)
                         if get_function(basic) == None: #would use default if player tried this combo
                             log.warning("%s: Possible default function: %s"%(self.scene.name, basic))
-
         self.game.stuff_event(scene.on_add, self)
         self._event_finish()
     
@@ -1041,9 +1040,15 @@ class Portal(Item):
         self._ox, self._oy = pt[0], pt[1]
         self._event_finish(False)
 
+    def arrive(self, actor=None):
+        """ helper function for entering through this door """
+        if actor == None: actor = self.game.player
+        actor.relocate(self.scene, (self.ox, self.oy)) #moves player to scene
+        actor.goto((self.sx, self.sy), ignore=True) #walk into scene        
         
-    def travel(self):
+    def travel(self, actor=None):
         """ default interact method for a portal, march player through portal and change scene """
+        if actor == None: actor = self.game.player
         if not self.link:
             self.game.player.says("It doesn't look like that goes anywhere.")
             log.error("portal %s has no link"%self.name)
@@ -1051,12 +1056,12 @@ class Portal(Item):
         if self.link.scene == None:
             log.error("Unable to travel through portal %s"%self.name)
         else:
-            log.info("Portal - actor %s goes from scene %s to %s"%(self.game.player.name, self.scene.name, self.link.scene.name))
-        self.game.player.goto((self.sx, self.sy))
-        self.game.player.goto((self.ox, self.oy), ignore=True)
-        self.game.player.relocate(self.link.scene, (self.link.ox, self.link.oy)) #moves player to scene
+            log.info("Portal - actor %s goes from scene %s to %s"%(actor.name, self.scene.name, self.link.scene.name))
+        actor.goto((self.sx, self.sy))
+        actor.goto((self.ox, self.oy), ignore=True)
+        actor.relocate(self.link.scene, (self.link.ox, self.link.oy)) #moves player to scene
         self.game.camera.scene(self.link.scene) #change the scene
-        self.game.player.goto((self.link.sx, self.link.sy), ignore=True) #walk into scene        
+        actor.goto((self.link.sx, self.link.sy), ignore=True) #walk into scene        
 
 
 #wrapline courtesy http://www.pygame.org/wiki/TextWrapping 
@@ -1897,6 +1902,7 @@ class Game(object):
                     os.makedirs(d)
                 obj = Portal(name)
                 obj.game = game
+                obj.link = scene
                 if obj and game.scene:
                     obj.x, obj.y = 500,400
                     obj._clickable_area = DEFAULT_CLICKABLE
@@ -2112,7 +2118,8 @@ class Game(object):
                 
         if not self._event: #waiting, so do an immediate process 
             e = self.events.pop(0) #stored as [(function, args))]
-            log.debug("Doing event %s"%e[0])
+            if e[0].__name__ not in ["on_add", "on_relocate", "on_rescale","on_reclickable", "on_reanchor", "on_restand", "on_retalk", "on_resolid"]:
+                log.debug("Doing event %s"%e[0].__name__)
 
             self._event = e
             e[0](*e[1:]) #call the function with the args        
