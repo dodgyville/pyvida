@@ -237,7 +237,7 @@ def prepare_tests(game, suites, log_file=None, user_control=None):#, setup_fn, e
     global log
     if log_file: #push log to file
         LOG_FILENAME = log_file
-        handler = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=60000, backupCount=5)
+        handler = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=2000000, backupCount=5)
         handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
         log.addHandler(handler)    
 
@@ -1045,6 +1045,11 @@ class Portal(Item):
         if actor == None: actor = self.game.player
         actor.relocate(self.scene, (self.ox, self.oy)) #moves player to scene
         actor.goto((self.sx, self.sy), ignore=True) #walk into scene        
+
+    def leave(self, actor=None):
+        if actor == None: actor = self.game.player
+        actor.goto((self.sx, self.sy))
+        actor.goto((self.ox, self.oy), ignore=True) 
         
     def travel(self, actor=None):
         """ default interact method for a portal, march player through portal and change scene """
@@ -1057,8 +1062,7 @@ class Portal(Item):
             log.error("Unable to travel through portal %s"%self.name)
         else:
             log.info("Portal - actor %s goes from scene %s to %s"%(actor.name, self.scene.name, self.link.scene.name))
-        actor.goto((self.sx, self.sy))
-        actor.goto((self.ox, self.oy), ignore=True)
+        self.leave(actor)
         actor.relocate(self.link.scene, (self.link.ox, self.link.oy)) #moves player to scene
         self.game.camera.scene(self.link.scene) #change the scene
         actor.goto((self.link.sx, self.link.sy), ignore=True) #walk into scene        
