@@ -75,6 +75,8 @@ DEBUG_SCALE = 11
 LOOP = 0
 PINGPONG = 1
 
+DEFAULT_FRAME_RATE = 16 #100 #normally 12 fps 
+
 def use_init_variables(original_class):
     """ Take the value of the args to the init function and assign them to the objects' attributes """
     def __init__(self, *args, **kws):
@@ -247,6 +249,7 @@ def prepare_tests(game, suites, log_file=None, user_control=None):#, setup_fn, e
     log.debug("%s"%date.today().strftime("%Y_%m_%d"))
     game.log = log
     game.testing = True
+    game.fps = 100
     game.tests = [i for sublist in suites for i in sublist]  #all tests, flattened in order
 
 
@@ -932,13 +935,15 @@ class Actor(object):
         x,y = self._tx, self._ty = destination
         d = self.speed
         fuzz = 10
+        if self.scene: #test point will be inside a walkarea
+            walkarea_fail = True
+            for w in self.scene.walkareas:
+                if w.polygon.collide(x,y): walkarea_fail = False
+            if walkarea_fail: log.warning("Destination point (%s, %s) not inside walkarea "%(x,y))                
         if self.game.testing == True or self.game.enabled_editor: 
-            if self.scene: #test point will be inside a walkarea
-                walkarea_fail = True
-                for w in self.scene.walkareas:
-                    if w.polygon.collide(x,y): walkarea_fail = False
-                if walkarea_fail: log.warning("Destination point (%s, %s) not inside walkarea "%(x,y))                
             self.x, self.y = x, y #skip straight to point for testing/editing
+        elif walkarea_fail == True: #not testing, and failed walk area test
+            self.game._event_finish() #signal to game event queue this event is done           
         if x - fuzz < self.x < x + fuzz and y - fuzz < self.y < y + fuzz:
             if "idle" in self.actions: self.action = self.actions['idle'] #XXX: magical variables, special cases, urgh
             if type(self) in [MenuItem, Collection]:
@@ -1461,7 +1466,7 @@ class Game(object):
         self.info_image = None
         self.info_position = None
         
-        fps = 100 #normally 12 fps 
+        fps = DEFAULT_FRAME_RATE 
         self.fps = int(1000.0/fps)
         
     def __getattr__(self, a):
@@ -1585,10 +1590,12 @@ class Game(object):
                 self.editing = None
                 self.enabled_editor = False
                 if hasattr(self, "e_objects"): self.e_objects = None #free add object collection
+                self.fps = DEFAULT_FRAME_RATE
             else:
                 editor_menu(self)
                 self.enabled_editor = True
                 if self.scene and self.scene.objects: self.set_editing(self.scene.objects.values()[0])
+                self.fps = 100
 
     def _trigger(self, obj):
         """ trigger use, look or interact, depending on mouse_mode """
@@ -1725,6 +1732,15 @@ class Game(object):
             self.toggle_editor()
         elif ENABLE_EDITOR and key == K_F2:
             import pdb; pdb.set_trace()
+        if self.enabled_editor == True and self.editing:
+            if key == K_DOWN: 
+                self.editing._y += 1
+            elif key == K_UP:
+                self.editing._y -= 1
+            elif key == K_LEFT:
+                self.editing._x -= 1
+            elif key == K_RIGHT:
+                self.editing._x += 1
             
 
     def handle_pygame_events(self):
@@ -2126,6 +2142,7 @@ class Game(object):
                                 if self.jump_to_step == "set_trace": import pdb; pdb.set_trace()
                         if return_to_player: #hand control back to player
                             self.testing = False
+                            self.fps = DEFAULT_FRAME_RATE
                             #self.tests = None
                             if self.player and self.testing_message: self.player.says("Handing back control to you")
                             self.finish_tests()
