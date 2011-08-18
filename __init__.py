@@ -18,6 +18,7 @@ import sys
 
 import pygame
 from pygame.locals import *#QUIT, K_ESCAPE
+from astar import AStar
 
 try:
     import android
@@ -56,11 +57,13 @@ log.warning("game.wait not implemented yet")
 
 #MOUSE_GENERAL = 0
 MOUSE_USE = 1
-MOUSE_LOOK = 2
-MOUSE_INTERACT = 3
+MOUSE_LOOK = 2  #SUBALTERN
+MOUSE_INTERACT = 3   #DEFAULT ACTION FOR MAIN BTN
 
 MOUSE_POINTER = 0
 MOUSE_CROSSHAIR = 1
+MOUSE_LEFT = 2
+MOUSE_RIGHT = 2
 
 DEBUG_LOCATION = 4
 DEBUG_TEXT = 5
@@ -451,6 +454,8 @@ class Actor(object):
         self._ax, self._ay = 0, 0   # displacement anchor point
         self._nx, self._ny = 0,0    # displacement point for name
         self._tx, self._ty = 0,0    # target for when this actor is mid-movement
+        self.display_text = None #can override name for game.info display text
+        
         self.speed = 10 #speed at which actor moves per frame
         self.inventory = {}
         self._scale = 1.0
@@ -583,7 +588,7 @@ class Actor(object):
 
     def trigger_look(self):
         log.debug("Player looks at %s"%self.name)
-        self.game.mouse_mode = MOUSE_LOOK #reset mouse mode
+        self.game.mouse_mode = MOUSE_INTERACT #reset mouse mode
         if self.look: #if user has supplied a look override
             self.look(self.game, self, self.game.player)
         else: #else, search several namespaces or use a default
@@ -611,7 +616,7 @@ class Actor(object):
 #        if self.use: #if user has supplied a look override
 #           self.use(self.game, self, self.game.player)
 #        else: #else, search several namespaces or use a default
-         self.game.mouse_mode = MOUSE_LOOK
+         self.game.mouse_mode = MOUSE_INTERACT #reset mouse
          slug_actor = slugify(actor.name)
          slug_actee = slugify(self.name)
          basic = "%s_use_%s"%(slug_actee, slug_actor)
@@ -629,7 +634,7 @@ class Actor(object):
 #        fn = self._get_interact()
  #       if self.interact: fn = self.interact
         log.debug("player interact with %s"%self.name)
-        self.game.mouse_mode = MOUSE_LOOK #reset mouse mode
+        self.game.mouse_mode = MOUSE_INTERACT #reset mouse mode
         if self.interact: #if user has supplied an interact override
             if type(self.interact) == str: self.interact = get_function(self.interact)
             self.interact(self.game, self, self.game.player)
@@ -951,13 +956,28 @@ class Actor(object):
                 self.x, self.y = self._tx, self._ty
             log.debug("actor %s has arrived at %s"%(self.name, destination))
             self.game._event_finish() #signal to game event queue this event is done
-        else: #try to follow the path
+        else: #try to follow the path, should use astar
+            #available walk actions
+            walk_actions = [wx for wx in self.actions.keys() if wx in ["left", "right", "up", "down"]]
+        
+            #direct method
             dx = int((x - self.x) / 3)
             dy = int((y - self.y) / 3)
-            walk_actions = [x for x in self.actions.keys() if x in ["left", "right", "up", "down"]]
             if len(walk_actions)>0:
                 self.action =self.actions[choice(walk_actions)]
             for i in range(3): self._motion_queue.append((dx+randint(-2,2),dy+randint(-2,2)))
+
+            return
+            solids = []
+#            nodes = [(self.x, self.y), (x,y)]
+            for a in self.scene.objects.values():
+                if a != game.player: # and len(a.nodes) > 0:
+                    nodes.extend(a.nodes)         
+            p = Astar((self.x, self.y), (x, y), nodes, solids)
+            if len(p)>0:
+                self._motion_queue.append(p[0])
+            else:
+                log.info("Unable to find path to point")
 
     def forget(self, fact):
         """ forget a fact from the list of facts """
@@ -1019,6 +1039,7 @@ class Portal(Item):
         Actor.__init__(self, *args, **kwargs)
         self.link = None #which Portal does it link to?
         self._ox, self._oy = 0,0 #outpoint
+        self.display_text = "" #no overlay info text by default for a portal
 #        self.interact = self._interact_default
 #        self.look = self._look
 
@@ -1155,6 +1176,7 @@ class ModalItem(Actor):
         Actor.__init__(self, name)
         self.interact = interact
         self.x, self.y = pos
+        self.display_text = "" #by default no overlay on modal items
 
     def collide(self, x,y): #modals cover the whole screen?
         return True
@@ -1171,6 +1193,7 @@ class MenuItem(Actor):
         self.x, self.y = spos
         self.in_x, self.in_y = spos #special in point reentry point
         self.out_x, self.out_y = hpos #special hide point for menu items
+        self.display_text = "" #by default no overlay on menu items
 
 ALPHABETICAL = 0
 
@@ -1350,7 +1373,7 @@ class Scene(object):
             for i in obj: self._remove(i)
         else:
             self._remove(obj)
-        self._event_finish(block=False)
+        self._event_finish()
         
     def on_add(self, obj): #scene.add
         """ removes obj from current scene it's in, adds to this scene """
@@ -1361,7 +1384,7 @@ class Scene(object):
         if obj.name in self.scales.keys():
             obj.scale = self.scales[obj.name]
         log.debug("Add %s to scene %s"%(obj.name, self.name))
-        self._event_finish(block=False)
+        self._event_finish()
 
 
 class Camera(object):
@@ -1451,7 +1474,7 @@ class Game(object):
         self.modals = []
         self.menu_mouse_pressed = False #stop editor from using menu clicks as edit flags
 
-        self.mouse_mode = MOUSE_LOOK #what activity does a mouse click trigger?
+        self.mouse_mode = MOUSE_INTERACT #what activity does a mouse click trigger?
         self.mouse_cursors = {} #available mouse images
         self.mouse_cursor = MOUSE_POINTER #which image to use
         
@@ -1524,7 +1547,7 @@ class Game(object):
         return obj
         #self._event_finish()
         
-    def info(self, text, x, y):
+    def info(self, text, x, y): #game.info
         """ On screen at one time can be an info text (eg an object name or menu hover) 
             Set that here.
         """
@@ -1648,7 +1671,7 @@ class Game(object):
     def _on_mouse_up(self, x, y, button, modifiers): #single button interface
  #       btn1, btn2, btn3 = pygame.mouse.get_pressed()
 #        import pdb; pdb.set_trace()
-        if button==0: self.mouse_mode = MOUSE_INTERACT
+        if button==0: self.mouse_mode = MOUSE_LOOK #subaltern btn pressed 
         if len(self.modals) > 0: #modals first
             for i in self.modals:
                 if i.collide(x,y): #always trigger interact on modals
@@ -1710,7 +1733,8 @@ class Game(object):
             if i.collide(x,y): #hovering
                 if i.actions.has_key('over'):
                     i.action = i.actions['over']
-                self.info(i.name, i.nx,i.ny)
+                t = i.name if i.display_text == None else i.display_text
+                self.info(t, i.nx,i.ny)
                 i._on_mouse_move(x, y, button, modifiers)
                 menu_capture = True
             else: #unhover over menu item
@@ -1721,8 +1745,12 @@ class Game(object):
         if self.player and self.scene:
             for i in self.scene.objects.values(): #then objects in the scene
                 if i is not self.player and i.collide(x,y):
-                    self.mouse_cursor = MOUSE_CROSSHAIR
-                    self.info(i.name, i.nx,i.ny)
+                    if isinstance(i, Portal):
+                        self.mouse_cursor = MOUSE_LEFT if i.x<512 else MOUSE_RIGHT
+                    else:
+                        self.mouse_cursor = MOUSE_CROSSHAIR
+                    t = i.name if i.display_text == None else i.display_text                    
+                    self.info(t, i.nx,i.ny)
 #                   self.text_image = self.font.render(i.name, True, self.text_colour)
                     return
                 
@@ -1776,6 +1804,17 @@ class Game(object):
         except:
             log.warning("Can't find game's cross cursor, so defaulting to unimplemented pyvida one")
 #            self.mousec_ursors[MOUSE_CROSSHAIR] = pyglet.image.load(os.path.join(sys.prefix, "defaults/c_cross.png"))
+        try:
+            cursor_pwd = os.path.join(os.getcwd(), os.path.join(self.interface_dir, 'i_left.png'))
+            self.mouse_cursors[MOUSE_LEFT] = pygame.image.load(cursor_pwd).convert_alpha()
+        except:
+            log.warning("Can't find game's left portal cursor, so defaulting to unimplemented pyvida one")
+        try:
+            cursor_pwd = os.path.join(os.getcwd(), os.path.join(self.interface_dir, 'i_right.png'))
+            self.mouse_cursors[MOUSE_RIGHT] = pygame.image.load(cursor_pwd).convert_alpha()
+        except:
+            log.warning("Can't find game's left portal cursor, so defaulting to unimplemented pyvida one")
+
     
     def _load_editor(self):
             """ Load the ingame edit menu """
