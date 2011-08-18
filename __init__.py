@@ -814,7 +814,7 @@ class Actor(object):
         pt = get_point(self.game, destination)
         self.x, self.y = pt
         log.debug("actor %s placed at %s"%(self.name, destination))
-        self._event_finish()
+        self._event_finish(block=False)
         
     def on_finish_fade(self):
         log.debug("finish fade %s"%self._alpha)
@@ -846,7 +846,7 @@ class Actor(object):
     def on_hide(self):
         """ A queuing function: hide the actor, including from all click and hover events """
         self.hidden = True
-        self._event_finish()
+        self._event_finish(block=False)
         
     def on_show(self):
         self.hidden = False
@@ -905,18 +905,18 @@ class Actor(object):
                         if get_function(basic) == None: #would use default if player tried this combo
                             log.warning("%s: Possible default function: %s"%(self.scene.name, basic))
         self.game.stuff_event(scene.on_add, self)
-        self._event_finish()
+        self._event_finish(block=False)
     
     
     def on_resize(self, start, end, duration):
         """ animate resizing of character """
         log.debug("actor.resize not implemented yet")
-        self._event_finish()
+        self._event_finish(block=False)
 
     def on_rotate(self, start, end, duration):
         """ animate rotation of character """
         log.debug("actor.rotation not implemented yet")
-        self._event_finish()
+        self._event_finish(block=False)
         
     
     def moveto(self, delta):
@@ -942,8 +942,9 @@ class Actor(object):
             if walkarea_fail: log.warning("Destination point (%s, %s) not inside walkarea "%(x,y))                
         if self.game.testing == True or self.game.enabled_editor: 
             self.x, self.y = x, y #skip straight to point for testing/editing
-        elif walkarea_fail == True: #not testing, and failed walk area test
-            self.game._event_finish() #signal to game event queue this event is done           
+        elif self.scene and walkarea_fail == True: #not testing, and failed walk area test
+            self.game._event_finish() #signal to game event queue this event is done    
+            return       
         if x - fuzz < self.x < x + fuzz and y - fuzz < self.y < y + fuzz:
             if "idle" in self.actions: self.action = self.actions['idle'] #XXX: magical variables, special cases, urgh
             if type(self) in [MenuItem, Collection]:
@@ -999,7 +1000,7 @@ class Actor(object):
     def on_remove(self): #remove this actor from its scene
         if self.scene:
             self.scene._remove(self)
-        self._event_finish()
+        self._event_finish(block=False)
         
     def on_wait(self, data):
         """ helper function for when we pass control of the event loop to a modal and need user 
@@ -1571,7 +1572,7 @@ class Game(object):
                 log.warning("game.smart unable to guess link for %s"%pname)
         if type(player) == str: player = self.actors[player]
         if player: self.player = player
-        self._event_finish()
+        self._event_finish(block=False)
                 
     def on_set_editing(self, obj, objects=None):
         self.editing = obj
@@ -2073,6 +2074,7 @@ class Game(object):
         
         while self.quit == False:
             pygame.time.delay(self.fps)
+            self.log.debug("clock tick")
             if android is not None and android.check_pause():
                 android.wait_for_resume()
             
@@ -2156,8 +2158,8 @@ class Game(object):
                 
         if not self._event: #waiting, so do an immediate process 
             e = self.events.pop(0) #stored as [(function, args))]
-            if e[0].__name__ not in ["on_add", "on_relocate", "on_rescale","on_reclickable", "on_reanchor", "on_restand", "on_retalk", "on_resolid"]:
-                log.debug("Doing event %s"%e[0].__name__)
+#            if e[0].__name__ not in ["on_add", "on_relocate", "on_rescale","on_reclickable", "on_reanchor", "on_restand", "on_retalk", "on_resolid"]:
+            log.debug("Doing event %s"%e[0].__name__)
 
             self._event = e
             e[0](*e[1:]) #call the function with the args        
@@ -2181,7 +2183,7 @@ class Game(object):
         """ start the next event in the game scripter """
 #        log.debug("finished event %s, remaining:"%(self._event, self.events)
         self._event = None
-        if block==False: self.handle_events()
+        if block==False: self.handle_events() #run next event immediately
     
     def walkthroughs(self, suites):
         """ use test suites to enable jumping forward """
