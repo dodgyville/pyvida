@@ -1350,7 +1350,7 @@ class Scene(object):
             for i in obj: self._remove(i)
         else:
             self._remove(obj)
-        self._event_finish()
+        self._event_finish(block=False)
         
     def on_add(self, obj): #scene.add
         """ removes obj from current scene it's in, adds to this scene """
@@ -1361,7 +1361,7 @@ class Scene(object):
         if obj.name in self.scales.keys():
             obj.scale = self.scales[obj.name]
         log.debug("Add %s to scene %s"%(obj.name, self.name))
-        self._event_finish()
+        self._event_finish(block=False)
 
 
 class Camera(object):
@@ -1826,6 +1826,11 @@ class Game(object):
                         f.write('    %s.restand((%i, %i))\n'%(slug, obj._sx, obj._sy))
                         f.write('    %s.retalk((%i, %i))\n'%(slug, obj._tx, obj._ty))
                         f.write('    %s.relocate(scene, (%i, %i))\n'%(slug, obj.x, obj.y))
+                        if isinstance(obj, Portal): #special portal details
+                            ox,oy = obj._ox, obj._oy
+                            if (ox,oy) == (0,0): #guess outpoint
+                                ox = -150 if obj.x < 512 else 150
+                            f.write('    %s.reout((%i, %i))\n'%(slug, ox, oy))
                         if obj == self.player:
                             f.write('    scene.scales["%s"] = %0.2f\n'%(name, obj.scale))
                     
@@ -2074,7 +2079,7 @@ class Game(object):
         
         while self.quit == False:
             pygame.time.delay(self.fps)
-            self.log.debug("clock tick")
+#            self.log.debug("clock tick")
             if android is not None and android.check_pause():
                 android.wait_for_resume()
             
