@@ -3,12 +3,14 @@ from __future__ import print_function
 from datetime import datetime, timedelta, date
 import gc
 import glob
+import copy
 import inspect
 from itertools import chain
 from itertools import cycle
 import logging
 import logging.handlers
-from math import sqrt
+from math import sqrt, acos, degrees, atan2
+import math
 from new import instancemethod 
 from optparse import OptionParser
 import os
@@ -19,6 +21,8 @@ import sys
 import pygame
 from pygame.locals import *#QUIT, K_ESCAPE
 from astar import AStar
+import euclid as eu
+
 
 try:
     import android
@@ -63,7 +67,8 @@ MOUSE_INTERACT = 3   #DEFAULT ACTION FOR MAIN BTN
 MOUSE_POINTER = 0
 MOUSE_CROSSHAIR = 1
 MOUSE_LEFT = 2
-MOUSE_RIGHT = 2
+MOUSE_RIGHT = 3
+MOUSE_EYES = 4
 
 DEBUG_LOCATION = 4
 DEBUG_TEXT = 5
@@ -126,9 +131,70 @@ def use_on_events(name, bases, dic):
 #    sys._getframe(1).f_locals[name] = create_event(f)
 #    return f
 
+def dotproduct(v1, v2):
+  return sum((a*b) for a, b in zip(v1, v2))
+
+def length(v):
+  return sqrt(dotproduct(v, v))
+
+from astar import distance
+
+
+def angle(v1, v2):
+  return acos(dotproduct(v1, v2) / (length(v1) * length(v2)))
+
+
+
+def scaleadd(origin, offset, vectorx):
+    """
+    From a vector representing the origin,
+    a scalar offset, and a vector, returns
+    a Vector3 object representing a point 
+    offset from the origin.
+
+    (Multiply vectorx by offset and add to origin.)
+    """
+    multx = vectorx * offset
+    return multx + origin
+
+def getinsetpoint(pt1, pt2, pt3, offset):
+    """
+    Given three points that form a corner (pt1, pt2, pt3),
+    returns a point offset distance OFFSET to the right
+    of the path formed by pt1-pt2-pt3.
+
+    pt1, pt2, and pt3 are two tuples.
+
+    Returns a Vector3 object.
+    """
+    origin = eu.Vector3(pt2[0], pt2[1], 0.0)
+    v1 = eu.Vector3(pt1[0] - pt2[0], 
+                    pt1[1] - pt2[1], 0.0)
+    v1.normalize()
+    v2 = eu.Vector3(pt3[0] - pt2[0], 
+                    pt3[1] - pt2[1], 0.0)
+    v2.normalize()
+    v3 = copy.copy(v1)
+    v1 = v1.cross(v2)
+    v3 += v2
+    if v1.z < 0.0:
+        retval = scaleadd(origin, -offset, v3)
+    else:
+        retval = scaleadd(origin, offset, v3)
+    return retval
+
+
+
 class Polygon(object):
+    """
+  
+    >>> p = Polygon([(693, 455), (993, 494), (996, 637), (10, 637), (11, 490), (245, 466), (457, 474), (569, 527)])
+
+    """
     def __init__(self, vertexarray = []):
         self.vertexarray = vertexarray
+        self.center = None
+        
     def __get__(self):
         return self.vertexarray
     def __set__(self, v):
@@ -168,6 +234,77 @@ class Polygon(object):
             j = i
             i += 1
         return c
+
+    def rescale(self, scale_factor):
+        """ 
+        courtesy: http://stackoverflow.com/questions/2014859/scaling-a-2d-polygon-with-the-mouse
+        """
+        npts = len(self.vertexarray)
+        if not self.center:
+            a = sum([x for x, y in self.vertexarray]) / npts
+            b = sum([y for x, y in self.vertexarray]) / npts
+            self.center = (a, b)
+
+#        if not self.original_points:  # the points before applying any scaling
+        rescaled_points = list(self.vertexarray)
+
+        for count, point in enumerate(self.vertexarray):
+            dist = (point[0] - self.center[0], point[1] - self.center[1]) 
+            rescaled_points[count] = (scale_factor * dist[0] + self.center[0], scale_factor * dist[1] + self.center[1]) 
+        return rescaled_points
+
+    def calcoffsetpoint(self, pt1, pt2, offset):
+        theta = math.atan2(pt2[1] - pt1[1],
+                       pt2[0] - pt1[0])
+        theta += math.pi/2.0
+        return (pt1[0] - math.cos(theta) * offset,
+            pt1[1] - math.sin(theta) * offset)
+
+    def astar_points_old(self, inside_pt):
+#        #return points for polygon slightly inside the polygon, perfect for a* search
+#        return self.rescale(1.15)
+        #<inside_pt> is a point we know to be inside the walkarea (eg the player)
+        #we need this to work out the quadrant to use
+        points = []
+        old_points = copy.copy(self.vertexarray)
+        old_points.insert(0,self.vertexarray[-1])
+        old_points.append(self.vertexarray[0])
+        for i, w in enumerate(old_points[:-2]):
+            w1 = old_points[i]
+            w2 = old_points[i+1]
+            w3 = old_points[i+2]
+            v1 = [w1[0]-w2[0], w1[1]-w2[1]] #, w2[0], w2[1]]
+            v2 = [w3[0]-w2[0], w3[1]-w2[1]]
+            th = angle(v1, v2)
+            #theta = atan2(x1-x, y1-y);
+            print(v1,v2, degrees(th))
+            helper_pt = inside_pt[0]-w2[0], inside_pt[1]-w2[1]
+            v1th = atan2(w1[0]-w2[0], w1[1]-w2[1])
+            v2th = atan2(w3[0]-w2[0], w3[1]-w2[1])
+            d1, d2 = degrees(v1th),degrees(v2th)
+            print("thetas",d1, d2, abs(d1)+abs(d2))
+#            w1 = w2
+        import pdb; pdb.set_trace()
+        return self.vertexarray
+
+    def astar_points(self):
+        #courtesy http://pyright.blogspot.com/2011/07/pyeuclid-vector-math-and-polygon-offset.html
+        polyinset = []
+        OFFSET = -10
+        i = 0
+#        poly = copyself.vertexarray
+        old_points = copy.copy(self.vertexarray)
+        old_points.insert(0,self.vertexarray[-1])
+        old_points.append(self.vertexarray[0])        
+        lenpolygon = len(old_points)
+        while i < lenpolygon - 2:
+            new_pt = getinsetpoint(old_points[i], old_points[i + 1], old_points[i + 2], OFFSET)
+            polyinset.append((new_pt.x, new_pt.y))
+            i += 1
+#        polyinset.append(getinsetpoint(poly[-2], poly[0], poly[1], OFFSET))
+ #       polyinset.append(getinsetpoint(poly[0], poly[1], poly[2], OFFSET))
+#        import pdb; pdb.set_trace()
+        return polyinset
 
 #### pygame testing functions ####
 
@@ -428,10 +565,15 @@ class WalkArea(object):
     def draw(self): #walkarea.draw
         if self.game and self.game.editing and self.game.editing == self:
             self._rect = pygame.draw.polygon(self.game.screen, (255,255,255), self.polygon.vertexarray, 1)
+            if self.game.player:
+                pygame.draw.polygon(self.game.screen, (255,155,155), self.polygon.astar_points(), 1) 
             for pt in self.polygon.vertexarray:
                 pt_rect = crosshair(self.game.screen, pt, (200,0,255))
                 self._rect.union_ip(pt_rect)
-
+            if self.game.player:
+                for pt in self.polygon.astar_points():
+                    pt_rect = crosshair(self.game.screen, pt, (200,0,5))
+                    self._rect.union_ip(pt_rect)
 
 
 class Actor(object):
@@ -531,6 +673,23 @@ class Actor(object):
         for i in self.actions.values():
             i.scale = x
     scale = property(get_scale, set_scale)  
+    
+    
+    @property
+    def points(self):
+        """ convert this actor into a series of solid points, used by astar to walk around """
+        INFLATE = 5
+        m = self.solid_area.inflate(INFLATE, INFLATE)
+        if (m.w, m.h) == (0,0): return None
+        return [m.topleft, m.bottomleft, m.topright, m.bottomright]
+        
+    @property
+    def solids(self):
+        """ convert this actor into a tuple """
+        m = self.solid_area
+        if (m.w, m.h) == (0,0): return None
+        return (m.left, m.top, m.width, m.height)
+        
     
     @property
     def clickable_area(self):
@@ -929,6 +1088,61 @@ class Actor(object):
         destination = (self.x + delta[0], self.y + delta[1])
         self.on_goto(destination)
     
+    def _goto(self, x, y):
+        """ Call astar search with the scene info to work out best path """
+        solids = []
+        objects = self.scene.objects.values() if self.scene else []
+        walkarea = self.scene.walkareas[0] if self.scene else [] #XXX assumes only 1 walkarea per scene
+        for a in objects: #set up solid areas you can't walk through
+            if a != self.game.player:
+                if a.solid_area.collidepoint(x,y):
+                    print("goto point is inside solid area")
+#                        self.action = self.actions['idle']
+#                        self.event_finish() #signal to game event queue this event is done
+                    return
+                elif not a.solid_area.collidepoint(self.x, self.y):
+                    if a.solids: solids.append(a.solids)
+#        solids.append([505,405,40,190])
+#        nodes = [(500,400),(550,400), (550,600),(500,600)]
+        nodes = []
+        if walkarea: nodes.extend(walkarea.polygon.astar_points()) #add the edges of the walkarea to the available nodes
+        for a in objects:
+            points = a.points
+            if a != self.game.player and len(points) > 0: #possibly add to nodes if inside walkarea
+                if walkarea:
+                    nodes.extend((p[0], p[1]) for p in points if p != None and walkarea.polygon.collide(p[0],p[1])==True)
+                else:
+                    nodes.extend(points)
+        p = AStar((self.x, self.y), (x, y), nodes, solids, walkarea)
+        print(self.name, self.x,self.y,"to",x,y,"points",nodes,"solids",solids,"path",p)
+        return
+        if p == False:
+            print("unable to find path")
+            self.event_finish() #signal to game event queue this event is done
+            self.action = self.actions['idle']
+            return
+        n = p[1] #short term goal is the next node
+        dx = int((n[0] - self.x) / 10)
+        dy = int((n[1] - self.y) / 10)
+        if dx < 0: #left
+            if abs(dx) < abs(dy): #up/down
+                if dy < 0: 
+                    self.action = self.actions['down']
+                else:
+                    self.action = self.actions['up']
+            else: 
+                self.action = self.actions['left'] 
+        else: #right
+            if abs(dx) < abs(dy): #up/down
+                if dy < 0: 
+                    self.action = self.actions['down']
+                else:
+                    self.action = self.actions['up']
+            else: 
+                self.action = self.actions['right'] 
+        for i in range(10):
+            self.motion_queue.append((dx+randint(-2,2),dy+randint(-2,2)))    
+    
     def on_goto(self, destination, block=True, modal=False, ignore=False):
         """
         ignore = [True|False] - ignore walkareas
@@ -956,28 +1170,43 @@ class Actor(object):
                 self.x, self.y = self._tx, self._ty
             log.debug("actor %s has arrived at %s"%(self.name, destination))
             self.game._event_finish() #signal to game event queue this event is done
-        else: #try to follow the path, should use astar
+        else: #lif self.scene: #try to follow the path, should use astar
+        
             #available walk actions
             walk_actions = [wx for wx in self.actions.keys() if wx in ["left", "right", "up", "down"]]
         
             #direct method
+#            dx = int((x - self.x) / 3)
+#            dy = int((y - self.y) / 3)
+#            if len(walk_actions)>0:
+#                self.action =self.actions[choice(walk_actions)]
+#            for i in range(3): self._motion_queue.append((dx+randint(-2,2),dy+randint(-2,2)))
+
+#            return
+#            solids = []
+#            nodes = [(self.x, self.y), (x,y)]
+#            nodes = []
+#            print("astar for %s to %s, %s"%(self.name, x,y))
+#            if self.scene:
+#              for a in self.scene.objects.values():
+#                if a != self.game.player and len(a.points) > 0:
+#                    nodes.extend(a.points)
+#                    print(a.name, a.points)
+#            else:
+#               print("%s HAS NO SCENE???"%self.name)
+#            p = AStar((self.x, self.y), (x, y), nodes, solids)
+#            print(p, "\n")
+#            if len(p)>0:
+#                self._motion_queue.append(p[0])
+#            else:
+#                log.info("Unable to find path to point")
+            self._goto(x,y)
             dx = int((x - self.x) / 3)
             dy = int((y - self.y) / 3)
             if len(walk_actions)>0:
                 self.action =self.actions[choice(walk_actions)]
             for i in range(3): self._motion_queue.append((dx+randint(-2,2),dy+randint(-2,2)))
 
-            return
-            solids = []
-#            nodes = [(self.x, self.y), (x,y)]
-            for a in self.scene.objects.values():
-                if a != game.player: # and len(a.nodes) > 0:
-                    nodes.extend(a.nodes)         
-            p = Astar((self.x, self.y), (x, y), nodes, solids)
-            if len(p)>0:
-                self._motion_queue.append(p[0])
-            else:
-                log.info("Unable to find path to point")
 
     def forget(self, fact):
         """ forget a fact from the list of facts """
@@ -1484,6 +1713,10 @@ class Game(object):
         self.testing_message = True #show a message alerting user they are back in control
         self.missing_actors = [] #list of actors mentioned in walkthrough that are never loaded
         self.test_inventory = False #heavy duty testing of inventory against scene objects
+        
+        #editor
+        self.debug_font = None
+        self.enabled_editor = False
 
         #set up text overlay image
         self.info_colour = (255,255,220)
@@ -1619,7 +1852,7 @@ class Game(object):
                 editor_menu(self)
                 self.enabled_editor = True
                 if self.scene and self.scene.objects: self.set_editing(self.scene.objects.values()[0])
-                self.fps = 100
+#                self.fps = 100
 
     def _trigger(self, obj):
         """ trigger use, look or interact, depending on mouse_mode """
@@ -1701,14 +1934,34 @@ class Game(object):
             #or finally, try and walk the player there.
             self.player.goto((x,y))
 
+    def _on_mouse_move_scene(self, x, y, button, modifiers):
+        """ possibly draw overlay text """
+        if self.player and self.scene:
+            for i in self.scene.objects.values(): #then objects in the scene
+                if i is not self.player and i.collide(x,y):
+                    if isinstance(i, Portal) and self.mouse_mode != MOUSE_USE:
+                        self.mouse_cursor = MOUSE_LEFT if i._x<512 else MOUSE_RIGHT
+                    elif self.mouse_mode == MOUSE_LOOK:
+                        self.mouse_cursor = MOUSE_CROSSHAIR #MOUSE_EYES
+                    elif self.mouse_mode != MOUSE_USE:
+                        self.mouse_cursor = MOUSE_CROSSHAIR
+                    t = i.name if i.display_text == None else i.display_text                    
+                    self.info(t, i.nx,i.ny)
+#                   self.text_image = self.font.render(i.name, True, self.text_colour)
+                    return
+    
 
-    def _on_mouse_move(self, x, y, button, modifiers): #single button interface
+
+    def _on_mouse_move(self, x, y, button, modifiers): #game._on_mouse_move #single button interface
         #not hovering over anything, so clear info text
         self.info_image = None
 
-        if self.mouse_mode != MOUSE_USE: #only update the mouse if not in "use" mode
+        if self.mouse_mode == MOUSE_INTERACT: #only update the mouse if not in "use" mode
             self.mouse_cursor = MOUSE_POINTER
+        elif self.mouse_mode == MOUSE_LOOK:
+            self.mouse_cursor = MOUSE_EYES
         else:
+            self._on_mouse_move_scene(x, y, button, modifiers)
             return
         if self.editing and type(self.editing) == WalkArea and self.editing_index != None: #move walkarea point
             self.editing.polygon.vertexarray[self.editing_index] = (x,y)
@@ -1742,17 +1995,7 @@ class Game(object):
                     if i.actions.has_key('idle'): 
                         i.action = i.actions['idle']
         if menu_capture == True: return
-        if self.player and self.scene:
-            for i in self.scene.objects.values(): #then objects in the scene
-                if i is not self.player and i.collide(x,y):
-                    if isinstance(i, Portal):
-                        self.mouse_cursor = MOUSE_LEFT if i.x<512 else MOUSE_RIGHT
-                    else:
-                        self.mouse_cursor = MOUSE_CROSSHAIR
-                    t = i.name if i.display_text == None else i.display_text                    
-                    self.info(t, i.nx,i.ny)
-#                   self.text_image = self.font.render(i.name, True, self.text_colour)
-                    return
+        self._on_mouse_move_scene(x, y, button, modifiers)
                 
     def _on_key_press(self, key):
         for i in self.menu:
@@ -1792,29 +2035,17 @@ class Game(object):
     
     def _load_mouse_cursors(self):
         """ called by Game after display initialised to load mouse cursor images """
-        try: #use specific mouse cursors or use pyvida defaults
-            cursor_pwd = os.path.join(os.getcwd(), os.path.join(self.interface_dir, 'c_pointer.png'))
-            self.mouse_cursors[MOUSE_POINTER] = pygame.image.load(cursor_pwd).convert_alpha()
-        except:
-            log.warning("Can't find game's pointer cursor, so defaulting to unimplemented pyvida one")
-#            self.mouse_cursors[MOUSE_POINTER] = pyglet.image.load(os.path.join(sys.prefix, "defaults/c_pointer.png"))
-        try:
-            cursor_pwd = os.path.join(os.getcwd(), os.path.join(self.interface_dir, 'c_cross.png'))
-            self.mouse_cursors[MOUSE_CROSSHAIR] = pygame.image.load(cursor_pwd).convert_alpha()
-        except:
-            log.warning("Can't find game's cross cursor, so defaulting to unimplemented pyvida one")
-#            self.mousec_ursors[MOUSE_CROSSHAIR] = pyglet.image.load(os.path.join(sys.prefix, "defaults/c_cross.png"))
-        try:
-            cursor_pwd = os.path.join(os.getcwd(), os.path.join(self.interface_dir, 'i_left.png'))
-            self.mouse_cursors[MOUSE_LEFT] = pygame.image.load(cursor_pwd).convert_alpha()
-        except:
-            log.warning("Can't find game's left portal cursor, so defaulting to unimplemented pyvida one")
-        try:
-            cursor_pwd = os.path.join(os.getcwd(), os.path.join(self.interface_dir, 'i_right.png'))
-            self.mouse_cursors[MOUSE_RIGHT] = pygame.image.load(cursor_pwd).convert_alpha()
-        except:
-            log.warning("Can't find game's left portal cursor, so defaulting to unimplemented pyvida one")
-
+        for key,value in [(MOUSE_POINTER, "c_pointer.png"),
+                        (MOUSE_CROSSHAIR, "c_cross.png"),
+                        (MOUSE_LEFT, "i_left.png"),
+                        (MOUSE_RIGHT, "i_right.png"),
+                        (MOUSE_EYES, "c_look.png"),
+                    ]:
+            try: #use specific mouse cursors or use pyvida defaults
+                cursor_pwd = os.path.join(os.getcwd(), os.path.join(self.interface_dir, value))
+                self.mouse_cursors[key] = pygame.image.load(cursor_pwd).convert_alpha()
+            except:
+                log.warning("Can't find game's %s cursor, so defaulting to unimplemented pyvida one"%value)
     
     def _load_editor(self):
             """ Load the ingame edit menu """
@@ -2067,6 +2298,7 @@ class Game(object):
         
     def run(self, callback=None):
         parser = OptionParser()
+        parser.add_option("-f", "--fullscreen", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
         parser.add_option("-s", "--step", dest="step", help="Jump to step in walkthrough")
         parser.add_option("-a", "--artreactor", dest="artreactor", help="Save images from each scene")
         parser.add_option("-i", "--inventory", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
@@ -2157,6 +2389,11 @@ class Game(object):
             elif self.mouse_cursor != None: #use an object (actor or item) image
                 mouse_image = self.mouse_cursor.action.image
             cursor_rect = self.screen.blit(mouse_image, (m[0]-15, m[1]-15))
+
+            debug_rect = None            
+            if self.enabled_editor == True and self.debug_font:
+                debug_rect = self.screen.blit(self.debug_font.render("%i, %i"%(m[0], m[1]), True, (255,255,120)), (950,10))
+                
             #pt = m
             #colour = (255,0,0)
             #pygame.draw.line(self.screen, colour, (pt[0],pt[1]-5), (pt[0],pt[1]+5))
@@ -2167,6 +2404,7 @@ class Game(object):
             #hide mouse
             if self.scene: self.screen.blit(self.scene.background(), cursor_rect, cursor_rect)
             if self.info_image: self.screen.blit(self.scene.background(), info_rect, info_rect)
+            if debug_rect: self.screen.blit(self.scene.background(), debug_rect, debug_rect)
 
             #if testing, instead of user input, pull an event off the test suite
             if self.testing and len(self.events) == 0 and not self._event: 
