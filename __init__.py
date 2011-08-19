@@ -124,27 +124,6 @@ def use_on_events(name, bases, dic):
         dic[qname] = create_event(dic[queue_method])
     return type(name, bases, dic)
 
-#def queue_function(f):
-#    """ create a small method for an "on_<x>" queue function """
-#    name = f.__name__[3:]
-#    log.debug("game itself has registered %s as a queue function"%(name))
-#    sys._getframe(1).f_locals[name] = create_event(f)
-#    return f
-
-def dotproduct(v1, v2):
-  return sum((a*b) for a, b in zip(v1, v2))
-
-def length(v):
-  return sqrt(dotproduct(v, v))
-
-from astar import distance
-
-
-def angle(v1, v2):
-  return acos(dotproduct(v1, v2) / (length(v1) * length(v2)))
-
-
-
 def scaleadd(origin, offset, vectorx):
     """
     From a vector representing the origin,
@@ -235,64 +214,11 @@ class Polygon(object):
             i += 1
         return c
 
-    def rescale(self, scale_factor):
-        """ 
-        courtesy: http://stackoverflow.com/questions/2014859/scaling-a-2d-polygon-with-the-mouse
-        """
-        npts = len(self.vertexarray)
-        if not self.center:
-            a = sum([x for x, y in self.vertexarray]) / npts
-            b = sum([y for x, y in self.vertexarray]) / npts
-            self.center = (a, b)
-
-#        if not self.original_points:  # the points before applying any scaling
-        rescaled_points = list(self.vertexarray)
-
-        for count, point in enumerate(self.vertexarray):
-            dist = (point[0] - self.center[0], point[1] - self.center[1]) 
-            rescaled_points[count] = (scale_factor * dist[0] + self.center[0], scale_factor * dist[1] + self.center[1]) 
-        return rescaled_points
-
-    def calcoffsetpoint(self, pt1, pt2, offset):
-        theta = math.atan2(pt2[1] - pt1[1],
-                       pt2[0] - pt1[0])
-        theta += math.pi/2.0
-        return (pt1[0] - math.cos(theta) * offset,
-            pt1[1] - math.sin(theta) * offset)
-
-    def astar_points_old(self, inside_pt):
-#        #return points for polygon slightly inside the polygon, perfect for a* search
-#        return self.rescale(1.15)
-        #<inside_pt> is a point we know to be inside the walkarea (eg the player)
-        #we need this to work out the quadrant to use
-        points = []
-        old_points = copy.copy(self.vertexarray)
-        old_points.insert(0,self.vertexarray[-1])
-        old_points.append(self.vertexarray[0])
-        for i, w in enumerate(old_points[:-2]):
-            w1 = old_points[i]
-            w2 = old_points[i+1]
-            w3 = old_points[i+2]
-            v1 = [w1[0]-w2[0], w1[1]-w2[1]] #, w2[0], w2[1]]
-            v2 = [w3[0]-w2[0], w3[1]-w2[1]]
-            th = angle(v1, v2)
-            #theta = atan2(x1-x, y1-y);
-            print(v1,v2, degrees(th))
-            helper_pt = inside_pt[0]-w2[0], inside_pt[1]-w2[1]
-            v1th = atan2(w1[0]-w2[0], w1[1]-w2[1])
-            v2th = atan2(w3[0]-w2[0], w3[1]-w2[1])
-            d1, d2 = degrees(v1th),degrees(v2th)
-            print("thetas",d1, d2, abs(d1)+abs(d2))
-#            w1 = w2
-        import pdb; pdb.set_trace()
-        return self.vertexarray
-
     def astar_points(self):
-        #courtesy http://pyright.blogspot.com/2011/07/pyeuclid-vector-math-and-polygon-offset.html
+        #polygon offset courtesy http://pyright.blogspot.com/2011/07/pyeuclid-vector-math-and-polygon-offset.html
         polyinset = []
         OFFSET = -10
         i = 0
-#        poly = copyself.vertexarray
         old_points = copy.copy(self.vertexarray)
         old_points.insert(0,self.vertexarray[-1])
         old_points.append(self.vertexarray[0])        
@@ -301,9 +227,6 @@ class Polygon(object):
             new_pt = getinsetpoint(old_points[i], old_points[i + 1], old_points[i + 2], OFFSET)
             polyinset.append((new_pt.x, new_pt.y))
             i += 1
-#        polyinset.append(getinsetpoint(poly[-2], poly[0], poly[1], OFFSET))
- #       polyinset.append(getinsetpoint(poly[0], poly[1], poly[2], OFFSET))
-#        import pdb; pdb.set_trace()
         return polyinset
 
 #### pygame testing functions ####
