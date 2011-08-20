@@ -1037,7 +1037,7 @@ class Actor(object):
                 else:
                     nodes.extend(points)
         p = AStar((self.x, self.y), (x, y), nodes, solids, walkarea)
-        print(self.name, self.x,self.y,"to",x,y,"points",nodes,"solids",solids,"path",p)
+#        print(self.name, self.x,self.y,"to",x,y,"points",nodes,"solids",solids,"path",p)
         return
         if p == False:
             print("unable to find path")
@@ -1097,33 +1097,11 @@ class Actor(object):
         
             #available walk actions
             walk_actions = [wx for wx in self.actions.keys() if wx in ["left", "right", "up", "down"]]
-        
-            #direct method
-#            dx = int((x - self.x) / 3)
-#            dy = int((y - self.y) / 3)
-#            if len(walk_actions)>0:
-#                self.action =self.actions[choice(walk_actions)]
-#            for i in range(3): self._motion_queue.append((dx+randint(-2,2),dy+randint(-2,2)))
 
-#            return
-#            solids = []
-#            nodes = [(self.x, self.y), (x,y)]
-#            nodes = []
-#            print("astar for %s to %s, %s"%(self.name, x,y))
-#            if self.scene:
-#              for a in self.scene.objects.values():
-#                if a != self.game.player and len(a.points) > 0:
-#                    nodes.extend(a.points)
-#                    print(a.name, a.points)
-#            else:
-#               print("%s HAS NO SCENE???"%self.name)
-#            p = AStar((self.x, self.y), (x, y), nodes, solids)
-#            print(p, "\n")
-#            if len(p)>0:
-#                self._motion_queue.append(p[0])
-#            else:
-#                log.info("Unable to find path to point")
+            #astar method (WIP)        
             self._goto(x,y)
+
+            #direct method
             dx = int((x - self.x) / 3)
             dy = int((y - self.y) / 3)
             if len(walk_actions)>0:
@@ -1146,7 +1124,10 @@ class Actor(object):
         return True if fact in self.facts else False       
         
     def on_says(self, text, sfx=-1, block=True, modal=True, font=None, action=None, background="msgbox"):
-        """ if sfx == -1, try and guess sound file """
+        """ 
+        if sfx == -1, try and guess sound file 
+        action = which action to display
+        """
         log.info("Actor %s says: %s"%(self.name, text))
 #        log.warning("")
         if self.game.testing: 
@@ -1159,12 +1140,22 @@ class Actor(object):
             game.modals.remove(game.items[background])
             game.modals.remove(game.items["txt"])
             game.modals.remove(game.items["ok"])
+            game.modals.remove(game.items["portrait"])            
             self._event_finish()
         msg = self.game.add(ModalItem(background, close_msgbox,(54,-400)).smart(self.game))
-        txt = self.game.add(Text("txt", (100,-80), (840,170), text, wrap=800), False, ModalItem)
+        txt = self.game.add(Text("txt", (100,-80), (840,170), text, wrap=660), False, ModalItem)
+        
+        #get a portrait for this speech
+        if type(action) == str: action = self.actions[action]
+        if not action: action = self.actions.get("portrait", self.actions.get("idle", None))
+        
+        portrait = Item("portrait")
+        portrait.actions["idle"] = portrait.action = action
+        portrait = self.game.add(portrait, False, ModalItem)
         ok = self.game.add(Item("ok").smart(self.game), False, ModalItem)
         self.game.stuff_event(ok.on_place, (900,250))
-        self.game.stuff_event(txt.on_place, (100,80))
+        self.game.stuff_event(portrait.on_place, (65,52))
+        self.game.stuff_event(txt.on_place, (220,60))
         self.game.stuff_event(msg.on_goto, (54,40))
 
         self._event_finish()
@@ -1282,7 +1273,7 @@ def wrapline(text, font, maxwidth):
  
 
 class Text(Actor):
-    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 200, 214), size=26, wrap=2000):
+    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=26, wrap=2000):
         Actor.__init__(self, name)
         self.x, self.y = pos
         self.w, self.h = dimensions
@@ -1982,8 +1973,7 @@ class Game(object):
         
             #setup editor menu
             def editor_load(game, menuItem, player):
-                log.debug("editor: save scene not implemented")
-                print("What is the name of this state (no directory or .py)?")
+                print("What is the name of this state to load (no directory or .py)?")
                 state = raw_input(">")
                 if state=="": return
 #                sfname = os.path.join(self.scene_dir, os.path.join(self.scene.name, state))
@@ -1991,7 +1981,6 @@ class Game(object):
 
 
             def editor_save(game, menuItem, player):
-                log.debug("editor: save scene not implemented")
                 print("What is the name of this state (no directory or .py)?")
                 state = raw_input(">")
                 if state=="": return
@@ -2091,7 +2080,7 @@ class Game(object):
                     if i.editable and type(i) not in [Portal, Collection, MenuItem]: e_objects.objects[i.name] = i
                 game.menu_fadeOut()
                 game.menu_push() #hide and push old menu to storage
-                game.set_menu("e_close", "e_objects_next", "e_objects_prev", "e_objects")
+                game.set_menu("e_close", "e_objects_next", "e_objects_prev", "e_objects_newitem", "e_objects_newactor", "e_objects")
                 game.menu_hide()
                 game.menu_fadeIn()
                 
@@ -2171,6 +2160,24 @@ class Game(object):
                 btn.collection.index -= 10
                 if btn.collection.index <= 0: btn.collection.index = 0
                 
+            def editor_collection_newactor(game, btn, player):
+                print("What is the name of this actor to create? (blank to abort)")
+                name = raw_input(">")
+                if name=="": return
+                d = os.path.join(game.actor_dir, name)
+                if not os.path.exists(d): os.makedirs(d)
+                obj = Actor(name).smart(game)
+                game.add(obj)
+                
+            def editor_collection_newitem(game, btn, player):
+                print("What is the name of this item to create? (blank to abort)")
+                name = raw_input(">")
+                if name=="": return
+                d = os.path.join(game.item_dir, name)
+                if not os.path.exists(d): os.makedirs(d)
+                obj = Item(name).smart(game)
+                game.add(obj)
+                
             def editor_collection_close(game, collection, player):
                 """ close an collection object in the editor, shared with e_portals and e_objects """
                 game.menu_fadeOut()
@@ -2191,7 +2198,9 @@ class Game(object):
             c = self.add(Collection("e_objects", editor_select_object, (300, 100), (300,-600), K_ESCAPE).smart(self))
             n = self.add(MenuItem("e_objects_next", editor_collection_next, (700, 610), (700,-100), K_ESCAPE).smart(self))            
             p = self.add(MenuItem("e_objects_prev", editor_collection_prev, (740, 610), (740,-100), K_ESCAPE).smart(self))            
-            n.collection = p.collection = c
+            na = self.add(MenuItem("e_objects_newactor", editor_collection_newactor, (620, 610), (680,-100), K_ESCAPE).smart(self))            
+            ni = self.add(MenuItem("e_objects_newitem", editor_collection_newitem, (540, 610), (600,-100), K_ESCAPE).smart(self))            
+            na.collection = ni.collection = n.collection = p.collection = c
 
             #collection widget for adding portals to other scenes
             self.add(Collection("e_portals", editor_select_portal, (300, 100), (300,-600), K_ESCAPE).smart(self))
@@ -2221,7 +2230,7 @@ class Game(object):
         
     def run(self, callback=None):
         parser = OptionParser()
-        parser.add_option("-f", "--fullscreen", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
+        parser.add_option("-f", "--fullscreen", action="store_true", dest="fullscreen", help="Play game in fullscreen mode", default=False)
         parser.add_option("-s", "--step", dest="step", help="Jump to step in walkthrough")
         parser.add_option("-a", "--artreactor", dest="artreactor", help="Save images from each scene")
         parser.add_option("-i", "--inventory", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
@@ -2243,7 +2252,10 @@ class Game(object):
                 self.jump_to_step = options.step
 
         pygame.init() 
-        self.screen = screen = pygame.display.set_mode((1024, 768))
+        flags = 0
+        if options.fullscreen:
+            flags |= pygame.FULLSCREEN
+        self.screen = screen = pygame.display.set_mode((1024, 768), flags)
         
         #do post pygame init loading
         #set up mouse cursors

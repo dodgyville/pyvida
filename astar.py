@@ -87,17 +87,17 @@ def can_see(source, target, blocking_rects_list, walkarea):
     #if the line between source and target intersects with any segment of 
     #the walkarea, then disallow, since we want to stay inside the walkarea
     if walkarea:
-        print los_line_p1, los_line_p2, #walkarea.polygon.vertexarray
+#        print los_line_p1, los_line_p2, #walkarea.polygon.vertexarray
         w0 = w1 = walkarea.polygon.vertexarray[0]
         for w2 in walkarea.polygon.vertexarray[1:]:
             if line_seg_intersect(los_line_p1, los_line_p2, w1, w2): 
-                print "intersect",w1,w2
+#                print "intersect",w1,w2
                 return 0
             w1 = w2
         if line_seg_intersect(los_line_p1, los_line_p2, w2, w0): 
-            print "intersectb",w2,w0
+#            print "intersectb",w2,w0
             return 0 #close loop
-        print "safe"
+#        print "safe"
     return 1
 
 
