@@ -23,6 +23,7 @@ Contents:
    testing.rst
    sceneedit.rst
    assets.rst
+   scripting.rst
    technical.rst
    reference.rst
 
