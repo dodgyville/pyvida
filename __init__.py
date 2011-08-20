@@ -1,28 +1,19 @@
 from __future__ import print_function
 
 from datetime import datetime, timedelta, date
-import gc
-import glob
-import copy
-import inspect
+import gc, glob, copy, inspect, logging, math, os, pdb, sys
 from itertools import chain
 from itertools import cycle
-import logging
 import logging.handlers
 from math import sqrt, acos, degrees, atan2
-import math
 from new import instancemethod 
 from optparse import OptionParser
-import os
-import pdb
 from random import choice, randint
-import sys
 
 import pygame
 from pygame.locals import *#QUIT, K_ESCAPE
 from astar import AStar
 import euclid as eu
-
 
 try:
     import android
@@ -42,8 +33,7 @@ LOG_FILENAME = 'pyvida4.log'
 log = logging.getLogger('pyvida4')
 log.setLevel(logging.DEBUG)
 
-handler = logging.handlers.RotatingFileHandler(
-              LOG_FILENAME, maxBytes=2000000, backupCount=5)
+handler = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=2000000, backupCount=5)
 handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
 log.addHandler(handler)
 
@@ -53,12 +43,9 @@ if not pygame.mixer: log.warning('Warning, sound disabled')
 log.warning("game.scene.camera panning not implemented yet")
 log.warning("broad try excepts around pygame.image.loads")
 log.warning("smart load should load non-idle action as default if there is only one action")
-log.warning("on_says: Passing in action should display action in corner (not implemented yet)")
 log.warning("game.wait not implemented yet")
 
-
 # MOUSE ACTIONS 
-
 #MOUSE_GENERAL = 0
 MOUSE_USE = 1
 MOUSE_LOOK = 2  #SUBALTERN
@@ -83,7 +70,7 @@ DEBUG_SCALE = 11
 LOOP = 0
 PINGPONG = 1
 
-DEFAULT_FRAME_RATE = 16 #100 #normally 12 fps 
+DEFAULT_FRAME_RATE = 16 #100
 
 def use_init_variables(original_class):
     """ Take the value of the args to the init function and assign them to the objects' attributes """
@@ -147,11 +134,9 @@ def getinsetpoint(pt1, pt2, pt3, offset):
     Returns a Vector3 object.
     """
     origin = eu.Vector3(pt2[0], pt2[1], 0.0)
-    v1 = eu.Vector3(pt1[0] - pt2[0], 
-                    pt1[1] - pt2[1], 0.0)
+    v1 = eu.Vector3(pt1[0] - pt2[0], pt1[1] - pt2[1], 0.0)
     v1.normalize()
-    v2 = eu.Vector3(pt3[0] - pt2[0], 
-                    pt3[1] - pt2[1], 0.0)
+    v2 = eu.Vector3(pt3[0] - pt2[0], pt3[1] - pt2[1], 0.0)
     v2.normalize()
     v3 = copy.copy(v1)
     v1 = v1.cross(v2)
@@ -166,9 +151,7 @@ def getinsetpoint(pt1, pt2, pt3, offset):
 
 class Polygon(object):
     """
-  
     >>> p = Polygon([(693, 455), (993, 494), (996, 637), (10, 637), (11, 490), (245, 466), (457, 474), (569, 527)])
-
     """
     def __init__(self, vertexarray = []):
         self.vertexarray = vertexarray
@@ -178,11 +161,6 @@ class Polygon(object):
         return self.vertexarray
     def __set__(self, v):
         self.vertexarray = v
-#    def draw(self): #polygon.draw
-#        for i in range(1, len(self.vertexarray)):
-#            x1,y1 = self.vertexarray[i-1]
-#            x2,y2 = self.vertexarray[i]
-#            draw_line(x1,y1,x2,y2)
 
     def get_point(self, i):
         """ return a point by index """
@@ -307,7 +285,6 @@ def prepare_tests(game, suites, log_file=None, user_control=None):#, setup_fn, e
         log.addHandler(handler)    
 
     log = log    
-#    game.quit = True
     log.info("===[TESTING REPORT FOR %s]==="%game.name.upper())
     log.debug("%s"%date.today().strftime("%Y_%m_%d"))
     game.log = log
@@ -315,10 +292,8 @@ def prepare_tests(game, suites, log_file=None, user_control=None):#, setup_fn, e
     game.fps = 100
     game.tests = [i for sublist in suites for i in sublist]  #all tests, flattened in order
 
-
         
 #### pygame util functions ####        
-
 def load_image(fname):
     im = None
     try:
@@ -342,11 +317,11 @@ def slugify(txt):
     return txt.replace("'", "")
 
 def collide(rect, x,y):
-        """ text is point x,y is inside rectangle """
-        return not ((x < rect[0])
-            or (x > rect[2] + rect[0])
-            or (y < rect[1])
-            or (y > rect[3] + rect[1]))
+    """ text is point x,y is inside rectangle """
+    return not ((x < rect[0])
+        or (x > rect[2] + rect[0])
+        or (y < rect[1])
+        or (y > rect[3] + rect[1]))
 
 def get_point(game, destination):
     """ get a point from a tuple, str or destination """
@@ -373,17 +348,13 @@ def get_function(basic):
           script = getattr(sys.modules['__main__'], basic.lower())
     return script
 
-
 #### pyvida helper functions ####
-
 def editor_menu(game):
-                game.menu_fadeOut()
-                game.menu_push() #hide and push old menu to storage
-                game.set_menu("e_load", "e_save", "e_add", "e_prev", "e_next", "e_walk", "e_portal", "e_scene", "e_step")
-                game.menu_hide()
-                game.menu_fadeIn()
-
-
+    game.menu_fadeOut()
+    game.menu_push() #hide and push old menu to storage
+    game.set_menu("e_load", "e_save", "e_add", "e_prev", "e_next", "e_walk", "e_portal", "e_scene", "e_step")
+    game.menu_hide()
+    game.menu_fadeIn()
 
 def editor_point(game, menuItem, player):
     #click on an editor button for editing a point
@@ -404,9 +375,8 @@ def editor_add_walkareapoint(game, menuItem, player):
      if game.editing:
             game.editing.polygon.vertexarray.append((512,316))
 
+
 #### pyvida classes ####
-
-
 @use_init_variables
 class Action(object):
     def __init__(self, actor=None, name="unknown action", fname=""): 
@@ -501,7 +471,7 @@ class WalkArea(object):
 
 class Actor(object):
     """
-    The class for all objects in the game.
+    The base class for all objects in the game.
     """
     __metaclass__ = use_on_events
     def __init__(self, name=None): 
@@ -612,7 +582,6 @@ class Actor(object):
         m = self.solid_area
         if (m.w, m.h) == (0,0): return None
         return (m.left, m.top, m.width, m.height)
-        
     
     @property
     def clickable_area(self):
