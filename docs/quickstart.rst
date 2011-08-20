@@ -91,10 +91,6 @@ Run your game
 -------------
 Type::
 
-python game.py
+python game.py -f
 
-
-
-
-
-
+To run your game in fullscreen use -f 
