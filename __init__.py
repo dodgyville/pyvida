@@ -20,6 +20,8 @@ try:
 except ImportError:
     android = None
 
+DEBUG_ASTAR = False
+
 ENABLE_EDITOR = True
 ENABLE_PROFILING = True
 ENABLE_LOGGING = True
@@ -38,12 +40,23 @@ handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s -
 log.addHandler(handler)
 
 log.debug("\n\n======== STARTING RUN ===========")
+
+if 'win32' in sys.platform: # check for win32 support
+    # win32 allows building of executables #    import py2exe
+    log.info("[Win32]")
+if 'darwin' in sys.platform: # check for OS X support
+    log.info("[MacOS]")
+if 'linux' in sys.platform:
+    log.info("[Linux]")
+
+
 if not pygame.font: log.warning('Warning, fonts disabled')
 if not pygame.mixer: log.warning('Warning, sound disabled')
 log.warning("game.scene.camera panning not implemented yet")
 log.warning("broad try excepts around pygame.image.loads")
 log.warning("smart load should load non-idle action as default if there is only one action")
 log.warning("game.wait not implemented yet")
+log.warning("action.deltas can only be set via action.load")
 
 # MOUSE ACTIONS 
 #MOUSE_GENERAL = 0
@@ -289,8 +302,8 @@ def prepare_tests(game, suites, log_file=None, user_control=None):#, setup_fn, e
     log.debug("%s"%date.today().strftime("%Y_%m_%d"))
     game.log = log
     game.testing = True
-    game.fps = 100
     game.tests = [i for sublist in suites for i in sublist]  #all tests, flattened in order
+    game.fps = int(1000.0/100) #fast debug
 
         
 #### pygame util functions ####        
@@ -387,6 +400,14 @@ class Action(object):
         self.step = 1
         self.scale = 1.0
 #        self.ax, self.ay = 0,0 #anchor point
+        #deltas
+        self.delta_index = 0 #index to deltas
+        self.deltas = None
+        self.avg_delta_x, self.avg_delta_y = 0,0 #for calculating astar
+
+    def unload(self):  #action.unload
+         self.images = []
+       
         
     @property
     def image(self): #return the current image
@@ -405,25 +426,15 @@ class Action(object):
         if self.mode == PINGPONG and self.index == self.count: 
             self.step = -1
             self.index =self.count-1
-            
         
     def load(self): 
         """Load an anim from a montage file"""
         anim = None
         fname = os.path.splitext(self.fname)[0]
+        
+        #load the image and slice info if necessary
         if not os.path.isfile(fname+".montage"):
-#            images = pyglet.image.load(fname+".png") #image can't be 9000 wide!
             self.images = [pygame.image.load(fname+".png").convert_alpha()]
-#            if anchor_x == -1: 
- #               images.anchor_x = int(images.width/2)
-#            elif anchor_x:
-#                images.anchor_x = anchor_x
-#            if anchor_y == -1: 
-#                images.anchor_y = int(images.height * 0.15)
-#            elif anchor_y:
-#                images.anchor_y = anchor_y
-#            self.anchor_x = images.anchor_x
-#            self.anchor_y = images.anchor_y
         else:
             with open(fname+".montage", "r") as f:
                 num, w, h  = [int(i) for i in f.readlines()]
@@ -432,6 +443,25 @@ class Action(object):
             for i in xrange(0, num):
     	        self.images.append(master_image.subsurface((i*w,0,w,h)))
         self.count = len(self.images)
+        
+        #load the deltas for moving the animation
+        if os.path.isfile(fname+".delta"):  #load deltas
+            self.deltas = []
+            for line in open(fname+".delta",'r'):
+                x,y = line.strip().split(" ")
+                self.deltas.append((int(x), int(y)))
+            tx, ty = tuple(sum(t) for t in zip(*self.deltas)) #sum of the x,y deltas
+            self.avg_delta_x, self.avg_delta_y = tx/len(self.deltas),ty/len(self.deltas) #for calculating astar        
+        else:
+            if self.name not in ["idle ", "portrait"]: log.debug("action %s has no delta, is stationary"%self.name)
+            
+        #load possible offset (relative to actor) for this action
+#        if os.path.isfile(d+".offset"):  #load per-action displacement (on top of actor displacement)
+#            with open(fname+".offset", "r") as f:        
+#                self.deltas = [(int(x), int(y) for x,y in f.readline().split(" ")]
+#                offsets = f.readlines()
+#                a.setDisplacement([int(of1fsets[0]), int(offsets[1])])
+       
         return self
 
 DEFAULT_WALKAREA = [(100,600),(900,560),(920,700),(80,720)]
@@ -578,7 +608,7 @@ class Actor(object):
         
     @property
     def solids(self):
-        """ convert this actor into a tuple """
+        """ convert thias actor into a tuple """
         m = self.solid_area
         if (m.w, m.h) == (0,0): return None
         return (m.left, m.top, m.width, m.height)
@@ -776,12 +806,12 @@ class Actor(object):
         l = len(self._motion_queue)
         dx = 0
         dy = 0
-        if l > 0:
-            d = self._motion_queue.pop(0)
-            dx, dy = d
-            self.x += dx
-            self.y += dy
-            if l == 1: #if queue empty, get some more queue
+        if l > 0: #in middle of moving somewhere
+            dx, dy = self._motion_queue.pop(0)
+            self.x += int(float(dx) * self.scale)
+            self.y += int(float(dy) * self.scale)
+#            if not self._test_goto_point((self._tx, self._ty))
+            if l == 1: #if not at point and queue (almost) empty, get some more queue or end the move
                 self.on_goto((self._tx, self._ty))
 #        if self.action:
  #           ax,ay=self.ax*self.action.scale, self.ay*self.action.scale
@@ -846,6 +876,13 @@ class Actor(object):
         if self.game.player: self.game.player.says(choice(c))
         self._event_finish()
 
+    def _do(self, action):
+        if type(action) == Action: action = action.name
+        if action in self.actions.keys():
+            self.action = self.actions[action]
+            log.debug("actor %s does action %s"%(self.name, action))
+        else:
+            log.error("actor %s missing action %s"%(self.name, action))
 
     def on_do(self, action):
         """ 
@@ -853,11 +890,7 @@ class Actor(object):
         
         Make this actor do an action
         """
-        if action in self.actions.keys():
-            self.action = self.actions[action]
-            log.debug("actor %s does action %s"%(self.name, action))
-        else:
-            log.error("actor %s missing action %s"%(self.name, action))
+        self._do(action)
         self._event_finish()
             
         
@@ -980,7 +1013,23 @@ class Actor(object):
         destination = (self.x + delta[0], self.y + delta[1])
         self.on_goto(destination)
     
-    def _goto(self, x, y):
+    def _goto_direct(self, x,y, walk_actions):
+
+        dx = int((x - self.x) / 3)
+        dy = int((y - self.y) / 3)
+        if len(walk_actions)>0:
+            self.action =self.actions[choice(walk_actions)]
+        for i in range(3): self._motion_queue.append((dx+randint(-2,2),dy+randint(-2,2)))
+    
+    def _queue_motion(self, action):
+        """ Queue the deltas from an action on this actor's motion_queue """
+        if type(action) == str: action = self.actions[action]
+        log.debug("queue_motion %s %s"%(action.name, action.deltas))
+        for dx,dy in action.deltas:
+            self._motion_queue.append((dx+randint(-1,1),dy+randint(-1,1)))
+        self._do(action) 
+    
+    def _goto_astar(self, x, y, walk_actions):
         """ Call astar search with the scene info to work out best path """
         solids = []
         objects = self.scene.objects.values() if self.scene else []
@@ -1007,33 +1056,38 @@ class Actor(object):
                     nodes.extend(points)
         p = AStar((self.x, self.y), (x, y), nodes, solids, walkarea)
 #        print(self.name, self.x,self.y,"to",x,y,"points",nodes,"solids",solids,"path",p)
-        return
+#        return
         if p == False:
-            print("unable to find path")
-            self.event_finish() #signal to game event queue this event is done
-            self.action = self.actions['idle']
+            log.warning("unable to find path")
+            self._do('idle')
+            self.game._event_finish() #signal to game event queue this event is done
             return
         n = p[1] #short term goal is the next node
-        dx = int((n[0] - self.x) / 10)
-        dy = int((n[1] - self.y) / 10)
+        log.debug("astar short term goal is from (%s, %s) to %s"%(self.x, self.y, n))
+        dx, dy = n[0] - self.x, n[1] - self.y
         if dx < 0: #left
-            if abs(dx) < abs(dy): #up/down
-                if dy < 0: 
-                    self.action = self.actions['down']
-                else:
-                    self.action = self.actions['up']
+            if abs(dx) < abs(dy): #up/down since y distance is greater
+                self._queue_motion("down") if dy > 0 else self._queue_motion("up")
             else: 
-                self.action = self.actions['left'] 
+                self._queue_motion("left")
         else: #right
             if abs(dx) < abs(dy): #up/down
-                if dy < 0: 
-                    self.action = self.actions['down']
-                else:
-                    self.action = self.actions['up']
+                self._queue_motion("down") if dy > 0 else self._queue_motion("up")
             else: 
-                self.action = self.actions['right'] 
-        for i in range(10):
-            self.motion_queue.append((dx+randint(-2,2),dy+randint(-2,2)))    
+                self._queue_motion("right")
+    
+    def _test_goto_point(self, destination):
+        """ If player is at point, set to idle and finish event """
+        x,y = destination
+        fuzz = 10
+        if x - fuzz < self.x < x + fuzz and y - fuzz < self.y < y + fuzz: #arrived at point, end event
+            if "idle" in self.actions: self.action = self.actions['idle'] #XXX: magical variables, special cases, urgh
+            if type(self) in [MenuItem, Collection]:
+                self.x, self.y = self._tx, self._ty
+            log.debug("actor %s has arrived at %s"%(self.name, destination))
+            self.game._event_finish() #signal to game event queue this event is done            
+            return True
+        return False
     
     def on_goto(self, destination, block=True, modal=False, ignore=False):
         """
@@ -1045,7 +1099,6 @@ class Actor(object):
             destination = (destination.sx, destination.sy)
         x,y = self._tx, self._ty = destination
         d = self.speed
-        fuzz = 10
         if self.scene: #test point will be inside a walkarea
             walkarea_fail = True
             for w in self.scene.walkareas:
@@ -1056,27 +1109,16 @@ class Actor(object):
         elif self.scene and walkarea_fail == True: #not testing, and failed walk area test
             self.game._event_finish() #signal to game event queue this event is done    
             return       
-        if x - fuzz < self.x < x + fuzz and y - fuzz < self.y < y + fuzz:
-            if "idle" in self.actions: self.action = self.actions['idle'] #XXX: magical variables, special cases, urgh
-            if type(self) in [MenuItem, Collection]:
-                self.x, self.y = self._tx, self._ty
-            log.debug("actor %s has arrived at %s"%(self.name, destination))
-            self.game._event_finish() #signal to game event queue this event is done
-        else: #lif self.scene: #try to follow the path, should use astar
-        
+        if self._test_goto_point(destination): 
+            return
+        else: #try to follow the path, should use astar
             #available walk actions
             walk_actions = [wx for wx in self.actions.keys() if wx in ["left", "right", "up", "down"]]
-
-            #astar method (WIP)        
-            self._goto(x,y)
-
-            #direct method
-            dx = int((x - self.x) / 3)
-            dy = int((y - self.y) / 3)
-            if len(walk_actions)>0:
-                self.action =self.actions[choice(walk_actions)]
-            for i in range(3): self._motion_queue.append((dx+randint(-2,2),dy+randint(-2,2)))
-
+            if len(walk_actions) <= 1: #need more than two actions to trigger astar
+                self._goto_direct(x,y, walk_actions)
+            else:
+                self._goto_direct(x,y, walk_actions)
+#                self._goto_astar(x,y, walk_actions) #XXX disabled astar for the moment
 
     def forget(self, fact):
         """ forget a fact from the list of facts """
@@ -1730,12 +1772,12 @@ class Game(object):
                 self.editing = None
                 self.enabled_editor = False
                 if hasattr(self, "e_objects"): self.e_objects = None #free add object collection
-                self.fps = DEFAULT_FRAME_RATE
+                self.fps = int(1000.0/DEFAULT_FRAME_RATE)
             else:
                 editor_menu(self)
                 self.enabled_editor = True
                 if self.scene and self.scene.objects: self.set_editing(self.scene.objects.values()[0])
-#                self.fps = 100
+                self.fps = int(1000.0/100) #fast debug
 
     def _trigger(self, obj):
         """ trigger use, look or interact, depending on mouse_mode """
@@ -2330,7 +2372,7 @@ class Game(object):
                                 if self.jump_to_step == "set_trace": import pdb; pdb.set_trace()
                         if return_to_player: #hand control back to player
                             self.testing = False
-                            self.fps = DEFAULT_FRAME_RATE
+                            self.fps = int(1000.0/DEFAULT_FRAME_RATE)
                             #self.tests = None
                             if self.player and self.testing_message: self.player.says("Handing back control to you")
                             self.finish_tests()
@@ -2344,8 +2386,8 @@ class Game(object):
                 
         if not self._event: #waiting, so do an immediate process 
             e = self.events.pop(0) #stored as [(function, args))]
-#            if e[0].__name__ not in ["on_add", "on_relocate", "on_rescale","on_reclickable", "on_reanchor", "on_restand", "on_retalk", "on_resolid"]:
-            log.debug("Doing event %s"%e[0].__name__)
+            if e[0].__name__ not in ["on_add", "on_relocate", "on_rescale","on_reclickable", "on_reanchor", "on_restand", "on_retalk", "on_resolid"]:
+                log.debug("Doing event %s"%e[0].__name__)
 
             self._event = e
             e[0](*e[1:]) #call the function with the args        
