@@ -15,3 +15,9 @@ python game.py -s <n>
 where <n> is the step in your walkthrough you want to jump to. At that point, control of the game will be handed back to the user.
 
 This is perfect for testing and editing.
+
+-i = inventory test
+
+-a = artreactor
+
+

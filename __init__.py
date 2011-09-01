@@ -1,23 +1,26 @@
 from __future__ import print_function
 
-from datetime import datetime, timedelta
-import gc
-import glob
-import inspect
+from datetime import datetime, timedelta, date
+import gc, glob, copy, inspect, logging, math, os, pdb, sys
 from itertools import chain
 from itertools import cycle
-import logging
 import logging.handlers
-from math import sqrt
+from math import sqrt, acos, degrees, atan2
 from new import instancemethod 
 from optparse import OptionParser
-import os
-import pdb
 from random import choice, randint
-import sys
 
 import pygame
 from pygame.locals import *#QUIT, K_ESCAPE
+from astar import AStar
+import euclid as eu
+
+try:
+    import android
+except ImportError:
+    android = None
+
+DEBUG_ASTAR = False
 
 ENABLE_EDITOR = True
 ENABLE_PROFILING = True
@@ -32,30 +35,40 @@ LOG_FILENAME = 'pyvida4.log'
 log = logging.getLogger('pyvida4')
 log.setLevel(logging.DEBUG)
 
-handler = logging.handlers.RotatingFileHandler(
-              LOG_FILENAME, maxBytes=60000, backupCount=5)
+handler = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=2000000, backupCount=5)
 handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
 log.addHandler(handler)
 
 log.debug("\n\n======== STARTING RUN ===========")
+
+if 'win32' in sys.platform: # check for win32 support
+    # win32 allows building of executables #    import py2exe
+    log.info("[Win32]")
+if 'darwin' in sys.platform: # check for OS X support
+    log.info("[MacOS]")
+if 'linux' in sys.platform:
+    log.info("[Linux]")
+
+
 if not pygame.font: log.warning('Warning, fonts disabled')
 if not pygame.mixer: log.warning('Warning, sound disabled')
 log.warning("game.scene.camera panning not implemented yet")
 log.warning("broad try excepts around pygame.image.loads")
 log.warning("smart load should load non-idle action as default if there is only one action")
-log.warning("on_says: Passing in action should display action in corner (not implemented yet)")
 log.warning("game.wait not implemented yet")
-
+log.warning("action.deltas can only be set via action.load")
 
 # MOUSE ACTIONS 
-
 #MOUSE_GENERAL = 0
 MOUSE_USE = 1
-MOUSE_LOOK = 2
-MOUSE_INTERACT = 3
+MOUSE_LOOK = 2  #SUBALTERN
+MOUSE_INTERACT = 3   #DEFAULT ACTION FOR MAIN BTN
 
 MOUSE_POINTER = 0
 MOUSE_CROSSHAIR = 1
+MOUSE_LEFT = 2
+MOUSE_RIGHT = 3
+MOUSE_EYES = 4
 
 DEBUG_LOCATION = 4
 DEBUG_TEXT = 5
@@ -69,6 +82,8 @@ DEBUG_SCALE = 11
 #Animation modes
 LOOP = 0
 PINGPONG = 1
+
+DEFAULT_FRAME_RATE = 16 #100
 
 def use_init_variables(original_class):
     """ Take the value of the args to the init function and assign them to the objects' attributes """
@@ -109,25 +124,56 @@ def use_on_events(name, bases, dic):
         dic[qname] = create_event(dic[queue_method])
     return type(name, bases, dic)
 
-#def queue_function(f):
-#    """ create a small method for an "on_<x>" queue function """
-#    name = f.__name__[3:]
-#    log.debug("game itself has registered %s as a queue function"%(name))
-#    sys._getframe(1).f_locals[name] = create_event(f)
-#    return f
+def scaleadd(origin, offset, vectorx):
+    """
+    From a vector representing the origin,
+    a scalar offset, and a vector, returns
+    a Vector3 object representing a point 
+    offset from the origin.
+
+    (Multiply vectorx by offset and add to origin.)
+    """
+    multx = vectorx * offset
+    return multx + origin
+
+def getinsetpoint(pt1, pt2, pt3, offset):
+    """
+    Given three points that form a corner (pt1, pt2, pt3),
+    returns a point offset distance OFFSET to the right
+    of the path formed by pt1-pt2-pt3.
+
+    pt1, pt2, and pt3 are two tuples.
+
+    Returns a Vector3 object.
+    """
+    origin = eu.Vector3(pt2[0], pt2[1], 0.0)
+    v1 = eu.Vector3(pt1[0] - pt2[0], pt1[1] - pt2[1], 0.0)
+    v1.normalize()
+    v2 = eu.Vector3(pt3[0] - pt2[0], pt3[1] - pt2[1], 0.0)
+    v2.normalize()
+    v3 = copy.copy(v1)
+    v1 = v1.cross(v2)
+    v3 += v2
+    if v1.z < 0.0:
+        retval = scaleadd(origin, -offset, v3)
+    else:
+        retval = scaleadd(origin, offset, v3)
+    return retval
+
+
 
 class Polygon(object):
+    """
+    >>> p = Polygon([(693, 455), (993, 494), (996, 637), (10, 637), (11, 490), (245, 466), (457, 474), (569, 527)])
+    """
     def __init__(self, vertexarray = []):
         self.vertexarray = vertexarray
+        self.center = None
+        
     def __get__(self):
         return self.vertexarray
     def __set__(self, v):
         self.vertexarray = v
-#    def draw(self): #polygon.draw
-#        for i in range(1, len(self.vertexarray)):
-#            x1,y1 = self.vertexarray[i-1]
-#            x2,y2 = self.vertexarray[i]
-#            draw_line(x1,y1,x2,y2)
 
     def get_point(self, i):
         """ return a point by index """
@@ -159,6 +205,21 @@ class Polygon(object):
             i += 1
         return c
 
+    def astar_points(self):
+        #polygon offset courtesy http://pyright.blogspot.com/2011/07/pyeuclid-vector-math-and-polygon-offset.html
+        polyinset = []
+        OFFSET = -10
+        i = 0
+        old_points = copy.copy(self.vertexarray)
+        old_points.insert(0,self.vertexarray[-1])
+        old_points.append(self.vertexarray[0])        
+        lenpolygon = len(old_points)
+        while i < lenpolygon - 2:
+            new_pt = getinsetpoint(old_points[i], old_points[i + 1], old_points[i + 2], OFFSET)
+            polyinset.append((new_pt.x, new_pt.y))
+            i += 1
+        return polyinset
+
 #### pygame testing functions ####
 
 def process_step(game, step):
@@ -171,6 +232,9 @@ def process_step(game, step):
     actor = step[1]
     actee = None
     game.mouse_mode = MOUSE_LOOK
+    if game.scene and game.errors < 2 and function_name != "location": #increment time spent in current scene
+        game.scene.analytics_count += 1
+    
     if function_name == "interact":
         log.info("TEST SUITE: %s with %s"%(function_name, actor))
         game.mouse_mode = MOUSE_INTERACT
@@ -181,12 +245,15 @@ def process_step(game, step):
         actee = step[2]
         log.info("TEST SUITE: %s %s on %s"%(function_name, actor, actee))
         game.mouse_mode = MOUSE_USE
+        if actee not in game.player.inventory:
+            log.warning("Item %s not in player's inventory"%actee)
         if actee in game.items: 
             actee = game.items[actee]
         elif actee in game.actors:
             actee = game.actors[actee]
         else:
             log.error("Can't do test suite trigger use, unable to find %s in game objects"%actee)
+            if actee not in game.missing_actors: game.missing_actors.append(actee)
             fail = True
         if not fail: game.mouse_cursor = actee
     elif function_name == "location": #check current location matches scene "actor"
@@ -207,7 +274,9 @@ def process_step(game, step):
             if actor == i.name:
                 game._trigger(i)
                 return
-    if not fail: log.error("Unable to find actor %s in modals, menu or current scene (%s) objects"%(actor, game.scene.name))
+    if not fail: 
+        log.error("Unable to find actor %s in modals, menu or current scene (%s) objects"%(actor, game.scene.name))
+        if actor not in game.missing_actors and actor not in game.actors and actor not in game.items: game.missing_actors.append(actor)
     game.errors += 1
     if game.errors == 2:
         game.log.warning("TEST SUITE SUGGESTS GAME HAS GONE OFF THE RAILS AT THIS POINT")
@@ -215,9 +284,29 @@ def process_step(game, step):
         game.log.info("This occurred at %s steps, estimated at %s.%s minutes"%(game.steps_complete, t/60, t%60))
 
 
+def prepare_tests(game, suites, log_file=None, user_control=None):#, setup_fn, exit_fn = on_exit, report = True, wait=10.1):
+    """
+    If user_control is an integer <n> or a string <s>, try and pause at step <n> in the suite or at command with name <s>
+    
+    Call it before the game.run function
+    """
+    global log
+    if log_file: #push log to file
+        LOG_FILENAME = log_file
+        handler = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=2000000, backupCount=5)
+        handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+        log.addHandler(handler)    
+
+    log = log    
+    log.info("===[TESTING REPORT FOR %s]==="%game.name.upper())
+    log.debug("%s"%date.today().strftime("%Y_%m_%d"))
+    game.log = log
+    game.testing = True
+    game.tests = [i for sublist in suites for i in sublist]  #all tests, flattened in order
+    game.fps = int(1000.0/100) #fast debug
+
         
 #### pygame util functions ####        
-
 def load_image(fname):
     im = None
     try:
@@ -241,11 +330,11 @@ def slugify(txt):
     return txt.replace("'", "")
 
 def collide(rect, x,y):
-        """ text is point x,y is inside rectangle """
-        return not ((x < rect[0])
-            or (x > rect[2] + rect[0])
-            or (y < rect[1])
-            or (y > rect[3] + rect[1]))
+    """ text is point x,y is inside rectangle """
+    return not ((x < rect[0])
+        or (x > rect[2] + rect[0])
+        or (y < rect[1])
+        or (y > rect[3] + rect[1]))
 
 def get_point(game, destination):
     """ get a point from a tuple, str or destination """
@@ -264,6 +353,7 @@ def relative_position(game, parent, pos):
     return parent.x-mx, parent.y-my
 
 def get_function(basic):
+    """ Search memory for a function that matches this name """
     script = None
     if hasattr(sys.modules['__main__'], basic):
           script = getattr(sys.modules['__main__'], basic)
@@ -271,17 +361,13 @@ def get_function(basic):
           script = getattr(sys.modules['__main__'], basic.lower())
     return script
 
-
 #### pyvida helper functions ####
-
 def editor_menu(game):
-                game.menu_fadeOut()
-                game.menu_push() #hide and push old menu to storage
-                game.set_menu("e_load", "e_save", "e_add", "e_prev", "e_next", "e_walk", "e_portal", "e_scene", "e_step")
-                game.menu_hide()
-                game.menu_fadeIn()
-
-
+    game.menu_fadeOut()
+    game.menu_push() #hide and push old menu to storage
+    game.set_menu("e_load", "e_save", "e_add", "e_prev", "e_next", "e_walk", "e_portal", "e_scene", "e_step")
+    game.menu_hide()
+    game.menu_fadeIn()
 
 def editor_point(game, menuItem, player):
     #click on an editor button for editing a point
@@ -302,9 +388,8 @@ def editor_add_walkareapoint(game, menuItem, player):
      if game.editing:
             game.editing.polygon.vertexarray.append((512,316))
 
+
 #### pyvida classes ####
-
-
 @use_init_variables
 class Action(object):
     def __init__(self, actor=None, name="unknown action", fname=""): 
@@ -315,6 +400,14 @@ class Action(object):
         self.step = 1
         self.scale = 1.0
 #        self.ax, self.ay = 0,0 #anchor point
+        #deltas
+        self.delta_index = 0 #index to deltas
+        self.deltas = None
+        self.avg_delta_x, self.avg_delta_y = 0,0 #for calculating astar
+
+    def unload(self):  #action.unload
+         self.images = []
+       
         
     @property
     def image(self): #return the current image
@@ -333,25 +426,15 @@ class Action(object):
         if self.mode == PINGPONG and self.index == self.count: 
             self.step = -1
             self.index =self.count-1
-            
         
     def load(self): 
         """Load an anim from a montage file"""
         anim = None
         fname = os.path.splitext(self.fname)[0]
+        
+        #load the image and slice info if necessary
         if not os.path.isfile(fname+".montage"):
-#            images = pyglet.image.load(fname+".png") #image can't be 9000 wide!
             self.images = [pygame.image.load(fname+".png").convert_alpha()]
-#            if anchor_x == -1: 
- #               images.anchor_x = int(images.width/2)
-#            elif anchor_x:
-#                images.anchor_x = anchor_x
-#            if anchor_y == -1: 
-#                images.anchor_y = int(images.height * 0.15)
-#            elif anchor_y:
-#                images.anchor_y = anchor_y
-#            self.anchor_x = images.anchor_x
-#            self.anchor_y = images.anchor_y
         else:
             with open(fname+".montage", "r") as f:
                 num, w, h  = [int(i) for i in f.readlines()]
@@ -360,6 +443,25 @@ class Action(object):
             for i in xrange(0, num):
     	        self.images.append(master_image.subsurface((i*w,0,w,h)))
         self.count = len(self.images)
+        
+        #load the deltas for moving the animation
+        if os.path.isfile(fname+".delta"):  #load deltas
+            self.deltas = []
+            for line in open(fname+".delta",'r'):
+                x,y = line.strip().split(" ")
+                self.deltas.append((int(x), int(y)))
+            tx, ty = tuple(sum(t) for t in zip(*self.deltas)) #sum of the x,y deltas
+            self.avg_delta_x, self.avg_delta_y = tx/len(self.deltas),ty/len(self.deltas) #for calculating astar        
+        else:
+            if self.name not in ["idle ", "portrait"]: log.debug("action %s has no delta, is stationary"%self.name)
+            
+        #load possible offset (relative to actor) for this action
+#        if os.path.isfile(d+".offset"):  #load per-action displacement (on top of actor displacement)
+#            with open(fname+".offset", "r") as f:        
+#                self.deltas = [(int(x), int(y) for x,y in f.readline().split(" ")]
+#                offsets = f.readlines()
+#                a.setDisplacement([int(of1fsets[0]), int(offsets[1])])
+       
         return self
 
 DEFAULT_WALKAREA = [(100,600),(900,560),(920,700),(80,720)]
@@ -386,13 +488,21 @@ class WalkArea(object):
     def draw(self): #walkarea.draw
         if self.game and self.game.editing and self.game.editing == self:
             self._rect = pygame.draw.polygon(self.game.screen, (255,255,255), self.polygon.vertexarray, 1)
+            if self.game.player:
+                pygame.draw.polygon(self.game.screen, (255,155,155), self.polygon.astar_points(), 1) 
             for pt in self.polygon.vertexarray:
                 pt_rect = crosshair(self.game.screen, pt, (200,0,255))
                 self._rect.union_ip(pt_rect)
-
+            if self.game.player:
+                for pt in self.polygon.astar_points():
+                    pt_rect = crosshair(self.game.screen, pt, (200,0,5))
+                    self._rect.union_ip(pt_rect)
 
 
 class Actor(object):
+    """
+    The base class for all objects in the game.
+    """
     __metaclass__ = use_on_events
     def __init__(self, name=None): 
         self.name = name if name else "Unitled %s"%self.__name__
@@ -409,6 +519,8 @@ class Actor(object):
         self._ax, self._ay = 0, 0   # displacement anchor point
         self._nx, self._ny = 0,0    # displacement point for name
         self._tx, self._ty = 0,0    # target for when this actor is mid-movement
+        self.display_text = None #can override name for game.info display text
+        
         self.speed = 10 #speed at which actor moves per frame
         self.inventory = {}
         self._scale = 1.0
@@ -485,6 +597,22 @@ class Actor(object):
             i.scale = x
     scale = property(get_scale, set_scale)  
     
+    
+    @property
+    def points(self):
+        """ convert this actor into a series of solid points, used by astar to walk around """
+        INFLATE = 5
+        m = self.solid_area.inflate(INFLATE, INFLATE)
+        if (m.w, m.h) == (0,0): return None
+        return [m.topleft, m.bottomleft, m.topright, m.bottomright]
+        
+    @property
+    def solids(self):
+        """ convert thias actor into a tuple """
+        m = self.solid_area
+        if (m.w, m.h) == (0,0): return None
+        return (m.left, m.top, m.width, m.height)
+    
     @property
     def clickable_area(self):
         return self._clickable_area.move(self.ax, self.ay)
@@ -494,7 +622,13 @@ class Actor(object):
         return self._solid_area.move(self.x, self.y)  
         
     def smart(self, game): #actor.smart
-        """ smart actor load """
+        """ 
+        Intelligently load as many animations and details about this actor/item.
+        
+        Most of the information is derived from the file structure.
+        
+        So smart will load all .PNG files in data/actors/<Actor Name> as actions available for this actor.
+        """
         if type(self) in [MenuItem, Collection]:
             d = game.menuitem_dir
         elif isinstance(self, ModalItem):
@@ -520,7 +654,8 @@ class Actor(object):
             self._clickable_area = Rect(0, 0, r.w, r.h)
             log.debug("Setting %s _clickable area to %s"%(self.name, self._clickable_area))
         else:
-            log.warning("%s %s smart load unable to get clickable area from action image, using default"%(self.__class__, self.name))
+            if not isinstance(self, Portal):
+                log.warning("%s %s smart load unable to get clickable area from action image, using default"%(self.__class__, self.name))
             self._clickable_area = DEFAULT_CLICKABLE
 #        except:
 #            log.warning("unable to load idle.png for %s"%self.name)
@@ -534,7 +669,7 @@ class Actor(object):
 
     def trigger_look(self):
         log.debug("Player looks at %s"%self.name)
-        self.game.mouse_mode = MOUSE_LOOK #reset mouse mode
+        self.game.mouse_mode = MOUSE_INTERACT #reset mouse mode
         if self.look: #if user has supplied a look override
             self.look(self.game, self, self.game.player)
         else: #else, search several namespaces or use a default
@@ -562,7 +697,7 @@ class Actor(object):
 #        if self.use: #if user has supplied a look override
 #           self.use(self.game, self, self.game.player)
 #        else: #else, search several namespaces or use a default
-         self.game.mouse_mode = MOUSE_LOOK
+         self.game.mouse_mode = MOUSE_INTERACT #reset mouse
          slug_actor = slugify(actor.name)
          slug_actee = slugify(self.name)
          basic = "%s_use_%s"%(slug_actee, slug_actor)
@@ -580,8 +715,9 @@ class Actor(object):
 #        fn = self._get_interact()
  #       if self.interact: fn = self.interact
         log.debug("player interact with %s"%self.name)
-        self.game.mouse_mode = MOUSE_LOOK #reset mouse mode
+        self.game.mouse_mode = MOUSE_INTERACT #reset mouse mode
         if self.interact: #if user has supplied an interact override
+            if type(self.interact) == str: self.interact = get_function(self.interact)
             self.interact(self.game, self, self.game.player)
         else: #else, search several namespaces or use a default
             basic = "interact_%s"%slugify(self.name)
@@ -590,7 +726,8 @@ class Actor(object):
                 script(self.game, self, self.game.player)
             else:
                 #warn if using default vida interact
-                log.warning("no interact script for %s (write an %s)"%(self.name, basic))
+                if not isinstance(self, Portal):
+                    log.warning("no interact script for %s (write an %s)"%(self.name, basic))
                 self._interact_default(self.game, self, self.game.player)
 
 
@@ -669,12 +806,12 @@ class Actor(object):
         l = len(self._motion_queue)
         dx = 0
         dy = 0
-        if l > 0:
-            d = self._motion_queue.pop(0)
-            dx, dy = d
-            self.x += dx
-            self.y += dy
-            if l == 1: #if queue empty, get some more queue
+        if l > 0: #in middle of moving somewhere
+            dx, dy = self._motion_queue.pop(0)
+            self.x += int(float(dx) * self.scale)
+            self.y += int(float(dy) * self.scale)
+#            if not self._test_goto_point((self._tx, self._ty))
+            if l == 1: #if not at point and queue (almost) empty, get some more queue or end the move
                 self.on_goto((self._tx, self._ty))
 #        if self.action:
  #           ax,ay=self.ax*self.action.scale, self.ay*self.action.scale
@@ -692,7 +829,11 @@ class Actor(object):
 #        return collide(self._clickable_area, x, y)
         
     def on_animation_mode(self, action, mode):
-        """ set the animation mode on this action """
+        """ 
+        A queuing function:
+        
+        Sets the animation mode on this action (eg ping pong, reversed, looped)
+        """
         self.actions[action].mode = mode
         self._event_finish()
         
@@ -735,45 +876,66 @@ class Actor(object):
         if self.game.player: self.game.player.says(choice(c))
         self._event_finish()
 
-
-    def on_do(self, action):
-        """ start an action """
+    def _do(self, action):
+        if type(action) == Action: action = action.name
         if action in self.actions.keys():
             self.action = self.actions[action]
             log.debug("actor %s does action %s"%(self.name, action))
         else:
             log.error("actor %s missing action %s"%(self.name, action))
+
+    def on_do(self, action):
+        """ 
+        A queuing function:
+        
+        Make this actor do an action
+        """
+        self._do(action)
         self._event_finish()
             
         
     def on_place(self, destination):
-        # """ place an actor at this location instantly """
+        """ 
+        A queuing function:
+        
+        Place this actor at this location instantly 
+        """
         pt = get_point(self.game, destination)
         self.x, self.y = pt
         log.debug("actor %s placed at %s"%(self.name, destination))
-        self._event_finish()
+        self._event_finish(block=False)
         
     def on_finish_fade(self):
         log.debug("finish fade %s"%self._alpha)
         if self._alpha == self._alpha_target:
             self._event_finish()
              
-    def on_fadeIn(self):
+    def on_fade_in(self):
+        """
+        A queuing function:
+        
+        Fade this actor in.
+        """
         self._alpha = 0
         self._alpha_target = 255
         self.game.stuff_event(self.finish_fade, self)
         self._event_finish()
 
-    def on_fadeOut(self):
+    def on_fade_out(self):
+        """
+        A queuing function:
+        
+        Fade this actor out.
+        """
         obj._alpha = 255
         obj._alpha_target = 0
         self.game.stuff_event(self.finish_fade, self)
         self._event_finish()
 
     def on_hide(self):
-        """ hide the actor from all click and hover events """
+        """ A queuing function: hide the actor, including from all click and hover events """
         self.hidden = True
-        self._event_finish()
+        self._event_finish(block=False)
         
     def on_show(self):
         self.hidden = False
@@ -824,13 +986,108 @@ class Actor(object):
             self.x, self.y = pt
 #        self.game.scene(scene)
 #        scene.add(self)
+        if self.game and self.game.scene and self == self.game.player and self.game.test_inventory: #test player's inventory against scene        
+            for inventory_item in self.inventory.values():
+                for scene_item in self.scene.objects.values():
+                    if type(scene_item) != Portal:
+                        basic = "%s_use_%s"%(scene_item.name, inventory_item.name)
+                        if get_function(basic) == None: #would use default if player tried this combo
+                            log.warning("%s: Possible default function: %s"%(self.scene.name, basic))
         self.game.stuff_event(scene.on_add, self)
-        self._event_finish()
+        self._event_finish(block=False)
+    
+    
+    def on_resize(self, start, end, duration):
+        """ animate resizing of character """
+        log.debug("actor.resize not implemented yet")
+        self._event_finish(block=False)
+
+    def on_rotate(self, start, end, duration):
+        """ animate rotation of character """
+        log.debug("actor.rotation not implemented yet")
+        self._event_finish(block=False)
+        
     
     def moveto(self, delta):
         """ move relative to the current position """
         destination = (self.x + delta[0], self.y + delta[1])
         self.on_goto(destination)
+    
+    def _goto_direct(self, x,y, walk_actions):
+
+        dx = int((x - self.x) / 3)
+        dy = int((y - self.y) / 3)
+        if len(walk_actions)>0:
+            self.action =self.actions[choice(walk_actions)]
+        for i in range(3): self._motion_queue.append((dx+randint(-2,2),dy+randint(-2,2)))
+    
+    def _queue_motion(self, action):
+        """ Queue the deltas from an action on this actor's motion_queue """
+        if type(action) == str: action = self.actions[action]
+        log.debug("queue_motion %s %s"%(action.name, action.deltas))
+        for dx,dy in action.deltas:
+            self._motion_queue.append((dx+randint(-1,1),dy+randint(-1,1)))
+        self._do(action) 
+    
+    def _goto_astar(self, x, y, walk_actions):
+        """ Call astar search with the scene info to work out best path """
+        solids = []
+        objects = self.scene.objects.values() if self.scene else []
+        walkarea = self.scene.walkareas[0] if self.scene else [] #XXX assumes only 1 walkarea per scene
+        for a in objects: #set up solid areas you can't walk through
+            if a != self.game.player:
+                if a.solid_area.collidepoint(x,y):
+                    print("goto point is inside solid area")
+#                        self.action = self.actions['idle']
+#                        self.event_finish() #signal to game event queue this event is done
+                    return
+                elif not a.solid_area.collidepoint(self.x, self.y):
+                    if a.solids: solids.append(a.solids)
+#        solids.append([505,405,40,190])
+#        nodes = [(500,400),(550,400), (550,600),(500,600)]
+        nodes = []
+        if walkarea: nodes.extend(walkarea.polygon.astar_points()) #add the edges of the walkarea to the available nodes
+        for a in objects:
+            points = a.points
+            if a != self.game.player and len(points) > 0: #possibly add to nodes if inside walkarea
+                if walkarea:
+                    nodes.extend((p[0], p[1]) for p in points if p != None and walkarea.polygon.collide(p[0],p[1])==True)
+                else:
+                    nodes.extend(points)
+        p = AStar((self.x, self.y), (x, y), nodes, solids, walkarea)
+#        print(self.name, self.x,self.y,"to",x,y,"points",nodes,"solids",solids,"path",p)
+#        return
+        if p == False:
+            log.warning("unable to find path")
+            self._do('idle')
+            self.game._event_finish() #signal to game event queue this event is done
+            return
+        n = p[1] #short term goal is the next node
+        log.debug("astar short term goal is from (%s, %s) to %s"%(self.x, self.y, n))
+        dx, dy = n[0] - self.x, n[1] - self.y
+        if dx < 0: #left
+            if abs(dx) < abs(dy): #up/down since y distance is greater
+                self._queue_motion("down") if dy > 0 else self._queue_motion("up")
+            else: 
+                self._queue_motion("left")
+        else: #right
+            if abs(dx) < abs(dy): #up/down
+                self._queue_motion("down") if dy > 0 else self._queue_motion("up")
+            else: 
+                self._queue_motion("right")
+    
+    def _test_goto_point(self, destination):
+        """ If player is at point, set to idle and finish event """
+        x,y = destination
+        fuzz = 10
+        if x - fuzz < self.x < x + fuzz and y - fuzz < self.y < y + fuzz: #arrived at point, end event
+            if "idle" in self.actions: self.action = self.actions['idle'] #XXX: magical variables, special cases, urgh
+            if type(self) in [MenuItem, Collection]:
+                self.x, self.y = self._tx, self._ty
+            log.debug("actor %s has arrived at %s"%(self.name, destination))
+            self.game._event_finish() #signal to game event queue this event is done            
+            return True
+        return False
     
     def on_goto(self, destination, block=True, modal=False, ignore=False):
         """
@@ -842,21 +1099,26 @@ class Actor(object):
             destination = (destination.sx, destination.sy)
         x,y = self._tx, self._ty = destination
         d = self.speed
-        fuzz = 10
-        if self.game.testing == True or self.game.enabled_editor: self.x, self.y = x, y #skip straight to point for testing/editing
-        if x - fuzz < self.x < x + fuzz and y - fuzz < self.y < y + fuzz:
-            if "idle" in self.actions: self.action = self.actions['idle'] #XXX: magical variables, special cases, urgh
-            if type(self) in [MenuItem, Collection]:
-                self.x, self.y = self._tx, self._ty
-            log.debug("actor %s has arrived at %s"%(self.name, destination))
-            self.game._event_finish() #signal to game event queue this event is done
-        else: #try to follow the path
-            dx = int((x - self.x) / 3)
-            dy = int((y - self.y) / 3)
-            walk_actions = [x for x in self.actions.keys() if x in ["left", "right", "up", "down"]]
-            if len(walk_actions)>0:
-                self.action =self.actions[choice(walk_actions)]
-            for i in range(3): self._motion_queue.append((dx+randint(-2,2),dy+randint(-2,2)))
+        if self.scene: #test point will be inside a walkarea
+            walkarea_fail = True
+            for w in self.scene.walkareas:
+                if w.polygon.collide(x,y): walkarea_fail = False
+            if walkarea_fail: log.warning("Destination point (%s, %s) not inside walkarea "%(x,y))                
+        if self.game.testing == True or self.game.enabled_editor: 
+            self.x, self.y = x, y #skip straight to point for testing/editing
+        elif self.scene and walkarea_fail == True: #not testing, and failed walk area test
+            self.game._event_finish() #signal to game event queue this event is done    
+            return       
+        if self._test_goto_point(destination): 
+            return
+        else: #try to follow the path, should use astar
+            #available walk actions
+            walk_actions = [wx for wx in self.actions.keys() if wx in ["left", "right", "up", "down"]]
+            if len(walk_actions) <= 1: #need more than two actions to trigger astar
+                self._goto_direct(x,y, walk_actions)
+            else:
+                self._goto_direct(x,y, walk_actions)
+#                self._goto_astar(x,y, walk_actions) #XXX disabled astar for the moment
 
     def forget(self, fact):
         """ forget a fact from the list of facts """
@@ -873,7 +1135,10 @@ class Actor(object):
         return True if fact in self.facts else False       
         
     def on_says(self, text, sfx=-1, block=True, modal=True, font=None, action=None, background="msgbox"):
-        """ if sfx == -1, try and guess sound file """
+        """ 
+        if sfx == -1, try and guess sound file 
+        action = which action to display
+        """
         log.info("Actor %s says: %s"%(self.name, text))
 #        log.warning("")
         if self.game.testing: 
@@ -886,12 +1151,22 @@ class Actor(object):
             game.modals.remove(game.items[background])
             game.modals.remove(game.items["txt"])
             game.modals.remove(game.items["ok"])
+            game.modals.remove(game.items["portrait"])            
             self._event_finish()
         msg = self.game.add(ModalItem(background, close_msgbox,(54,-400)).smart(self.game))
-        txt = self.game.add(Text("txt", (100,-80), (840,170), text, wrap=800), False, ModalItem)
+        txt = self.game.add(Text("txt", (100,-80), (840,170), text, wrap=660), False, ModalItem)
+        
+        #get a portrait for this speech
+        if type(action) == str: action = self.actions[action]
+        if not action: action = self.actions.get("portrait", self.actions.get("idle", None))
+        
+        portrait = Item("portrait")
+        portrait.actions["idle"] = portrait.action = action
+        portrait = self.game.add(portrait, False, ModalItem)
         ok = self.game.add(Item("ok").smart(self.game), False, ModalItem)
         self.game.stuff_event(ok.on_place, (900,250))
-        self.game.stuff_event(txt.on_place, (100,80))
+        self.game.stuff_event(portrait.on_place, (65,52))
+        self.game.stuff_event(txt.on_place, (220,60))
         self.game.stuff_event(msg.on_goto, (54,40))
 
         self._event_finish()
@@ -899,7 +1174,7 @@ class Actor(object):
     def on_remove(self): #remove this actor from its scene
         if self.scene:
             self.scene._remove(self)
-        self._event_finish()
+        self._event_finish(block=False)
         
     def on_wait(self, data):
         """ helper function for when we pass control of the event loop to a modal and need user 
@@ -918,6 +1193,7 @@ class Portal(Item):
         Actor.__init__(self, *args, **kwargs)
         self.link = None #which Portal does it link to?
         self._ox, self._oy = 0,0 #outpoint
+        self.display_text = "" #no overlay info text by default for a portal
 #        self.interact = self._interact_default
 #        self.look = self._look
 
@@ -946,9 +1222,20 @@ class Portal(Item):
         self._ox, self._oy = pt[0], pt[1]
         self._event_finish(False)
 
+    def arrive(self, actor=None):
+        """ helper function for entering through this door """
+        if actor == None: actor = self.game.player
+        actor.relocate(self.scene, (self.ox, self.oy)) #moves player to scene
+        actor.goto((self.sx, self.sy), ignore=True) #walk into scene        
+
+    def leave(self, actor=None):
+        if actor == None: actor = self.game.player
+        actor.goto((self.sx, self.sy))
+        actor.goto((self.ox, self.oy), ignore=True) 
         
-    def travel(self):
+    def travel(self, actor=None):
         """ default interact method for a portal, march player through portal and change scene """
+        if actor == None: actor = self.game.player
         if not self.link:
             self.game.player.says("It doesn't look like that goes anywhere.")
             log.error("portal %s has no link"%self.name)
@@ -956,12 +1243,11 @@ class Portal(Item):
         if self.link.scene == None:
             log.error("Unable to travel through portal %s"%self.name)
         else:
-            log.info("Actor %s goes from scene %s to %s"%(self.game.player.name, self.scene.name, self.link.scene.name))
-        self.game.player.goto((self.sx, self.sy))
-        self.game.player.goto((self.ox, self.oy), ignore=True)
-        self.game.player.relocate(self.link.scene, (self.link.ox, self.link.oy)) #moves player to scene
+            log.info("Portal - actor %s goes from scene %s to %s"%(actor.name, self.scene.name, self.link.scene.name))
+        self.leave(actor)
+        actor.relocate(self.link.scene, (self.link.ox, self.link.oy)) #moves player to scene
         self.game.camera.scene(self.link.scene) #change the scene
-        self.game.player.goto((self.link.sx, self.link.sy), ignore=True) #walk into scene        
+        actor.goto((self.link.sx, self.link.sy), ignore=True) #walk into scene        
 
 
 #wrapline courtesy http://www.pygame.org/wiki/TextWrapping 
@@ -998,7 +1284,7 @@ def wrapline(text, font, maxwidth):
  
 
 class Text(Actor):
-    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 200, 214), size=26, wrap=2000):
+    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=26, wrap=2000):
         Actor.__init__(self, name)
         self.x, self.y = pos
         self.w, self.h = dimensions
@@ -1044,6 +1330,7 @@ class ModalItem(Actor):
         Actor.__init__(self, name)
         self.interact = interact
         self.x, self.y = pos
+        self.display_text = "" #by default no overlay on modal items
 
     def collide(self, x,y): #modals cover the whole screen?
         return True
@@ -1060,6 +1347,9 @@ class MenuItem(Actor):
         self.x, self.y = spos
         self.in_x, self.in_y = spos #special in point reentry point
         self.out_x, self.out_y = hpos #special hide point for menu items
+        self.display_text = "" #by default no overlay on menu items
+
+ALPHABETICAL = 0
 
 class Collection(MenuItem):
     """ 
@@ -1069,7 +1359,9 @@ class Collection(MenuItem):
     def __init__(self, name="Untitled Collection", interact=None, spos=(None, None), hpos=(None, None), key=None): 
         MenuItem.__init__(self, name, interact, spos, hpos, key)
         self.objects = {}
-        self.index = 0
+        self._sorted_objects = None
+        self.index = 0 #where in the index to start showing
+        self.sort_by = ALPHABETICAL
     
     def add(self, *args):
         for a in args:
@@ -1077,6 +1369,7 @@ class Collection(MenuItem):
             elif type(a) == str and a in self.game.items: obj = self.game.items[a]
             else: obj = a
             self.objects[obj.name] = obj
+            self._sorted_objects = None
 
     def _update(self, dt):
         Actor._update(self, dt)
@@ -1086,11 +1379,18 @@ class Collection(MenuItem):
             else:
                 log.warning("Collection %s trying to update collection %s"%(self.name, i.name))
 
+    def _get_sorted(self):
+        if self._sorted_objects == None:
+            show = self.objects.values()
+            self._sorted_objects = sorted(show, key=lambda x: x.name.lower(), reverse=False)
+        return self._sorted_objects
+        
 
     def get_object(self, pos):
         """ Return the object at this spot on the screen in the collection """
         mx,my = pos
-        show = self.objects.values()[self.index:]
+
+        show = self._get_sorted()[self.index:]
         for i in show:
             if hasattr(i, "_cr") and collide(i._cr, mx, my): 
                 log.debug("Clicked on %s in collection %s"%(i.name, self.name))
@@ -1100,7 +1400,8 @@ class Collection(MenuItem):
         
         
     def _on_mouse_move(self, x, y, button, modifiers): #collection.mouse_move single button interface
-        """ when hovering over an object in the collection, show the item name """
+        """ when hovering over an object in the collection, show the item name 
+        """
         m = pygame.mouse.get_pos()
         obj = self.get_object(m)
         if obj:
@@ -1117,9 +1418,12 @@ class Collection(MenuItem):
         else:
             w,h = 0, 0
             log.warning("Collection %s missing an action"%self.name)
-        show = self.objects.values()[self.index:]
+
+        show = self._get_sorted()[self.index:]
         for i in show:
+            i._cr = Rect(x+self.x, y+self.y, dx, dy) #temporary collection values
             img = i._image()
+            if not img: img = Text("tmp", (0,0), (200,200), i.name, wrap=200).img
             if img:
                 iw, ih = img.get_width(), img.get_height()
                 ratio_w = float(dx)/iw
@@ -1132,7 +1436,6 @@ class Collection(MenuItem):
                     ndx,ndy = nw1, nh1
                 img = pygame.transform.scale(img, (ndx, ndy))
                 r = img.get_rect().move(x+self.x, y+self.y)
-                i._cr = r #temporary collection values
                 self.game.screen.blit(img, r)
             x += dx+2
             if float(x)/(w-sy-dx)>1:
@@ -1157,6 +1460,7 @@ class Scene(object):
         self.cx, self.cy = 512,384 #camera pointing at position (center of screen)
         self.scales = {} #when an actor is added to this scene, what scale factor to apply? (from scene.scales)
         self.editable = True #will it appear in the editor (eg portals list)
+        self.analytics_count = 0 #used by test runner to measure how "popular" a scene is.
 
     def _event_finish(self, block=True): 
         return self.game._event_finish(block)
@@ -1210,6 +1514,8 @@ class Scene(object):
 
     def _remove(self, obj):
         """ remove object from the scene """
+        if type(obj) == str and obj in self.objects:
+            obj = self.objects[obj]
         obj.scene = None
         del self.objects[obj.name]
 #        self._event_finish()
@@ -1217,9 +1523,10 @@ class Scene(object):
 
     def on_remove(self, obj):
         """ queued function for removing object from the scene """
-        if type(obj) == str and obj in self.objects:
-            obj = self.objects[obj]
-        self._remove(obj)
+        if type(obj) == list:
+            for i in obj: self._remove(i)
+        else:
+            self._remove(obj)
         self._event_finish()
         
     def on_add(self, obj): #scene.add
@@ -1246,7 +1553,11 @@ class Camera(object):
             log.error("Can't change to non-existent scene, staying on current scene")
             scene = self.game.scene
         if type(scene) == str:
-            scene = self.game.scenes[scene]
+            if scene in self.game.scenes:
+                scene = self.game.scenes[scene]
+            else:
+                log.error("camera on_scene: unable to find scene %s"%scene)
+                scene = self.game.scene
         self.game.scene = scene
         log.debug("changing scene to %s"%scene.name)
         if self.game.scene and self.game.screen:
@@ -1317,20 +1628,27 @@ class Game(object):
         self.modals = []
         self.menu_mouse_pressed = False #stop editor from using menu clicks as edit flags
 
-        self.mouse_mode = MOUSE_LOOK #what activity does a mouse click trigger?
+        self.mouse_mode = MOUSE_INTERACT #what activity does a mouse click trigger?
         self.mouse_cursors = {} #available mouse images
         self.mouse_cursor = MOUSE_POINTER #which image to use
         
+        #walkthrough and test runner
         self._walkthroughs = []
         self.errors = 0 #used by walkthrough runner
         self.testing_message = True #show a message alerting user they are back in control
+        self.missing_actors = [] #list of actors mentioned in walkthrough that are never loaded
+        self.test_inventory = False #heavy duty testing of inventory against scene objects
+        
+        #editor
+        self.debug_font = None
+        self.enabled_editor = False
 
         #set up text overlay image
         self.info_colour = (255,255,220)
         self.info_image = None
         self.info_position = None
         
-        fps = 100 #normally 12 fps 
+        fps = DEFAULT_FRAME_RATE 
         self.fps = int(1000.0/fps)
         
     def __getattr__(self, a):
@@ -1387,7 +1705,7 @@ class Game(object):
         return obj
         #self._event_finish()
         
-    def info(self, text, x, y):
+    def info(self, text, x, y): #game.info
         """ On screen at one time can be an info text (eg an object name or menu hover) 
             Set that here.
         """
@@ -1424,18 +1742,18 @@ class Game(object):
                     
                     
 #            if obj_cls == Portal: #guess portal links based on name, do before scene loads
-        for pname in portals:
-                    links = pname.split("_To_")
-                    guess_link = None
-                    if len(links)>1:
-                        guess_link = "%s_To_%s"%(links[1], links[0])
-                    if guess_link and guess_link in self.items:
-                        self.items[pname].link = self.items[guess_link]
-                    else:
-                        log.warning("game.smart unable to guess link for %s"%pname)
+        for pname in portals: #try and guess portal links
+            links = pname.split("_To_")
+            guess_link = None
+            if len(links)>1: #name format matches guess
+                guess_link = "%s_To_%s"%(links[1], links[0])
+            if guess_link and guess_link in self.items:
+                self.items[pname].link = self.items[guess_link]
+            else:
+                log.warning("game.smart unable to guess link for %s"%pname)
         if type(player) == str: player = self.actors[player]
         if player: self.player = player
-        self._event_finish()
+        self._event_finish(block=False)
                 
     def on_set_editing(self, obj, objects=None):
         self.editing = obj
@@ -1454,10 +1772,12 @@ class Game(object):
                 self.editing = None
                 self.enabled_editor = False
                 if hasattr(self, "e_objects"): self.e_objects = None #free add object collection
+                self.fps = int(1000.0/DEFAULT_FRAME_RATE)
             else:
                 editor_menu(self)
                 self.enabled_editor = True
                 if self.scene and self.scene.objects: self.set_editing(self.scene.objects.values()[0])
+                self.fps = int(1000.0/100) #fast debug
 
     def _trigger(self, obj):
         """ trigger use, look or interact, depending on mouse_mode """
@@ -1509,7 +1829,7 @@ class Game(object):
     def _on_mouse_up(self, x, y, button, modifiers): #single button interface
  #       btn1, btn2, btn3 = pygame.mouse.get_pressed()
 #        import pdb; pdb.set_trace()
-        if button==0: self.mouse_mode = MOUSE_INTERACT
+        if button==0: self.mouse_mode = MOUSE_LOOK #subaltern btn pressed 
         if len(self.modals) > 0: #modals first
             for i in self.modals:
                 if i.collide(x,y): #always trigger interact on modals
@@ -1539,14 +1859,34 @@ class Game(object):
             #or finally, try and walk the player there.
             self.player.goto((x,y))
 
+    def _on_mouse_move_scene(self, x, y, button, modifiers):
+        """ possibly draw overlay text """
+        if self.player and self.scene:
+            for i in self.scene.objects.values(): #then objects in the scene
+                if i is not self.player and i.collide(x,y):
+                    if isinstance(i, Portal) and self.mouse_mode != MOUSE_USE:
+                        self.mouse_cursor = MOUSE_LEFT if i._x<512 else MOUSE_RIGHT
+                    elif self.mouse_mode == MOUSE_LOOK:
+                        self.mouse_cursor = MOUSE_CROSSHAIR #MOUSE_EYES
+                    elif self.mouse_mode != MOUSE_USE:
+                        self.mouse_cursor = MOUSE_CROSSHAIR
+                    t = i.name if i.display_text == None else i.display_text                    
+                    self.info(t, i.nx,i.ny)
+#                   self.text_image = self.font.render(i.name, True, self.text_colour)
+                    return
+    
 
-    def _on_mouse_move(self, x, y, button, modifiers): #single button interface
+
+    def _on_mouse_move(self, x, y, button, modifiers): #game._on_mouse_move #single button interface
         #not hovering over anything, so clear info text
         self.info_image = None
 
-        if self.mouse_mode != MOUSE_USE: #only update the mouse if not in "use" mode
+        if self.mouse_mode == MOUSE_INTERACT: #only update the mouse if not in "use" mode
             self.mouse_cursor = MOUSE_POINTER
+        elif self.mouse_mode == MOUSE_LOOK:
+            self.mouse_cursor = MOUSE_EYES
         else:
+            self._on_mouse_move_scene(x, y, button, modifiers)
             return
         if self.editing and type(self.editing) == WalkArea and self.editing_index != None: #move walkarea point
             self.editing.polygon.vertexarray[self.editing_index] = (x,y)
@@ -1566,23 +1906,21 @@ class Game(object):
                 self.editing_point[0](x)
                 if len(self.editing_point)>1: self.editing_point[1](y)
             return
+        menu_capture = False #has the mouse found an item in the menu
         for i in self.menu: #then menu
-            if i.collide(x,y):
-                i._on_mouse_move(x, y, button, modifiers)
+            if i.collide(x,y): #hovering
                 if i.actions.has_key('over'):
                     i.action = i.actions['over']
-#                    return
-            else:
+                t = i.name if i.display_text == None else i.display_text
+                self.info(t, i.nx,i.ny)
+                i._on_mouse_move(x, y, button, modifiers)
+                menu_capture = True
+            else: #unhover over menu item
                 if i.action and i.action.name == "over":
                     if i.actions.has_key('idle'): 
                         i.action = i.actions['idle']
-        if self.player and self.scene:
-            for i in self.scene.objects.values(): #then objects in the scene
-                if i is not self.player and i.collide(x,y):
-                    self.mouse_cursor = MOUSE_CROSSHAIR
-                    self.info(i.name, i.nx,i.ny)
-#                   self.text_image = self.font.render(i.name, True, self.text_colour)
-                    return
+        if menu_capture == True: return
+        self._on_mouse_move_scene(x, y, button, modifiers)
                 
     def _on_key_press(self, key):
         for i in self.menu:
@@ -1591,6 +1929,15 @@ class Game(object):
             self.toggle_editor()
         elif ENABLE_EDITOR and key == K_F2:
             import pdb; pdb.set_trace()
+        if self.enabled_editor == True and self.editing:
+            if key == K_DOWN: 
+                self.editing._y += 1
+            elif key == K_UP:
+                self.editing._y -= 1
+            elif key == K_LEFT:
+                self.editing._x -= 1
+            elif key == K_RIGHT:
+                self.editing._x += 1
             
 
     def handle_pygame_events(self):
@@ -1613,18 +1960,17 @@ class Game(object):
     
     def _load_mouse_cursors(self):
         """ called by Game after display initialised to load mouse cursor images """
-        try: #use specific mouse cursors or use pyvida defaults
-            cursor_pwd = os.path.join(os.getcwd(), os.path.join(self.interface_dir, 'c_pointer.png'))
-            self.mouse_cursors[MOUSE_POINTER] = pygame.image.load(cursor_pwd).convert_alpha()
-        except:
-            log.warning("Can't find game's pointer cursor, so defaulting to unimplemented pyvida one")
-#            self.mouse_cursors[MOUSE_POINTER] = pyglet.image.load(os.path.join(sys.prefix, "defaults/c_pointer.png"))
-        try:
-            cursor_pwd = os.path.join(os.getcwd(), os.path.join(self.interface_dir, 'c_cross.png'))
-            self.mouse_cursors[MOUSE_CROSSHAIR] = pygame.image.load(cursor_pwd).convert_alpha()
-        except:
-            log.warning("Can't find game's cross cursor, so defaulting to unimplemented pyvida one")
-#            self.mousec_ursors[MOUSE_CROSSHAIR] = pyglet.image.load(os.path.join(sys.prefix, "defaults/c_cross.png"))
+        for key,value in [(MOUSE_POINTER, "c_pointer.png"),
+                        (MOUSE_CROSSHAIR, "c_cross.png"),
+                        (MOUSE_LEFT, "i_left.png"),
+                        (MOUSE_RIGHT, "i_right.png"),
+                        (MOUSE_EYES, "c_look.png"),
+                    ]:
+            try: #use specific mouse cursors or use pyvida defaults
+                cursor_pwd = os.path.join(os.getcwd(), os.path.join(self.interface_dir, value))
+                self.mouse_cursors[key] = pygame.image.load(cursor_pwd).convert_alpha()
+            except:
+                log.warning("Can't find game's %s cursor, so defaulting to unimplemented pyvida one"%value)
     
     def _load_editor(self):
             """ Load the ingame edit menu """
@@ -1638,8 +1984,7 @@ class Game(object):
         
             #setup editor menu
             def editor_load(game, menuItem, player):
-                log.debug("editor: save scene not implemented")
-                print("What is the name of this state (no directory or .py)?")
+                print("What is the name of this state to load (no directory or .py)?")
                 state = raw_input(">")
                 if state=="": return
 #                sfname = os.path.join(self.scene_dir, os.path.join(self.scene.name, state))
@@ -1647,7 +1992,6 @@ class Game(object):
 
 
             def editor_save(game, menuItem, player):
-                log.debug("editor: save scene not implemented")
                 print("What is the name of this state (no directory or .py)?")
                 state = raw_input(">")
                 if state=="": return
@@ -1664,7 +2008,7 @@ class Game(object):
                     f.write(']\n')
                     for name, obj in game.scene.objects.items():
                         slug = slugify(name).lower()
-                        txt = "actors" if type(obj) == Actor else "items"
+                        txt = "items" if isinstance(obj, Item) else "actors"
                         f.write('    %s = game.%s["%s"]\n'%(slug, txt, name))
                         r = obj._clickable_area
                         f.write('    %s.reclickable(Rect(%s, %s, %s, %s))\n'%(slug, r.left, r.top, r.w, r.h))
@@ -1675,6 +2019,11 @@ class Game(object):
                         f.write('    %s.restand((%i, %i))\n'%(slug, obj._sx, obj._sy))
                         f.write('    %s.retalk((%i, %i))\n'%(slug, obj._tx, obj._ty))
                         f.write('    %s.relocate(scene, (%i, %i))\n'%(slug, obj.x, obj.y))
+                        if isinstance(obj, Portal): #special portal details
+                            ox,oy = obj._ox, obj._oy
+                            if (ox,oy) == (0,0): #guess outpoint
+                                ox = -150 if obj.x < 512 else 150
+                            f.write('    %s.reout((%i, %i))\n'%(slug, ox, oy))
                         if obj == self.player:
                             f.write('    scene.scales["%s"] = %0.2f\n'%(name, obj.scale))
                     
@@ -1739,10 +2088,10 @@ class Game(object):
                 for i in game.actors.values():
                     if i.editable and type(i) not in [Collection, MenuItem]: e_objects.objects[i.name] = i
                 for i in game.items.values():
-                    if i.editable and type(i) not in [Collection, MenuItem]: e_objects.objects[i.name] = i
+                    if i.editable and type(i) not in [Portal, Collection, MenuItem]: e_objects.objects[i.name] = i
                 game.menu_fadeOut()
                 game.menu_push() #hide and push old menu to storage
-                game.set_menu("e_close", "e_objects")
+                game.set_menu("e_close", "e_objects_next", "e_objects_prev", "e_objects_newitem", "e_objects_newactor", "e_objects")
                 game.menu_hide()
                 game.menu_fadeIn()
                 
@@ -1789,6 +2138,7 @@ class Game(object):
                     os.makedirs(d)
                 obj = Portal(name)
                 obj.game = game
+                obj.link = scene
                 if obj and game.scene:
                     obj.x, obj.y = 500,400
                     obj._clickable_area = DEFAULT_CLICKABLE
@@ -1810,6 +2160,34 @@ class Game(object):
                 game.camera.scene(scene)
                 game.player.relocate(scene)
                 editor_collection_close(game, collection, player)
+
+            def editor_collection_next(game, btn, player):
+                """ move an index in a collection object in the editor, shared with e_portals and e_objects """
+                if btn.collection.index < len(btn.collection._get_sorted())-10:
+                    btn.collection.index += 10
+
+            def editor_collection_prev(game, btn, player):
+                """ move an index in a collection object in the editor, shared with e_portals and e_objects """
+                btn.collection.index -= 10
+                if btn.collection.index <= 0: btn.collection.index = 0
+                
+            def editor_collection_newactor(game, btn, player):
+                print("What is the name of this actor to create? (blank to abort)")
+                name = raw_input(">")
+                if name=="": return
+                d = os.path.join(game.actor_dir, name)
+                if not os.path.exists(d): os.makedirs(d)
+                obj = Actor(name).smart(game)
+                game.add(obj)
+                
+            def editor_collection_newitem(game, btn, player):
+                print("What is the name of this item to create? (blank to abort)")
+                name = raw_input(">")
+                if name=="": return
+                d = os.path.join(game.item_dir, name)
+                if not os.path.exists(d): os.makedirs(d)
+                obj = Item(name).smart(game)
+                game.add(obj)
                 
             def editor_collection_close(game, collection, player):
                 """ close an collection object in the editor, shared with e_portals and e_objects """
@@ -1828,7 +2206,13 @@ class Game(object):
             self.add(MenuItem("e_step", editor_step, (390, 10), (390,-50), "n").smart(self))
 
             #a collection widget for adding objects to a scene
-            self.add(Collection("e_objects", editor_select_object, (300, 100), (300,-600), K_ESCAPE).smart(self))
+            c = self.add(Collection("e_objects", editor_select_object, (300, 100), (300,-600), K_ESCAPE).smart(self))
+            n = self.add(MenuItem("e_objects_next", editor_collection_next, (700, 610), (700,-100), K_ESCAPE).smart(self))            
+            p = self.add(MenuItem("e_objects_prev", editor_collection_prev, (740, 610), (740,-100), K_ESCAPE).smart(self))            
+            na = self.add(MenuItem("e_objects_newactor", editor_collection_newactor, (620, 610), (680,-100), K_ESCAPE).smart(self))            
+            ni = self.add(MenuItem("e_objects_newitem", editor_collection_newitem, (540, 610), (600,-100), K_ESCAPE).smart(self))            
+            na.collection = ni.collection = n.collection = p.collection = c
+
             #collection widget for adding portals to other scenes
             self.add(Collection("e_portals", editor_select_portal, (300, 100), (300,-600), K_ESCAPE).smart(self))
             #collection widget for selecting the scene to edit
@@ -1840,10 +2224,27 @@ class Game(object):
                 self.add(MenuItem("e_%s"%v, editor_point, (100+i*30, 45), (100+i*30,-50), v[0]).smart(self))
             self.items['e_clickable'].interact = editor_edit_rect
             self.add(MenuItem("e_add_walkareapoint", editor_add_walkareapoint, (310, 45), (310,-50), v[0]).smart(self))            
+
+    def finish_tests(self):
+        """ called when test runner is ending or handing back control """
+        if len(self.missing_actors)>0:
+            self.log.error("The following actors were never loaded:")
+            for i in self.missing_actors: self.log.error(i)
+        scenes = sorted(self.scenes.values(), key=lambda x: x.analytics_count, reverse=True)        
+        self.log.info("Scenes listed in order of time spent")
+        for s in scenes:
+            t = s.analytics_count * 30
+            self.log.info("%s - %s steps (%s.%s minutes)"%(s.name, s.analytics_count, t/60, t%60))
+        t = self.steps_complete * 30 #30 seconds per step
+        self.log.info("Finished %s steps, estimated at %s.%s minutes"%(self.steps_complete, t/60, t%60))
+    
         
     def run(self, callback=None):
         parser = OptionParser()
+        parser.add_option("-f", "--fullscreen", action="store_true", dest="fullscreen", help="Play game in fullscreen mode", default=False)
         parser.add_option("-s", "--step", dest="step", help="Jump to step in walkthrough")
+        parser.add_option("-a", "--artreactor", dest="artreactor", help="Save images from each scene")
+        parser.add_option("-i", "--inventory", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
 #        parser.add_option("-q", "--quiet",
  #                 action="store_false", dest="verbose", default=True,
   #                help="don't print status messages to stdout")
@@ -1851,6 +2252,8 @@ class Game(object):
         (options, args) = parser.parse_args()    
         self.jump_to_step = None
         self.steps_complete = 0
+        if options.test_inventory:
+            self.test_inventory = True
         if options.step: #switch on test runner to step through walkthrough
             self.testing = True
             self.tests = self._walkthroughs
@@ -1860,7 +2263,10 @@ class Game(object):
                 self.jump_to_step = options.step
 
         pygame.init() 
-        self.screen = screen = pygame.display.set_mode((1024, 768))
+        flags = 0
+        if options.fullscreen:
+            flags |= pygame.FULLSCREEN
+        self.screen = screen = pygame.display.set_mode((1024, 768), flags)
         
         #do post pygame init loading
         #set up mouse cursors
@@ -1890,6 +2296,10 @@ class Game(object):
         
         while self.quit == False:
             pygame.time.delay(self.fps)
+#            self.log.debug("clock tick")
+            if android is not None and android.check_pause():
+                android.wait_for_resume()
+            
             if self.scene:
                 blank = [self.scene.objects.values(), self.menu, self.modals]
             else:
@@ -1925,6 +2335,11 @@ class Game(object):
             elif self.mouse_cursor != None: #use an object (actor or item) image
                 mouse_image = self.mouse_cursor.action.image
             cursor_rect = self.screen.blit(mouse_image, (m[0]-15, m[1]-15))
+
+            debug_rect = None            
+            if self.enabled_editor == True and self.debug_font:
+                debug_rect = self.screen.blit(self.debug_font.render("%i, %i"%(m[0], m[1]), True, (255,255,120)), (950,10))
+                
             #pt = m
             #colour = (255,0,0)
             #pygame.draw.line(self.screen, colour, (pt[0],pt[1]-5), (pt[0],pt[1]+5))
@@ -1935,13 +2350,13 @@ class Game(object):
             #hide mouse
             if self.scene: self.screen.blit(self.scene.background(), cursor_rect, cursor_rect)
             if self.info_image: self.screen.blit(self.scene.background(), info_rect, info_rect)
+            if debug_rect: self.screen.blit(self.scene.background(), debug_rect, debug_rect)
 
             #if testing, instead of user input, pull an event off the test suite
             if self.testing and len(self.events) == 0 and not self._event: 
                 if len(self.tests) == 0: #no more tests, so exit
                     self.quit = True
-                    t = self.steps_complete * 30 #30 seconds per step
-                    self.log.info("Finished %s steps, estimated at %s.%s minutes"%(self.steps_complete, t/60, t%60))
+                    self.finish_tests()
                 else:
                     step = self.tests.pop(0)
                     self.steps_complete += 1
@@ -1952,14 +2367,15 @@ class Game(object):
                             self.jump_to_step -= 1
                             if self.jump_to_step == 0: return_to_player = True
                         else: #assume step name has been given
-                            if step[-1] == self.jump_to_step: return_to_player = True
+                            if step[-1] == self.jump_to_step:
+                                return_to_player = True
+                                if self.jump_to_step == "set_trace": import pdb; pdb.set_trace()
                         if return_to_player: #hand control back to player
                             self.testing = False
+                            self.fps = int(1000.0/DEFAULT_FRAME_RATE)
                             #self.tests = None
                             if self.player and self.testing_message: self.player.says("Handing back control to you")
-                            t = self.steps_complete * 30 #30 seconds per step
-                            self.log.info("Finished %s steps, estimated at %s.%s minutes"%(self.steps_complete, t/60, t%60))
-
+                            self.finish_tests()
                     
         pygame.mouse.set_visible(True)
             
@@ -1970,7 +2386,8 @@ class Game(object):
                 
         if not self._event: #waiting, so do an immediate process 
             e = self.events.pop(0) #stored as [(function, args))]
-            log.debug("Doing event %s"%e[0])
+            if e[0].__name__ not in ["on_add", "on_relocate", "on_rescale","on_reclickable", "on_reanchor", "on_restand", "on_retalk", "on_resolid"]:
+                log.debug("Doing event %s"%e[0].__name__)
 
             self._event = e
             e[0](*e[1:]) #call the function with the args        
@@ -1994,7 +2411,7 @@ class Game(object):
         """ start the next event in the game scripter """
 #        log.debug("finished event %s, remaining:"%(self._event, self.events)
         self._event = None
-        if block==False: self.handle_events()
+        if block==False: self.handle_events() #run next event immediately
     
     def walkthroughs(self, suites):
         """ use test suites to enable jumping forward """
@@ -2011,12 +2428,17 @@ class Game(object):
         """ a queuing function, not a queued function (ie it adds events but is not one """
         """ load a state from a file inside a scene directory """
         """ stuff load state events into the start of the queue """
-        if type(scene) == str: scene = self.scenes[scene]
+        if type(scene) == str:
+            if scene in self.scenes:
+                scene = self.scenes[scene]
+            else:
+                log.error("load state: unable to find scene %s"%scene)
+                return
         sfname = os.path.join(self.scene_dir, os.path.join(scene.name, state))
         sfname = "%s.py"%sfname
         variables= {}
         if not os.path.exists(sfname):
-            log.error("load state: state not found: %s"%sfname)
+            log.error("load state: state not found for scene %s: %s"%(scene.name, sfname))
         else:
             execfile( sfname, variables)
             variables['load_state'](self, scene)

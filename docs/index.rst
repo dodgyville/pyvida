@@ -5,7 +5,7 @@
 Pyvida
 ======
 
-pyvida is a 2D point and click adventure game engine. 
+pyvida is a 2D point-and-click adventure game engine. 
 
 The goals of pyvida are:
  * To make it easy to write a game
@@ -18,10 +18,14 @@ Contents:
    :maxdepth: 2
 
    overview.rst
+   quickstart.rst
    tutorial.rst
+   testing.rst
    sceneedit.rst
    assets.rst
+   scripting.rst
    technical.rst
+   reference.rst
 
 Indices and tables
 ==================
