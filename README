@@ -12,3 +12,12 @@ to do
 * scene editor
 
 
+INSTALLING
+
+linux
+too easy
+
+mac using macports
+
+port install py27-game
+port install libpng
