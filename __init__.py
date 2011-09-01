@@ -1405,7 +1405,7 @@ class Collection(MenuItem):
         m = pygame.mouse.get_pos()
         obj = self.get_object(m)
         if obj:
-            self.game.info(obj.name, x, y)
+            self.game.info(obj.name, x-10, y-10)
 
     def draw(self):
         Actor.draw(self)
@@ -1521,7 +1521,7 @@ class Scene(object):
 #        self._event_finish()
 
 
-    def on_remove(self, obj):
+    def on_remove(self, obj): #scene.remove
         """ queued function for removing object from the scene """
         if type(obj) == list:
             for i in obj: self._remove(i)
@@ -1912,7 +1912,7 @@ class Game(object):
                 if i.actions.has_key('over'):
                     i.action = i.actions['over']
                 t = i.name if i.display_text == None else i.display_text
-                self.info(t, i.nx,i.ny)
+                self.info(t, i.nx, i.ny)
                 i._on_mouse_move(x, y, button, modifiers)
                 menu_capture = True
             else: #unhover over menu item
@@ -2121,7 +2121,7 @@ class Game(object):
                     if i.editable: e_scenes.objects[i.name] = i
                 game.menu_fadeOut()
                 game.menu_push() #hide and push old menu to storage
-                game.set_menu("e_close", "e_scenes")
+                game.set_menu("e_close", "e_newscene", "e_scenes")
                 game.menu_hide()
                 game.menu_fadeIn()                
 
@@ -2148,7 +2148,7 @@ class Game(object):
                     game.set_editing(obj)
 
             def editor_select_scene(game, collection, player):
-                """ select an scene from the collection and switch current scene to that scene """
+                """ select a scene from the collection and switch current scene to that scene """
                 m = pygame.mouse.get_pos()
                 mx,my = relative_position(game, collection, m)
                 scene = collection.get_object(m)
@@ -2160,6 +2160,20 @@ class Game(object):
                 game.camera.scene(scene)
                 game.player.relocate(scene)
                 editor_collection_close(game, collection, player)
+
+
+            def editor_collection_newscene(game, btn, player):
+                print("What is the name of this scene to create? (blank to abort)")
+                name = raw_input(">")
+                if name=="": return
+                d = os.path.join(game.scene_dir, name)
+                if not os.path.exists(d): os.makedirs(d)
+                obj = Scene(name).smart(game)
+                game.add(obj)
+                btn.collection.e_scenes = None
+                editor_collection_close(game, btn.collection, player)
+                
+                
 
             def editor_collection_next(game, btn, player):
                 """ move an index in a collection object in the editor, shared with e_portals and e_objects """
@@ -2216,9 +2230,11 @@ class Game(object):
             #collection widget for adding portals to other scenes
             self.add(Collection("e_portals", editor_select_portal, (300, 100), (300,-600), K_ESCAPE).smart(self))
             #collection widget for selecting the scene to edit
-            self.add(Collection("e_scenes", editor_select_scene, (300, 100), (300,-600), K_ESCAPE).smart(self))
+            sc = self.add(Collection("e_scenes", editor_select_scene, (300, 100), (300,-600), K_ESCAPE).smart(self))
+            snew = self.add(MenuItem("e_newscene", editor_collection_newscene, (620, 610), (680,-100), K_ESCAPE).smart(self))            
+            snew.collection = sc
             #close button for all editor collections
-            self.add(MenuItem("e_close", editor_collection_close, (800, 600), (800,-100), K_ESCAPE).smart(self))
+            self.add(MenuItem("e_close", editor_collection_close, (800, 610), (800,-100), K_ESCAPE).smart(self))
             #add menu items for actor editor
             for i, v in enumerate(["location", "anchor", "stand", "scale", "clickable", "talk"]):
                 self.add(MenuItem("e_%s"%v, editor_point, (100+i*30, 45), (100+i*30,-50), v[0]).smart(self))
@@ -2324,9 +2340,6 @@ class Game(object):
                     for obj in group: obj.draw()
                 for w in self.scene.walkareas: w.draw() #draw walkarea if editing
                     
-            #draw info text if available
-            if self.info_image:
-                info_rect = self.screen.blit(self.info_image, self.info_position)
                                 
             #draw mouse
             m = pygame.mouse.get_pos()
@@ -2335,6 +2348,10 @@ class Game(object):
             elif self.mouse_cursor != None: #use an object (actor or item) image
                 mouse_image = self.mouse_cursor.action.image
             cursor_rect = self.screen.blit(mouse_image, (m[0]-15, m[1]-15))
+
+            #draw info text if available
+            if self.info_image:
+                info_rect = self.screen.blit(self.info_image, self.info_position)
 
             debug_rect = None            
             if self.enabled_editor == True and self.debug_font:
@@ -2423,6 +2440,13 @@ class Game(object):
         
 #    def on_move(self, scene, destination):
 #        """ transition to scene, and move player if available """    
+
+    def set_interact(self, actor, fn):
+        """ helper function for setting interact on an actor """
+        if type(actor) == str: 
+            actor = self.actors[actor] if actor in self.actors else self.items[actor]
+        actor.interact = fn
+
 
     def load_state(self, scene, state):
         """ a queuing function, not a queued function (ie it adds events but is not one """
