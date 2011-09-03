@@ -57,6 +57,7 @@ log.warning("broad try excepts around pygame.image.loads")
 log.warning("smart load should load non-idle action as default if there is only one action")
 log.warning("game.wait not implemented yet")
 log.warning("action.deltas can only be set via action.load")
+log.warning("actor.asks not fully implemented")
 
 # MOUSE ACTIONS 
 #MOUSE_GENERAL = 0
@@ -221,6 +222,16 @@ class Polygon(object):
         return polyinset
 
 #### pygame testing functions ####
+
+def interact(): pass #stub
+
+def use(): pass #stub
+
+def look(): pass #stub
+
+def location(): pass #stub
+
+def select(): pass #stub
 
 def process_step(game, step):
     """
@@ -437,7 +448,11 @@ class Action(object):
             self.images = [pygame.image.load(fname+".png").convert_alpha()]
         else:
             with open(fname+".montage", "r") as f:
-                num, w, h  = [int(i) for i in f.readlines()]
+                try:
+                    num, w, h  = [int(i) for i in f.readlines()]
+                except ValueError, err:
+                    log.error("Can't read values in %s.%s.montage"%(self.name, fname))
+                    num,w,h = 0,0,0
             master_image = pygame.image.load(fname + ".png").convert_alpha()
             master_width, master_height = master_image.get_size()
             for i in xrange(0, num):
@@ -536,6 +551,7 @@ class Actor(object):
         self.interact = None #special queuing function for interacts
         self.look = None #override queuing function for look
         self.hidden = False
+        self._on_mouse_move = self._on_mouse_leave = None    
     
     def _event_finish(self, block=True): 
         return self.game._event_finish(block)
@@ -1147,11 +1163,13 @@ class Actor(object):
 
         self.game.stuff_event(self.on_wait, None)
         def close_msgbox(game, actor, player):
-#            game.clearModal()
-            game.modals.remove(game.items[background])
-            game.modals.remove(game.items["txt"])
-            game.modals.remove(game.items["ok"])
-            game.modals.remove(game.items["portrait"])            
+            try:
+                game.modals.remove(game.items[background])
+                game.modals.remove(game.items["txt"])
+                game.modals.remove(game.items["ok"])
+                game.modals.remove(game.items["portrait"])            
+            except ValueError:
+                pass
             self._event_finish()
         msg = self.game.add(ModalItem(background, close_msgbox,(54,-400)).smart(self.game))
         txt = self.game.add(Text("txt", (100,-80), (840,170), text, wrap=660), False, ModalItem)
@@ -1164,12 +1182,58 @@ class Actor(object):
         portrait.actions["idle"] = portrait.action = action
         portrait = self.game.add(portrait, False, ModalItem)
         ok = self.game.add(Item("ok").smart(self.game), False, ModalItem)
+        ok.interact = close_msgbox
         self.game.stuff_event(ok.on_place, (900,250))
         self.game.stuff_event(portrait.on_place, (65,52))
         self.game.stuff_event(txt.on_place, (220,60))
         self.game.stuff_event(msg.on_goto, (54,40))
-
         self._event_finish()
+    
+    def on_asks(self, *args):
+#        game.menu_fadeOut()
+#        game.menu_push() #hide and push old menu to storage
+        self.on_says(args[0])
+        def collide_never(x,y): #for asks, most modals can't be clicked, only the txt modelitam options can.
+            return False
+
+        for m in self.game.modals[-4:]: #for the new says elements, allow clicking on voice options
+            if m.name != "ok":
+                m.collide = collide_never
+            if m.name == "msgbox":
+                msgbox = m
+  
+#    game.set_menu("inventory_cancel", "inventory_back")
+#    game.set_menu("inventory_back")
+        if self.game.testing:
+            next_step = self.game.tests.pop(0)
+            for q,fn in args[1:]:
+                if q in next_step:
+                    fn(self.game, self, self.game.player)
+                    self._event_finish()
+                    return
+            log.error("Unable to select %s option in on_ask '%s'"%(next_step, args[0]))
+            return
+                    
+        msgbox.options = []
+        for i, qfn in enumerate(args[1:]): #add the response options
+            q, fn = qfn
+            opt = self.game.add(Text("opt%s"%i, (100,-80), (840,180), q, wrap=660) , False, ModalItem)
+            def close_modal_then_callback(game, menuItem, player): #close the modal ask box and then run the callback
+                elements = ["msgbox", "txt", "ok", "portrait"]
+                elements.extend(menuItem.msgbox.options)
+                for i in elements:
+                    if game.items[i] in game.modals: game.modals.remove(game.items[i])
+                menuItem.callback(game, self, player)
+                self._event_finish()
+
+            opt.callback = fn
+            opt.interact = close_modal_then_callback
+            opt._on_mouse_move = opt._on_mouse_move_utility #switch on mouse over change
+            opt._on_mouse_leave = opt._on_mouse_leave_utility #switch on mouse over change
+            opt.collide = opt._collide #switch on mouse over box
+            opt.msgbox = msgbox
+            msgbox.options.append(opt.name)
+            self.game.stuff_event(opt.on_place, (250,90+i*40))
         
     def on_remove(self): #remove this actor from its scene
         if self.scene:
@@ -1289,32 +1353,56 @@ class Text(Actor):
         self.x, self.y = pos
         self.w, self.h = dimensions
 #        fname = "data/fonts/domesticManners.ttf"
+        self.text = text
+        self.wrap = wrap
+        self.size = size
+        self.img = self._img = self._generate_text(text, colour)
+        self._mouse_move_img = self._generate_text(text, (255,255,255))
+        self.mouse_move_enabled = False
+        self.key = None #if forced to MenuItem or ModalItem
+        #TODO img has shadow?
+        self._on_mouse_move = self._on_mouse_leave = None
+        self._clickable_area = self.img.get_rect()
+
+    def _on_mouse_move_utility(self, x, y, button, modifiers): #text.mouse_move single button interface
+        self.img = self._mouse_move_img
+
+    def _on_mouse_leave_utility(self, x, y, button, modifiers): #text.mouse_move mouse has left
+        self.img = self._img
+
+
+    def _collide(self, x,y):
+        return self.clickable_area.collidepoint(x,y)
+
+    def _generate_text(self, text, colour=(255,255,255)):
         fname = "data/fonts/vera.ttf"
         try:
-            self.font = pygame.font.Font(fname, size)
+            self.font = pygame.font.Font(fname, self.size)
         except:
             self.font = None
             log.error("text %s unable to load or initialise font"%self.name)
             
         if not self.font:
-            self.img = pygame.Surface((10,10))
-            return
+            img = pygame.Surface((10,10))
+            return img
         
-        text = wrapline(text, self.font, wrap)
+        text = wrapline(text, self.font, self.wrap)
         if len(text) == 1:
-            self.img = self.font.render(text[0], True, colour)
-            return
+            img = self.font.render(text[0], True, colour)
+            return img
         
         h=self.font.size(text[0])[1]
-        self.img = pygame.Surface((wrap + 20,len(text)*h + 20), SRCALPHA, 32)
-        self.img = self.img.convert_alpha()
+        img = pygame.Surface((self.wrap + 20,len(text)*h + 20), SRCALPHA, 32)
+        img = img.convert_alpha()
         
         for i, t in enumerate(text):
-            img = self.font.render(t, True, colour)
-            self.img.blit(img, (10, i * h + 10))
-   
+            img_line = self.font.render(t, True, colour)
+            img.blit(img_line, (10, i * h + 10))
+
+        return img
 
     def draw(self):
+#        print(self.action.name) if self.action else print("no action for Text %s"%self.text)
         if self.img:
             r = self.img.get_rect().move(self.x, self.y)    
 #            if self.game.editing == self:
@@ -1638,6 +1726,7 @@ class Game(object):
         self.testing_message = True #show a message alerting user they are back in control
         self.missing_actors = [] #list of actors mentioned in walkthrough that are never loaded
         self.test_inventory = False #heavy duty testing of inventory against scene objects
+        self.step = None #current step in the walkthroughs
         
         #editor
         self.debug_font = None
@@ -1681,6 +1770,8 @@ class Game(object):
         if force_cls:
             if force_cls == ModalItem:
                 self.modals.append(obj)
+                self.items[obj.name] = obj
+            elif force_cls == MenuItem:
                 self.items[obj.name] = obj
             else:
                 log.error("forcing objects to type %s not implement in game.add"%force_cls)
@@ -1829,7 +1920,9 @@ class Game(object):
     def _on_mouse_up(self, x, y, button, modifiers): #single button interface
  #       btn1, btn2, btn3 = pygame.mouse.get_pressed()
 #        import pdb; pdb.set_trace()
-        if button==0: self.mouse_mode = MOUSE_LOOK #subaltern btn pressed 
+        if button<>1: 
+            print("SUB BUTTON PRESSED")
+            self.mouse_mode = MOUSE_LOOK #subaltern btn pressed 
         if len(self.modals) > 0: #modals first
             for i in self.modals:
                 if i.collide(x,y): #always trigger interact on modals
@@ -1907,13 +2000,23 @@ class Game(object):
                 if len(self.editing_point)>1: self.editing_point[1](y)
             return
         menu_capture = False #has the mouse found an item in the menu
+        for i in self.modals:
+            if i.collide(x,y): #hovering
+#                if i.actions and i.actions.has_key('over'):
+#                    i.action = i.actions['over']
+                if i._on_mouse_move: i._on_mouse_move(x, y, button, modifiers)
+                menu_capture = True
+            else:
+                if i._on_mouse_leave: i._on_mouse_leave(x, y, button, modifiers)
+            
+        if menu_capture == True: return       
         for i in self.menu: #then menu
             if i.collide(x,y): #hovering
-                if i.actions.has_key('over'):
+                if i.actions and i.actions.has_key('over'):
                     i.action = i.actions['over']
                 t = i.name if i.display_text == None else i.display_text
                 self.info(t, i.nx, i.ny)
-                i._on_mouse_move(x, y, button, modifiers)
+                if i._on_mouse_move: i._on_mouse_move(x, y, button, modifiers)
                 menu_capture = True
             else: #unhover over menu item
                 if i.action and i.action.name == "over":
@@ -1943,14 +2046,15 @@ class Game(object):
     def handle_pygame_events(self):
         m = pygame.mouse.get_pos()
         btn1, btn2, btn3 = pygame.mouse.get_pressed()
+#        print(btn1, btn2, btn3)
         for event in pygame.event.get():
             if event.type == QUIT:
                 self.quit = True
                 return
             elif event.type == MOUSEBUTTONDOWN:
-                self._on_mouse_down(m[0], m[1], btn1, None)
+                self._on_mouse_down(m[0], m[1], event.button, None)
             elif event.type == MOUSEBUTTONUP:
-                self._on_mouse_up(m[0], m[1], btn1, None)
+                self._on_mouse_up(m[0], m[1], event.button, None)
             elif event.type == KEYDOWN:
                 self._on_key_press(event.key)
         self._on_mouse_move(m[0], m[1], btn1, None)
@@ -1992,7 +2096,7 @@ class Game(object):
 
 
             def editor_save(game, menuItem, player):
-                print("What is the name of this state (no directory or .py)?")
+                print("What is the name of this state to save (no directory or .py)?")
                 state = raw_input(">")
                 if state=="": return
                 sfname = os.path.join(self.scene_dir, os.path.join(self.scene.name, state))
@@ -2007,24 +2111,26 @@ class Game(object):
                         f.write('WalkArea().smart(game, %s),'%(walkarea))
                     f.write(']\n')
                     for name, obj in game.scene.objects.items():
-                        slug = slugify(name).lower()
-                        txt = "items" if isinstance(obj, Item) else "actors"
-                        f.write('    %s = game.%s["%s"]\n'%(slug, txt, name))
-                        r = obj._clickable_area
-                        f.write('    %s.reclickable(Rect(%s, %s, %s, %s))\n'%(slug, r.left, r.top, r.w, r.h))
-                        r = obj._solid_area
-                        f.write('    %s.resolid(Rect(%s, %s, %s, %s))\n'%(slug, r.left, r.top, r.w, r.h))
-                        f.write('    %s.rescale(%0.2f)\n'%(slug, obj.scale))
-                        f.write('    %s.reanchor((%i, %i))\n'%(slug, obj._ax, obj._ay))
-                        f.write('    %s.restand((%i, %i))\n'%(slug, obj._sx, obj._sy))
-                        f.write('    %s.retalk((%i, %i))\n'%(slug, obj._tx, obj._ty))
-                        f.write('    %s.relocate(scene, (%i, %i))\n'%(slug, obj.x, obj.y))
-                        if isinstance(obj, Portal): #special portal details
-                            ox,oy = obj._ox, obj._oy
-                            if (ox,oy) == (0,0): #guess outpoint
-                                ox = -150 if obj.x < 512 else 150
-                            f.write('    %s.reout((%i, %i))\n'%(slug, ox, oy))
-                        if obj == self.player:
+                        if obj != game.player:
+                            slug = slugify(name).lower()
+                            txt = "items" if isinstance(obj, Item) else "actors"
+                            f.write('    %s = game.%s["%s"]\n'%(slug, txt, name))
+                            r = obj._clickable_area
+                            f.write('    %s.reclickable(Rect(%s, %s, %s, %s))\n'%(slug, r.left, r.top, r.w, r.h))
+                            r = obj._solid_area
+                            f.write('    %s.resolid(Rect(%s, %s, %s, %s))\n'%(slug, r.left, r.top, r.w, r.h))
+                            f.write('    %s.rescale(%0.2f)\n'%(slug, obj.scale))
+                            f.write('    %s.reanchor((%i, %i))\n'%(slug, obj._ax, obj._ay))
+                            f.write('    %s.restand((%i, %i))\n'%(slug, obj._sx, obj._sy))
+                            f.write('    %s.retalk((%i, %i))\n'%(slug, obj._tx, obj._ty))
+                            f.write('    %s.relocate(scene, (%i, %i))\n'%(slug, obj.x, obj.y))
+                            if isinstance(obj, Portal): #special portal details
+                                ox,oy = obj._ox, obj._oy
+                                if (ox,oy) == (0,0): #guess outpoint
+                                    ox = -150 if obj.x < 512 else 1024+150
+                                    oy = obj.sy
+                                f.write('    %s.reout((%i, %i))\n'%(slug, ox, oy))
+                        else: #the player object
                             f.write('    scene.scales["%s"] = %0.2f\n'%(name, obj.scale))
                     
             def _editor_cycle(game, collection, player, v):
@@ -2193,6 +2299,9 @@ class Game(object):
                 if not os.path.exists(d): os.makedirs(d)
                 obj = Actor(name).smart(game)
                 game.add(obj)
+                if hasattr(self, "e_objects"): self.e_objects = None #free add object collection
+                editor_collection_close(game, btn.collection, player)
+                
                 
             def editor_collection_newitem(game, btn, player):
                 print("What is the name of this item to create? (blank to abort)")
@@ -2202,6 +2311,9 @@ class Game(object):
                 if not os.path.exists(d): os.makedirs(d)
                 obj = Item(name).smart(game)
                 game.add(obj)
+                if hasattr(self, "e_objects"): self.e_objects = None #free add object collection
+                editor_collection_close(game, btn.collection, player)
+
                 
             def editor_collection_close(game, collection, player):
                 """ close an collection object in the editor, shared with e_portals and e_objects """
@@ -2246,7 +2358,7 @@ class Game(object):
         if len(self.missing_actors)>0:
             self.log.error("The following actors were never loaded:")
             for i in self.missing_actors: self.log.error(i)
-        scenes = sorted(self.scenes.values(), key=lambda x: x.analytics_count, reverse=True)        
+        scenes = sorted(self.scenes.values(), key=lambda x: x.analytics_count, reverse=True)
         self.log.info("Scenes listed in order of time spent")
         for s in scenes:
             t = s.analytics_count * 30
@@ -2375,16 +2487,16 @@ class Game(object):
                     self.quit = True
                     self.finish_tests()
                 else:
-                    step = self.tests.pop(0)
+                    self.step = self.tests.pop(0)
                     self.steps_complete += 1
-                    process_step(self, step)
+                    process_step(self, self.step)
                     if self.jump_to_step:
                         return_to_player = False
                         if type(self.jump_to_step) == int: #integer step provided
                             self.jump_to_step -= 1
                             if self.jump_to_step == 0: return_to_player = True
                         else: #assume step name has been given
-                            if step[-1] == self.jump_to_step:
+                            if self.step[-1] == self.jump_to_step:
                                 return_to_player = True
                                 if self.jump_to_step == "set_trace": import pdb; pdb.set_trace()
                         if return_to_player: #hand control back to player
