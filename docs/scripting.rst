@@ -1,4 +1,5 @@
-
+Scripting
+=====================================
 
 def interact_<ActorName>(game, actor, player):
     player.says("Hello")

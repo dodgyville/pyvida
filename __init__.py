@@ -516,7 +516,7 @@ class WalkArea(object):
 
 class Actor(object):
     """
-    The base class for all objects in the game.
+    The base class for all objects in the game, including actors, items, portals, text objects and menu items.
     """
     __metaclass__ = use_on_events
     def __init__(self, name=None): 
@@ -902,9 +902,13 @@ class Actor(object):
 
     def on_do(self, action):
         """ 
-        A queuing function:
+        A queuing function, takes either the action name or the action itself.
+
+        Make this actor do an action. Available in your script as:
+        actor.do(<action>)
         
-        Make this actor do an action
+        Example::
+        player.do("shrug")
         """
         self._do(action)
         self._event_finish()
@@ -914,7 +918,14 @@ class Actor(object):
         """ 
         A queuing function:
         
-        Place this actor at this location instantly 
+        Place this actor at this location instantly (as opposed to on_goto which animates the movement)
+        
+        examples::
+        
+            player.place((50,50))   #will place player at point (50,50) on the screen
+            player.place(pet_dog)   #will place player at the stand point of actor pet_dog
+            player.place("pet_dog") #will place player at the stand point of actor pet_dog
+            
         """
         pt = get_point(self.game, destination)
         self.x, self.y = pt
@@ -928,9 +939,11 @@ class Actor(object):
              
     def on_fade_in(self):
         """
-        A queuing function:
+        A queuing function: Fade this actor in.
         
-        Fade this actor in.
+        Example::
+        
+        player.fade_in()
         """
         self._alpha = 0
         self._alpha_target = 255
@@ -939,9 +952,11 @@ class Actor(object):
 
     def on_fade_out(self):
         """
-        A queuing function:
+        A queuing function: Fade this actor out.
         
-        Fade this actor out.
+        Example::
+        
+        player.fade_out()
         """
         obj._alpha = 255
         obj._alpha_target = 0
@@ -949,19 +964,41 @@ class Actor(object):
         self._event_finish()
 
     def on_hide(self):
-        """ A queuing function: hide the actor, including from all click and hover events """
+        """ A queuing function: hide the actor, including from all click and hover events 
+        
+            Example::
+            
+            player.hide()
+        """
         self.hidden = True
         self._event_finish(block=False)
         
     def on_show(self):
+        """ A queuing function: show the actor, including from all click and hover events 
+        
+            Example::
+            
+                player.show()
+        """
         self.hidden = False
         self._event_finish()
 
     def on_rescale(self, scale):
+        """ A queuing function: scale the actor to a different size
+        
+            Example::
+            
+                player.scale(0.38) 
+        """
         self.scale = scale
         self._event_finish(False)
         
     def on_reclickable(self, area):
+        """ A queuing function: change the clickable area of the actor
+        
+            Example::
+            
+                player.scale(Rect(0,0,100,100)) """
         self._clickable_area = area
         self._event_finish(False)
 
@@ -1019,13 +1056,17 @@ class Actor(object):
         self._event_finish(block=False)
 
     def on_rotate(self, start, end, duration):
-        """ animate rotation of character """
+        """ A queuing function. Animate rotation of character """
         log.debug("actor.rotation not implemented yet")
         self._event_finish(block=False)
         
     
     def moveto(self, delta):
-        """ move relative to the current position """
+        """ A pseudo-queuing function: move relative to the current position
+        
+            Example::
+            
+                player.moveto((-50,0)) #will make the player walk -50 from their current position """        
         destination = (self.x + delta[0], self.y + delta[1])
         self.on_goto(destination)
     
@@ -1107,8 +1148,22 @@ class Actor(object):
     
     def on_goto(self, destination, block=True, modal=False, ignore=False):
         """
-        ignore = [True|False] - ignore walkareas
-        """
+        A queuing function: make the actor move to a new position.
+           
+        Can take a point, an actor's name, or an actor.
+           
+        Examples::
+        
+                player.goto((50,50)) #will move player towards point (50,50)
+                player.goto(pet_dog)    #will move player towards the stand point of actor pet_dog
+                player.goto("pet_dog")  #will move player towards the stand point of actor pet_dog
+                
+        Options::
+        
+                ignore = [True|False]  #ignore walkareas
+                modal = [True|False] #block user input until action reaches destination
+                block = [True|False] #block other events from running until actor reaches dest
+        """        
         if type(destination) == str:
             destination = (self.game.actors[destination].sx, self.game.actors[destination].sy)
         elif type(destination) != tuple:
@@ -1137,23 +1192,47 @@ class Actor(object):
 #                self._goto_astar(x,y, walk_actions) #XXX disabled astar for the moment
 
     def forget(self, fact):
-        """ forget a fact from the list of facts """
+        """ A pseudo-queuing function. Forget a fact from the list of facts 
+            
+            Example::
+            
+                player.forgets("spoken to everyone")
+        """
         self.facts.remove(fact)
         #self._event_finish()
 
     def remember(self, fact):
-        """ remember a fact to the list of facts """
+        """ A pseudo-queuing function. Remember a fact to the list of facts
+            
+            Example::
+                player.remember("spoken to everyone")            
+        """
+
         self.facts.append(fact)
         #self._event_finish()
 
     def remembers(self, fact):
-        """ return true if fact in the list of facts """
+        """ A pseudo-queuing function. Return true if fact in the list of facts 
+
+            Example::
+        
+                if player.remembers("spoken to everyone"): player.says("I've spoken to everyone")
+        
+        """
         return True if fact in self.facts else False       
         
     def on_says(self, text, sfx=-1, block=True, modal=True, font=None, action=None, background="msgbox"):
-        """ 
-        if sfx == -1, try and guess sound file 
-        action = which action to display
+        """ A queuing function. Display a speech bubble with text and wait for player to close it.
+        
+        Examples::
+        
+            player.says("Hello world!")  #will use "portrait" action or "idle"
+            player.says("Hello world!", action="happy") #will use player's happy action
+        
+        Options::
+        
+            if sfx == -1  #, try and guess sound file 
+            action = None #which action to display
         """
         log.info("Actor %s says: %s"%(self.name, text))
 #        log.warning("")
@@ -1190,6 +1269,24 @@ class Actor(object):
         self._event_finish()
     
     def on_asks(self, *args):
+        """ A pseudo-queuing function. Display a speech bubble with text and several replies, and wait for player to pick one.
+        
+        Examples::
+        
+            def friend_function(game, guard, player):
+                guard.says("OK then. You may pass.")
+                player.says("Thanks.")
+                
+            def foe_function(game, guard, player):
+                guard.says("Then you shall not pass.")
+                
+            guard.says("Friend or foe?", ("Friend", friend_function), ("Foe", foe_function))
+        
+        Options::
+        
+            tuples containing a text option to display and a function to call if the player selects this option.
+            
+        """    
 #        game.menu_fadeOut()
 #        game.menu_push() #hide and push old menu to storage
         self.on_says(args[0])

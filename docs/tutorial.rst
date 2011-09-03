@@ -87,11 +87,11 @@ You're making a game for the end-user to play, so why not start with your expect
 
 Test driven development has several main advantages here:
 
-   # You can start tweaking the gameplay from the first moment
-   # You only code what you need to (and to your plot)
-   # Heaps of testing is done on your game
-   # You quickly get an idea of how big your game will be   
-   # You know quickly if a player can actually play all the way through your game!
+   * You can start tweaking the gameplay from the first moment.
+   * You only code what you need to (and to your plot).
+   * Heaps of testing is done on your game, so it will be rock solid.
+   * You quickly get an idea of how big your game will be.
+   * You know quickly if a player can actually play all the way through your game!
 
 A test suite in pyvida mimics a user sitting at the screen clicking items and actors and moving about. 
 The idea is that you write a list of commands the player would make if they were really playing the game.

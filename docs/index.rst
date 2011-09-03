@@ -10,7 +10,7 @@ pyvida is a 2D point-and-click adventure game engine.
 The goals of pyvida are:
  * To make it easy to write a game
  * To be multi-platform and open-source
- * To prescribe a complete design philosophy from plotting to distribution
+ * To prescribe a complete test-driven design philosophy from plotting to distribution
 
 Contents:
 
