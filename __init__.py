@@ -338,6 +338,7 @@ def crosshair(screen, pt, colour=(255,100,100)):
 def slugify(txt):
     """ slugify a piece of text """
     txt = txt.replace(" ", "_")
+    txt = txt.replace("-", "")
     return txt.replace("'", "")
 
 def collide(rect, x,y):
@@ -1198,7 +1199,7 @@ class Actor(object):
             
             Example::
             
-                player.forgets("spoken to everyone")
+                player.forget("spoken to everyone")
         """
         self.facts.remove(fact)
         #self._event_finish()
@@ -1706,12 +1707,14 @@ class Scene(object):
 
     def _remove(self, obj):
         """ remove object from the scene """
-        if type(obj) == str and obj in self.objects:
-            obj = self.objects[obj]
+        if type(obj) == str:
+            if obj in self.objects:
+                obj = self.objects[obj]
+            else:
+                log.warning("Object %s not in this scene %s"%(obj, self.name))
+                return
         obj.scene = None
         del self.objects[obj.name]
-#        self._event_finish()
-
 
     def on_remove(self, obj): #scene.remove
         """ queued function for removing object from the scene """
