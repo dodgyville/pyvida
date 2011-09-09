@@ -730,20 +730,22 @@ class Actor(object):
         """ find an interact function for this actor and call it """
 #        fn = self._get_interact()
  #       if self.interact: fn = self.interact
-        log.debug("player interact with %s"%self.name)
+#        log.debug("player interact with %s"%self.name)
         self.game.mouse_mode = MOUSE_INTERACT #reset mouse mode
         if self.interact: #if user has supplied an interact override
             if type(self.interact) == str: self.interact = get_function(self.interact)
+            log.debug("Player interact (%s) with %s"%(self.interact.__name__, self.name))
             self.interact(self.game, self, self.game.player)
         else: #else, search several namespaces or use a default
             basic = "interact_%s"%slugify(self.name)
             script = get_function(basic)
             if script:
                 script(self.game, self, self.game.player)
+                log.debug("Player interact (%s) with %s"%(script.__name__, self.name))
             else:
                 #warn if using default vida interact
                 if not isinstance(self, Portal):
-                    log.warning("no interact script for %s (write an %s)"%(self.name, basic))
+                    log.warning("No interact script for %s (write an %s)"%(self.name, basic))
                 self._interact_default(self.game, self, self.game.player)
 
 
@@ -1023,7 +1025,7 @@ class Actor(object):
         self._sx, self._sy = pt[0], pt[1]
         self._event_finish(False)
 
-    def on_relocate(self, scene, destination=None):
+    def on_relocate(self, scene, destination=None): #actor.relocate
         # """ relocate this actor to scene at destination instantly """ 
         if scene == None:
             log.error("Unable to relocate %s to non-existent scene, relocating on current scene"%self.name)
@@ -1220,6 +1222,11 @@ class Actor(object):
         
         """
         return True if fact in self.facts else False       
+    
+    def has(self, item):
+        """ Does this actor have this item in their inventory?"""
+        if type(item) != str: item = item.name
+        return True if item in self.inventory.keys() else False
         
     def on_says(self, text, sfx=-1, block=True, modal=True, font=None, action=None, background="msgbox"):
         """ A queuing function. Display a speech bubble with text and wait for player to close it.
