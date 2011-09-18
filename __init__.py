@@ -223,6 +223,8 @@ class Polygon(object):
 
 #### pygame testing functions ####
 
+def goto(): pass #stub
+
 def interact(): pass #stub
 
 def use(): pass #stub
@@ -232,6 +234,21 @@ def look(): pass #stub
 def location(): pass #stub
 
 def select(): pass #stub
+
+scene_path = []
+def scene_search(scene, target): #are scenes connected via portals?
+    global scene_path
+    scene_path.append(scene)
+#    return scene
+    if scene.name.upper() == target:
+        return scene
+    for i in scene.objects.values():
+        if isinstance(i, Portal): #if portal and has link, follow that portal
+            if i.link and i.link.scene not in scene_path and  scene_search(i.link.scene, target) != False: 
+                return i.link.scene
+    scene_path.pop(-1)
+    return False
+
 
 def process_step(game, step):
     """
@@ -267,6 +284,20 @@ def process_step(game, step):
             if actee not in game.missing_actors: game.missing_actors.append(actee)
             fail = True
         if not fail: game.mouse_cursor = actee
+    elif function_name == "goto": #move player to scene, by calc path
+        global scene_path    
+        scene_path = []
+        if game.scene:
+            scene = scene_search(game.scene, actor.upper())
+            if scene != False:
+                scene._add(game.player)
+                log.info("Player goes %s"%([x.name for x in scene_path]))
+                game.camera.scene(scene)
+            else:
+                log.error("Unable to get player from scene %s to scene %s"%(game.scene.name, actor))
+        else:
+            log.error("Going from no scene to scene %s"%actor)
+        return
     elif function_name == "location": #check current location matches scene "actor"
         if game.scene.name != actor:
             log.error("Current scene should be %s, but is currently %s"%(actor, game.scene.name))
@@ -280,12 +311,12 @@ def process_step(game, step):
             i.trigger_interact()
             return
 #    if actor == "spare uniform": import pdb; pdb.set_trace()
-    if game.scene and fail == False:
+    if game.scene and fail == False: #not sure what this does
         for i in game.scene.objects.values():
             if actor == i.name:
                 game._trigger(i)
                 return
-    if not fail: 
+    if not fail:
         log.error("Unable to find actor %s in modals, menu or current scene (%s) objects"%(actor, game.scene.name))
         if actor not in game.missing_actors and actor not in game.actors and actor not in game.items: game.missing_actors.append(actor)
     game.errors += 1
@@ -1724,7 +1755,7 @@ class Scene(object):
             self._remove(obj)
         self._event_finish()
         
-    def on_add(self, obj): #scene.add
+    def _add(self, obj):
         """ removes obj from current scene it's in, adds to this scene """
         if obj.scene:
             obj.scene._remove(obj)
@@ -1733,6 +1764,9 @@ class Scene(object):
         if obj.name in self.scales.keys():
             obj.scale = self.scales[obj.name]
         log.debug("Add %s to scene %s"%(obj.name, self.name))
+
+    def on_add(self, obj): #scene.add
+        self._add(obj)
         self._event_finish()
 
 
@@ -1781,8 +1815,6 @@ class Game(object):
     mute_all = False
     font_speech = None
     
-    profiling = False 
-    enabled_profiling = False
     editing = None #which actor or walkarea are we editing
     editing_point = None #which point or rect are we editing
     editing_index = None #point in the polygon or rect we are editing
@@ -1834,6 +1866,11 @@ class Game(object):
         self.missing_actors = [] #list of actors mentioned in walkthrough that are never loaded
         self.test_inventory = False #heavy duty testing of inventory against scene objects
         self.step = None #current step in the walkthroughs
+
+        #profiling
+        self.profiling = False 
+        self.enabled_profiling = False
+        
         
         #editor
         self.debug_font = None
@@ -2477,6 +2514,7 @@ class Game(object):
     def run(self, callback=None):
         parser = OptionParser()
         parser.add_option("-f", "--fullscreen", action="store_true", dest="fullscreen", help="Play game in fullscreen mode", default=False)
+        parser.add_option("-p", "--profile", action="store_true", dest="profiling", help="Record player movements for testing", default=False)        
         parser.add_option("-s", "--step", dest="step", help="Jump to step in walkthrough")
         parser.add_option("-a", "--artreactor", dest="artreactor", help="Save images from each scene")
         parser.add_option("-i", "--inventory", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
@@ -2489,6 +2527,7 @@ class Game(object):
         self.steps_complete = 0
         if options.test_inventory:
             self.test_inventory = True
+        if options.profiling: self.profiling = True
         if options.step: #switch on test runner to step through walkthrough
             self.testing = True
             self.tests = self._walkthroughs
