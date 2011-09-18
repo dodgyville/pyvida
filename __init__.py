@@ -244,8 +244,10 @@ def scene_search(scene, target): #are scenes connected via portals?
         return scene
     for i in scene.objects.values():
         if isinstance(i, Portal): #if portal and has link, follow that portal
-            if i.link and i.link.scene not in scene_path and  scene_search(i.link.scene, target) != False: 
-                return i.link.scene
+            if i.link and i.link.scene not in scene_path:
+                found_target = scene_search(i.link.scene, target)
+                if found_target != False: 
+                    return found_target
     scene_path.pop(-1)
     return False
 
