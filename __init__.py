@@ -372,6 +372,13 @@ def slugify(txt):
     """ slugify a piece of text """
     txt = txt.replace(" ", "_")
     txt = txt.replace("-", "")
+    txt = txt.replace(".", "_")
+    txt = txt.replace("!", "")
+    txt = txt.replace("+", "")
+    txt = txt.replace("]", "")
+    txt = txt.replace("[", "")
+    txt = txt.replace("}", "")
+    txt = txt.replace("{", "")
     return txt.replace("'", "")
 
 def collide(rect, x,y):
@@ -1480,10 +1487,34 @@ def wrapline(text, font, maxwidth):
                                
     while not done:             
         nl, done, stext=truncline(text, font, maxwidth) 
-        wrapped.append(stext.strip())                  
+        stext = stext.strip().split("\n")
+        wrapped.extend(stext)                  
         text=text[nl:]                                 
     return wrapped
  
+
+def text_to_image(text, font, colour, maxwidth,offset=None):
+    """ Convert block of text to wrapped image """
+    text = wrapline(text, font, maxwidth)
+    if len(text) == 1:
+        img = font.render(text[0], True, colour)
+        return img
+    _offset = offset if offset else 0
+
+    h= font.size(text[0])[1]
+    img = pygame.Surface((maxwidth + 20 + _offset, len(text)*h + 20 + _offset), SRCALPHA, 32)
+    img = img.convert_alpha()
+    
+    for i, t in enumerate(text):
+        #shadow
+        if offset:
+            img_line = font.render(t, True, (0,0,0))
+            img.blit(img_line, (10+offset, i * h + 10+offset))
+        img_line = font.render(t, True, colour)
+        img.blit(img_line, (10, i * h + 10))
+
+    return img
+
 
 class Text(Actor):
     def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=26, wrap=2000):
@@ -1494,6 +1525,7 @@ class Text(Actor):
         self.text = text
         self.wrap = wrap
         self.size = size
+        self.colour = colour
         self.img = self._img = self._generate_text(text, colour)
         self._mouse_move_img = self._generate_text(text, (255,255,255))
         self.mouse_move_enabled = False
@@ -1501,6 +1533,9 @@ class Text(Actor):
         #TODO img has shadow?
         self._on_mouse_move = self._on_mouse_leave = None
         self._clickable_area = self.img.get_rect()
+
+    def update_text(self): #rebuild the text image
+        self.img = self._img = self._generate_text(self.text, self.colour)
 
     def _on_mouse_move_utility(self, x, y, button, modifiers): #text.mouse_move single button interface
         self.img = self._mouse_move_img
@@ -1524,19 +1559,7 @@ class Text(Actor):
             img = pygame.Surface((10,10))
             return img
         
-        text = wrapline(text, self.font, self.wrap)
-        if len(text) == 1:
-            img = self.font.render(text[0], True, colour)
-            return img
-        
-        h=self.font.size(text[0])[1]
-        img = pygame.Surface((self.wrap + 20,len(text)*h + 20), SRCALPHA, 32)
-        img = img.convert_alpha()
-        
-        for i, t in enumerate(text):
-            img_line = self.font.render(t, True, colour)
-            img.blit(img_line, (10, i * h + 10))
-
+        img = text_to_image(text, self.font, colour, self.wrap)
         return img
 
     def draw(self):
@@ -1549,6 +1572,19 @@ class Text(Actor):
 #                self._crosshair((255,0,0), (self.ax, self.ay))
             self._rect = self.game.screen.blit(self.img, r)
 
+
+class Input(Text):
+    def __init__(self,name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=26, wrap=2000, maxlength=32, callback=None):
+        Text.__init__(self, name=name, pos=pos, dimensions=dimensions, text=text, colour=colour, size=size, wrap=wrap)
+        self.value = ""
+        self._text = text
+        self.maxlength = maxlength #number of characters
+        self.callback = callback
+
+    def update_text(self): #rebuild the text image
+        self.text = "%s\n%s"%(self._text, self.value)
+        self.img = self._img = self._generate_text(self.text, self.colour)
+       
 
 class ModalItem(Actor):
     """ blocks interactions with actors, items and menu """
@@ -1573,7 +1609,7 @@ class MenuItem(Actor):
         self.x, self.y = spos
         self.in_x, self.in_y = spos #special in point reentry point
         self.out_x, self.out_y = hpos #special hide point for menu items
-        self.display_text = "" #by default no overlay on menu items
+        self.display_text = name #"" #by default no overlay on menu items
 
 ALPHABETICAL = 0
 
@@ -1946,9 +1982,27 @@ class Game(object):
         """ On screen at one time can be an info text (eg an object name or menu hover) 
             Set that here.
         """
-        colour = (255,200,200)
+#        base = font.render(message, 0, fontcolor)
+#        img = pygame.Surface(size, 16)
+#        base.set_palette_at(1, shadowcolor)
+#        img.blit(base, (offset, offset))
+#        base.set_palette_at(1, fontcolor)
+#        img.blit(base, (0, 0))
+#        return img        
+        colour = (250,200,120)
+        self.info_image = None
+        if text and len(text) == 0: return
         if self.font:
-            self.info_image = self.font.render(text, True, colour)
+            self.info_image = text_to_image(text, self.font, colour, 150, offset=2)
+        
+#            offset = 2
+#            info_image = self.font.render(text, True, (0,0,0))
+#            size = info_image.get_width() + offset, info_image.get_height() + offset
+#            self.info_image = pygame.Surface(size, pygame.SRCALPHA, 32)
+#            self.info_image.blit(info_image, (offset, offset))
+#            info_image = self.font.render(text, True, colour)
+#            self.info_image.blit(info_image, (0, 0))
+            
         self.info_position = (x,y)
 
     def on_smart(self, player=None, player_class=Actor): #game.smart
@@ -2170,8 +2224,20 @@ class Game(object):
                         i.action = i.actions['idle']
         if menu_capture == True: return
         self._on_mouse_move_scene(x, y, button, modifiers)
-                
-    def _on_key_press(self, key):
+
+    def _on_key_press(self, key, unicode_key):
+        for i in self.modals:
+            if isinstance(i, Input): #inputs catch keyboard
+                print("add %s to input %s"%(unicode_key, i.name))
+#                import pdb; pdb.set_trace()
+                addable = unicode_key.isalnum() or unicode_key in " .!+-_][}{"
+                if len(i.value)< i.maxlength and addable:
+                    i.value += unicode_key
+                    i.update_text()
+                if len(unicode_key)>0 and unicode_key in "\n\r\t":
+                    self.modals.remove(i)
+                    i.callback(self, i)
+                return
         for i in self.menu:
             if key == i.key: i.trigger_interact() #print("bound to menu item")
         if ENABLE_EDITOR and key == K_F1:
@@ -2202,7 +2268,7 @@ class Game(object):
             elif event.type == MOUSEBUTTONUP:
                 self._on_mouse_up(m[0], m[1], event.button, None)
             elif event.type == KEYDOWN:
-                self._on_key_press(event.key)
+                self._on_key_press(event.key, event.dict['unicode'])
         self._on_mouse_move(m[0], m[1], btn1, None)
 #            elif event.key == K_ESCAPE:
  #               self.quit = True
@@ -2513,7 +2579,7 @@ class Game(object):
         self.log.info("Finished %s steps, estimated at %s.%s minutes"%(self.steps_complete, t/60, t%60))
     
         
-    def run(self, callback=None):
+    def run(self, splash=None, callback=None):
         parser = OptionParser()
         parser.add_option("-f", "--fullscreen", action="store_true", dest="fullscreen", help="Play game in fullscreen mode", default=False)
         parser.add_option("-p", "--profile", action="store_true", dest="profiling", help="Record player movements for testing", default=False)        
@@ -2551,7 +2617,7 @@ class Game(object):
         
         #set up default game font
         fname = "data/fonts/vera.ttf"
-        size = 14
+        size = 18
         try:
             self.font = pygame.font.Font(fname, size)
         except:
@@ -2561,6 +2627,12 @@ class Game(object):
         
         if self.scene and self.screen:
            self.screen.blit(self.scene.background(), (0, 0))
+        elif self.screen and splash:
+            scene = Scene(splash)
+            scene.background(splash)
+            self.screen.blit(scene.background(), (0, 0))
+            pygame.display.flip() #show updated display to user
+           
 
         pygame.display.set_caption(self.name)
 
@@ -2764,6 +2836,65 @@ class Game(object):
         #add timed event for callback
 #        self.
         
+
+    def user_input(self, text, callback):
+        """ A pseudo-queuing function. Display a text input, and wait for player to type something and hit enter
+        Examples::
+        
+            def input_function(game, guard, player):
+                guard.says("Then you shall not pass.")
+                
+            game.input("Player name", input_function)
+        
+        Options::
+        
+            text option to display and a function to call if the player selects this option.
+            
+        """    
+        txt = self.game.add(Input("input", (100,170), (840,170), text, wrap=660, callback=callback), False, ModalItem)
+        print("added modal input")
+        return
+        
+        self.on_says(args[0])
+        def collide_never(x,y): #for asks, most modals can't be clicked, only the txt modelitam options can.
+            return False
+
+        for m in self.game.modals[-4:]: #for the new says elements, allow clicking on voice options
+            if m.name != "ok":
+                m.collide = collide_never
+            if m.name == "msgbox":
+                msgbox = m
+  
+        if self.game.testing:
+            next_step = self.game.tests.pop(0)
+#            for q,fn in args[1:]:
+#                if q in next_step:
+#                    fn(self.game, self, self.game.player)
+#                    self._event_finish()
+#                    return
+#            log.error("Unable to select %s option in on_ask '%s'"%(next_step, args[0]))
+#            return
+                    
+        for i, qfn in enumerate(args[1:]): #add the response options
+            q, fn = qfn
+            opt = self.game.add(Text("opt%s"%i, (100,-80), (840,180), q, wrap=660) , False, ModalItem)
+            def close_modal_then_callback(game, menuItem, player): #close the modal ask box and then run the callback
+                elements = ["msgbox", "txt", "ok", "portrait"]
+                elements.extend(menuItem.msgbox.options)
+                for i in elements:
+                    if game.items[i] in game.modals: game.modals.remove(game.items[i])
+                menuItem.callback(game, self, player)
+                self._event_finish()
+
+            opt.callback = fn
+            opt.interact = close_modal_then_callback
+            opt._on_mouse_move = opt._on_mouse_move_utility #switch on mouse over change
+            opt._on_mouse_leave = opt._on_mouse_leave_utility #switch on mouse over change
+            opt.collide = opt._collide #switch on mouse over box
+            opt.msgbox = msgbox
+            msgbox.options.append(opt.name)
+            self.game.stuff_event(opt.on_place, (250,90+i*40))
+
         
     def on_set_menu(self, *args):
         """ add the items in args to the menu """
