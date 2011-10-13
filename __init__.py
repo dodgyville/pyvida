@@ -313,9 +313,10 @@ def process_step(game, step):
             i.trigger_interact()
             return
 #    if actor == "spare uniform": import pdb; pdb.set_trace()
-    if game.scene and fail == False: #not sure what this does
+    if game.scene and fail == False: #not sure what this does - I think this is the actual call
         for i in game.scene.objects.values():
             if actor == i.name:
+                i.analytics_count += 1            
                 game._trigger(i)
                 return
     if not fail:
@@ -423,6 +424,7 @@ def editor_menu(game):
 
 def editor_point(game, menuItem, player):
     #click on an editor button for editing a point
+    if not game.editing: return
     if type(menuItem) == str: menuItem = game.items[menuItem]
     if type(game.editing) == WalkArea: return
     points = {"e_location": (game.editing.set_x, game.editing.set_y),
@@ -592,7 +594,10 @@ class Actor(object):
         self.interact = None #special queuing function for interacts
         self.look = None #override queuing function for look
         self.hidden = False
-        self._on_mouse_move = self._on_mouse_leave = None    
+        self._on_mouse_move = self._on_mouse_leave = None
+        
+        self.analytics_count = 0 #used by test runner to measure how "popular" an actor is.
+        
     
     def _event_finish(self, block=True): 
         return self.game._event_finish(block)
@@ -1241,7 +1246,11 @@ class Actor(object):
             
                 player.forget("spoken to everyone")
         """
-        self.facts.remove(fact)
+        if fact in self.facts:
+            self.facts.remove(fact)
+        else:
+            log.warning("Can't forget fact '%s' ... was not in memory."%(fact))
+            
         #self._event_finish()
 
     def remember(self, fact):
@@ -1496,10 +1505,16 @@ def wrapline(text, font, maxwidth):
 def text_to_image(text, font, colour, maxwidth,offset=None):
     """ Convert block of text to wrapped image """
     text = wrapline(text, font, maxwidth)
-    if len(text) == 1:
-        img = font.render(text[0], True, colour)
-        return img
     _offset = offset if offset else 0
+    if len(text) == 1:
+#        img = font.render(text[0], True, colour)
+        info_image = font.render(text[0], True, (0,0,0))
+        size = info_image.get_width() + _offset, info_image.get_height() + _offset
+        img = pygame.Surface(size, pygame.SRCALPHA, 32)
+        img.blit(info_image, (_offset, _offset))
+        info_image = font.render(text[0], True, colour)
+        img.blit(info_image, (0, 0))
+        return img
 
     h= font.size(text[0])[1]
     img = pygame.Surface((maxwidth + 20 + _offset, len(text)*h + 20 + _offset), SRCALPHA, 32)
@@ -1989,20 +2004,11 @@ class Game(object):
 #        base.set_palette_at(1, fontcolor)
 #        img.blit(base, (0, 0))
 #        return img        
-        colour = (250,200,120)
+        colour = (250,250,40)
         self.info_image = None
         if text and len(text) == 0: return
         if self.font:
-            self.info_image = text_to_image(text, self.font, colour, 150, offset=2)
-        
-#            offset = 2
-#            info_image = self.font.render(text, True, (0,0,0))
-#            size = info_image.get_width() + offset, info_image.get_height() + offset
-#            self.info_image = pygame.Surface(size, pygame.SRCALPHA, 32)
-#            self.info_image.blit(info_image, (offset, offset))
-#            info_image = self.font.render(text, True, colour)
-#            self.info_image.blit(info_image, (0, 0))
-            
+            self.info_image = text_to_image(text, self.font, colour, 150, offset=1)
         self.info_position = (x,y)
 
     def on_smart(self, player=None, player_class=Actor): #game.smart
@@ -2228,8 +2234,6 @@ class Game(object):
     def _on_key_press(self, key, unicode_key):
         for i in self.modals:
             if isinstance(i, Input): #inputs catch keyboard
-                print("add %s to input %s"%(unicode_key, i.name))
-#                import pdb; pdb.set_trace()
                 addable = unicode_key.isalnum() or unicode_key in " .!+-_][}{"
                 if len(i.value)< i.maxlength and addable:
                     i.value += unicode_key
@@ -2308,7 +2312,7 @@ class Game(object):
 
 
             def editor_save(game, menuItem, player):
-                print("What is the name of this state to save (no directory or .py)?")
+                print("What is the name of this %s state to save (no directory or .py)?"%self.scene.name)
                 state = raw_input(">")
                 if state=="": return
                 sfname = os.path.join(self.scene_dir, os.path.join(self.scene.name, state))
@@ -2575,17 +2579,25 @@ class Game(object):
         for s in scenes:
             t = s.analytics_count * 30
             self.log.info("%s - %s steps (%s.%s minutes)"%(s.name, s.analytics_count, t/60, t%60))
+        actors = sorted(self.actors.values(), key=lambda x: x.analytics_count, reverse=True)
+        self.log.info("Actors listed in order of interactions")
+        for s in actors:
+            t = s.analytics_count * 30
+            self.log.info("%s - %s interactions (%s.%s minutes)"%(s.name, s.analytics_count, t/60, t%60))
+        
         t = self.steps_complete * 30 #30 seconds per step
         self.log.info("Finished %s steps, estimated at %s.%s minutes"%(self.steps_complete, t/60, t%60))
     
         
-    def run(self, splash=None, callback=None):
+    def run(self, splash=None, callback=None, icon=None):
         parser = OptionParser()
         parser.add_option("-f", "--fullscreen", action="store_true", dest="fullscreen", help="Play game in fullscreen mode", default=False)
         parser.add_option("-p", "--profile", action="store_true", dest="profiling", help="Record player movements for testing", default=False)        
         parser.add_option("-s", "--step", dest="step", help="Jump to step in walkthrough")
         parser.add_option("-a", "--artreactor", dest="artreactor", help="Save images from each scene")
         parser.add_option("-i", "--inventory", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
+#        parser.add_option("-l", "--list", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
+
 #        parser.add_option("-q", "--quiet",
  #                 action="store_false", dest="verbose", default=True,
   #                help="don't print status messages to stdout")
@@ -2605,10 +2617,13 @@ class Game(object):
                 self.jump_to_step = options.step
 
         pygame.init() 
+        if icon:
+            pygame.display.set_icon(pygame.image.load(icon))
         flags = 0
         if options.fullscreen:
             flags |= pygame.FULLSCREEN
         self.screen = screen = pygame.display.set_mode((1024, 768), flags)
+        
         
         #do post pygame init loading
         #set up mouse cursors
@@ -2852,7 +2867,10 @@ class Game(object):
             
         """    
         txt = self.game.add(Input("input", (100,170), (840,170), text, wrap=660, callback=callback), False, ModalItem)
-        print("added modal input")
+        if self.game.testing: 
+            self.game.modals.remove(txt)
+            callback(self.game, txt)
+            return
         return
         
         self.on_says(args[0])
