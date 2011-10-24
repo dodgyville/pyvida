@@ -235,6 +235,14 @@ def location(): pass #stub
 
 def select(): pass #stub
 
+def add_object_to_analysis(game, obj): #watching a scene closely
+    scene = game.analyse_scene
+    if not isinstance(obj, Portal):
+        if isinstance(obj, Item) and obj not in scene._total_items:
+            scene._total_items.append(obj)
+        elif isinstance(obj, Actor) and obj not in scene._total_actors:
+            scene._total_actors.append(obj)
+
 scene_path = []
 def scene_search(scene, target): #are scenes connected via portals?
     global scene_path
@@ -380,6 +388,8 @@ def slugify(txt):
     txt = txt.replace("[", "")
     txt = txt.replace("}", "")
     txt = txt.replace("{", "")
+    txt = txt.replace("/", "_")
+    txt = txt.replace("\\", "_")
     return txt.replace("'", "")
 
 def collide(rect, x,y):
@@ -498,8 +508,15 @@ class Action(object):
                     num,w,h = 0,0,0
             master_image = pygame.image.load(fname + ".png").convert_alpha()
             master_width, master_height = master_image.get_size()
+            if master_width/num != w:
+                w = master_width/num
+                h = master_height
+                log.warning("%s montage file for actor %s does not match image dimensions, will guess dimensions (%i, %i)"%(fname, self.name, w, h))
             for i in xrange(0, num):
-    	        self.images.append(master_image.subsurface((i*w,0,w,h)))
+               try:
+                    self.images.append(master_image.subsurface((i*w,0,w,h)))
+               except ValueError, e:
+                    log.error("ValueError: %s (does .montage file match actual image dimensions?)")
         self.count = len(self.images)
         
         #load the deltas for moving the animation
@@ -755,6 +772,11 @@ class Actor(object):
             if type(actor) == str: 
                 log.error("%s trigger use unable to find %s in game objects"%(self.name, actor))
                 return
+                
+         if self.game.analyse_scene == self.scene: #if we are watching this scene, store extra info
+            add_object_to_analysis(self.game, actor)
+            add_object_to_analysis(self.game, self)
+            
          log.info("Player uses %s on %s"%(actor.name, self.name))
 #        if self.use: #if user has supplied a look override
 #           self.use(self.game, self, self.game.player)
@@ -1122,6 +1144,9 @@ class Actor(object):
 
         dx = int((x - self.x) / 3)
         dy = int((y - self.y) / 3)
+        if dx>0 and dx < 1: dx = 1
+        if dx<0 and dx > -1: dx = -1
+        
         if len(walk_actions)>0:
             self.action =self.actions[choice(walk_actions)]
         for i in range(3): self._motion_queue.append((dx+randint(-2,2),dy+randint(-2,2)))
@@ -1814,6 +1839,9 @@ class Scene(object):
             obj.scene._remove(obj)
         self.objects[obj.name] = obj
         obj.scene = self
+        if self.game.analyse_scene == self: #if we are watching this scene closely, store more info
+            add_object_to_analysis(self.game, obj)
+            
         if obj.name in self.scales.keys():
             obj.scale = self.scales[obj.name]
         log.debug("Add %s to scene %s"%(obj.name, self.name))
@@ -1923,6 +1951,9 @@ class Game(object):
         #profiling
         self.profiling = False 
         self.enabled_profiling = False
+        self.analyse_scene = None
+        self.artreactor = None #which directory to store screenshots
+        self.artreactor_scene = None #which was the last scene the artreactor took a screenshot of
         
         
         #editor
@@ -1975,6 +2006,11 @@ class Game(object):
         else:
             if isinstance(obj, Scene):
                 self.scenes[obj.name] = obj
+                if self.analyse_scene == obj.name: 
+                    self.analyse_scene = obj
+                    obj._total_actors = [] #store all actors referenced in this scene
+                    obj._total_items = []
+                    
             elif type(obj) in [MenuItem, Collection]: #menu items are stored in items
                 obj.x, obj.y = obj.out_x, obj.out_y #menu starts hidden by default
                 self.items[obj.name] = obj
@@ -2585,6 +2621,15 @@ class Game(object):
             t = s.analytics_count * 30
             self.log.info("%s - %s interactions (%s.%s minutes)"%(s.name, s.analytics_count, t/60, t%60))
         
+        if self.analyse_scene:
+            scene = self.analyse_scene
+            if type(scene) == str:
+                self.log.warning("Asked to watch scene %s but it was never loaded"%scene)
+            else:
+                self.log.info("ANALYSED SCENE %s"%scene.name)
+                self.log.info("Used actors %s"%[x.name for x in scene._total_actors])
+                self.log.info("Used items %s"%[x.name for x in scene._total_items])
+        
         t = self.steps_complete * 30 #30 seconds per step
         self.log.info("Finished %s steps, estimated at %s.%s minutes"%(self.steps_complete, t/60, t%60))
     
@@ -2594,8 +2639,10 @@ class Game(object):
         parser.add_option("-f", "--fullscreen", action="store_true", dest="fullscreen", help="Play game in fullscreen mode", default=False)
         parser.add_option("-p", "--profile", action="store_true", dest="profiling", help="Record player movements for testing", default=False)        
         parser.add_option("-s", "--step", dest="step", help="Jump to step in walkthrough")
-        parser.add_option("-a", "--artreactor", dest="artreactor", help="Save images from each scene")
+        parser.add_option("-a", "--artreactor", action="store_true", dest="artreactor", help="Save images from each scene")
         parser.add_option("-i", "--inventory", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
+        parser.add_option("-d", "--detailed <scene>", dest="analyse_scene", help="Print lots of info about one scene (best used with test runner)")
+
 #        parser.add_option("-l", "--list", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
 
 #        parser.add_option("-q", "--quiet",
@@ -2608,6 +2655,13 @@ class Game(object):
         if options.test_inventory:
             self.test_inventory = True
         if options.profiling: self.profiling = True
+        if options.artreactor: 
+            t = date.today()
+            dname = "artreactor_%s_%s_%s"%(t.year, t.month, t.day)
+            self.artreactor = dname
+            if not os.path.exists(dname): os.makedirs(dname)
+
+        if options.analyse_scene: self.analyse_scene = options.analyse_scene
         if options.step: #switch on test runner to step through walkthrough
             self.testing = True
             self.tests = self._walkthroughs
@@ -2710,6 +2764,12 @@ class Game(object):
             #pygame.draw.line(self.screen, colour, (pt[0]-5,pt[1]), (pt[0]+5,pt[1]))
             
             pygame.display.flip() #show updated display to user
+
+            #if profiling art, save a screenshot if needed
+            if self.scene and self.artreactor and self.artreactor_scene != self.scene:
+                scene = self.scene
+                pygame.image.save(self.screen, "%s/%s_%0.4d.jpeg"%(self.artreactor, slugify(scene.name), self.steps_complete))
+                self.artreactor_scene = self.scene
             
             #hide mouse
             if self.scene: self.screen.blit(self.scene.background(), cursor_rect, cursor_rect)
