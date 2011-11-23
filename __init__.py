@@ -1,7 +1,7 @@
 from __future__ import print_function
 
 from datetime import datetime, timedelta, date
-import gc, glob, copy, inspect, logging, math, os, pdb, sys
+import gc, glob, copy, inspect, logging, math, os, pdb, sys, operator
 from itertools import chain
 from itertools import cycle
 import logging.handlers
@@ -235,7 +235,7 @@ def location(): pass #stub
 
 def select(): pass #stub
 
-def add_object_to_analysis(game, obj): #watching a scene closely
+def add_object_to_scene_analysis(game, obj): #profiling: watching a scene closely
     scene = game.analyse_scene
     if not isinstance(obj, Portal):
         if isinstance(obj, Item) and obj not in scene._total_items:
@@ -613,8 +613,9 @@ class Actor(object):
         self.hidden = False
         self._on_mouse_move = self._on_mouse_leave = None
         
+        #profiling and testing
         self.analytics_count = 0 #used by test runner to measure how "popular" an actor is.
-        
+        self._count_actions = {} #dict containing action name and number of times used
     
     def _event_finish(self, block=True): 
         return self.game._event_finish(block)
@@ -741,10 +742,14 @@ class Actor(object):
         log.debug("smart load %s %s clickable %s and actions %s"%(type(self), self.name, self._clickable_area, self.actions.keys()))
         return self
 
+    def _count_actions_add(self, action, c):
+        """ profiling: store action for analysis """
+        if action not in self._count_actions: self._count_actions[action] = 0
+        self._count_actions[action] += c
+
     def _on_mouse_move(self, x, y, button, modifiers): #actor.mouse_move
         """ stub for doing special things with mouse overs (eg collections) """
         pass
-
 
     def trigger_look(self):
         log.debug("Player looks at %s"%self.name)
@@ -774,8 +779,8 @@ class Actor(object):
                 return
                 
          if self.game.analyse_scene == self.scene: #if we are watching this scene, store extra info
-            add_object_to_analysis(self.game, actor)
-            add_object_to_analysis(self.game, self)
+            add_object_to_scene_analysis(self.game, actor)
+            add_object_to_scene_analysis(self.game, self)
             
          log.info("Player uses %s on %s"%(actor.name, self.name))
 #        if self.use: #if user has supplied a look override
@@ -964,13 +969,14 @@ class Actor(object):
 
     def _do(self, action):
         if type(action) == Action: action = action.name
+        if self.game and self.game.analyse_characters: self._count_actions_add(action, 1) #profiling
         if action in self.actions.keys():
             self.action = self.actions[action]
             log.debug("actor %s does action %s"%(self.name, action))
         else:
             log.error("actor %s missing action %s"%(self.name, action))
 
-    def on_do(self, action):
+    def on_do(self, action): #actor.on_do
         """ 
         A queuing function, takes either the action name or the action itself.
 
@@ -1243,12 +1249,17 @@ class Actor(object):
             destination = (destination.sx, destination.sy)
         x,y = self._tx, self._ty = destination
         d = self.speed
+        
+        #available walk actions for this character
+        walk_actions = [wx for wx in self.actions.keys() if wx in ["left", "right", "up", "down"]]
         if self.scene: #test point will be inside a walkarea
             walkarea_fail = True
             for w in self.scene.walkareas:
                 if w.polygon.collide(x,y): walkarea_fail = False
             if walkarea_fail: log.warning("Destination point (%s, %s) not inside walkarea "%(x,y))                
         if self.game.testing == True or self.game.enabled_editor: 
+            if self.game.analyse_characters: #count walk actions as occuring for analysis
+                for w in walk_actions: self._count_actions_add(w, 5)
             self.x, self.y = x, y #skip straight to point for testing/editing
         elif self.scene and walkarea_fail == True: #not testing, and failed walk area test
             self.game._event_finish() #signal to game event queue this event is done    
@@ -1257,7 +1268,6 @@ class Actor(object):
             return
         else: #try to follow the path, should use astar
             #available walk actions
-            walk_actions = [wx for wx in self.actions.keys() if wx in ["left", "right", "up", "down"]]
             if len(walk_actions) <= 1: #need more than two actions to trigger astar
                 self._goto_direct(x,y, walk_actions)
             else:
@@ -1954,7 +1964,7 @@ class Game(object):
         self.analyse_scene = None
         self.artreactor = None #which directory to store screenshots
         self.artreactor_scene = None #which was the last scene the artreactor took a screenshot of
-        
+        self.analyse_characters = False
         
         #editor
         self.debug_font = None
@@ -2620,7 +2630,11 @@ class Game(object):
         for s in actors:
             t = s.analytics_count * 30
             self.log.info("%s - %s interactions (%s.%s minutes)"%(s.name, s.analytics_count, t/60, t%60))
-        
+        if self.analyse_characters:
+            self.log.info("Objects with action calls")
+            for i in (self.actors.values() + self.items.values()):
+                actions = sorted(i._count_actions.iteritems(), key=operator.itemgetter(1))
+                self.log.info("%s: %s"%(i.name, actions))
         if self.analyse_scene:
             scene = self.analyse_scene
             if type(scene) == str:
@@ -2638,6 +2652,8 @@ class Game(object):
         parser = OptionParser()
         parser.add_option("-f", "--fullscreen", action="store_true", dest="fullscreen", help="Play game in fullscreen mode", default=False)
         parser.add_option("-p", "--profile", action="store_true", dest="profiling", help="Record player movements for testing", default=False)        
+        parser.add_option("-c", "--characters", action="store_true", dest="analyse_characters", help="Print lots of info about actor and items to calculate art requirements", default=False)        
+
         parser.add_option("-s", "--step", dest="step", help="Jump to step in walkthrough")
         parser.add_option("-a", "--artreactor", action="store_true", dest="artreactor", help="Save images from each scene")
         parser.add_option("-i", "--inventory", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
@@ -2652,9 +2668,11 @@ class Game(object):
         (options, args) = parser.parse_args()    
         self.jump_to_step = None
         self.steps_complete = 0
-        if options.test_inventory:
-            self.test_inventory = True
+        if options.test_inventory: self.test_inventory = True
         if options.profiling: self.profiling = True
+        if options.analyse_characters: 
+            print("Using analyse characters")
+            self.analyse_characters = True
         if options.artreactor: 
             t = date.today()
             dname = "artreactor_%s_%s_%s"%(t.year, t.month, t.day)
