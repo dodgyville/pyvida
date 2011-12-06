@@ -611,6 +611,7 @@ class Actor(object):
         self.interact = None #special queuing function for interacts
         self.look = None #override queuing function for look
         self.hidden = False
+        self.interactive = True #if false, don't allow mouse clicks or hovers
         self._on_mouse_move = self._on_mouse_leave = None
         
         #profiling and testing
@@ -1649,7 +1650,7 @@ class ModalItem(Actor):
   
    
 class MenuItem(Actor):
-    def __init__(self, name="Untitled Menu Item", interact=None, spos=(None, None), hpos=(None, None), key=None): 
+    def __init__(self, name="Untitled Menu Item", interact=None, spos=(None, None), hpos=(None, None), key=None, display_text=""): 
         Actor.__init__(self, name)
         self.interact = interact
 #        if key: 
@@ -1659,7 +1660,7 @@ class MenuItem(Actor):
         self.x, self.y = spos
         self.in_x, self.in_y = spos #special in point reentry point
         self.out_x, self.out_y = hpos #special hide point for menu items
-        self.display_text = name #"" #by default no overlay on menu items
+        self.display_text = display_text #by default no overlay on menu items
 
 ALPHABETICAL = 0
 
@@ -2208,7 +2209,7 @@ class Game(object):
         """ possibly draw overlay text """
         if self.player and self.scene:
             for i in self.scene.objects.values(): #then objects in the scene
-                if i is not self.player and i.collide(x,y):
+                if i is not self.player and i.collide(x,y) and i.interactive==True:
                     if isinstance(i, Portal) and self.mouse_mode != MOUSE_USE:
                         self.mouse_cursor = MOUSE_LEFT if i._x<512 else MOUSE_RIGHT
                     elif self.mouse_mode == MOUSE_LOOK:
