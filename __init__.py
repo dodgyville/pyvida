@@ -580,7 +580,7 @@ class Actor(object):
     """
     __metaclass__ = use_on_events
     def __init__(self, name=None): 
-        self.name = name if name else "Unitled %s"%self.__name__
+        self.name = name if name else "Unitled %s"%self.__class__.__name__
         self._motion_queue = [] #actor's deltas for moving on the screen in the near-future
         self.action = None
         self.actions = {}
@@ -1568,6 +1568,7 @@ def text_to_image(text, font, colour, maxwidth,offset=None):
 
 
 class Text(Actor):
+    """ Display text on the screen """
     def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=26, wrap=2000):
         Actor.__init__(self, name)
         self.x, self.y = pos
@@ -1861,6 +1862,16 @@ class Scene(object):
         self._add(obj)
         self._event_finish()
 
+class Mixer(object):
+    """ Handles sound and music """
+    __metaclass__ = use_on_events
+    def __init__(self, game=None):
+        self.game = game
+
+    def on_music_play(self):
+        pygame.mixer.music.play()
+        self.game._event_finish()
+
 
 class Camera(object):
     """ Handles the current viewport, transitions and camera movements """
@@ -1931,6 +1942,7 @@ class Game(object):
         self.game = self
         self.name = name
         self.camera = Camera(self) #the camera object
+        self.mixer = Mixer(self) #the sound mixer object
 
         self.events = []
         self._event = None
@@ -1989,11 +2001,12 @@ class Game(object):
         raise AttributeError
 #        return self.__getattribute__(self, a)
 
-    def add(self, obj, replace=False, force_cls=None): #game.add (not a queuing function)
+    def add(self, obj, replace=False, force_cls=None, scene=None): #game.add (not a queuing function)
         if type(obj) == list:
             for i in obj: self._add(i, replace, force_cls)
         else:
             self._add(obj, replace, force_cls)
+        if scene != None: obj.relocate(scene)
         return obj
 
     def _add(self, obj, replace=False, force_cls=None): #game.add
@@ -2125,7 +2138,7 @@ class Game(object):
 
     def _trigger(self, obj):
         """ trigger use, look or interact, depending on mouse_mode """
-        if self.player: self.player.goto(obj)
+        if self.player and self.scene and self.player in self.scene.objects.values(): self.player.goto(obj)
         if self.mouse_mode == MOUSE_LOOK:
            obj.trigger_look()
         elif self.mouse_mode == MOUSE_INTERACT:
@@ -2196,14 +2209,15 @@ class Game(object):
                 self.editing_index = None
                 return
                 
-        elif self.player and self.scene and self.player in self.scene.objects.values(): #regular game interaction
+        elif self.scene: #regular game interaction
             for i in self.scene.objects.values(): #then objects in the scene
-                if i is not self.player and i.collide(x,y):
+                if i is not self.player and i.collide(x,y) and i.interactive==True:
 #                   if i.actions.has_key('down'): i.action = i.actions['down']
                     self._trigger(i) #trigger look, use or interact
                     return
             #or finally, try and walk the player there.
-            self.player.goto((x,y))
+            if self.player and self.player in self.scene.objects.values():
+                self.player.goto((x,y))
 
     def _on_mouse_move_scene(self, x, y, button, modifiers):
         """ possibly draw overlay text """
@@ -2931,7 +2945,7 @@ class Game(object):
 #        self.
         
 
-    def user_input(self, text, callback):
+    def user_input(self, text, callback, position=(100,170), background="msgbox"):
         """ A pseudo-queuing function. Display a text input, and wait for player to type something and hit enter
         Examples::
         
@@ -2945,8 +2959,10 @@ class Game(object):
             text option to display and a function to call if the player selects this option.
             
         """    
-        txt = self.game.add(Input("input", (100,170), (840,170), text, wrap=660, callback=callback), False, ModalItem)
+        msg = self.game.add(ModalItem(background, None, position).smart(self.game))
+        txt = self.game.add(Input("input", position, (840,170), text, wrap=660, callback=callback), False, ModalItem)
         if self.game.testing: 
+            self.game.modals.remove(msgbox)
             self.game.modals.remove(txt)
             callback(self.game, txt)
             return
