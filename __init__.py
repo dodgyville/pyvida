@@ -2196,7 +2196,7 @@ class Game(object):
                     return
             return
         for i in self.menu: #then menu
-            if i.collide(x,y):
+            if i.collide(x,y) and i.interactive:
                 if i.actions.has_key('down'): i.action = i.actions['down']
                 i.trigger_interact() #always trigger interact on menu items
                 self.menu_mouse_pressed = True
@@ -2279,14 +2279,14 @@ class Game(object):
         if menu_capture == True: return       
         for i in self.menu: #then menu
             if i.collide(x,y): #hovering
-                if i.actions and i.actions.has_key('over'):
+                if i.actions and i.actions.has_key('over') and i.interactive:
                     i.action = i.actions['over']
                 t = i.name if i.display_text == None else i.display_text
                 self.info(t, i.nx, i.ny)
                 if i._on_mouse_move: i._on_mouse_move(x, y, button, modifiers)
                 menu_capture = True
             else: #unhover over menu item
-                if i.action and i.action.name == "over":
+                if i.action and i.action.name == "over" and i.interactive:
                     if i.actions.has_key('idle'): 
                         i.action = i.actions['idle']
         if menu_capture == True: return
@@ -3015,6 +3015,7 @@ class Game(object):
         args.reverse()
         log.debug("set menu to %s"%list(args))
         for i in args:
+            if type(i) != str: i = i.name
             if i in self.items: 
                 self.menu.append(self.items[i])
             else:
@@ -3060,6 +3061,7 @@ class Game(object):
         self._event_finish()
         
     def on_menu_push(self):
+        """ push this menu to the list of menus and clear the current menu """
         log.debug("push menu %s"%[x.name for x in self.menu])
         if self.menu:
             self._menus.append(self.menu)
@@ -3067,6 +3069,7 @@ class Game(object):
         self._event_finish()
 
     def on_menu_pop(self):
+        """ pull a menu off the list of menus """
         if self._menus: self.menu = self._menus.pop()
         log.debug("pop menu %s"%[x.name for x in self.menu])
         self._event_finish()
