@@ -710,7 +710,7 @@ class Actor(object):
         
         So smart will load all .PNG files in data/actors/<Actor Name> as actions available for this actor.
         """
-        if type(self) in [MenuItem, Collection]:
+        if isinstance(self, MenuItem) or isinstance(self, Collection):
             d = game.menuitem_dir
         elif isinstance(self, ModalItem):
             d = game.item_dir
@@ -1219,7 +1219,7 @@ class Actor(object):
         fuzz = 10
         if x - fuzz < self.x < x + fuzz and y - fuzz < self.y < y + fuzz: #arrived at point, end event
             if "idle" in self.actions: self.action = self.actions['idle'] #XXX: magical variables, special cases, urgh
-            if type(self) in [MenuItem, Collection]:
+            if isinstance(self, MenuItem) or isinstance(self, Collection):
                 self.x, self.y = self._tx, self._ty
             log.debug("actor %s has arrived at %s"%(self.name, destination))
             self.game._event_finish() #signal to game event queue this event is done            
@@ -1632,6 +1632,7 @@ class Input(Text):
         self._text = text
         self.maxlength = maxlength #number of characters
         self.callback = callback
+        self.remove = [] #associated items to remove when this input is finished (eg background box)
 
     def update_text(self): #rebuild the text image
         self.text = "%s\n%s"%(self._text, self.value)
@@ -1939,6 +1940,7 @@ class Game(object):
     def __init__(self, name="Untitled Game", fullscreen=False):
         log.debug("game object created at %s"%datetime.now())
         self.log = log
+        self.allow_save = False #are we in the middle of a game, if so, allow save
         self.game = self
         self.name = name
         self.camera = Camera(self) #the camera object
@@ -2035,7 +2037,7 @@ class Game(object):
                     obj._total_actors = [] #store all actors referenced in this scene
                     obj._total_items = []
                     
-            elif type(obj) in [MenuItem, Collection]: #menu items are stored in items
+            elif isinstance(obj, MenuItem) or isinstance(obj, Collection): #menu items are stored in items
                 obj.x, obj.y = obj.out_x, obj.out_y #menu starts hidden by default
                 self.items[obj.name] = obj
             elif isinstance(obj, ModalItem):
@@ -2300,7 +2302,8 @@ class Game(object):
                     i.value += unicode_key
                     i.update_text()
                 if len(unicode_key)>0 and unicode_key in "\n\r\t":
-                    self.modals.remove(i)
+                    for remove_item in i.remove: #remove all elements of the input box (Eg background too)
+                        self.modals.remove(remove_item)
                     i.callback(self, i)
                 return
         for i in self.menu:
@@ -2960,7 +2963,8 @@ class Game(object):
             
         """    
         msg = self.game.add(ModalItem(background, None, position).smart(self.game))
-        txt = self.game.add(Input("input", position, (840,170), text, wrap=660, callback=callback), False, ModalItem)
+        txt = self.game.add(Input("input", (position[0]+30, position[1]+30), (840,170), text, wrap=660, callback=callback), False, ModalItem)
+        txt.remove = [txt, msg]
         if self.game.testing: 
             self.game.modals.remove(msgbox)
             self.game.modals.remove(txt)
@@ -3013,13 +3017,13 @@ class Game(object):
         """ add the items in args to the menu """
         args = list(args)
         args.reverse()
-        log.debug("set menu to %s"%list(args))
         for i in args:
             if type(i) != str: i = i.name
             if i in self.items: 
                 self.menu.append(self.items[i])
             else:
                 log.error("Menu item %s not found in MenuItem collection"%i)
+        log.debug("set menu to %s"%[x.name for x in self.menu])
         self._event_finish()        
         
     def on_menu_clear(self):
@@ -3062,7 +3066,7 @@ class Game(object):
         
     def on_menu_push(self):
         """ push this menu to the list of menus and clear the current menu """
-        log.debug("push menu %s"%[x.name for x in self.menu])
+        log.debug("push menu %s, %s"%([x.name for x in self.menu], self._menus))
         if self.menu:
             self._menus.append(self.menu)
             self.menu = []
