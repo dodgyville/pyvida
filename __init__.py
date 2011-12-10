@@ -1,7 +1,7 @@
 from __future__ import print_function
 
 from datetime import datetime, timedelta, date
-import gc, glob, copy, inspect, logging, math, os, pdb, sys, operator
+import gc, glob, copy, inspect, logging, math, os, pdb, sys, operator, types, pickle
 from itertools import chain
 from itertools import cycle
 import logging.handlers
@@ -58,6 +58,10 @@ log.warning("smart load should load non-idle action as default if there is only 
 log.warning("game.wait not implemented yet")
 log.warning("action.deltas can only be set via action.load")
 log.warning("actor.asks not fully implemented")
+
+
+from pygame import Surface        
+from pygame.font import Font
 
 # MOUSE ACTIONS 
 #MOUSE_GENERAL = 0
@@ -235,6 +239,8 @@ def location(): pass #stub
 
 def select(): pass #stub
 
+def toggle(): pass #stub 
+
 def add_object_to_scene_analysis(game, obj): #profiling: watching a scene closely
     scene = game.analyse_scene
     if not isinstance(obj, Portal):
@@ -312,6 +318,8 @@ def process_step(game, step):
         if game.scene.name != actor:
             log.error("Current scene should be %s, but is currently %s"%(actor, game.scene.name))
         return
+    elif function_name == "toggle": #toggle a setting in the game
+        if hasattr(game, actor): game.__dict__[actor] = not game.__dict__[actor]
     for i in game.modals: #try modals first
         if actor == i.name:
             i.trigger_interact()
@@ -332,9 +340,9 @@ def process_step(game, step):
         if actor not in game.missing_actors and actor not in game.actors and actor not in game.items: game.missing_actors.append(actor)
     game.errors += 1
     if game.errors == 2:
-        game.log.warning("TEST SUITE SUGGESTS GAME HAS GONE OFF THE RAILS AT THIS POINT")
+        log.warning("TEST SUITE SUGGESTS GAME HAS GONE OFF THE RAILS AT THIS POINT")
         t = game.steps_complete * 30 #30 seconds per step
-        game.log.info("This occurred at %s steps, estimated at %s.%s minutes"%(game.steps_complete, t/60, t%60))
+        log.info("This occurred at %s steps, estimated at %s.%s minutes"%(game.steps_complete, t/60, t%60))
 
 
 def prepare_tests(game, suites, log_file=None, user_control=None):#, setup_fn, exit_fn = on_exit, report = True, wait=10.1):
@@ -353,7 +361,6 @@ def prepare_tests(game, suites, log_file=None, user_control=None):#, setup_fn, e
     log = log    
     log.info("===[TESTING REPORT FOR %s]==="%game.name.upper())
     log.debug("%s"%date.today().strftime("%Y_%m_%d"))
-    game.log = log
     game.testing = True
     game.tests = [i for sublist in suites for i in sublist]  #all tests, flattened in order
     game.fps = int(1000.0/100) #fast debug
@@ -478,7 +485,7 @@ class Action(object):
         if self.images:
             return self.images[self.index%self.count]
         else:
-            img = pygame.Surface((10,10))
+            img = Surface((10,10))
             log.debug("action %s has no images"%self.name)
         return img
         
@@ -702,13 +709,15 @@ class Actor(object):
     def solid_area(self):
         return self._solid_area.move(self.x, self.y)  
         
-    def smart(self, game): #actor.smart
+    def smart(self, game, img=None): #actor.smart
         """ 
         Intelligently load as many animations and details about this actor/item.
         
         Most of the information is derived from the file structure.
         
-        So smart will load all .PNG files in data/actors/<Actor Name> as actions available for this actor.
+        If no <img>, smart will load all .PNG files in data/actors/<Actor Name> as actions available for this actor.
+
+        If there is an <img>, create an idle action for that.
         """
         if isinstance(self, MenuItem) or isinstance(self, Collection):
             d = game.menuitem_dir
@@ -720,7 +729,11 @@ class Actor(object):
             d = game.item_dir
         elif isinstance(self, Actor):
             d = game.actor_dir
-        for action_fname in glob.glob(os.path.join(d, "%s/*.png"%self.name)): #load actions for this actor
+        if img:
+            images = [img]
+        else:
+            images = glob.glob(os.path.join(d, "%s/*.png"%self.name))
+        for action_fname in images: #load actions for this actor
             action_name = os.path.splitext(os.path.basename(action_fname))[0]
             action = self.actions[action_name] = Action(self, action_name, action_fname).load()
             if action_name == "idle": self.action = action
@@ -1546,14 +1559,14 @@ def text_to_image(text, font, colour, maxwidth,offset=None):
 #        img = font.render(text[0], True, colour)
         info_image = font.render(text[0], True, (0,0,0))
         size = info_image.get_width() + _offset, info_image.get_height() + _offset
-        img = pygame.Surface(size, pygame.SRCALPHA, 32)
+        img = Surface(size, pygame.SRCALPHA, 32)
         img.blit(info_image, (_offset, _offset))
         info_image = font.render(text[0], True, colour)
         img.blit(info_image, (0, 0))
         return img
 
     h= font.size(text[0])[1]
-    img = pygame.Surface((maxwidth + 20 + _offset, len(text)*h + 20 + _offset), SRCALPHA, 32)
+    img = Surface((maxwidth + 20 + _offset, len(text)*h + 20 + _offset), SRCALPHA, 32)
     img = img.convert_alpha()
     
     for i, t in enumerate(text):
@@ -1602,13 +1615,13 @@ class Text(Actor):
     def _generate_text(self, text, colour=(255,255,255)):
         fname = "data/fonts/vera.ttf"
         try:
-            self.font = pygame.font.Font(fname, self.size)
+            self.font = Font(fname, self.size)
         except:
             self.font = None
-            log.error("text %s unable to load or initialise font"%self.name)
+            log.error("text %s unable to load or initialise font %s"%(self.name, fname))
             
         if not self.font:
-            img = pygame.Surface((10,10))
+            img = Surface((10,10))
             return img
         
         img = text_to_image(text, self.font, colour, self.wrap)
@@ -1677,6 +1690,7 @@ class Collection(MenuItem):
         self._sorted_objects = None
         self.index = 0 #where in the index to start showing
         self.sort_by = ALPHABETICAL
+        self.cdx, self.cdy = 50,50 #width
     
     def add(self, *args):
         for a in args:
@@ -1727,7 +1741,7 @@ class Collection(MenuItem):
         #XXX padding not implemented, ratios not implemented
         sx,sy=20,20 #padding
         x,y = sx,sy
-        dx,dy=50,50
+        dx,dy=self.cdx, self.cdy  #width
         if self.action:
             w,h = self.action.image.get_width(), self.action.image.get_height()
         else:
@@ -1924,7 +1938,6 @@ class Game(object):
     editing_index = None #point in the polygon or rect we are editing
     
     enabled_editor = False
-    testing = False
     
     actor_dir = "data/actors"
     item_dir = "data/items"
@@ -1932,6 +1945,7 @@ class Game(object):
     scene_dir = "data/scenes"
     interface_dir = "data/interface"
     portal_dir = "data/portals"
+    save_dir = "saves"
 
     quit = False
     screen = None
@@ -1939,7 +1953,7 @@ class Game(object):
    
     def __init__(self, name="Untitled Game", fullscreen=False):
         log.debug("game object created at %s"%datetime.now())
-        self.log = log
+#        log = log
         self.allow_save = False #are we in the middle of a game, if so, allow save
         self.game = self
         self.name = name
@@ -1948,6 +1962,10 @@ class Game(object):
 
         self.events = []
         self._event = None
+        
+        self.save_game = [] #a list of events caused by this player to get to this point in game
+        self.testing = False
+        self.headless = False #run game without pygame graphics?
 
         self.scene = None
         self.player = None
@@ -1992,6 +2010,29 @@ class Game(object):
         
         fps = DEFAULT_FRAME_RATE 
         self.fps = int(1000.0/fps)
+        
+        
+    def save(self, fname): #save the game current game object
+        """ save the game current game object """
+        print(self.save_game)
+        with open(fname, "w") as f:
+           pickle.dump(self.save_game, f)
+        print("pickled \n")
+            
+    def load(self, fname): #game.load - load a game state
+        with open(fname, "r") as f:
+            data = pickle.load(f)
+        print(data)
+        if self.reset_game == None:
+            log.error("Unable to load save game, reset_game value not set on game object")
+        else:
+            self.headless = True #switch off pygame rendering
+            data.append([toggle, "headless"])
+            self.reset_game(self)
+            self.testing = True
+            self.tests = data
+            self.jump_to_step = len(data)
+
         
     def __getattr__(self, a):
         #only called as a last resort, so possibly set up a queue function
@@ -2060,7 +2101,7 @@ class Game(object):
             Set that here.
         """
 #        base = font.render(message, 0, fontcolor)
-#        img = pygame.Surface(size, 16)
+#        img = Surface(size, 16)
 #        base.set_palette_at(1, shadowcolor)
 #        img.blit(base, (offset, offset))
 #        base.set_palette_at(1, fontcolor)
@@ -2142,13 +2183,16 @@ class Game(object):
         """ trigger use, look or interact, depending on mouse_mode """
         if self.player and self.scene and self.player in self.scene.objects.values(): self.player.goto(obj)
         if self.mouse_mode == MOUSE_LOOK:
-           obj.trigger_look()
+            self.game.save_game.append([look, obj.name])
+            obj.trigger_look()
         elif self.mouse_mode == MOUSE_INTERACT:
-           obj.trigger_interact()
+            self.game.save_game.append([interact, obj.name])
+            obj.trigger_interact()
         elif self.mouse_mode == MOUSE_USE:
-           obj.trigger_use(self.mouse_cursor)
-           self.mouse_cursor = MOUSE_POINTER
-           self.mouse_mode = MOUSE_LOOK
+            self.game.save_game.append([use, obj.name, self.mouse_cursor.name])
+            obj.trigger_use(self.mouse_cursor)
+            self.mouse_cursor = MOUSE_POINTER
+            self.mouse_mode = MOUSE_LOOK
 
     def _on_mouse_down(self, x, y, button, modifiers): #single button interface
 #        if self.menu_mouse_pressed == True: return
@@ -2361,7 +2405,7 @@ class Game(object):
             #load debug font
             fname = "data/fonts/vera.ttf"
             try:
-                self.debug_font = pygame.font.Font(fname, 12)
+                self.debug_font = Font(fname, 12)
             except:
                 self.debug_font = None
                 log.error("font %s unable to load or initialise for game"%fname)
@@ -2636,34 +2680,34 @@ class Game(object):
     def finish_tests(self):
         """ called when test runner is ending or handing back control """
         if len(self.missing_actors)>0:
-            self.log.error("The following actors were never loaded:")
-            for i in self.missing_actors: self.log.error(i)
+            log.error("The following actors were never loaded:")
+            for i in self.missing_actors: log.error(i)
         scenes = sorted(self.scenes.values(), key=lambda x: x.analytics_count, reverse=True)
-        self.log.info("Scenes listed in order of time spent")
+        log.info("Scenes listed in order of time spent")
         for s in scenes:
             t = s.analytics_count * 30
-            self.log.info("%s - %s steps (%s.%s minutes)"%(s.name, s.analytics_count, t/60, t%60))
+            log.info("%s - %s steps (%s.%s minutes)"%(s.name, s.analytics_count, t/60, t%60))
         actors = sorted(self.actors.values(), key=lambda x: x.analytics_count, reverse=True)
-        self.log.info("Actors listed in order of interactions")
+        log.info("Actors listed in order of interactions")
         for s in actors:
             t = s.analytics_count * 30
-            self.log.info("%s - %s interactions (%s.%s minutes)"%(s.name, s.analytics_count, t/60, t%60))
+            log.info("%s - %s interactions (%s.%s minutes)"%(s.name, s.analytics_count, t/60, t%60))
         if self.analyse_characters:
-            self.log.info("Objects with action calls")
+            log.info("Objects with action calls")
             for i in (self.actors.values() + self.items.values()):
                 actions = sorted(i._count_actions.iteritems(), key=operator.itemgetter(1))
-                self.log.info("%s: %s"%(i.name, actions))
+                log.info("%s: %s"%(i.name, actions))
         if self.analyse_scene:
             scene = self.analyse_scene
             if type(scene) == str:
-                self.log.warning("Asked to watch scene %s but it was never loaded"%scene)
+                log.warning("Asked to watch scene %s but it was never loaded"%scene)
             else:
-                self.log.info("ANALYSED SCENE %s"%scene.name)
-                self.log.info("Used actors %s"%[x.name for x in scene._total_actors])
-                self.log.info("Used items %s"%[x.name for x in scene._total_items])
+                log.info("ANALYSED SCENE %s"%scene.name)
+                log.info("Used actors %s"%[x.name for x in scene._total_actors])
+                log.info("Used items %s"%[x.name for x in scene._total_items])
         
         t = self.steps_complete * 30 #30 seconds per step
-        self.log.info("Finished %s steps, estimated at %s.%s minutes"%(self.steps_complete, t/60, t%60))
+        log.info("Finished %s steps, estimated at %s.%s minutes"%(self.steps_complete, t/60, t%60))
     
         
     def run(self, splash=None, callback=None, icon=None):
@@ -2724,7 +2768,7 @@ class Game(object):
         fname = "data/fonts/vera.ttf"
         size = 18
         try:
-            self.font = pygame.font.Font(fname, size)
+            self.font = Font(fname, size)
         except:
             self.font = None
             log.error("game unable to load or initialise font %s"%fname)
@@ -2748,8 +2792,7 @@ class Game(object):
         dt = 12 #time passed
         
         while self.quit == False:
-            pygame.time.delay(self.fps)
-#            self.log.debug("clock tick")
+            if not self.headless: pygame.time.delay(self.fps)
             if android is not None and android.check_pause():
                 android.wait_for_resume()
             
@@ -2799,7 +2842,9 @@ class Game(object):
             #pygame.draw.line(self.screen, colour, (pt[0],pt[1]-5), (pt[0],pt[1]+5))
             #pygame.draw.line(self.screen, colour, (pt[0]-5,pt[1]), (pt[0]+5,pt[1]))
             
-            pygame.display.flip() #show updated display to user
+            
+            if not self.headless:
+                pygame.display.flip() #show updated display to user
 
             #if profiling art, save a screenshot if needed
             if self.scene and self.artreactor and self.artreactor_scene != self.scene:
@@ -2831,6 +2876,7 @@ class Game(object):
                                 return_to_player = True
                                 if self.jump_to_step == "set_trace": import pdb; pdb.set_trace()
                         if return_to_player: #hand control back to player
+                            print("hand back!")
                             self.testing = False
                             self.fps = int(1000.0/DEFAULT_FRAME_RATE)
                             #self.tests = None
@@ -2962,9 +3008,9 @@ class Game(object):
             text option to display and a function to call if the player selects this option.
             
         """    
-        msg = self.game.add(ModalItem(background, None, position).smart(self.game))
+        msgbox = self.game.add(ModalItem(background, None, position).smart(self.game))
         txt = self.game.add(Input("input", (position[0]+30, position[1]+30), (840,170), text, wrap=660, callback=callback), False, ModalItem)
-        txt.remove = [txt, msg]
+        txt.remove = [txt, msgbox]
         if self.game.testing: 
             self.game.modals.remove(msgbox)
             self.game.modals.remove(txt)
