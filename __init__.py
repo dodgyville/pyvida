@@ -87,6 +87,8 @@ DEBUG_SCALE = 11
 #Animation modes
 LOOP = 0
 PINGPONG = 1
+ONCE_BLOCK = 2 #play action once, only throw event_finished at end
+ONCE = 3
 
 DEFAULT_FRAME_RATE = 16 #100
 
@@ -469,12 +471,14 @@ class Action(object):
         self.count = 0
         self.mode = LOOP
         self.step = 1
+        self.repeats = 0 #how many times to do this action
         self.scale = 1.0
 #        self.ax, self.ay = 0,0 #anchor point
         #deltas
         self.delta_index = 0 #index to deltas
         self.deltas = None
         self.avg_delta_x, self.avg_delta_y = 0,0 #for calculating astar
+        self.actor = actor
 
     def unload(self):  #action.unload
          self.images = []
@@ -497,6 +501,8 @@ class Action(object):
         if self.mode == PINGPONG and self.index == self.count: 
             self.step = -1
             self.index =self.count-1
+
+        if self.actor and self.mode == ONCE_BLOCK and self.index == self.count: self.actor._event_finish()
         
     def load(self): 
         """Load an anim from a montage file"""
@@ -981,28 +987,36 @@ class Actor(object):
         if self.game.player: self.game.player.says(choice(c))
         self._event_finish()
 
-    def _do(self, action):
+    def _do(self, action, mode=LOOP, repeats=0):
         if type(action) == Action: action = action.name
         if self.game and self.game.analyse_characters: self._count_actions_add(action, 1) #profiling
         if action in self.actions.keys():
             self.action = self.actions[action]
+            self.action.mode = mode
+            if self.action.mode in [ONCE, ONCE_BLOCK]: self.action.index = 0  #reset action for non-looping anims
             log.debug("actor %s does action %s"%(self.name, action))
         else:
             log.error("actor %s missing action %s"%(self.name, action))
 
-    def on_do(self, action): #actor.on_do
+    def on_do(self, action, mode=LOOP, repeats=0): #actor.on_do
         """ 
         A queuing function, takes either the action name or the action itself.
 
         Make this actor do an action. Available in your script as:
-        actor.do(<action>)
+        actor.do(<action>, mode=<MODE>)
+        
+        <MODE> is the animation mode, non-blocking loop by default, other options are: LOOP, PINGPONG, ONCE, ONCE_BLOCK
         
         Example::
         player.do("shrug")
         """
-        self._do(action)
-        self._event_finish()
+        self._do(action, mode=mode, repeats=repeats)
+        if self.action.mode != ONCE_BLOCK:
+            self._event_finish()
             
+    def on_do_once(self, action):
+        """ Does an action, blocking, once. """            
+        self.on_do(action, ONCE_BLOCK)
         
     def on_place(self, destination):
         """ 
@@ -1270,7 +1284,7 @@ class Actor(object):
             walkarea_fail = True
             for w in self.scene.walkareas:
                 if w.polygon.collide(x,y): walkarea_fail = False
-            if walkarea_fail: log.warning("Destination point (%s, %s) not inside walkarea "%(x,y))                
+            if walkarea_fail and ignore==False: log.warning("Destination point (%s, %s) not inside walkarea "%(x,y))                
         if self.game.testing == True or self.game.enabled_editor: 
             if self.game.analyse_characters: #count walk actions as occuring for analysis
                 for w in walk_actions: self._count_actions_add(w, 5)
@@ -1945,6 +1959,7 @@ class Game(object):
     scene_dir = "data/scenes"
     interface_dir = "data/interface"
     portal_dir = "data/portals"
+    music_dir = "data/music"
     save_dir = "saves"
 
     quit = False
@@ -2356,6 +2371,12 @@ class Game(object):
             self.toggle_editor()
         elif ENABLE_EDITOR and key == K_F2:
             import pdb; pdb.set_trace()
+        elif ENABLE_EDITOR and key == K_F3:
+            self.player.do_once("undressed_lookleft")
+#            self.player.do_once("undressed_lookright")
+            self.player.do("undressed_lookright",mode=ONCE_BLOCK)
+            self.player.do("idle")
+#            self.player.do("undressed_lookleft2")
         if self.enabled_editor == True and self.editing:
             if key == K_DOWN: 
                 self.editing._y += 1
@@ -2455,6 +2476,7 @@ class Game(object):
                                     oy = obj.sy
                                 f.write('    %s.reout((%i, %i))\n'%(slug, ox, oy))
                         else: #the player object
+                            f.write('    #%s.reanchor((%i, %i))\n'%(name, obj._ax, obj._ay))
                             f.write('    scene.scales["%s"] = %0.2f\n'%(name, obj.scale))
                     
             def _editor_cycle(game, collection, player, v):
@@ -2896,20 +2918,24 @@ class Game(object):
                 log.debug("Doing event %s"%e[0].__name__)
 
             self._event = e
-            e[0](*e[1:]) #call the function with the args        
-#            try:
- #              e[0](*e[1:]) #call the function with the args        
-  #          except:
-   #             import pdb; pdb.set_trace()
+            try:
+                e[0](*e[1], **e[2]) #call the function with the args and kwargs
+            except:
+                import pdb; pdb.set_trace()
     
     def queue_event(self, event, *args, **kwargs):
-        self.events.append((event, )+(args))
+        try:
+#            self.events.append((event, )+(args)+tuple(kwargs))
+            self.events.append((event, args, kwargs))
+        except:
+            import pdb; pdb.set_trace()
 #        log.debug("events %s"%self.events)
+        print(self.events[-1])
         return args[0]
 
-    def stuff_event(self, event, *args):
+    def stuff_event(self, event, *args, **kwargs):
         """ stuff an event near the head of the queue """
-        self.events.insert(0, (event, )+(args))
+        self.events.insert(0, (event, args, kwargs)) #insert function call, args and kwargs to events
         return args[0] if len(args)>0 else None
 
 
