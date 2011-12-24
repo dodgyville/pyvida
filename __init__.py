@@ -601,7 +601,8 @@ class Actor(object):
         self._alpha = 255
         self._alpha_target = 255
         
-        self.font_speech = None    
+        self.font_speech = None #use default
+        self.font_colour = None #use default
         self._x, self._y = -1000,-1000  # place in scene, offscreen at start
         self._sx, self._sy = 0,0    # stand point
         self._ax, self._ay = 0, 0   # displacement anchor point
@@ -1289,7 +1290,7 @@ class Actor(object):
             if self.game.analyse_characters: #count walk actions as occuring for analysis
                 for w in walk_actions: self._count_actions_add(w, 5)
             self.x, self.y = x, y #skip straight to point for testing/editing
-        elif self.scene and walkarea_fail == True: #not testing, and failed walk area test
+        elif self.scene and walkarea_fail == True and ignore==False: #not testing, and failed walk area test
             self.game._event_finish() #signal to game event queue this event is done    
             return       
         if self._test_goto_point(destination): 
@@ -1371,7 +1372,9 @@ class Actor(object):
                 pass
             self._event_finish()
         msg = self.game.add(ModalItem(background, close_msgbox,(54,-400)).smart(self.game))
-        txt = self.game.add(Text("txt", (100,-80), (840,170), text, wrap=660), False, ModalItem)
+        kwargs = {'wrap':660,}
+        if self.font_colour != None: kwargs["colour"] = self.font_colour
+        txt = self.game.add(Text("txt", (100,-80), (840,170), text, **kwargs), False, ModalItem)
         
         #get a portrait for this speech
         if type(action) == str: action = self.actions[action]
@@ -1797,6 +1800,7 @@ class Scene(object):
     def __init__(self, name="Untitled Scene"):
         self.name = name
         self.objects = {}
+        self.editlocked = False #stop ingame editor from overwriting file
         self.game = None
         self._background = None
         self.walkareas = [] #a list of WalkArea objects
@@ -2441,6 +2445,8 @@ class Game(object):
 
 
             def editor_save(game, menuItem, player):
+                if self.scene.editlocked == True:
+                    print("WARNING: The state file for this scene requests a lock, you need to manually edit it")
                 print("What is the name of this %s state to save (no directory or .py)?"%self.scene.name)
                 state = raw_input(">")
                 if state=="": return
@@ -2918,19 +2924,11 @@ class Game(object):
                 log.debug("Doing event %s"%e[0].__name__)
 
             self._event = e
-            try:
-                e[0](*e[1], **e[2]) #call the function with the args and kwargs
-            except:
-                import pdb; pdb.set_trace()
+            e[0](*e[1], **e[2]) #call the function with the args and kwargs
     
     def queue_event(self, event, *args, **kwargs):
-        try:
-#            self.events.append((event, )+(args)+tuple(kwargs))
-            self.events.append((event, args, kwargs))
-        except:
-            import pdb; pdb.set_trace()
+        self.events.append((event, args, kwargs))
 #        log.debug("events %s"%self.events)
-        print(self.events[-1])
         return args[0]
 
     def stuff_event(self, event, *args, **kwargs):
