@@ -2029,6 +2029,7 @@ class Game(object):
         
         fps = DEFAULT_FRAME_RATE 
         self.fps = int(1000.0/fps)
+        self.fullscreen = fullscreen
         
         
     def save(self, fname): #save the game current game object
@@ -2373,8 +2374,8 @@ class Game(object):
             if key == i.key: i.trigger_interact() #print("bound to menu item")
         if ENABLE_EDITOR and key == K_F1:
             self.toggle_editor()
-        elif ENABLE_EDITOR and key == K_F2:
-            import pdb; pdb.set_trace()
+        elif ENABLE_EDITOR and key == K_F2: #allow set_trace if not fullscreen
+            if not self.fullscreen: import pdb; pdb.set_trace()
         elif ENABLE_EDITOR and key == K_F3:
             self.player.do_once("undressed_lookleft")
 #            self.player.do_once("undressed_lookright")
@@ -2784,6 +2785,7 @@ class Game(object):
         flags = 0
         if options.fullscreen:
             flags |= pygame.FULLSCREEN
+            self.fullscreen = True
         self.screen = screen = pygame.display.set_mode((1024, 768), flags)
         
         
