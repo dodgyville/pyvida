@@ -437,7 +437,7 @@ def get_function(basic):
 def editor_menu(game):
     game.menu_fadeOut()
     game.menu_push() #hide and push old menu to storage
-    game.set_menu("e_load", "e_save", "e_add", "e_prev", "e_next", "e_walk", "e_portal", "e_scene", "e_step")
+    game.set_menu("e_load", "e_save", "e_add", "e_delete", "e_prev", "e_next", "e_walk", "e_portal", "e_scene", "e_step")
     game.menu_hide()
     game.menu_fadeIn()
 
@@ -833,7 +833,8 @@ class Actor(object):
         self.game.mouse_mode = MOUSE_INTERACT #reset mouse mode
         if self.interact: #if user has supplied an interact override
             if type(self.interact) == str: self.interact = get_function(self.interact)
-            log.debug("Player interact (%s) with %s"%(self.interact.__name__, self.name))
+            n = self.interact.__name__ if self.interact else "self.interact is None"
+            log.debug("Player interact (%s) with %s"%(n, self.name))
             self.interact(self.game, self, self.game.player)
         else: #else, search several namespaces or use a default
             basic = "interact_%s"%slugify(self.name)
@@ -1724,7 +1725,7 @@ class Collection(MenuItem):
         self.index = 0 #where in the index to start showing
         self.sort_by = ALPHABETICAL
         self.cdx, self.cdy = 50,50 #width
-    
+  
     def add(self, *args):
         for a in args:
             if type(a) == str and a in self.game.actors: obj = self.game.actors[a]
@@ -1732,6 +1733,11 @@ class Collection(MenuItem):
             else: obj = a
             self.objects[obj.name] = obj
             self._sorted_objects = None
+
+    def empty(self):
+        self.objects = {}
+        self._sorted_objects = None
+        self.index = 0
 
     def _update(self, dt):
         Actor._update(self, dt)
@@ -2580,6 +2586,12 @@ class Game(object):
                 game.menu_hide()
                 game.menu_fadeIn()
                 
+            def editor_delete(game, menuItem, player):
+                """ remove current object from scene """                
+                if game.editing:
+                    game.scene._remove(game.editing)
+                    game.editing = None
+                
             def editor_portal(game, menuItem, player):
                 """ set up the collection object for portals """
                 if hasattr(self, "e_portals") and self.e_portals: #existing collection
@@ -2703,12 +2715,13 @@ class Game(object):
             self.add(MenuItem("e_load", editor_load, (50, 10), (50,-50), "l").smart(self))
             self.add(MenuItem("e_save", editor_save, (90, 10), (90,-50), "s").smart(self))
             self.add(MenuItem("e_add", editor_add, (130, 10), (130,-50), "a").smart(self))
-            self.add(MenuItem("e_prev", editor_prev, (170, 10), (170,-50), "[").smart(self))
-            self.add(MenuItem("e_next", editor_next, (210, 10), (210,-50), "]").smart(self))
-            self.add(MenuItem("e_walk", editor_walk, (250, 10), (250,-50), "w").smart(self))
-            self.add(MenuItem("e_portal", editor_portal, (290, 10), (290,-50), "p").smart(self))
-            self.add(MenuItem("e_scene", editor_scene, (350, 10), (350,-50), "i").smart(self))
-            self.add(MenuItem("e_step", editor_step, (390, 10), (390,-50), "n").smart(self))
+            self.add(MenuItem("e_delete", editor_delete, (170, 10), (170,-50), "a").smart(self))
+            self.add(MenuItem("e_prev", editor_prev, (210, 10), (210,-50), "[").smart(self))
+            self.add(MenuItem("e_next", editor_next, (250, 10), (250,-50), "]").smart(self))
+            self.add(MenuItem("e_walk", editor_walk, (290, 10), (290,-50), "w").smart(self))
+            self.add(MenuItem("e_portal", editor_portal, (330, 10), (330,-50), "p").smart(self))
+            self.add(MenuItem("e_scene", editor_scene, (430, 10), (430,-50), "i").smart(self))
+            self.add(MenuItem("e_step", editor_step, (470, 10), (470,-50), "n").smart(self))
 
             #a collection widget for adding objects to a scene
             c = self.add(Collection("e_objects", editor_select_object, (300, 100), (300,-600), K_ESCAPE).smart(self))
