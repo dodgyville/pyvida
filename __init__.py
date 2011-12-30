@@ -256,6 +256,9 @@ def scene_search(scene, target): #are scenes connected via portals?
     global scene_path
     scene_path.append(scene)
 #    return scene
+    if not scene or not scene.name:
+        log.warning("Strange scene search %s"%scene_path)
+        return False
     if scene.name.upper() == target:
         return scene
     for i in scene.objects.values():
@@ -1018,6 +1021,9 @@ class Actor(object):
         player.do("shrug")
         """
         self._do(action, mode=mode, repeats=repeats)
+        if self.action == None: #can't find action, continue with next event
+            self._event_finish() 
+            return
         if self.action.mode != ONCE_BLOCK:
             self._event_finish()
             
@@ -1048,7 +1054,7 @@ class Actor(object):
         if self._alpha == self._alpha_target:
             self._event_finish()
              
-    def on_fade_in(self):
+    def on_fade_in(self, block=True):
         """
         A queuing function: Fade this actor in.
         
@@ -1058,10 +1064,10 @@ class Actor(object):
         """
         self._alpha = 0
         self._alpha_target = 255
-        self.game.stuff_event(self.finish_fade, self)
-        self._event_finish()
+ #       self.game.stuff_event(self.finish_fade, self)
+        self._event_finish(block=block)
 
-    def on_fade_out(self):
+    def on_fade_out(self, block=True):
         """
         A queuing function: Fade this actor out.
         
@@ -1069,10 +1075,10 @@ class Actor(object):
         
         player.fade_out()
         """
-        obj._alpha = 255
-        obj._alpha_target = 0
-        self.game.stuff_event(self.finish_fade, self)
-        self._event_finish()
+        self._alpha = 255
+        self._alpha_target = 0
+#        self.game.stuff_event(self.finish_fade, self)
+        self._event_finish(block=block)
 
     def on_hide(self):
         """ A queuing function: hide the actor, including from all click and hover events 
@@ -1260,7 +1266,7 @@ class Actor(object):
             if "idle" in self.actions: self.action = self.actions['idle'] #XXX: magical variables, special cases, urgh
             if isinstance(self, MenuItem) or isinstance(self, Collection):
                 self.x, self.y = self._tx, self._ty
-            log.debug("actor %s has arrived at %s on scene %s"%(self.name, destination, self.scene))
+            log.debug("actor %s has arrived at %s on scene %s"%(self.name, destination, self.scene.name if self.scene else "none"))
             self.game._event_finish() #signal to game event queue this event is done            
             return True
         return False
@@ -1825,6 +1831,7 @@ class Scene(object):
         self.editlocked = False #stop ingame editor from overwriting file
         self.game = None
         self._background = None
+        self._last_state = None #name of last state loaded using load_state
         self.walkareas = [] #a list of WalkArea objects
         self.cx, self.cy = 512,384 #camera pointing at position (center of screen)
         self.scales = {} #when an actor is added to this scene, what scale factor to apply? (from scene.scales)
@@ -1899,11 +1906,20 @@ class Scene(object):
         else:
             self._remove(obj)
         self._event_finish()
-        
+
+    def on_do(self, background):
+        """ replace the background with the image in the scene's directory """        
+        sdir = os.path.join(os.getcwd(),os.path.join(self.game.scene_dir, self.name))
+        bname = os.path.join(sdir, "%s.png"%background)
+        if os.path.isfile(bname):
+            self.background(bname)
+        else:
+            log.error("scene %s has no image %s available"%(self.name, background))
+        self._event_finish()
         
     def on_clean(self, objs): #remove items not in this list from the scene
         for i in self.objects.values():
-            if i.name not in objs and not isinstance(i, Portal): self._remove(i)
+            if i.name not in objs and not isinstance(i, Portal) and i != self.game.player: self._remove(i)
         self._event_finish()
                 
         
@@ -1958,13 +1974,13 @@ class Camera(object):
            self.game.screen.blit(self.game.scene.background(), (0, 0))
         self.game._event_finish()
     
-    def on_fade_out(self):
+    def on_fade_out(self, block=True):
         log.error("camera.fade_out not implement yet")
-        self.game._event_finish()
+        self.game._event_finish(block=block)
         
-    def on_fade_in(self):
+    def on_fade_in(self, block=True):
         log.error("camera.fade_in not implement yet")
-        self.game._event_finish()
+        self.game._event_finish(block=block)
 
 
 EDIT_CLICKABLE = "clickable_area"
@@ -2230,7 +2246,7 @@ class Game(object):
 
     def _trigger(self, obj):
         """ trigger use, look or interact, depending on mouse_mode """
-        if self.player and self.scene and self.player in self.scene.objects.values(): self.player.goto(obj)
+        if self.player and self.scene and self.player in self.scene.objects.values() and obj != self.player: self.player.goto(obj)
         if self.mouse_mode == MOUSE_LOOK:
             self.game.save_game.append([look, obj.name])
             obj.trigger_look()
@@ -2306,10 +2322,11 @@ class Game(object):
                 
         elif self.scene: #regular game interaction
             for i in self.scene.objects.values(): #then objects in the scene
-                if i is not self.player and i.collide(x,y) and i.interactive==True:
+                if i.collide(x,y) and i.interactive==True:
 #                   if i.actions.has_key('down'): i.action = i.actions['down']
-                    self._trigger(i) #trigger look, use or interact
-                    return
+                    if self.mouse_mode == MOUSE_USE or i is not self.player: #only click on player in USE mode
+                        self._trigger(i) #trigger look, use or interact
+                        return
             #or finally, try and walk the player there.
             if self.player and self.player in self.scene.objects.values():
                 self.player.goto((x,y))
@@ -2788,6 +2805,8 @@ class Game(object):
         parser.add_option("-a", "--artreactor", action="store_true", dest="artreactor", help="Save images from each scene")
         parser.add_option("-i", "--inventory", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
         parser.add_option("-d", "--detailed <scene>", dest="analyse_scene", help="Print lots of info about one scene (best used with test runner)")
+        parser.add_option("-r", "--random", action="store_true", dest="stresstest", help="Randomly deviate from walkthrough to stress test robustness of scripting")
+
 
 #        parser.add_option("-l", "--list", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
 
@@ -3018,6 +3037,8 @@ class Game(object):
         if not os.path.exists(sfname):
             log.error("load state: state not found for scene %s: %s"%(scene.name, sfname))
         else:
+            log.debug("load state: load %s for scene %s"%(sfname, scene.name))
+            scene._last_state = sfname
             execfile( sfname, variables)
             variables['load_state'](self, scene)
 
