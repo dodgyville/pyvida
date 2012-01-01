@@ -28,4 +28,4 @@ Inventory Testing
 
 python game.py -i
 
-tail -f pyvida4.log | grep "Possible default"
+tail -f pyvida4.log | grep "default function missing"

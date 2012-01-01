@@ -629,6 +629,7 @@ class Actor(object):
         self.look = None #override queuing function for look
         self.hidden = False
         self.interactive = True #if false, don't allow mouse clicks or hovers
+        self.use_disabled = False #if True, don't allow inventory objects to be combined with this object
         self._on_mouse_move = self._on_mouse_leave = None
         
         #profiling and testing
@@ -976,7 +977,7 @@ class Actor(object):
     def _use_default(self, game, actor, actee):
         """ default queuing use method """
         c = [
-            "I don't think if that will work.",
+            "I don't think that will work.",
             "It's not designed to do that.",
             "It won't fit, trust me, I know.",
         ]
@@ -1156,14 +1157,15 @@ class Actor(object):
             self.x, self.y = pt
 #        self.game.scene(scene)
 #        scene.add(self)
-        if self.game and self.game.scene and self == self.game.player and self.game.test_inventory: #test player's inventory against scene        
+        if self.game and scene and self == self.game.player and self.game.test_inventory: #test player's inventory against scene        
             for inventory_item in self.inventory.values():
-                for scene_item in self.scene.objects.values():
+                for scene_item in scene.objects.values():
                     if type(scene_item) != Portal:
                         actee, actor = slugify(scene_item.name), slugify(inventory_item.name)
                         basic = "%s_use_%s"%(actee, actor)
                         if get_function(basic) == None: #would use default if player tried this combo
-                            log.warning("%s default function missing: def %s(game, %s, %s)"%(self.scene.name, basic, actee.lower(), actor.lower()))
+                            log.warning("%s default function missing: def %s(game, %s, %s)"%(scene.name, basic, actee.lower(), actor.lower()))
+
         self.game.stuff_event(scene.on_add, self)
         self._event_finish(block=False)
     
@@ -2258,7 +2260,11 @@ class Game(object):
             obj.trigger_interact()
         elif self.mouse_mode == MOUSE_USE:
             self.game.save_game.append([use, obj.name, self.mouse_cursor.name])
-            obj.trigger_use(self.mouse_cursor)
+            print("%s, %s"%(obj.name,obj.use_disabled))
+            if obj.use_disabled: #if use disabled, do a regular interact
+                obj.trigger_interact()
+            else:
+                obj.trigger_use(self.mouse_cursor)
             self.mouse_cursor = MOUSE_POINTER
             self.mouse_mode = MOUSE_LOOK
 
