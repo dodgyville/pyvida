@@ -123,6 +123,7 @@ def enqueue(q,p,y):
 def AStar(start, goal, nodes, solids,walkarea=None):
      """ <nodes> is a list of points that the path could go through
        <solids> is a list of rectangles (x,y,w,h) that the path may not go through
+       <walkarea> is a list of points that describe the area the path between nodes must be contained in. 
      """
      closed = []
      q = [[start]]

@@ -8,7 +8,12 @@ coverage run tests.py &&  coverage report -m __init__.py  - run code coverage (e
 """
 
 import random
-import unittest2 as unittest
+try:
+    import unittest2 as unittest
+except:
+    import unittest
+
+from astar import AStar
 
 from __init__ import Game, Actor, Scene, Item, MenuItem
 
@@ -219,6 +224,31 @@ class TestActor(TestPyvida):
 #            random.sample(self.seq, 20)
 #        for element in random.sample(self.seq, 5):
 #            self.assertTrue(element in self.seq)
+
+class TestAStar(unittest.TestCase):
+    def test_basic(self):
+        """ A simple path between start and end points, no solids or walkarea """
+        sx,sy = 100,100 #start pos
+        tx,ty = 200,200 #end pos
+        nodes = []
+        solids = []
+        walkarea = []
+        p = AStar((sx, sy), (tx, ty), nodes, solids, walkarea)
+        self.assertEqual(p, [(sx,sy), (tx,ty)])
+
+    def test_oneNode(self):
+        """ A simple path between start and end points, no solids or walkarea """
+        sx,sy = 100,100 #start pos
+        tx,ty = 200,200 #end pos
+        nodes = [(200,100)]
+        solids = []
+        walkarea = []
+        p = AStar((sx, sy), (tx, ty), nodes, solids, walkarea)
+        self.assertEqual(p, [(sx,sy), (tx,ty)])
+
+
+
+
 
 if __name__ == '__main__':
     unittest.main()

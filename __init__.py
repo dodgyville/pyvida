@@ -624,6 +624,7 @@ class Actor(object):
         self.facts = []
         
         self.editable = True #affected by editor?
+        self.editor_clean = False #current actor state set by editor
 
         self.interact = None #special queuing function for interacts
         self.look = None #override queuing function for look
@@ -1167,6 +1168,7 @@ class Actor(object):
                             log.warning("%s default function missing: def %s(game, %s, %s)"%(scene.name, basic, actee.lower(), actor.lower()))
 
         self.game.stuff_event(scene.on_add, self)
+        self.editor_clean = False #actor no longer in position placed by editor
         self._event_finish(block=False)
     
     
@@ -1925,7 +1927,12 @@ class Scene(object):
             if i.name not in objs and not isinstance(i, Portal) and i != self.game.player: self._remove(i)
         self._event_finish()
                 
-        
+
+    def on_reset_editor_clean(self):
+        #reset the editor_clean flag on all objects in this scene.
+        for i in self.objects.values(): i.editor_clean = True
+        self._event_finish()
+
     def _add(self, obj):
         """ removes obj from current scene it's in, adds to this scene """
         if obj.scene:
@@ -2503,6 +2510,10 @@ class Game(object):
             def editor_save(game, menuItem, player):
                 if self.scene.editlocked == True:
                     print("**** WARNING: The state file for this scene requests a lock, you may need to manually edit it")
+                if game.scene._last_state: print("SCENE STATE WAS LOADED FROM %s"%game.scene._last_state)
+                for name, obj in game.scene.objects.items():
+                    if obj.editor_clean == False:
+                        print("%s has been changed since last save"%obj.name)    
                 print("What is the name of this %s state to save (no directory or .py)?"%self.scene.name)
                 state = raw_input(">")
                 if state=="": return
@@ -2529,6 +2540,8 @@ class Game(object):
                             f.write('    %s.reclickable(Rect(%s, %s, %s, %s))\n'%(slug, r.left, r.top, r.w, r.h))
                             r = obj._solid_area
                             f.write('    %s.resolid(Rect(%s, %s, %s, %s))\n'%(slug, r.left, r.top, r.w, r.h))
+                            if obj.use_disabled:
+                                f.write('    %s.use_disabled = True\n'%(slug))
                             f.write('    %s.rescale(%0.2f)\n'%(slug, obj.scale))
                             f.write('    %s.reanchor((%i, %i))\n'%(slug, obj._ax, obj._ay))
                             f.write('    %s.restand((%i, %i))\n'%(slug, obj._sx, obj._sy))
@@ -3049,6 +3062,7 @@ class Game(object):
             scene._last_state = sfname
             execfile( sfname, variables)
             variables['load_state'](self, scene)
+            scene.reset_editor_clean()
 
     def on_save_state(self, scene, state):
         """ save a state inside a scene directory """
