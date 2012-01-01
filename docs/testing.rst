@@ -22,3 +22,10 @@ This is perfect for testing and editing.
 -a = artreactor
 
 
+Inventory Testing
+=================
+
+
+python game.py -i
+
+tail -f pyvida4.log | grep "Possible default"

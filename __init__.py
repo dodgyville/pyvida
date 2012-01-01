@@ -1160,9 +1160,10 @@ class Actor(object):
             for inventory_item in self.inventory.values():
                 for scene_item in self.scene.objects.values():
                     if type(scene_item) != Portal:
-                        basic = "%s_use_%s"%(scene_item.name, inventory_item.name)
+                        actee, actor = slugify(scene_item.name), slugify(inventory_item.name)
+                        basic = "%s_use_%s"%(actee, actor)
                         if get_function(basic) == None: #would use default if player tried this combo
-                            log.warning("%s: Possible default function: %s"%(self.scene.name, basic))
+                            log.warning("%s default function missing: def %s(game, %s, %s)"%(self.scene.name, basic, actee.lower(), actor.lower()))
         self.game.stuff_event(scene.on_add, self)
         self._event_finish(block=False)
     
@@ -2187,6 +2188,7 @@ class Game(object):
             player_class can be used to override the player class with a custom one.
         """
         portals = []
+        self.set_headless(True) #ignore clock ticks while loading
         for obj_cls in [Actor, Item, Portal, Scene]:
             dname = "%s_dir"%obj_cls.__name__.lower()
             for name in os.listdir(getattr(self, dname)):
@@ -2218,6 +2220,7 @@ class Game(object):
                 log.warning("game.smart unable to guess link for %s"%pname)
         if type(player) == str: player = self.actors[player]
         if player: self.player = player
+        self.set_headless(False) #ignore clock ticks while loading
         self._event_finish(block=False)
                 
     def on_set_editing(self, obj, objects=None):
@@ -2869,7 +2872,6 @@ class Game(object):
             scene.background(splash)
             self.screen.blit(scene.background(), (0, 0))
             pygame.display.flip() #show updated display to user
-           
 
         pygame.display.set_caption(self.name)
 
@@ -3053,6 +3055,12 @@ class Game(object):
         
     def on_wait(self, seconds):
         self._event_finish()
+
+    def on_set_headless(self, headless=False):
+        """ switch game engine between headless and non-headless mode, restrict events to per clock tick, etc """
+        self.headless = headless
+        self._event_finish()
+        
 
     def on_splash(self, image, callback, duration, immediately=False):
 #        """ show a splash screen then pass to callback after duration """
