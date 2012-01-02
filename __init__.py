@@ -826,7 +826,7 @@ class Actor(object):
                 script(self.game, self, actor)
          else:
                  #warn if using default vida look
-                log.warning("no use script for using %s with %s (write an %s function)"%(actor.name, self.name, basic))
+                if not self.use_disabled: log.warning("no use script for using %s with %s (write an %s function)"%(actor.name, self.name, basic))
                 self._use_default(self.game, self, actor)
 
         
@@ -1402,7 +1402,7 @@ class Actor(object):
         msg = self.game.add(ModalItem(background, close_msgbox,(54,-400)).smart(self.game))
         kwargs = {'wrap':660,}
         if self.font_colour != None: kwargs["colour"] = self.font_colour
-        txt = self.game.add(Text("txt", (100,-80), (840,170), text, **kwargs), False, ModalItem)
+        txt = self.game.add(Text("txt", (220,-200), (840,170), text, **kwargs), False, ModalItem)
         
         #get a portrait for this speech
         if type(action) == str: action = self.actions[action]
