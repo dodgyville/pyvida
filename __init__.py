@@ -440,7 +440,7 @@ def get_function(basic):
 def editor_menu(game):
     game.menu_fadeOut()
     game.menu_push() #hide and push old menu to storage
-    game.set_menu("e_load", "e_save", "e_add", "e_delete", "e_prev", "e_next", "e_walk", "e_portal", "e_scene", "e_step")
+    game.set_menu("e_load", "e_save", "e_add", "e_delete", "e_prev", "e_next", "e_walk", "e_portal", "e_useable", "e_show", "e_scene", "e_step")
     game.menu_hide()
     game.menu_fadeIn()
 
@@ -1066,7 +1066,7 @@ class Actor(object):
         """
         self._alpha = 0
         self._alpha_target = 255
- #       self.game.stuff_event(self.finish_fade, self)
+#        self.game.stuff_event(self.finish_fade, self)
         self._event_finish(block=block)
 
     def on_fade_out(self, block=True):
@@ -1079,7 +1079,7 @@ class Actor(object):
         """
         self._alpha = 255
         self._alpha_target = 0
-#        self.game.stuff_event(self.finish_fade, self)
+ #       self.game.stuff_event(self.finish_fade, self)
         self._event_finish(block=block)
 
     def on_hide(self):
@@ -1165,7 +1165,7 @@ class Actor(object):
                         actee, actor = slugify(scene_item.name), slugify(inventory_item.name)
                         basic = "%s_use_%s"%(actee, actor)
                         if get_function(basic) == None: #would use default if player tried this combo
-                            log.warning("%s default function missing: def %s(game, %s, %s)"%(scene.name, basic, actee.lower(), actor.lower()))
+                            if not scene_item.use_disabled: log.warning("%s default function missing: def %s(game, %s, %s)"%(scene.name, basic, actee.lower(), actor.lower()))
 
         self.game.stuff_event(scene.on_add, self)
         self.editor_clean = False #actor no longer in position placed by editor
@@ -2779,7 +2779,7 @@ class Game(object):
             #close button for all editor collections
             self.add(MenuItem("e_close", editor_collection_close, (800, 610), (800,-100), K_ESCAPE).smart(self))
             #add menu items for actor editor
-            for i, v in enumerate(["location", "anchor", "stand", "scale", "clickable", "talk"]):
+            for i, v in enumerate(["location", "anchor", "stand", "scale", "clickable", "talk",]):
                 self.add(MenuItem("e_%s"%v, editor_point, (100+i*30, 45), (100+i*30,-50), v[0]).smart(self))
             self.items['e_clickable'].interact = editor_edit_rect
             self.add(MenuItem("e_add_walkareapoint", editor_add_walkareapoint, (310, 45), (310,-50), v[0]).smart(self))            
