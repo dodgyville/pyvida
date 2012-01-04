@@ -1190,7 +1190,7 @@ class Actor(object):
             
                 player.move((-50,0)) #will make the player walk -50 from their current position """        
         destination = (self.x + delta[0], self.y + delta[1])
-        self.on_goto(destination)
+        self.goto(destination)
 
     def moveto(self, delta):
         """ deprecated verson of move """
@@ -1488,10 +1488,11 @@ class Actor(object):
             self.scene._remove(self)
         self._event_finish(block=False)
         
-    def on_wait(self, data):
+    def on_wait(self, data): #actor.wait
         """ helper function for when we pass control of the event loop to a modal and need user 
             input before we continue """
         pass
+        print("on wait")
         
 class Item(Actor):
     pass
@@ -3073,7 +3074,7 @@ class Game(object):
         obj.trigger_interact()
         self._event_finish()
         
-    def on_wait(self, seconds):
+    def on_wait(self, seconds): #game.wait
         self._event_finish()
 
     def on_set_headless(self, headless=False):
