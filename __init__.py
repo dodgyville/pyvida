@@ -440,7 +440,7 @@ def get_function(basic):
 def editor_menu(game):
     game.menu_fadeOut()
     game.menu_push() #hide and push old menu to storage
-    game.set_menu("e_load", "e_save", "e_add", "e_delete", "e_prev", "e_next", "e_walk", "e_portal", "e_useable", "e_show", "e_scene", "e_step")
+    game.set_menu("e_load", "e_save", "e_add", "e_delete", "e_prev", "e_next", "e_walk", "e_portal", "e_scene", "e_step")
     game.menu_hide()
     game.menu_fadeIn()
 
@@ -626,11 +626,14 @@ class Actor(object):
         self.editable = True #affected by editor?
         self.editor_clean = False #current actor state set by editor
 
+        self.allow_draw = True
+        self.allow_update = True
+        self.allow_use = True
+        self.allow_interact = True
+        self.allow_look = True
+
         self.interact = None #special queuing function for interacts
         self.look = None #override queuing function for look
-        self.hidden = False
-        self.interactive = True #if false, don't allow mouse clicks or hovers
-        self.use_disabled = False #if True, don't allow inventory objects to be combined with this object
         self._on_mouse_move = self._on_mouse_leave = None
         
         #profiling and testing
@@ -826,7 +829,7 @@ class Actor(object):
                 script(self.game, self, actor)
          else:
                  #warn if using default vida look
-                if not self.use_disabled: log.warning("no use script for using %s with %s (write an %s function)"%(actor.name, self.name, basic))
+                if self.allow_use: log.warning("no use script for using %s with %s (write an %s function)"%(actor.name, self.name, basic))
                 self._use_default(self.game, self, actor)
 
         
@@ -879,7 +882,7 @@ class Actor(object):
         return img
 
     def draw(self): #actor.draw
-        if self.hidden: return
+        if not self.allow_draw: return
         img = self._image()
         if img: 
             if self.scale != 1.0:
@@ -925,7 +928,7 @@ class Actor(object):
 
     def _update(self, dt): #actor.update
         """ update this actor within the game """
-        if self.hidden: return
+        if not self.allow_update: return
         l = len(self._motion_queue)
         dx = 0
         dy = 0
@@ -1082,24 +1085,39 @@ class Actor(object):
  #       self.game.stuff_event(self.finish_fade, self)
         self._event_finish(block=block)
 
-    def on_hide(self):
+    def _set_usage(self, draw=None, update=None, look=None, interact=None, use=None, ):
+        """ Toggle the player->object interactions for this actor """
+        if draw != None: self.allow_draw = draw 
+        if update != None: self.allow_update = update
+        if look != None: self.allow_look = look
+        if interact != None: self.allow_interact = interact
+        if use != None: self.allow_use = use
+
+
+    def on_hide(self, interactive=False):
         """ A queuing function: hide the actor, including from all click and hover events 
         
             Example::
             
             player.hide()
         """
-        self.hidden = True
+        self._set_usage(draw=False, update=False)
         self._event_finish(block=False)
         
-    def on_show(self):
+    def on_show(self, interactive=True):
         """ A queuing function: show the actor, including from all click and hover events 
         
             Example::
             
                 player.show()
         """
-        self.hidden = False
+        self._set_usage(draw=True, update=True) # switch everything on
+        self._event_finish()
+        
+        
+    def on_usage(self, draw=None, update=None, look=None, interact=None, use=None):
+        """ Set the player->object interact flags on this object """
+        self._set_usage(draw=draw, update=update, look=look, interact=interact, use=use)
         self._event_finish()
 
     def on_rescale(self, scale):
@@ -1165,7 +1183,7 @@ class Actor(object):
                         actee, actor = slugify(scene_item.name), slugify(inventory_item.name)
                         basic = "%s_use_%s"%(actee, actor)
                         if get_function(basic) == None: #would use default if player tried this combo
-                            if not scene_item.use_disabled: log.warning("%s default function missing: def %s(game, %s, %s)"%(scene.name, basic, actee.lower(), actor.lower()))
+                            if scene_item.allow_use: log.warning("%s default function missing: def %s(game, %s, %s)"%(scene.name, basic, actee.lower(), actor.lower()))
 
         self.game.stuff_event(scene.on_add, self)
         self.editor_clean = False #actor no longer in position placed by editor
@@ -1492,7 +1510,6 @@ class Actor(object):
         """ helper function for when we pass control of the event loop to a modal and need user 
             input before we continue """
         pass
-        print("on wait")
         
 class Item(Actor):
     pass
@@ -2235,8 +2252,12 @@ class Game(object):
                 
     def on_set_editing(self, obj, objects=None):
         self.editing = obj
+        for i in ["allow_draw", "allow_look", "allow_interact", "allow_use"]:
+            btn = self.items["e_object_%s"%i]
+            btn.do("idle_off") if not getattr(self.editing, i, True) else btn.do("idle_on")
+
         if self.items["e_location"] not in self.menu:
-            mitems = ["e_location", "e_anchor", "e_stand", "e_scale", "e_talk", "e_clickable", "e_add_walkareapoint"]
+            mitems = ["e_location", "e_anchor", "e_stand", "e_scale", "e_talk", "e_clickable", "e_object_allow_draw", "e_object_allow_look", "e_object_allow_interact", "e_object_allow_use", "e_add_walkareapoint"]
             self.set_menu(*mitems)
             self.menu_hide(mitems)
             self.menu_fadeIn()
@@ -2262,15 +2283,14 @@ class Game(object):
         if self.player and self.scene and self.player in self.scene.objects.values() and obj != self.player: self.player.goto(obj)
         if self.mouse_mode == MOUSE_LOOK:
             self.game.save_game.append([look, obj.name])
-            obj.trigger_look()
+            if obj.allow_look: obj.trigger_look()
         elif self.mouse_mode == MOUSE_INTERACT:
             self.game.save_game.append([interact, obj.name])
-            obj.trigger_interact()
+            if obj.allow_interact:  obj.trigger_interact()
         elif self.mouse_mode == MOUSE_USE:
             self.game.save_game.append([use, obj.name, self.mouse_cursor.name])
-            print("%s, %s"%(obj.name,obj.use_disabled))
-            if obj.use_disabled: #if use disabled, do a regular interact
-                obj.trigger_interact()
+            if not obj.allow_use: #if use disabled, do a regular interact
+                if obj.allow_interact: obj.trigger_interact()
             else:
                 obj.trigger_use(self.mouse_cursor)
             self.mouse_cursor = MOUSE_POINTER
@@ -2303,17 +2323,8 @@ class Game(object):
             else:        #edit single point (eg location, stand, anchor) 
                 self.editing_index = 0 #must be not-None to trigger drag
             
- #               for i in self.scene.objects.values():
-  #                  if collide(i._rect, x, y):
-   #                     if i == self.editing: #assume want to move
-    #                        editor_point(self, "e_location", self.player)
-     #                   else:
-      #                      self.set_editing(i)
-       #             return
 
     def _on_mouse_up(self, x, y, button, modifiers): #single button interface
- #       btn1, btn2, btn3 = pygame.mouse.get_pressed()
-#        import pdb; pdb.set_trace()
         if button<>1: 
             print("SUB BUTTON PRESSED")
             self.mouse_mode = MOUSE_LOOK #subaltern btn pressed 
@@ -2324,12 +2335,11 @@ class Game(object):
                     return
             return
         for i in self.menu: #then menu
-            if i.collide(x,y) and i.interactive:
+            if i.collide(x,y) and i.allow_interact:
                 if i.actions.has_key('down'): i.action = i.actions['down']
                 i.trigger_interact() #always trigger interact on menu items
                 self.menu_mouse_pressed = True
                 return
-#        self.menu_mouse_pressed = False
                 
         if self.enabled_editor and self.scene: #finish edit point or rect or walkarea point
             if self.editing: #finish move
@@ -2339,7 +2349,7 @@ class Game(object):
                 
         elif self.scene: #regular game interaction
             for i in self.scene.objects.values(): #then objects in the scene
-                if i.collide(x,y) and i.interactive==True:
+                if i.collide(x,y) and (i.allow_use or i.allow_interact or i.allow_look):
 #                   if i.actions.has_key('down'): i.action = i.actions['down']
                     if self.mouse_mode == MOUSE_USE or i is not self.player: #only click on player in USE mode
                         self._trigger(i) #trigger look, use or interact
@@ -2352,7 +2362,7 @@ class Game(object):
         """ possibly draw overlay text """
         if self.player and self.scene:
             for i in self.scene.objects.values(): #then objects in the scene
-                if i is not self.player and i.collide(x,y) and i.interactive==True:
+                if i is not self.player and i.collide(x,y) and (i.allow_interact or i.allow_use or i.allow_look):
                     if isinstance(i, Portal) and self.mouse_mode != MOUSE_USE:
                         self.mouse_cursor = MOUSE_LEFT if i._x<512 else MOUSE_RIGHT
                     elif self.mouse_mode == MOUSE_LOOK:
@@ -2408,14 +2418,14 @@ class Game(object):
         if menu_capture == True: return       
         for i in self.menu: #then menu
             if i.collide(x,y): #hovering
-                if i.actions and i.actions.has_key('over') and i.interactive:
+                if i.actions and i.actions.has_key('over') and (i.allow_interact or i.allow_use or i.allow_look):
                     i.action = i.actions['over']
                 t = i.name if i.display_text == None else i.display_text
                 self.info(t, i.nx, i.ny)
                 if i._on_mouse_move: i._on_mouse_move(x, y, button, modifiers)
                 menu_capture = True
             else: #unhover over menu item
-                if i.action and i.action.name == "over" and i.interactive:
+                if i.action and i.action.name == "over" and (i.allow_interact or i.allow_use or i.allow_look):
                     if i.actions.has_key('idle'): 
                         i.action = i.actions['idle']
         if menu_capture == True: return
@@ -2541,8 +2551,8 @@ class Game(object):
                             f.write('    %s.reclickable(Rect(%s, %s, %s, %s))\n'%(slug, r.left, r.top, r.w, r.h))
                             r = obj._solid_area
                             f.write('    %s.resolid(Rect(%s, %s, %s, %s))\n'%(slug, r.left, r.top, r.w, r.h))
-                            if obj.use_disabled:
-                                f.write('    %s.use_disabled = True\n'%(slug))
+                            if not (obj.allow_draw and obj.allow_update and obj.allow_interact and obj.allow_use and obj.allow_look):
+                                f.write('    %s.usage(%s, %s, %s, %s, %s)\n'%(slug, obj.allow_draw, obj.allow_update, obj.allow_look, obj.allow_interact, obj.allow_use))
                             f.write('    %s.rescale(%0.2f)\n'%(slug, obj.scale))
                             f.write('    %s.reanchor((%i, %i))\n'%(slug, obj._ax, obj._ay))
                             f.write('    %s.restand((%i, %i))\n'%(slug, obj._sx, obj._sy))
@@ -2752,6 +2762,31 @@ class Game(object):
                 game.menu_pop()
                 game.menu_fadeIn()
             
+            def editor_toggle_draw(game, btn, player):    
+                """ toggle visible on obj """
+                if game.editing:
+                    game.editing.allow_draw = not game.editing.allow_draw
+                    game.editing.allow_update = game.editing.allow_draw
+                    btn.do("idle_off") if not game.editing.allow_draw else btn.do("idle_on")
+
+            def editor_toggle_use(game, btn, player):    
+                """ toggle allow use on obj """
+                if game.editing:
+                    game.editing.allow_use = not game.editing.allow_use
+                    btn.do("idle_off") if not game.editing.allow_use else btn.do("idle_on")
+
+            def editor_toggle_interact(game, btn, player):    
+                """ toggle allow use on obj """
+                if game.editing:
+                    game.editing.allow_interact = not game.editing.allow_interact
+                    btn.do("idle_off") if not game.editing.allow_interact else btn.do("idle_on")
+                        
+            def editor_toggle_look(game, btn, player):    
+                """ toggle allow look on obj """
+                if game.editing:
+                    game.editing.allow_look = not game.editing.allow_look
+                    btn.do("idle_off") if not game.editing.allow_look else btn.do("idle_on")
+            
             self.add(MenuItem("e_load", editor_load, (50, 10), (50,-50), "l").smart(self))
             self.add(MenuItem("e_save", editor_save, (90, 10), (90,-50), "s").smart(self))
             self.add(MenuItem("e_add", editor_add, (130, 10), (130,-50), "a").smart(self))
@@ -2783,7 +2818,15 @@ class Game(object):
             for i, v in enumerate(["location", "anchor", "stand", "scale", "clickable", "talk",]):
                 self.add(MenuItem("e_%s"%v, editor_point, (100+i*30, 45), (100+i*30,-50), v[0]).smart(self))
             self.items['e_clickable'].interact = editor_edit_rect
-            self.add(MenuItem("e_add_walkareapoint", editor_add_walkareapoint, (310, 45), (310,-50), v[0]).smart(self))            
+            e = self.add(MenuItem("e_object_allow_draw", editor_toggle_draw, (350, 45), (350,-50), v[0]).smart(self))            
+            e.do("idle_on")
+            e = self.add(MenuItem("e_object_allow_look", editor_toggle_look, (380, 45), (380,-50), v[0]).smart(self))            
+            e.do("idle_on")
+            e = self.add(MenuItem("e_object_allow_interact", editor_toggle_interact, (410, 45), (410,-50), v[0]).smart(self))            
+            e.do("idle_on")
+            e = self.add(MenuItem("e_object_allow_use", editor_toggle_use, (440, 45), (440,-50), v[0]).smart(self))            
+            e.do("idle_on")
+            self.add(MenuItem("e_add_walkareapoint", editor_add_walkareapoint, (550, 45), (550,-50), v[0]).smart(self))            
 
     def finish_tests(self):
         """ called when test runner is ending or handing back control """
@@ -2990,7 +3033,7 @@ class Game(object):
                             self.testing = False
                             self.fps = int(1000.0/DEFAULT_FRAME_RATE)
                             #self.tests = None
-                            if self.player and self.testing_message: self.player.says("Handing back control to you")
+                            if self.player and self.testing_message: self.player.says("Handing back control to you.")
                             self.finish_tests()
                     
         pygame.mouse.set_visible(True)
