@@ -453,6 +453,7 @@ def editor_point(game, menuItem, player):
               "e_anchor": (game.editing.set_ax, game.editing.set_ay),
               "e_stand": (game.editing.set_sx, game.editing.set_sy),
               "e_talk": (game.editing.set_tx, game.editing.set_ty),
+              "e_scale": (game.editing.adjust_scale_x, game.editing.adjust_scale_y),
                     }
     if menuItem.name in points:
         game.editing_point = points[menuItem.name]
@@ -700,7 +701,19 @@ class Actor(object):
             i.scale = x
     scale = property(get_scale, set_scale)  
     
-    
+    def adjust_scale_y(self, y):
+        """ adjust scale of actor based on mouse displacement """
+        if not self.game: return
+        my = self.game.mouse_down[1]
+        if (y-my+100) < 20: return
+        sf = (100.0/(y - my + 100))
+        if sf > 0.95 and sf < 1.05: sf = 1.0 #snap to full size
+        self.scale = sf
+
+
+    def adjust_scale_x(self,x):
+        pass
+
     @property
     def points(self):
         """ convert this actor into a series of solid points, used by astar to walk around """
@@ -2074,6 +2087,7 @@ class Game(object):
         self.mouse_mode = MOUSE_INTERACT #what activity does a mouse click trigger?
         self.mouse_cursors = {} #available mouse images
         self.mouse_cursor = MOUSE_POINTER #which image to use
+        self.mouse_down = None #point of last mouse down (used by editor scale)
         
         #walkthrough and test runner
         self._walkthroughs = []
@@ -2299,6 +2313,7 @@ class Game(object):
     def _on_mouse_down(self, x, y, button, modifiers): #single button interface
 #        if self.menu_mouse_pressed == True: return
 #        import pdb; pdb.set_trace()
+        self.mouse_down = (x,y)
         for i in self.menu: 
             if i.collide(x,y): return #let mouse_up have a go at menu
 
