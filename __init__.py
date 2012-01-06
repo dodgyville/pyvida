@@ -1352,6 +1352,7 @@ class Actor(object):
         """
         if fact in self.facts:
             self.facts.remove(fact)
+            log.debug("Forgetting fact '%s' for player %s"%(fact, self.name))
         else:
             log.warning("Can't forget fact '%s' ... was not in memory."%(fact))
             
@@ -1363,8 +1364,7 @@ class Actor(object):
             Example::
                 player.remember("spoken to everyone")            
         """
-
-        self.facts.append(fact)
+        if fact not in self.facts: self.facts.append(fact)
         #self._event_finish()
 
     def remembers(self, fact):
