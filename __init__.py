@@ -463,7 +463,6 @@ def editor_point(game, menuItem, player):
         game.editing_point = points[menuItem.name]
     else:
         game.editing_point = None
-    print("ep",game.editing_point)
 
 def editor_add_walkareapoint(game, menuItem, player):
      if game.editing:
@@ -1308,7 +1307,7 @@ class Actor(object):
 #        print(self.name, self.x,self.y,"to",x,y,"points",nodes,"solids",solids,"path",p)
 #        return
         if p == False:
-            log.warning("%s unable to find path from %s to %s (walkrea: %s)"%(self.name, (self.x, self.y), (x,y), walkarea)
+            log.warning("%s unable to find path from %s to %s (walkrea: %s)"%(self.name, (self.x, self.y), (x,y), walkarea))
             self._do('idle')
             self.game._event_finish() #signal to game event queue this event is done
             return
@@ -1934,6 +1933,7 @@ class Scene(object):
         self.scales = {} #when an actor is added to this scene, what scale factor to apply? (from scene.scales)
         self.editable = True #will it appear in the editor (eg portals list)
         self.analytics_count = 0 #used by test runner to measure how "popular" a scene is.
+        self.foreground = [] #items to draw in the foreground
 
     def _event_finish(self, block=True): 
         return self.game._event_finish(block)
@@ -1944,14 +1944,17 @@ class Scene(object):
         bname = os.path.join(sdir, "background.png")
         if os.path.isfile(bname):
             self.background(bname)
-#        for element in glob.glob(os.path.join(sdir,"*.png")): #add foreground elments
-#            x,y = 0,0
-#            fname = os.path.basename(element[:-4])
-#            if os.path.isfile(bname+fname+".details"): #find a details file for each element
-#                with open(bname+fname+".details", "r") as f:
-#                    x, y  = [int(i) for i in f.readlines()]
-#                a = VidaActor(fname, x=x, y=y).createAction("idle", bname+fname)
-#                self.foreground.append(a)
+        for element in glob.glob(os.path.join(sdir,"*.png")): #add foreground elments
+            x,y = 0,0
+            fname = os.path.splitext(os.path.basename(element))[0]
+
+            if os.path.isfile(os.path.join(sdir, fname+".details")): #find a details file for each element
+                with open(os.path.join(sdir, fname+".details"), "r") as f:
+                    x, y  = [int(i) for i in f.readlines()]
+#                a = Item(fname, x=x, y=y).createAction("idle", bname+fname)
+                f = self.game.add(Item("%s_%s"%(self.name, fname)).smart(game, element))
+                f.x, f.y = x,y
+                self.foreground.append(f)
         scale_name = os.path.join(sdir, "scene.scale")
         if os.path.isfile(scale_name):
             with open(scale_name, "r") as f:
@@ -3031,7 +3034,7 @@ class Game(object):
         if callback: callback(self)
         dt = 12 #time passed
         
-        while self.quit == False:
+        while self.quit == False: #game.draw game.update
             if not self.headless: pygame.time.delay(self.fps)
             if android is not None and android.check_pause():
                 android.wait_for_resume()
@@ -3056,7 +3059,7 @@ class Game(object):
             if self.scene and self.screen: #draw objects
                 objects = sorted(self.scene.objects.values(), key=lambda x: x.y, reverse=False)
 #                menu_objects = sorted(self.menu, key=lambda x: x.y, reverse=False)
-                for group in [objects, self.menu, self.modals]:
+                for group in [objects, self.scene.foreground, self.menu, self.modals]:
                     for obj in group: obj.draw()
                 for w in self.scene.walkareas: w.draw() #draw walkarea if editing
                     
