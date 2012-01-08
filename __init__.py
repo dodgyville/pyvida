@@ -452,14 +452,18 @@ def editor_point(game, menuItem, player):
     points = {"e_location": (game.editing.set_x, game.editing.set_y),
               "e_anchor": (game.editing.set_ax, game.editing.set_ay),
               "e_stand": (game.editing.set_sx, game.editing.set_sy),
-              "e_talk": (game.editing.set_tx, game.editing.set_ty),
+              "e_talk": (game.editing.set_nx, game.editing.set_ny),
               "e_scale": (game.editing.adjust_scale_x, game.editing.adjust_scale_y),
                     }
+                    
+    if hasattr(game.editing, "set_ox"):
+        points["e_out"] = (game.editing.set_ox, game.editing.set_oy)
+
     if menuItem.name in points:
         game.editing_point = points[menuItem.name]
     else:
         game.editing_point = None
-
+    print("ep",game.editing_point)
 
 def editor_add_walkareapoint(game, menuItem, player):
      if game.editing:
@@ -918,24 +922,31 @@ class Actor(object):
                 
             #draw location point
             self._rect.union_ip(crosshair(self.game.screen, (self.x, self.y), (0,0,255)))
-            stats = self.game.debug_font.render("%0.2f, %0.2f"%(self.x, self.y+12), True, (255,155,0))
+            stats = self.game.debug_font.render("loc %0.2f, %0.2f"%(self.x, self.y+12), True, (255,155,0))
             edit_rect = self.game.screen.blit(stats, stats.get_rect().move(self.x, self.y))
             self._rect.union_ip(edit_rect)
             
             #draw anchor point
             self._rect.union_ip(crosshair(self.game.screen, (self.ax, self.ay), (255,0,0)))
-            stats = self.game.debug_font.render("%0.2f, %0.2f"%(self._ax, self._ay), True, (255,155,0))
+            stats = self.game.debug_font.render("anchor %0.2f, %0.2f"%(self._ax, self._ay), True, (255,155,0))
             self._rect.union_ip(self.game.screen.blit(stats, stats.get_rect().move(self.ax, self.ay)))
 
             #draw stand point
-            self._rect.union_ip(crosshair(self.game.screen, (self.sx, self.sy), (255,0,0)))
-            stats = self.game.debug_font.render("%0.2f, %0.2f"%(self._sx, self._sy), True, (205,155,100))
+            self._rect.union_ip(crosshair(self.game.screen, (self.sx, self.sy), (255,200,0)))
+            stats = self.game.debug_font.render("stand %0.2f, %0.2f"%(self._sx, self._sy), True, (225,255,50))
             self._rect.union_ip(self.game.screen.blit(stats, stats.get_rect().move(self.sx, self.sy)))
 
             #draw name/text point
-            self._rect.union_ip(crosshair(self.game.screen, (self.nx, self.ny), (255,0,0)))
-            stats = self.game.debug_font.render("%0.2f, %0.2f"%(self._nx, self._ny), True, (255,155,255))
+            self._rect.union_ip(crosshair(self.game.screen, (self.nx, self.ny), (255,0,255)))
+            stats = self.game.debug_font.render("text %0.2f, %0.2f"%(self._nx, self._ny), True, (255,50,255))
             self._rect.union_ip(self.game.screen.blit(stats, stats.get_rect().move(self.nx, self.ny)))
+
+            #draw out point if portal
+            if hasattr(self, "set_ox"):
+                self._rect.union_ip(crosshair(self.game.screen, (self.ox, self.oy), (0,255,0)))
+                stats = self.game.debug_font.render("out %0.2f, %0.2f"%(self._ox, self._oy), True, (105,255,100))
+                self._rect.union_ip(self.game.screen.blit(stats, stats.get_rect().move(self.ox, self.oy)))
+
 
                 
 
@@ -1106,6 +1117,24 @@ class Actor(object):
         if interact != None: self.allow_interact = interact
         if use != None: self.allow_use = use
 
+    def on_set_actions(self, actions, prefix=None, postfix=None):
+        """ Take a list of actions and replace them with prefix_action eg set_actions(["idle", "over"], "off") """
+        log.info("player.set_actions using prefix %s on %s"%(prefix, actions))
+        for i in actions: 
+            if prefix:
+                key = "%s_%s"%(prefix, i)
+            else:
+                key = "%s_%s"%(i, postfix)
+            if key in self.actions: self.actions[i] = self.actions[key]
+        self._event_finish()
+    
+    def on_backup_actions(self, actions, prefix):
+        """ Take a list of actions and make copies with prefix_action """       
+        log.info("player.backup_actions using prefix %s on %s"%(prefix, actions))
+        for i in actions:
+            key = "%s_%s"%(prefix, i)
+            if key in self.actions: self.actions[key] = self.actions[i]
+        self._event_finish()
 
     def on_hide(self, interactive=False):
         """ A queuing function: hide the actor, including from all click and hover events 
@@ -1279,7 +1308,7 @@ class Actor(object):
 #        print(self.name, self.x,self.y,"to",x,y,"points",nodes,"solids",solids,"path",p)
 #        return
         if p == False:
-            log.warning("unable to find path")
+            log.warning("%s unable to find path from %s to %s (walkrea: %s)"%(self.name, (self.x, self.y), (x,y), walkarea)
             self._do('idle')
             self.game._event_finish() #signal to game event queue this event is done
             return
@@ -1560,18 +1589,18 @@ class Portal(Item):
     def __init__(self, *args, **kwargs):
         Actor.__init__(self, *args, **kwargs)
         self.link = None #which Portal does it link to?
-        self._ox, self._oy = 0,0 #outpoint
+        self._ox, self._oy = 0,0 #outpoint, relative to _x, _y
         self.display_text = "" #no overlay info text by default for a portal
 #        self.interact = self._interact_default
 #        self.look = self._look
 
     def get_oy(self): return self._oy + self._y
-    def set_oy(self, oy): self._oy = oy - self._oy
+    def set_oy(self, oy): self._oy = oy - self._y
     oy = property(get_oy, set_oy)
 
     def get_ox(self): return self._ox + self._x
-    def set_ox(self, ox): self._ox = ox - self._ox
-    ox = property(get_ox, set_ox)
+    def set_ox(self, ox): self._ox = ox - self._x
+    ox = property(get_ox, set_ox)   
 
 #    def draw(self):
  #       """ portals are invisible """
@@ -2302,8 +2331,15 @@ class Game(object):
             btn = self.items["e_object_%s"%i]
             btn.do("idle_off") if not getattr(self.editing, i, True) else btn.do("idle_on")
 
+        if isinstance(obj, Portal): #switch on editing out point
+            self.items['e_out'].set_actions(["idle"], postfix="on")
+        else:
+            self.items['e_out'].set_actions(["idle"], postfix="off")
+        self.items['e_out'].do("idle")
+        print("toggle e_out")
+
         if self.items["e_location"] not in self.menu:
-            mitems = ["e_location", "e_anchor", "e_stand", "e_scale", "e_talk", "e_clickable", "e_object_allow_draw", "e_object_allow_look", "e_object_allow_interact", "e_object_allow_use", "e_add_walkareapoint"]
+            mitems = ["e_location", "e_anchor", "e_stand", "e_scale", "e_talk", "e_clickable", "e_out", "e_object_allow_draw", "e_object_allow_look", "e_object_allow_interact", "e_object_allow_use", "e_add_walkareapoint"]
             self.set_menu(*mitems)
             self.menu_hide(mitems)
             self.menu_fadeIn()
@@ -2603,7 +2639,7 @@ class Game(object):
                             f.write('    %s.rescale(%0.2f)\n'%(slug, obj.scale))
                             f.write('    %s.reanchor((%i, %i))\n'%(slug, obj._ax, obj._ay))
                             f.write('    %s.restand((%i, %i))\n'%(slug, obj._sx, obj._sy))
-                            f.write('    %s.retalk((%i, %i))\n'%(slug, obj._tx, obj._ty))
+                            f.write('    %s.retalk((%i, %i))\n'%(slug, obj._nx, obj._ny))
                             f.write('    %s.relocate(scene, (%i, %i))\n'%(slug, obj.x, obj.y))
                             if isinstance(obj, Portal): #special portal details
                                 ox,oy = obj._ox, obj._oy
@@ -2613,6 +2649,7 @@ class Game(object):
                                 f.write('    %s.reout((%i, %i))\n'%(slug, ox, oy))
                         else: #the player object
                             f.write('    #%s.reanchor((%i, %i))\n'%(name, obj._ax, obj._ay))
+                            f.write('    scene.scales["default"] = %0.2f\n'%(obj.scale))
                             f.write('    scene.scales["%s"] = %0.2f\n'%(name, obj.scale))
                     
             def _editor_cycle(game, collection, player, v):
@@ -2862,9 +2899,12 @@ class Game(object):
             #close button for all editor collections
             self.add(MenuItem("e_close", editor_collection_close, (800, 610), (800,-100), K_ESCAPE).smart(self))
             #add menu items for actor editor
-            for i, v in enumerate(["location", "anchor", "stand", "scale", "clickable", "talk",]):
+            for i, v in enumerate(["location", "anchor", "stand", "out", "scale", "clickable", "talk",]):
                 self.add(MenuItem("e_%s"%v, editor_point, (100+i*30, 45), (100+i*30,-50), v[0]).smart(self))
             self.items['e_clickable'].interact = editor_edit_rect
+            self.items['e_out'].set_actions(["idle"], "off")
+            self.items['e_out'].do("idle")
+
             e = self.add(MenuItem("e_object_allow_draw", editor_toggle_draw, (350, 45), (350,-50), v[0]).smart(self))            
             e.do("idle_on")
             e = self.add(MenuItem("e_object_allow_look", editor_toggle_look, (380, 45), (380,-50), v[0]).smart(self))            
