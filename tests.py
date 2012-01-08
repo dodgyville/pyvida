@@ -15,7 +15,7 @@ except:
 
 from astar import AStar
 
-from __init__ import Game, Actor, Scene, Item, MenuItem
+from __init__ import Game, Actor, Scene, Item, MenuItem, Rect
 
 class TestPyvida(unittest.TestCase):
     def setUp(self):
@@ -225,6 +225,19 @@ class TestActor(TestPyvida):
 #        for element in random.sample(self.seq, 5):
 #            self.assertTrue(element in self.seq)
 
+def solid_to_nodes(x,y,w,h):
+    """ Convert a rect to 4 points """
+    r = Rect(x,y,w,h)
+    INFLATE = 5
+    m = r.inflate(INFLATE, INFLATE)
+    return [m.topleft, m.bottomleft, m.topright, m.bottomright]
+    
+def solids_to_nodes(solids):
+    s = []
+    for i in solids:
+        s.extend(solid_to_nodes(*i))    
+    return s
+
 class TestAStar(unittest.TestCase):
     def test_basic(self):
         """ A simple path between start and end points, no solids or walkarea """
@@ -246,7 +259,16 @@ class TestAStar(unittest.TestCase):
         p = AStar((sx, sy), (tx, ty), nodes, solids, walkarea)
         self.assertEqual(p, [(sx,sy), (tx,ty)])
 
-
+    def test_solid(self):
+        """ Walk around a solid object """
+        sx,sy = 100,100 #start pos
+        tx,ty = 200,100 #end pos
+        nodes = []
+        solids = [(150,90, 22,22),]
+        walkarea = []
+        nodes.extend(solids_to_nodes(solids))
+        p = AStar((sx, sy), (tx, ty), nodes, solids, walkarea)
+        self.assertEqual(p, [(100, 100), (148, 88), (175, 88), (200, 100)])
 
 
 

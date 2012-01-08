@@ -724,7 +724,7 @@ class Actor(object):
         
     @property
     def solids(self):
-        """ convert thias actor into a tuple """
+        """ convert this actor into a tuple """
         m = self.solid_area
         if (m.w, m.h) == (0,0): return None
         return (m.left, m.top, m.width, m.height)
@@ -949,9 +949,9 @@ class Actor(object):
             dx, dy = self._motion_queue.pop(0)
             self.x += int(float(dx) * self.scale)
             self.y += int(float(dy) * self.scale)
-#            if not self._test_goto_point((self._tx, self._ty))
-            if l == 1: #if not at point and queue (almost) empty, get some more queue or end the move
-                self.on_goto((self._tx, self._ty))
+            if not self._test_goto_point((self._tx, self._ty)): #test each frame if we're over the point
+                if len(self._motion_queue) <= 1: #if not at point and queue (almost) empty, get some more queue or end the move
+                    self.on_goto((self._tx, self._ty))
 #        if self.action:
  #           ax,ay=self.ax*self.action.scale, self.ay*self.action.scale
   #      else:
@@ -1243,15 +1243,18 @@ class Actor(object):
         """ Queue the deltas from an action on this actor's motion_queue """
         if type(action) == str: action = self.actions[action]
         log.debug("queue_motion %s %s"%(action.name, action.deltas))
+        if not action.deltas:
+            log.error("No deltas for action %s on actor %s, can't move."%(action.name, self.name))
+            return
         for dx,dy in action.deltas:
             self._motion_queue.append((dx+randint(-1,1),dy+randint(-1,1)))
         self._do(action) 
     
-    def _goto_astar(self, x, y, walk_actions):
+    def _goto_astar(self, x, y, walk_actions, walkareas=[]):
         """ Call astar search with the scene info to work out best path """
         solids = []
         objects = self.scene.objects.values() if self.scene else []
-        walkarea = self.scene.walkareas[0] if self.scene else [] #XXX assumes only 1 walkarea per scene
+        walkarea = walkareas[0] if walkareas else [] #XXX assumes only 1 walkarea per scene
         for a in objects: #set up solid areas you can't walk through
             if a != self.game.player:
                 if a.solid_area.collidepoint(x,y):
@@ -1298,13 +1301,34 @@ class Actor(object):
         """ If player is at point, set to idle and finish event """
         x,y = destination
         fuzz = 10
-        if x - fuzz < self.x < x + fuzz and y - fuzz < self.y < y + fuzz: #arrived at point, end event
+        if self.action:
+            dx,dy = abs(self.action.avg_delta_x/2)*self.scale, abs(self.action.avg_delta_y/2)*self.scale
+        else:
+            dx,dy= 0,0
+#        print("test %s, %s is near %s, %s (%s, %s)"%(self.x, self.y, x,y,dx,dy))
+        #XXX requires only vertical/horizontal actions - short circuit action if player is horiztonal or vertical with the point 
+        if dy<>0 and (y-dy < self.y < y + dy): #travelling vertically
+            self.y = self._ty
+#            print("*************** arrived at same y value, force goto")
+            self._motion_queue = [] #force a*star to recalculate (will probably start a vertical walk)
+
+        if dx<>0 and (x-dx < self.x < x + dx): #travelling vertically
+            self.x = self._tx
+#            print("*************** arrived at same x value, force goto")
+            self._motion_queue = [] #force a*star to recalculate (will probably start a vertical walk)
+
+
+        if x - fuzz - dx  < self.x < x + fuzz +dx and y - fuzz - dy < self.y < y + fuzz + dy: #arrived at point, end event
             if "idle" in self.actions: self.action = self.actions['idle'] #XXX: magical variables, special cases, urgh
-            if isinstance(self, MenuItem) or isinstance(self, Collection):
-                self.x, self.y = self._tx, self._ty
+#            if isinstance(self, MenuItem) or isinstance(self, Collection):
+            self.x, self.y = self._tx, self._ty
             log.debug("actor %s has arrived at %s on scene %s"%(self.name, destination, self.scene.name if self.scene else "none"))
+            self._motion_queue = [] #empty motion queue
             self.game._event_finish() #signal to game event queue this event is done            
             return True
+            
+
+
         return False
     
     def on_goto(self, destination, block=True, modal=False, ignore=False):
@@ -1353,8 +1377,9 @@ class Actor(object):
             if len(walk_actions) <= 1: #need more than two actions to trigger astar
                 self._goto_direct(x,y, walk_actions)
             else:
-                self._goto_direct(x,y, walk_actions)
-#                self._goto_astar(x,y, walk_actions) #XXX disabled astar for the moment
+#                self._goto_direct(x,y, walk_actions)
+                walkareas = self.scene.walkareas if self.scene and ignore==False else None
+                self._goto_astar(x,y, walk_actions, walkareas) #XXX disabled astar for the moment
 
     def forget(self, fact):
         """ A pseudo-queuing function. Forget a fact from the list of facts 
@@ -1755,6 +1780,13 @@ class MenuItem(Actor):
 
 ALPHABETICAL = 0
 
+class MenuText(Text, MenuItem):
+    """ Use a text in the menu """
+    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=26, wrap=2000, interact=None, spos=(None, None), hpos=(None, None), key=None):
+        MenuItem.__init__(self, name, interact, spos, hpos, key, text)
+        Text.__init__(self,  name, pos, dimensions, text, colour, size, wrap)
+    
+    
 class Collection(MenuItem):
     """ 
     An actor which contains subactors (eg an inventory or directory listing)
