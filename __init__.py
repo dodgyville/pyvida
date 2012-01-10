@@ -1,7 +1,7 @@
 from __future__ import print_function
 
 from datetime import datetime, timedelta, date
-import gc, glob, copy, inspect, logging, math, os, pdb, sys, operator, types, pickle
+import gc, glob, copy, inspect, logging, math, os, pdb, sys, operator, types, pickle, time
 from itertools import chain
 from itertools import cycle
 import logging.handlers
@@ -2201,7 +2201,7 @@ class Game(object):
             data.append([toggle, "headless"])
             self.reset_game(self)
             self.testing = True
-            self.tests = data
+            self.tests = [d[:-1] for d in data] #strip time info off save game
             self.jump_to_step = len(data)
 
         
@@ -2293,7 +2293,8 @@ class Game(object):
             player_class can be used to override the player class with a custom one.
         """
         portals = []
-        self.set_headless(True) #ignore clock ticks while loading
+        running_headless = self.headless
+        if not running_headless: self.set_headless(True) #ignore clock ticks while loading
         for obj_cls in [Actor, Item, Portal, Scene]:
             dname = "%s_dir"%obj_cls.__name__.lower()
             for name in os.listdir(getattr(self, dname)):
@@ -2325,7 +2326,7 @@ class Game(object):
                 log.warning("game.smart unable to guess link for %s"%pname)
         if type(player) == str: player = self.actors[player]
         if player: self.player = player
-        self.set_headless(False) #ignore clock ticks while loading
+        if not running_headless: self.set_headless(False) #restore headless state
         self._event_finish(block=False)
                 
     def on_set_editing(self, obj, objects=None):
@@ -2339,7 +2340,6 @@ class Game(object):
         else:
             self.items['e_out'].set_actions(["idle"], postfix="off")
         self.items['e_out'].do("idle")
-        print("toggle e_out")
 
         if self.items["e_location"] not in self.menu:
             mitems = ["e_location", "e_anchor", "e_stand", "e_scale", "e_talk", "e_clickable", "e_out", "e_object_allow_draw", "e_object_allow_look", "e_object_allow_interact", "e_object_allow_use", "e_add_walkareapoint"]
@@ -2364,16 +2364,17 @@ class Game(object):
                 self.fps = int(1000.0/100) #fast debug
 
     def _trigger(self, obj):
+        t = time.time()
         """ trigger use, look or interact, depending on mouse_mode """
         if self.player and self.scene and self.player in self.scene.objects.values() and obj != self.player: self.player.goto(obj)
         if self.mouse_mode == MOUSE_LOOK:
-            self.game.save_game.append([look, obj.name])
+            self.game.save_game.append([look, obj.name, t])
             if obj.allow_look: obj.trigger_look()
         elif self.mouse_mode == MOUSE_INTERACT:
-            self.game.save_game.append([interact, obj.name])
+            self.game.save_game.append([interact, obj.name, t])
             if obj.allow_interact:  obj.trigger_interact()
         elif self.mouse_mode == MOUSE_USE:
-            self.game.save_game.append([use, obj.name, self.mouse_cursor.name])
+            self.game.save_game.append([use, obj.name, self.mouse_cursor.name, t])
             if not obj.allow_use: #if use disabled, do a regular interact
                 if obj.allow_interact: obj.trigger_interact()
             else:
@@ -2958,6 +2959,7 @@ class Game(object):
         parser.add_option("-c", "--characters", action="store_true", dest="analyse_characters", help="Print lots of info about actor and items to calculate art requirements", default=False)        
 
         parser.add_option("-s", "--step", dest="step", help="Jump to step in walkthrough")
+        parser.add_option("-H", "--headless", action="store_true", dest="headless", help="Run game as headless (no video)")
         parser.add_option("-a", "--artreactor", action="store_true", dest="artreactor", help="Save images from each scene")
         parser.add_option("-i", "--inventory", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
         parser.add_option("-d", "--detailed <scene>", dest="analyse_scene", help="Print lots of info about one scene (best used with test runner)")
@@ -2992,7 +2994,9 @@ class Game(object):
                 self.jump_to_step = int(options.step) #automatically run to <step> in walkthrough
             else:
                 self.jump_to_step = options.step
-
+        if options.headless: 
+            print("setting to headless")
+            self.headless = True
         pygame.init() 
         if icon:
             pygame.display.set_icon(pygame.image.load(icon))
@@ -3123,8 +3127,11 @@ class Game(object):
                             self.testing = False
                             self.fps = int(1000.0/DEFAULT_FRAME_RATE)
                             #self.tests = None
-                            if self.player and self.testing_message: self.player.says("Handing back control to you.")
+                            if self.player and self.testing_message:
+                                if self.headless: self.headless = False #force visual if handing over to player
+                                self.player.says("Handing back control to you.")
                             self.finish_tests()
+                            
                     
         pygame.mouse.set_visible(True)
             
