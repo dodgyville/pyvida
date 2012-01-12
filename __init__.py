@@ -1405,9 +1405,9 @@ class Actor(object):
             if len(walk_actions) <= 1: #need more than two actions to trigger astar
                 self._goto_direct(x,y, walk_actions)
             else:
-#                self._goto_direct(x,y, walk_actions)
+                self._goto_direct(x,y, walk_actions)
                 walkareas = self.scene.walkareas if self.scene and ignore==False else None
-                self._goto_astar(x,y, walk_actions, walkareas) #XXX disabled astar for the moment
+#                self._goto_astar(x,y, walk_actions, walkareas) #XXX disabled astar for the moment
 
     def forget(self, fact):
         """ A pseudo-queuing function. Forget a fact from the list of facts 
@@ -2232,7 +2232,7 @@ class Game(object):
         if replace == False:
            if obj.name in self.items or obj.name in self.actors:
                 existing_obj = self.items[obj.name] if obj.name in self.items else self.actors[obj.name]
-                log.error("Adding %s (%s), but already in item or actor dictionary as %s"%(obj.name, obj.__class__, existing_obj.__class__))
+                log.warning("Adding %s (%s), but already in item or actor dictionary as %s"%(obj.name, obj.__class__, existing_obj.__class__))
         if force_cls:
             if force_cls == ModalItem:
                 self.modals.append(obj)
