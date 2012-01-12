@@ -1119,6 +1119,7 @@ class Actor(object):
     def on_set_actions(self, actions, prefix=None, postfix=None):
         """ Take a list of actions and replace them with prefix_action eg set_actions(["idle", "over"], "off") """
         log.info("player.set_actions using prefix %s on %s"%(prefix, actions))
+        self.editor_clean = False #actor no longer has permissions as set by editor
         for i in actions: 
             if prefix:
                 key = "%s_%s"%(prefix, i)
@@ -1401,6 +1402,7 @@ class Actor(object):
         if self._test_goto_point(destination): 
             return
         else: #try to follow the path, should use astar
+            self.editor_clean = False #actor no longer in position placed by editor
             #available walk actions
             if len(walk_actions) <= 1: #need more than two actions to trigger astar
                 self._goto_direct(x,y, walk_actions)
@@ -2356,7 +2358,7 @@ class Game(object):
                 self.editing = None
                 self.enabled_editor = False
                 if hasattr(self, "e_objects"): self.e_objects = None #free add object collection
-                self.fps = int(1000.0/DEFAULT_FRAME_RATE)
+                self.set_fps(int(1000.0/DEFAULT_FRAME_RATE))
             else:
                 editor_menu(self)
                 self.enabled_editor = True
@@ -3221,7 +3223,10 @@ class Game(object):
         """ switch game engine between headless and non-headless mode, restrict events to per clock tick, etc """
         self.headless = headless
         self._event_finish()
-        
+
+    def on_set_fps(self, fps):
+        self.fps = fps
+        self._event_finish()
 
     def on_splash(self, image, callback, duration, immediately=False):
 #        """ show a splash screen then pass to callback after duration """
