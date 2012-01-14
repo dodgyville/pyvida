@@ -990,11 +990,11 @@ class Actor(object):
     def _interact_default(self, game, actor, player):
         """ default queuing interact smethod """
         if isinstance(self, Item): #very generic
-            c = ["It's not very interesting",
+            c = ["It's not very interesting.",
             "I'm not sure what you want me to do with that.",
             "I've already tried using that, it just won't fit."]
         else: #probably an Actor object
-            c = ["They're not responding to my hails",
+            c = ["They're not responding to my hails.",
             "Perhaps they need a good poking.",
             "They don't want to talk to me."]
         if self.game.player: self.game.player.says(choice(c))
@@ -1407,9 +1407,9 @@ class Actor(object):
             if len(walk_actions) <= 1: #need more than two actions to trigger astar
                 self._goto_direct(x,y, walk_actions)
             else:
-#                self._goto_direct(x,y, walk_actions)
+                self._goto_direct(x,y, walk_actions)
                 walkareas = self.scene.walkareas if self.scene and ignore==False else None
-                self._goto_astar(x,y, walk_actions, walkareas) #XXX disabled astar for the moment
+#                self._goto_astar(x,y, walk_actions, walkareas) #XXX disabled astar for the moment
 
     def forget(self, fact):
         """ A pseudo-queuing function. Forget a fact from the list of facts 
@@ -2234,7 +2234,7 @@ class Game(object):
         if replace == False:
            if obj.name in self.items or obj.name in self.actors:
                 existing_obj = self.items[obj.name] if obj.name in self.items else self.actors[obj.name]
-                log.error("Adding %s (%s), but already in item or actor dictionary as %s"%(obj.name, obj.__class__, existing_obj.__class__))
+                log.warning("Adding %s (%s), but already in item or actor dictionary as %s"%(obj.name, obj.__class__, existing_obj.__class__))
         if force_cls:
             if force_cls == ModalItem:
                 self.modals.append(obj)
