@@ -990,11 +990,11 @@ class Actor(object):
     def _interact_default(self, game, actor, player):
         """ default queuing interact smethod """
         if isinstance(self, Item): #very generic
-            c = ["It's not very interesting",
+            c = ["It's not very interesting.",
             "I'm not sure what you want me to do with that.",
             "I've already tried using that, it just won't fit."]
         else: #probably an Actor object
-            c = ["They're not responding to my hails",
+            c = ["They're not responding to my hails.",
             "Perhaps they need a good poking.",
             "They don't want to talk to me."]
         if self.game.player: self.game.player.says(choice(c))
