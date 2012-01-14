@@ -1225,7 +1225,7 @@ class Actor(object):
                         actee, actor = slugify(scene_item.name), slugify(inventory_item.name)
                         basic = "%s_use_%s"%(actee, actor)
                         if get_function(basic) == None: #would use default if player tried this combo
-                            if scene_item.allow_use: log.warning("%s default function missing: def %s(game, %s, %s)"%(scene.name, basic, actee.lower(), actor.lower()))
+                            if scene_item.allow_use: log.warning("%s default use script missing: def %s(game, %s, %s)"%(scene.name, basic, actee.lower(), actor.lower()))
 
         self.game.stuff_event(scene.on_add, self)
         self.editor_clean = False #actor no longer in position placed by editor
