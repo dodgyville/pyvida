@@ -254,11 +254,10 @@ def add_object_to_scene_analysis(game, obj): #profiling: watching a scene closel
 scene_path = []
 def scene_search(scene, target): #are scenes connected via portals?
     global scene_path
-    scene_path.append(scene)
-#    return scene
     if not scene or not scene.name:
         log.warning("Strange scene search %s"%scene_path)
         return False
+    scene_path.append(scene)
     if scene.name.upper() == target:
         return scene
     for i in scene.objects.values():
@@ -845,7 +844,7 @@ class Actor(object):
                 script(self.game, self, actor)
          else:
                  #warn if using default vida look
-                if self.allow_use: log.warning("no use script for using %s with %s (write an %s function)"%(actor.name, self.name, basic))
+                if self.allow_use: log.warning("no use script for using %s with %s (write a def %s(game, %s, %s): function)"%(actor.name, self.name, basic, slug_actee, slug_actor))
                 self._use_default(self.game, self, actor)
 
         
@@ -869,7 +868,7 @@ class Actor(object):
             else:
                 #warn if using default vida interact
                 if not isinstance(self, Portal):
-                    log.warning("No interact script for %s (write an %s)"%(self.name, basic))
+                    log.warning("No interact script for %s (write a def %s(game, %s, player): function)"%(self.name, basic, slugify(self.name)))
                 self._interact_default(self.game, self, self.game.player)
 
 
