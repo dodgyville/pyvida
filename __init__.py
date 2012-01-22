@@ -55,7 +55,6 @@ if not pygame.mixer: log.warning('Warning, sound disabled')
 log.warning("game.scene.camera panning not implemented yet")
 log.warning("broad try excepts around pygame.image.loads")
 log.warning("smart load should load non-idle action as default if there is only one action")
-log.warning("game.wait not implemented yet")
 log.warning("action.deltas can only be set via action.load")
 log.warning("actor.asks not fully implemented")
 
@@ -385,6 +384,18 @@ def crosshair(screen, pt, colour=(255,100,100)):
     pygame.draw.line(screen, colour, (pt[0]-5,pt[1]), (pt[0]+5,pt[1]))
     return Rect(pt[0]-5, pt[1]-5, 11,11)
         
+        
+def blit_alpha(target, source, location, opacity):
+    #blit per-pixel alpha images at partial opacity in pygame
+    #courtesy from http://www.nerdparadise.com/tech/python/pygame/blitopacity/
+    x = location[0]
+    y = location[1]
+    temp = pygame.Surface((source.get_width(), source.get_height())).convert()
+    temp.blit(target, (-x, -y))
+    temp.blit(source, (0, 0))
+    temp.set_alpha(opacity)        
+    r = target.blit(temp, location)
+    return r
 
 ##### generic helper functions ####
 
@@ -604,8 +615,8 @@ class Actor(object):
         self.action = None
         self.actions = {}
         
-        self._alpha = 255
-        self._alpha_target = 255
+        self._alpha = 1.0
+        self._alpha_target = 1.0
         
         self.font_speech = None #use default
         self.font_colour = None #use default
@@ -694,6 +705,9 @@ class Actor(object):
     def set_ny(self, ny): self._ny = ny
     ny = property(get_ny, set_ny)
 
+#    def get_alpha(self): return self._alpha
+        
+#    alpha = property(get_alpha, set_alpha)
     
     def get_scale(self): return self._scale
     def set_scale(self, x): 
@@ -906,7 +920,10 @@ class Actor(object):
                 img = pygame.transform.smoothscale(img, (w, h))
             img.set_alpha(self._alpha)
             r = img.get_rect().move(self.ax, self.ay)
-            self._rect = self.game.screen.blit(img, r)
+            if self._alpha != 1.0:
+                self._rect = blit_alpha(self.game.screen, img, r, self._alpha*255)
+            else:
+                self._rect = self.game.screen.blit(img, r)
             if self.game.editing == self: #draw bounding box
                 r2 = r.inflate(-2,-2)
                 pygame.draw.rect(self.game.screen, (0,255,0), r2, 2)
@@ -966,8 +983,8 @@ class Actor(object):
   #      else:
    #         ax,ay=self.ax, self.ay
 #        self._clickable_area = Rect(self.ax, self.ay, self._clickable_area[2]*self.scale, self._clickable_area[3]*self.scale)
-        if self._alpha > self._alpha_target: self._alpha -= 1
-        if self._alpha < self._alpha_target: self._alpha += 1
+        if self._alpha > self._alpha_target: self._alpha -= .05
+        if self._alpha < self._alpha_target: self._alpha += .05
         if self.action: self.action.update(dt)
         if hasattr(self, "update"): #run this actor's personalised update function
             self.update(dt)
@@ -1090,7 +1107,7 @@ class Actor(object):
         player.fade_in()
         """
         self._alpha = 0
-        self._alpha_target = 255
+        self._alpha_target = 1.0
 #        self.game.stuff_event(self.finish_fade, self)
         self._event_finish(block=block)
 
@@ -1102,7 +1119,7 @@ class Actor(object):
         
         player.fade_out()
         """
-        self._alpha = 255
+        self._alpha = 1.0
         self._alpha_target = 0
  #       self.game.stuff_event(self.finish_fade, self)
         self._event_finish(block=block)
@@ -1240,7 +1257,14 @@ class Actor(object):
         """ A queuing function. Animate rotation of character """
         log.debug("actor.rotation not implemented yet")
         self._event_finish(block=False)
-        
+
+    def on_set_alpha(self, alpha, block=False):
+        if alpha < 0: alpha = 0
+        if alpha > 1.0: alpha = 1.0
+        print("set alpha %s"%alpha)
+        self._alpha = alpha
+        self._alpha_target = alpha
+        self._event_finish(block=block)
     
     def move(self, delta):
         """ A pseudo-queuing function: move relative to the current position
@@ -2179,6 +2203,9 @@ class Game(object):
         self.info_image = None
         self.info_position = None
         
+        #variables for special events such as on_wait
+        self._wait = None #what time to hold processing events to
+        
         fps = DEFAULT_FRAME_RATE 
         self.fps = int(1000.0/fps)
         self.fullscreen = fullscreen
@@ -2537,12 +2564,21 @@ class Game(object):
             self.toggle_editor()
         elif ENABLE_EDITOR and key == K_F2: #allow set_trace if not fullscreen
             if not self.fullscreen: import pdb; pdb.set_trace()
-        elif ENABLE_EDITOR and key == K_F3:
+        elif ENABLE_EDITOR and key == K_F3: #kill an event if stuck in the event queue
+            self._event_finish()      
+        elif ENABLE_EDITOR and key == K_F4:
             self.player.do_once("undressed_lookleft")
 #            self.player.do_once("undressed_lookright")
             self.player.do("undressed_lookright",mode=ONCE_BLOCK)
             self.player.do("idle")
 #            self.player.do("undressed_lookleft2")
+        elif ENABLE_EDITOR and key == K_F5:
+            from scripts.all_chapters import transmat_in, transmat_out
+            transmat_in(self, self.player)
+        elif ENABLE_EDITOR and key == K_F6:
+            from scripts.all_chapters import transmat_in, transmat_out
+            transmat_out(self, self.player)
+
         if self.enabled_editor == True and self.editing:
             if key == K_DOWN: 
                 self.editing._y += 1
@@ -3054,8 +3090,11 @@ class Game(object):
                     for obj in group: obj.clear()
                 for w in self.scene.walkareas: w.clear() #clear walkarea if editing
 
-            self.handle_pygame_events()
-            self.handle_events()
+            if not self._wait: #process events normally
+                self.handle_pygame_events()
+                self.handle_events()
+            else: #wait until time passes
+                if datetime.now() > self._wait: self.finished_wait()
 
             if self.scene and self.screen: #update objects
                 for group in [self.scene.objects.values(), self.menu, self.modals]:
@@ -3216,6 +3255,12 @@ class Game(object):
         self._event_finish()
         
     def on_wait(self, seconds): #game.wait
+        self._wait = datetime.now() + timedelta(seconds=seconds)
+        log.debug("waiting until %s"%datetime.now())
+        
+    def finished_wait(self):
+        log.debug("finished wait at %s"%datetime.now())
+        self._wait = None
         self._event_finish()
 
     def on_set_headless(self, headless=False):
