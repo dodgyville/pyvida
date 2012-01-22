@@ -2381,7 +2381,7 @@ class Game(object):
             else:
                 obj.trigger_use(self.mouse_cursor)
             self.mouse_cursor = MOUSE_POINTER
-            self.mouse_mode = MOUSE_LOOK
+            self.mouse_mode = MOUSE_INTERACT
 
     def _on_mouse_down(self, x, y, button, modifiers): #single button interface
 #        if self.menu_mouse_pressed == True: return
