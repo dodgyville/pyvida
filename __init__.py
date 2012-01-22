@@ -519,7 +519,7 @@ class Action(object):
             self.step = -1
             self.index =self.count-1
 
-        if self.actor and self.mode == ONCE_BLOCK and self.index == self.count: self.actor._event_finish()
+        if self.actor and self.mode == ONCE_BLOCK and self.index >= self.count-1: self.actor._event_finish()
         
     def load(self): 
         """Load an anim from a montage file"""
@@ -1261,7 +1261,7 @@ class Actor(object):
     def on_set_alpha(self, alpha, block=False):
         if alpha < 0: alpha = 0
         if alpha > 1.0: alpha = 1.0
-        print("set alpha %s"%alpha)
+        log.debug("%s set alpha %s"%(self.name, alpha))
         self._alpha = alpha
         self._alpha_target = alpha
         self._event_finish(block=block)
@@ -3221,6 +3221,12 @@ class Game(object):
         if type(actor) == str: 
             actor = self.actors[actor] if actor in self.actors else self.items[actor]
         actor.interact = fn
+
+    def set_look(self, actor, fn):
+        """ helper function for setting look method on an actor """
+        if type(actor) == str: 
+            actor = self.actors[actor] if actor in self.actors else self.items[actor]
+        actor.look = fn
 
 
     def load_state(self, scene, state):
