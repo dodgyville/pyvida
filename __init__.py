@@ -826,7 +826,8 @@ class Actor(object):
                 script(self.game, self, self.game.player)
             else:
                  #warn if using default vida look
-                log.warning("no look script for %s (write %s)"%(self.name, basic))
+                log.warning("no look script for %s (write a def %s(game, %s, player): function)"%(self.name, basic, slugify(self.name).lower()))
+                
                 self._look_default(self.game, self, self.game.player)
 
 
@@ -858,7 +859,7 @@ class Actor(object):
                 script(self.game, self, actor)
          else:
                  #warn if using default vida look
-                if self.allow_use: log.warning("no use script for using %s with %s (write a def %s(game, %s, %s): function)"%(actor.name, self.name, basic, slug_actee, slug_actor))
+                if self.allow_use: log.warning("no use script for using %s with %s (write a def %s(game, %s, %s): function)"%(actor.name, self.name, basic, slug_actee.lower(), slug_actor.lower()))
                 self._use_default(self.game, self, actor)
 
         
