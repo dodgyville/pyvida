@@ -648,6 +648,7 @@ class Actor(object):
 
         self.interact = None #special queuing function for interacts
         self.look = None #override queuing function for look
+        self.uses = {} #override use functions (actor is key name)
         self._on_mouse_move = self._on_mouse_leave = None
         
         #profiling and testing
@@ -854,6 +855,9 @@ class Actor(object):
          slug_actor = slugify(actor.name)
          slug_actee = slugify(self.name)
          basic = "%s_use_%s"%(slug_actee, slug_actor)
+         if actor.name in self.uses: #use a specially defined use method
+            basic = self.uses[actor.name]
+            log.info("Using custom use script %s for actor %s"%(basic, actor.name))
          script = get_function(basic)
          if script:
                 script(self.game, self, actor)
