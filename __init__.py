@@ -490,7 +490,8 @@ class Action(object):
         self.step = 1
         self.repeats = 0 #how many times to do this action
         self.scale = 1.0
-#        self.ax, self.ay = 0,0 #anchor point
+        self.ax, self.ay = 0,0 #anchor point, relative to actor's anchor point
+        
         #deltas
         self.delta_index = 0 #index to deltas
         self.deltas = None
@@ -510,7 +511,7 @@ class Action(object):
             log.debug("action %s has no images"%self.name)
         return img
         
-    def update(self, dt):
+    def update(self, dt): #action.update
         self.index += self.step
         if self.mode == PINGPONG and self.index == -1: 
             self.step = 1
@@ -566,6 +567,13 @@ class Action(object):
 #                self.deltas = [(int(x), int(y) for x,y in f.readline().split(" ")]
 #                offsets = f.readlines()
 #                a.setDisplacement([int(of1fsets[0]), int(offsets[1])])
+        if os.path.isfile(fname+".offset"):  #load per-action displacement (on top of actor displacement)
+            with open(fname+".offset", "r") as f:
+                try:
+                    self.ax, self.ay  = [int(i) for i in f.readlines()]
+                except ValueError, err:
+                    log.error("Can't read values in %s.%s.offset"%(self.name, fname))
+                    self.ax, self.ay = 0,0
        
         return self
 
@@ -968,8 +976,6 @@ class Actor(object):
                 self._rect.union_ip(self.game.screen.blit(stats, stats.get_rect().move(self.ox, self.oy)))
 
 
-                
-
     def _update(self, dt): #actor.update
         """ update this actor within the game """
         if not self.allow_update: return
@@ -977,9 +983,16 @@ class Actor(object):
         dx = 0
         dy = 0
         if l > 0: #in middle of moving somewhere
+            minx = 4 #when moving, what is the minimum move value (to stop scaling stranding an actor)
+            miny = 4
             dx, dy = self._motion_queue.pop(0)
-            self.x += int(float(dx) * self.scale)
-            self.y += int(float(dy) * self.scale)
+            dx = int(float(dx) * self.scale) 
+            dy = int(float(dy) * self.scale)
+            if dy < miny: dy = miny
+            if dx < minx: dx = minx
+            self.x += dx
+            self.y += dy
+            
             if not self._test_goto_point((self._tx, self._ty)): #test each frame if we're over the point
                 if len(self._motion_queue) <= 1: #if not at point and queue (almost) empty, get some more queue or end the move
                     self.on_goto((self._tx, self._ty))
@@ -1435,9 +1448,9 @@ class Actor(object):
             if len(walk_actions) <= 1: #need more than two actions to trigger astar
                 self._goto_direct(x,y, walk_actions)
             else:
-                self._goto_direct(x,y, walk_actions)
+#                self._goto_direct(x,y, walk_actions)
                 walkareas = self.scene.walkareas if self.scene and ignore==False else None
-#                self._goto_astar(x,y, walk_actions, walkareas) #XXX disabled astar for the moment
+                self._goto_astar(x,y, walk_actions, walkareas) #XXX disabled astar for the moment
 
     def forget(self, fact):
         """ A pseudo-queuing function. Forget a fact from the list of facts 
