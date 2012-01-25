@@ -620,6 +620,7 @@ class Actor(object):
     def __init__(self, name=None): 
         self.name = name if name else "Unitled %s"%self.__class__.__name__
         self._motion_queue = [] #actor's deltas for moving on the screen in the near-future
+        self._motion_queue_ignore = False #is this motion queue ignoring walkareas?
         self.action = None
         self.actions = {}
         
@@ -983,19 +984,15 @@ class Actor(object):
         dx = 0
         dy = 0
         if l > 0: #in middle of moving somewhere
-            minx = 4 #when moving, what is the minimum move value (to stop scaling stranding an actor)
-            miny = 4
             dx, dy = self._motion_queue.pop(0)
             dx = int(float(dx) * self.scale) 
             dy = int(float(dy) * self.scale)
-            if dy < miny: dy = miny
-            if dx < minx: dx = minx
             self.x += dx
             self.y += dy
             
             if not self._test_goto_point((self._tx, self._ty)): #test each frame if we're over the point
                 if len(self._motion_queue) <= 1: #if not at point and queue (almost) empty, get some more queue or end the move
-                    self.on_goto((self._tx, self._ty))
+                    self.on_goto((self._tx, self._ty), ignore=self._motion_queue_ignore)
 #        if self.action:
  #           ax,ay=self.ax*self.action.scale, self.ay*self.action.scale
   #      else:
@@ -1284,14 +1281,14 @@ class Actor(object):
         self._alpha_target = alpha
         self._event_finish(block=block)
     
-    def move(self, delta):
+    def move(self, delta, ignore=False):
         """ A pseudo-queuing function: move relative to the current position
         
             Example::
             
                 player.move((-50,0)) #will make the player walk -50 from their current position """        
         destination = (self.x + delta[0], self.y + delta[1])
-        self.goto(destination)
+        self.goto(destination, ignore=ignore)
 
     def moveto(self, delta):
         """ deprecated verson of move """
@@ -1309,15 +1306,27 @@ class Actor(object):
             self.action =self.actions[choice(walk_actions)]
         for i in range(3): self._motion_queue.append((dx+randint(-2,2),dy+randint(-2,2)))
     
-    def _queue_motion(self, action):
+    def _queue_motion(self, paction):
         """ Queue the deltas from an action on this actor's motion_queue """
-        if type(action) == str: action = self.actions[action]
-        log.debug("queue_motion %s %s"%(action.name, action.deltas))
-        if not action.deltas:
-            log.error("No deltas for action %s on actor %s, can't move."%(action.name, self.name))
+        if type(paction) == str: 
+            action = self.actions.get(paction, None)
+        else:
+            action = paction
+        deltas = None
+        if action:
+            log.debug("queue_motion %s %s"%(action.name, action.deltas))
+            deltas = action.deltas
+        else:
+            log.warning("queue_motion %s missing for actor %s"%(paction, self.name))
+        if not deltas:
+            log.error("No deltas for action %s on actor %s, can't move."%(paction, self.name))
             return
-        for dx,dy in action.deltas:
-            self._motion_queue.append((dx+randint(-1,1),dy+randint(-1,1)))
+        minx = 2 #when moving, what is the minimum move value (to stop scaling stranding an actor)
+        miny = 2
+        for dx,dy in deltas:
+            dx2 = int(float(dx) * self.scale) 
+            dy2 = int(float(dy) * self.scale)
+            self._motion_queue.append((dx2+randint(-1,1),dy2+randint(-1,1)))
         self._do(action) 
     
     def _goto_astar(self, x, y, walk_actions, walkareas=[]):
@@ -1418,7 +1427,8 @@ class Actor(object):
                 ignore = [True|False]  #ignore walkareas
                 modal = [True|False] #block user input until action reaches destination
                 block = [True|False] #block other events from running until actor reaches dest
-        """        
+        """    
+        self._motion_queue_ignore = ignore
         if type(destination) == str:
             destination = (self.game.actors[destination].sx, self.game.actors[destination].sy)
         elif type(destination) != tuple:
@@ -1427,6 +1437,7 @@ class Actor(object):
         d = self.speed
         
         #available walk actions for this character
+#        if self.name == "Dome Guard": import pdb; pdb.set_trace()
         walk_actions = [wx for wx in self.actions.keys() if wx in ["left", "right", "up", "down"]]
         if self.scene: #test point will be inside a walkarea
             walkarea_fail = True
