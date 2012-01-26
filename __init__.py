@@ -707,12 +707,12 @@ class Actor(object):
         self._ay = (self.y - ay)*scale
     ay = property(get_ay, set_ay)
 
-    def get_nx(self): return self._nx + self.x
-    def set_nx(self, nx): self._nx = nx
+    def get_nx(self): return self._nx + self._x #name display pt
+    def set_nx(self, nx): self._nx = nx - self._x
     nx = property(get_nx, set_nx)
 
-    def get_ny(self): return self._ny + self.y
-    def set_ny(self, ny): self._ny = ny
+    def get_ny(self): return self._ny + self._y
+    def set_ny(self, ny): self._ny = ny - self._y
     ny = property(get_ny, set_ny)
 
 #    def get_alpha(self): return self._alpha
@@ -1323,9 +1323,10 @@ class Actor(object):
             return
         minx = 2 #when moving, what is the minimum move value (to stop scaling stranding an actor)
         miny = 2
+        scale = (0.5) + (0.5 * self.scale)
         for dx,dy in deltas:
-            dx2 = int(float(dx) * self.scale) 
-            dy2 = int(float(dy) * self.scale)
+            dx2 = int(float(dx) * scale) 
+            dy2 = int(float(dy) * scale)
             self._motion_queue.append((dx2+randint(-1,1),dy2+randint(-1,1)))
         self._do(action) 
     
