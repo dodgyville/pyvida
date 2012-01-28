@@ -670,8 +670,8 @@ class Actor(object):
         self.analytics_count = 0 #used by test runner to measure how "popular" an actor is.
         self._count_actions = {} #dict containing action name and number of times used
     
-    def _event_finish(self, block=True): 
-        return self.game._event_finish(block)
+    def _event_finish(self, success=True, block=True): 
+        return self.game._event_finish(success, block)
 
     def get_x(self): return self._x #position
     def set_x(self, x): self._x = x
@@ -1207,7 +1207,7 @@ class Actor(object):
                 player.scale(0.38) 
         """
         self.scale = scale
-        self._event_finish(False)
+        self._event_finish(block=False)
         
     def on_reclickable(self, area):
         """ A queuing function: change the clickable area of the actor
@@ -1216,28 +1216,28 @@ class Actor(object):
             
                 player.scale(Rect(0,0,100,100)) """
         self._clickable_area = area
-        self._event_finish(False)
+        self._event_finish(block=False)
 
         
     def on_resolid(self, area):
         self._solid_area = area
-        self._event_finish(False)
+        self._event_finish(block=False)
 
 
     def on_reanchor(self, pt):
         """ queue event for changing the anchor points """
         self._ax, self._ay = pt[0], pt[1]
-        self._event_finish(False)
+        self._event_finish(block=False)
 
     def on_retalk(self, pt):
         """ queue event for changing the talk anchor points """
         self._nx, self._ny = pt[0], pt[1]
-        self._event_finish(False)
+        self._event_finish(block=False)
 
     def on_restand(self, pt):
         """ queue event for changing the stand points """
         self._sx, self._sy = pt[0], pt[1]
-        self._event_finish(False)
+        self._event_finish(block=False)
 
     def on_relocate(self, scene, destination=None): #actor.relocate
         # """ relocate this actor to scene at destination instantly """ 
@@ -1367,7 +1367,7 @@ class Actor(object):
         if p == False:
             log.warning("%s unable to find path from %s to %s (walkrea: %s)"%(self.name, (self.x, self.y), (x,y), walkarea))
             self._do('idle')
-            self.game._event_finish() #signal to game event queue this event is done
+            self.game._event_finish(success=False) #signal to game event queue this event is done
             return
         n = p[1] #short term goal is the next node
         log.debug("astar short term goal is from (%s, %s) to %s"%(self.x, self.y, n))
@@ -1456,7 +1456,7 @@ class Actor(object):
                 for w in walk_actions: self._count_actions_add(w, 5)
             self.x, self.y = x, y #skip straight to point for testing/editing
         elif self.scene and walkarea_fail == True and ignore==False: #not testing, and failed walk area test
-            self.game._event_finish() #signal to game event queue this event is done    
+            self.game._event_finish(success=False) #signal to game event queue this event is done    
             return       
         if self._test_goto_point(destination): 
             return
@@ -1677,7 +1677,7 @@ class Portal(Item):
     def on_reout(self, pt):
         """ queue event for changing the portal out points """
         self._ox, self._oy = pt[0], pt[1]
-        self._event_finish(False)
+        self._event_finish(block=False)
 
     def arrive(self, actor=None):
         """ helper function for entering through this door """
@@ -1996,8 +1996,8 @@ class Scene(object):
         self.analytics_count = 0 #used by test runner to measure how "popular" a scene is.
         self.foreground = [] #items to draw in the foreground
 
-    def _event_finish(self, block=True): 
-        return self.game._event_finish(block)
+    def _event_finish(self, success=True, block=True): 
+        return self.game._event_finish(success, block)
 
     def smart(self, game): #scene.smart
         """ smart scene load """
@@ -2192,6 +2192,7 @@ class Game(object):
 
         self.events = []
         self._event = None
+        self._last_event_success = True #did the last even succeed or fail
         
         self.save_game = [] #a list of events caused by this player to get to this point in game
         self.reset_game = None #which function can we call to reset the game state to a safe point (eg start of chapter)
@@ -2420,7 +2421,7 @@ class Game(object):
             self.set_menu(*mitems)
             self.menu_hide(mitems)
             self.menu_fadeIn()
-        self._event_finish(False)
+        self._event_finish(block=False)
             
     def toggle_editor(self):
             if self.enabled_editor:  #switch off editor
@@ -2624,6 +2625,15 @@ class Game(object):
         elif ENABLE_EDITOR and key == K_F6:
             from scripts.all_chapters import transmat_in, transmat_out
             transmat_out(self, self.player)
+        elif ENABLE_EDITOR and key == K_F7:
+            self.camera.scene("aqspa")
+            self.player.relocate("aqspa")
+        elif ENABLE_EDITOR and key == K_F8:
+            self.camera.scene("aqwelcome")
+            self.player.relocate("aqwelcome")
+        elif ENABLE_EDITOR and key == K_F9:
+            self.camera.scene("aqsurfaceairlock")
+            self.player.relocate("aqsurfaceairlock")
 
         if self.enabled_editor == True and self.editing:
             if key == K_DOWN: 
@@ -3245,10 +3255,11 @@ class Game(object):
         return args[0] if len(args)>0 else None
 
 
-    def _event_finish(self, block=True): #Game.on_event_finish
+    def _event_finish(self, success=True, block=True): #Game.on_event_finish
         """ start the next event in the game scripter """
 #        log.debug("finished event %s, remaining:"%(self._event, self.events)
         self._event = None
+        self._last_event_success = success
         if block==False: self.handle_events() #run next event immediately
     
     def walkthroughs(self, suites):
