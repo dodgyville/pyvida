@@ -8,6 +8,9 @@ This page documents the technical limits and design decisions behind the game.
  * Depends on pyglet 1.1+
  * Depends on python 2.5+
 
+To build documentation:
+ * python sphinx must be installed (python-sphinx on deb/apt-get systems)
+
 Limitations and Known Bugs
 ==========================
  * Recommended resolution for pyvida 1.0.0 is 1024x768
@@ -44,7 +47,7 @@ Future
 
 Features I believe pyvida needs. Other developers are welcome to contribute. This is in order of most essential to least essential.
 
-   * basic skeleton
+   * basic skeleton animation for actions
    * Better memory management/scene management
    * Better documentation (polish + distribution)
    * Parallax scenes

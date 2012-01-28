@@ -15,6 +15,10 @@ from pygame.locals import *#QUIT, K_ESCAPE
 from astar import AStar
 import euclid as eu
 
+VERSION_MAJOR = 1 #major incompatibilities
+VERSION_MINOR = 0 #minor/bug fixes, can run same scripts
+VERSION_SAVE = 1  #save/load version, only change on incompatible changes
+
 try:
     import android
 except ImportError:
@@ -227,6 +231,8 @@ class Polygon(object):
         return polyinset
 
 #### pygame testing functions ####
+
+def reset(): pass #stub for letting save game know when a reset point has been reached
 
 def goto(): pass #stub
 
@@ -2188,6 +2194,7 @@ class Game(object):
         self._event = None
         
         self.save_game = [] #a list of events caused by this player to get to this point in game
+        self.reset_game = None #which function can we call to reset the game state to a safe point (eg start of chapter)
         self.testing = False
         self.headless = False #run game without pygame graphics?
 
@@ -2240,17 +2247,26 @@ class Game(object):
         self.fps = int(1000.0/fps)
         self.fullscreen = fullscreen
         
+    def set_reset(game, fn): #inform the save game system that this fn can function as a reset point for savegames.
+        t = time.time()
+        self.game.save_game.append([reset, fn, t])
+        
+    @property
+    def save_game_info(self):   
+        return {"version": VERSION_SAVE, "reset": self.reset_game }
         
     def save(self, fname): #save the game current game object
         """ save the game current game object """
         print(self.save_game)
         with open(fname, "w") as f:
+           pickle.dump(self.save_game_info, f)
            pickle.dump(self.save_game, f)
         print("pickled \n")
             
     def load(self, fname): #game.load - load a game state
         with open(fname, "r") as f:
-            data = pickle.load(f)
+           meta = pickle.load(f)
+           data = pickle.load(f)
         print(data)
         if self.reset_game == None:
             log.error("Unable to load save game, reset_game value not set on game object")
