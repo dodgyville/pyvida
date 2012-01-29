@@ -13,9 +13,13 @@ try:
 except:
     import unittest
 
+import Image, ImageDraw
+
 from astar import AStar
 
-from __init__ import Game, Actor, Scene, Item, MenuItem, Rect
+from __init__ import Game, Actor, Scene, Item, MenuItem, Rect, Action, WalkArea
+
+HORSESHOE_WALKAREA = WalkArea([(918, 349), (900, 560), (920, 700), (80, 720), (75, 350), (386, 349), (400, 632), (669, 622), (679, 347)])
 
 class TestPyvida(unittest.TestCase):
     def setUp(self):
@@ -271,6 +275,67 @@ class TestAStar(unittest.TestCase):
         self.assertEqual(p, [(100, 100), (148, 88), (175, 88), (200, 100)])
 
 
+def draw(instructions, fname):
+    img = Image.new("RGB", (1024,768)) 
+    colour = "rgb(255,255,255)"
+    draw = ImageDraw.Draw(img)
+    width = 2
+    background = "rgb(100,100,100)"
+    radius = 5
+    mx,my = 0,0
+    for i in instructions:
+        instruction, values = i.split(":")
+        if instruction == "colour": colour = "rgb(%s,%s,%s)"%eval(values)
+        if instruction == "width": radius = eval(values)
+        if instruction == "moveto": mx,my = eval(values)
+        if instruction == "lineto": 
+            tx,ty = eval(values)
+            draw.line((mx,my, tx,ty), fill=colour)
+            mx,my=tx,ty
+        if instruction == "node": 
+            x, y = eval(values)
+            x,y = int(x), int(y)
+            circle = x-radius, y-radius, x+radius, y+radius
+            draw.ellipse(circle, outline=colour, fill=background)
+    img.save(fname)
+    
+class TestActorGoto(unittest.TestCase):
+    def test_left(self):
+        """ Create an actor with a left animation cycle """
+        instructions = []
+        a = Actor("Randy Harrison")
+        a.x, a.y = 150, 480 #start
+        x,y = 840, 450  #destination
+        action = Action(a, "left")
+        a.actions[action.name] = action
+        action.deltas = [(-10,0), (-16,0), (-20,0), (-15,0), (-10,0)]
+        instructions.append("background:0,0,0")        
+        instructions.append("colour:100,100,100")
+        instructions.append("width:5")
+        instructions.extend("node:%s, %s"%i for i in HORSESHOE_WALKAREA.polygon.vertexarray)
+#        instructions.extend(HORSESHOE_WALKAREA.polygon.vertexarray)
+        walkareas = [HORSESHOE_WALKAREA]
+        walkactions = [action.name]
+        nodes = a._goto_astar(x,y, walkactions, walkareas)
+        
+#        nodes = square_off_nodes(nodes, HORSESHOE_WALKAREA) #calculate right angle nodes
+        import astar
+        n = astar.MAP_NODES
+        instructions.append("colour:25,0,25")
+        instructions.extend("node:%s,%s"%x for x in n)
+        
+        nodes = [(x,y) for x,y in nodes]
+        instructions.append("width:8")
+        instructions.append("colour:155,0,85")
+        instructions.append("background:55,0,25")        
+#        for x in nodes: 
+        instructions.extend("node:%s,%s"%x for x in nodes)
+        instructions.append("moveto:%s,%s"%nodes[0])
+        instructions.append("colour:55,0,35")
+        instructions.extend("lineto:%s,%s"%x for x in nodes[1:])
+#        print("node(%s)"%x for x in nodes)
+        print(instructions)
+        draw(instructions, "testastar3.png")
 
 if __name__ == '__main__':
     unittest.main()

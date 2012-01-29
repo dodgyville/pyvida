@@ -170,7 +170,7 @@ def getinsetpoint(pt1, pt2, pt3, offset):
         retval = scaleadd(origin, offset, v3)
     return retval
 
-
+    
 
 class Polygon(object):
     """
@@ -226,7 +226,7 @@ class Polygon(object):
         lenpolygon = len(old_points)
         while i < lenpolygon - 2:
             new_pt = getinsetpoint(old_points[i], old_points[i + 1], old_points[i + 2], OFFSET)
-            polyinset.append((new_pt.x, new_pt.y))
+            polyinset.append((int(new_pt.x), int(new_pt.y)))
             i += 1
         return polyinset
 
@@ -585,6 +585,7 @@ class Action(object):
 
 DEFAULT_WALKAREA = [(100,600),(900,560),(920,700),(80,720)]
 DEFAULT_CLICKABLE = Rect(0,0,80,150)
+DEFAULT_SOLID = Rect(0,0,80,50)
 
 class WalkArea(object):
     """ Used by scenes to define where the player can walk """
@@ -946,14 +947,21 @@ class Actor(object):
                 self._rect = self.game.screen.blit(img, r)
             if self.game.editing == self: #draw bounding box
                 r2 = r.inflate(-2,-2)
-                pygame.draw.rect(self.game.screen, (0,255,0), r2, 2)
+                pygame.draw.rect(self.game.screen, (0,255,0), r2, 1)
         else:
             self._rect = pygame.Rect(self.x, self.y,0,0)
         
         #draw the edit overlay    
         if self.game and self.game.editing and self.game.editing == self:
-            self._rect.union_ip(pygame.draw.rect(self.game.screen, (200,150,180), self.clickable_area, 2))
-            self._rect.union_ip(pygame.draw.rect(self.game.screen, (100,150,180), self.clickable_area, 2))
+            #clickable area
+            self._rect.union_ip(pygame.draw.rect(self.game.screen, (230,210,250), self.clickable_area, 2))
+ #           self._rect.union_ip(pygame.draw.rect(self.game.screen, (100,150,180), self.clickable_area, 2))
+
+            #solid area
+            self._rect.union_ip(pygame.draw.rect(self.game.screen, (255,80,60), self.solid_area, 4))
+#            self._rect.union_ip(pygame.draw.rect(self.game.screen, (255,150,180), Rect(0,0,100,100), 20))
+#            self._rect.union_ip(pygame.draw.rect(self.game.screen, (100,150,180), self.solid_area, 2))
+
                 
             #draw location point
             self._rect.union_ip(crosshair(self.game.screen, (self.x, self.y), (0,0,255)))
@@ -991,8 +999,8 @@ class Actor(object):
         dy = 0
         if l > 0: #in middle of moving somewhere
             dx, dy = self._motion_queue.pop(0)
-            dx = int(float(dx) * self.scale) 
-            dy = int(float(dy) * self.scale)
+#            dx = int(float(dx) * self.scale) 
+ #           dy = int(float(dy) * self.scale)
             self.x += dx
             self.y += dy
             
@@ -1329,7 +1337,8 @@ class Actor(object):
             return
         minx = 2 #when moving, what is the minimum move value (to stop scaling stranding an actor)
         miny = 2
-        scale = (0.5) + (0.5 * self.scale)
+#        scale = (0.5) + (0.5 * self.scale)
+        scale = self.scale
         for dx,dy in deltas:
             dx2 = int(float(dx) * scale) 
             dy2 = int(float(dy) * scale)
@@ -1361,14 +1370,16 @@ class Actor(object):
                     nodes.extend((p[0], p[1]) for p in points if p != None and walkarea.polygon.collide(p[0],p[1])==True)
                 else:
                     nodes.extend(points)
+ 
+#        nodes.extend(n) #calculate right angle nodes
         p = AStar((self.x, self.y), (x, y), nodes, solids, walkarea)
 #        print(self.name, self.x,self.y,"to",x,y,"points",nodes,"solids",solids,"path",p)
 #        return
         if p == False:
             log.warning("%s unable to find path from %s to %s (walkrea: %s)"%(self.name, (self.x, self.y), (x,y), walkarea))
             self._do('idle')
-            self.game._event_finish(success=False) #signal to game event queue this event is done
-            return
+            if self.game: self.game._event_finish(success=False) #signal to game event queue this event is done
+            return None
         n = p[1] #short term goal is the next node
         log.debug("astar short term goal is from (%s, %s) to %s"%(self.x, self.y, n))
         dx, dy = n[0] - self.x, n[1] - self.y
@@ -1382,6 +1393,7 @@ class Actor(object):
                 self._queue_motion("down") if dy > 0 else self._queue_motion("up")
             else: 
                 self._queue_motion("right")
+        return p 
     
     def _test_goto_point(self, destination):
         """ If player is at point, set to idle and finish event """
@@ -1435,6 +1447,7 @@ class Actor(object):
                 modal = [True|False] #block user input until action reaches destination
                 block = [True|False] #block other events from running until actor reaches dest
         """    
+        ignore = True #XXX goto ingnores walkareas
         self._motion_queue_ignore = ignore
         if type(destination) == str:
             destination = (self.game.actors[destination].sx, self.game.actors[destination].sy)
@@ -2417,7 +2430,7 @@ class Game(object):
         self.items['e_out'].do("idle")
 
         if self.items["e_location"] not in self.menu:
-            mitems = ["e_location", "e_anchor", "e_stand", "e_scale", "e_talk", "e_clickable", "e_out", "e_object_allow_draw", "e_object_allow_look", "e_object_allow_interact", "e_object_allow_use", "e_add_walkareapoint"]
+            mitems = ["e_location", "e_anchor", "e_stand", "e_scale", "e_talk", "e_clickable", "e_solid", "e_out", "e_object_allow_draw", "e_object_allow_look", "e_object_allow_interact", "e_object_allow_use", "e_add_walkareapoint"]
             self.set_menu(*mitems)
             self.menu_hide(mitems)
             self.menu_fadeIn()
@@ -2473,7 +2486,7 @@ class Game(object):
                         self.editing_index = i
                         closest_distance = dist
                 if self.editing_index != None: return
-            elif self.editing and type(self.editing_point) == str: #editing a rect
+            elif self.editing and type(self.editing_point) == str: #editing a rect (editing_point is rect name on actor)
                 closest_distance = 10000.0
                 r = getattr(self.editing, self.editing_point, None)
                 for i,pt in enumerate([(r.left, r.top), (r.right, r.bottom)]): #possible select new point
@@ -2626,8 +2639,8 @@ class Game(object):
             from scripts.all_chapters import transmat_in, transmat_out
             transmat_out(self, self.player)
         elif ENABLE_EDITOR and key == K_F7:
-            self.camera.scene("aqspa")
-            self.player.relocate("aqspa")
+            self.camera.scene("aqbeach")
+            self.player.relocate("aqbeach")
         elif ENABLE_EDITOR and key == K_F8:
             self.camera.scene("aqwelcome")
             self.player.relocate("aqwelcome")
@@ -2786,6 +2799,8 @@ class Game(object):
                     'e_clickable': EDIT_CLICKABLE,
                     'e_solid': EDIT_SOLID,
                 }
+                if hasattr(game.editing, "solid_area") and game.editing.solid_area.w == 0:
+                    game.editing._solid_area = DEFAULT_SOLID
                 game.editing_point = rects[menu_item.name]
 
             def editor_select_object(game, collection, player):
@@ -2974,10 +2989,10 @@ class Game(object):
             self.add(MenuItem("e_delete", editor_delete, (170, 10), (170,-50), "a").smart(self))
             self.add(MenuItem("e_prev", editor_prev, (210, 10), (210,-50), "[").smart(self))
             self.add(MenuItem("e_next", editor_next, (250, 10), (250,-50), "]").smart(self))
-            self.add(MenuItem("e_walk", editor_walk, (290, 10), (290,-50), "w").smart(self))
+            self.add(MenuItem("e_walk", editor_walk, (290, 10), (290,-50), "w", display_text="scene walk area").smart(self))
             self.add(MenuItem("e_portal", editor_portal, (330, 10), (330,-50), "p").smart(self))
-            self.add(MenuItem("e_scene", editor_scene, (430, 10), (430,-50), "i").smart(self))
-            self.add(MenuItem("e_step", editor_step, (470, 10), (470,-50), "n").smart(self))
+            self.add(MenuItem("e_scene", editor_scene, (430, 10), (430,-50), "i", display_text="change scene").smart(self))
+            self.add(MenuItem("e_step", editor_step, (470, 10), (470,-50), "n", display_text="next step").smart(self))
 
             #a collection widget for adding objects to a scene
             c = self.add(Collection("e_objects", editor_select_object, (300, 100), (300,-600), K_ESCAPE).smart(self))
@@ -2996,9 +3011,10 @@ class Game(object):
             #close button for all editor collections
             self.add(MenuItem("e_close", editor_collection_close, (800, 610), (800,-100), K_ESCAPE).smart(self))
             #add menu items for actor editor
-            for i, v in enumerate(["location", "anchor", "stand", "out", "scale", "clickable", "talk",]):
-                self.add(MenuItem("e_%s"%v, editor_point, (100+i*30, 45), (100+i*30,-50), v[0]).smart(self))
+            for i, v in enumerate(["location", "anchor", "stand", "out", "scale", "clickable", "solid", "talk",]):
+                self.add(MenuItem("e_%s"%v, editor_point, (100+i*30, 45), (100+i*30,-50), v[0], display_text=v).smart(self))
             self.items['e_clickable'].interact = editor_edit_rect
+            self.items['e_solid'].interact = editor_edit_rect
             self.items['e_out'].set_actions(["idle"], "off")
             self.items['e_out'].do("idle")
 

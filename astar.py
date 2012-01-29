@@ -119,6 +119,40 @@ def successors(x, nodes, solids, walkarea=None):
 
 def enqueue(q,p,y):
 	q.append(y)
+	
+def square_off_nodes(start, nodes, walkarea):
+    """ add nodes to existing list that are at right angles between nodes """
+    
+    original_nodes = copy.copy(nodes)
+    original_nodes.append(start)
+    print(original_nodes)
+    r = []
+    w = 20
+    for node1 in original_nodes: #add our corner nodes to master node list
+        for node2 in original_nodes:
+            if node1 != node2:
+                new1 = node1[0], node2[1]
+                new2 = node2[0], node1[1]
+                for x,y in [new1, new2]:
+                    nodes.append((x,y))
+
+    print(nodes)                 
+    for i, node in enumerate(nodes):
+        add_node = True
+        if walkarea and not walkarea.polygon.collide(*node): add_node = False
+        if add_node == True:
+            for j,node2 in enumerate(r): #test for nodes that are too similar
+                x,y=node
+                tx,ty=node2
+                if tx-w < x < tx + w and ty-w < y < ty + w: 
+                    pass
+#                    print("too close")
+                    add_node = False
+            if add_node == True: r.append((x,y))
+    print(len(r))                        
+    return r
+	
+MAP_NODES = []
 
 def AStar(start, goal, nodes, solids,walkarea=None):
      """ <nodes> is a list of points that the path could go through
@@ -128,6 +162,10 @@ def AStar(start, goal, nodes, solids,walkarea=None):
      closed = []
      q = [[start]]
      nodes.append(goal)
+#     nodes = square_off_nodes(start, nodes, walkarea)
+#     global MAP_NODES
+#     MAP_NODES = nodes
+#     return nodes[:3]
      while len(q) > 0:
          p = q.pop(0) #a path to try
          x = p[-1]  #a node to try
