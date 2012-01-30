@@ -2639,8 +2639,8 @@ class Game(object):
             from scripts.all_chapters import transmat_in, transmat_out
             transmat_out(self, self.player)
         elif ENABLE_EDITOR and key == K_F7:
-            self.camera.scene("aqbeach")
-            self.player.relocate("aqbeach")
+            self.camera.scene("aqspa")
+            self.player.relocate("aqspa")
         elif ENABLE_EDITOR and key == K_F8:
             self.camera.scene("aqwelcome")
             self.player.relocate("aqwelcome")
@@ -2799,7 +2799,7 @@ class Game(object):
                     'e_clickable': EDIT_CLICKABLE,
                     'e_solid': EDIT_SOLID,
                 }
-                if hasattr(game.editing, "solid_area") and game.editing.solid_area.w == 0:
+                if menu_item.name == "e_solid" and hasattr(game.editing, "solid_area") and game.editing.solid_area.w == 0:
                     game.editing._solid_area = DEFAULT_SOLID
                 game.editing_point = rects[menu_item.name]
 
