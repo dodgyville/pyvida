@@ -558,6 +558,7 @@ class Action(object):
         
         #load the deltas for moving the animation
         if os.path.isfile(fname+".delta"):  #load deltas
+            log.info("found delta file for action %s"%fname)
             self.deltas = []
             for line in open(fname+".delta",'r'):
                 x,y = line.strip().split(" ")
@@ -995,6 +996,13 @@ class Actor(object):
         """ update this actor within the game """
         if not self.allow_update: return
         l = len(self._motion_queue)
+        
+        if l == 0 and self.action and self.action.deltas: #use action delta
+            count = len(self.action.deltas)
+            dx, dy = self.action.deltas[self.action.index%count]
+            self.x += dx
+            self.y += dy
+            
         dx = 0
         dy = 0
         if l > 0: #in middle of moving somewhere
@@ -1447,7 +1455,6 @@ class Actor(object):
                 modal = [True|False] #block user input until action reaches destination
                 block = [True|False] #block other events from running until actor reaches dest
         """    
-        ignore = True #XXX goto ingnores walkareas
         self._motion_queue_ignore = ignore
         if type(destination) == str:
             destination = (self.game.actors[destination].sx, self.game.actors[destination].sy)
@@ -1471,6 +1478,9 @@ class Actor(object):
         elif self.scene and walkarea_fail == True and ignore==False: #not testing, and failed walk area test
             self.game._event_finish(success=False) #signal to game event queue this event is done    
             return       
+
+        ignore = True #XXX goto ingnores walkareas
+
         if self._test_goto_point(destination): 
             return
         else: #try to follow the path, should use astar
@@ -2057,7 +2067,7 @@ class Scene(object):
         """ return an image for this object """
         return self.background()
 
-    def background(self, fname=None):
+    def background(self, fname=None): #get or set the background image
         if fname:
             self._background = load_image(fname)
         return self._background
@@ -2639,14 +2649,14 @@ class Game(object):
             from scripts.all_chapters import transmat_in, transmat_out
             transmat_out(self, self.player)
         elif ENABLE_EDITOR and key == K_F7:
-            self.camera.scene("aqspa")
-            self.player.relocate("aqspa")
+            self.camera.scene("aqbar")
+            self.player.relocate("aqbar")
         elif ENABLE_EDITOR and key == K_F8:
-            self.camera.scene("aqwelcome")
-            self.player.relocate("aqwelcome")
+            self.camera.scene("aqexecairlock")
+            self.player.relocate("aqexecairlock")
         elif ENABLE_EDITOR and key == K_F9:
-            self.camera.scene("aqsurfaceairlock")
-            self.player.relocate("aqsurfaceairlock")
+            self.camera.scene("aqcleaners")
+            self.player.relocate("aqcleaners")
 
         if self.enabled_editor == True and self.editing:
             if key == K_DOWN: 
@@ -2751,6 +2761,8 @@ class Game(object):
                             f.write('    %s.restand((%i, %i))\n'%(slug, obj._sx, obj._sy))
                             f.write('    %s.retalk((%i, %i))\n'%(slug, obj._nx, obj._ny))
                             f.write('    %s.relocate(scene, (%i, %i))\n'%(slug, obj.x, obj.y))
+                            if obj.action and obj.action.name != "idle":
+                                f.write('    %s.do("%s")\n'%(slug, obj.action.name))
                             if isinstance(obj, Portal): #special portal details
                                 ox,oy = obj._ox, obj._oy
                                 if (ox,oy) == (0,0): #guess outpoint
