@@ -1255,7 +1255,7 @@ class Actor(object):
         self._sx, self._sy = pt[0], pt[1]
         self._event_finish(block=False)
 
-    def on_relocate(self, scene, destination=None): #actor.relocate
+    def _relocate(self, scene, destination=None): #actor.relocate
         # """ relocate this actor to scene at destination instantly """ 
         if scene == None:
             log.error("Unable to relocate %s to non-existent scene, relocating on current scene"%self.name)
@@ -1284,6 +1284,8 @@ class Actor(object):
         self.editor_clean = False #actor no longer in position placed by editor
         self._event_finish(block=False)
     
+    def on_relocate(self, scene, destination=None): #actor.relocate
+        sekf._relocate(self, scene, destination)
     
     def on_resize(self, start, end, duration):
         """ animate resizing of character """
@@ -2041,9 +2043,15 @@ class Scene(object):
                 self.foreground.append(f)
         scale_name = os.path.join(sdir, "scene.scale")
         if os.path.isfile(scale_name):
-            with open(scale_name, "r") as f:
+            f = open(scale_name, "r")
+            line = f.readline()
+            while line:
+                log.debug("Loading scale info for %s"%self.name)
                 actor, factor = f.readline().split("\t")
+                print(actor)
                 self.scales[actor] = float(factor)
+                line = f.readline()
+            f.close()
         if len(self.walkareas) == 0:
             self.walkareas.append(WalkArea().smart(game))
 #            self.addWalkarea(walkarea)
@@ -3161,7 +3169,7 @@ class Game(object):
         
         while self.quit == False: #game.draw game.update
             if not self.headless: pygame.time.delay(self.fps)
-            if android is not None and android.check_pause():
+            if android and android.check_pause():
                 android.wait_for_resume()
             
             if self.scene:
@@ -3353,6 +3361,10 @@ class Game(object):
         log.debug("finished wait at %s"%datetime.now())
         self._wait = None
         self._event_finish()
+
+    def on_relocate(self, obj, scene, destination):
+        if type(obj) == str: obj = self.actors[obj] #XXX should check items, and fail gracefully too
+        obj._relocate(scene, destination)
 
     def on_set_headless(self, headless=False):
         """ switch game engine between headless and non-headless mode, restrict events to per clock tick, etc """
