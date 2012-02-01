@@ -7,12 +7,17 @@ try:
     import logging.handlers
 except ImportError:
     logging = None
-logging = None
 
 try:
     import pdb
 except ImportError:
     pdb = None
+
+try:
+    from gettext import gettext
+except ImportError:
+    def gettext(txt):
+        return txt
 
 from itertools import chain
 from itertools import cycle
@@ -594,8 +599,11 @@ class Action(object):
             if logging: log.info("found delta file for action %s"%fname)
             self.deltas = []
             for line in open(fname+".delta",'r'):
-                x,y = line.strip().split(" ")
-                self.deltas.append((int(x), int(y)))
+                try:
+                    x,y = line.strip().split(" ")
+                    self.deltas.append((int(x), int(y)))
+                except ValueError:
+                    if logging: log.warning("Unable to import all deltas %s"%line)
             tx, ty = tuple(sum(t) for t in zip(*self.deltas)) #sum of the x,y deltas
             self.avg_delta_x, self.avg_delta_y = tx/len(self.deltas),ty/len(self.deltas) #for calculating astar        
         else:
@@ -1318,7 +1326,7 @@ class Actor(object):
         self._event_finish(block=False)
     
     def on_relocate(self, scene, destination=None): #actor.relocate
-        sekf._relocate(self, scene, destination)
+        self._relocate(scene, destination)
     
     def on_resize(self, start, end, duration):
         """ animate resizing of character """
