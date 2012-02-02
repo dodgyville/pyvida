@@ -2519,7 +2519,10 @@ class Game(object):
             if obj.allow_look: obj.trigger_look()
         elif self.mouse_mode == MOUSE_INTERACT:
             self.game.save_game.append([interact, obj.name, t])
-            if obj.allow_interact:  obj.trigger_interact()
+            if obj.allow_interact:
+                obj.trigger_interact()
+            elif self.testing:
+                log.warning("Trying to do interact on %s when interact disabled"%obj.name)
         elif self.mouse_mode == MOUSE_USE:
             self.game.save_game.append([use, obj.name, self.mouse_cursor.name, t])
             if not obj.allow_use: #if use disabled, do a regular interact
@@ -2582,9 +2585,7 @@ class Game(object):
                 return
                 
         elif self.scene: #regular game interaction
-            print("mouse up on scene")
             for i in self.scene.objects.values(): #then objects in the scene
-                print("test collide",i.name, i.collide(x,y))
                 if i.collide(x,y) and (i.allow_use or i.allow_interact or i.allow_look):
 #                   if i.actions.has_key('down'): i.action = i.actions['down']
                     if self.mouse_mode == MOUSE_USE or i is not self.player: #only click on player in USE mode
@@ -2592,7 +2593,6 @@ class Game(object):
                         return
             #or finally, try and walk the player there.
             if self.player and self.player in self.scene.objects.values():
-                print("trigger goto",x,y)
                 self.player.goto((x,y))
 
     def _on_mouse_move_scene(self, x, y, button, modifiers):
@@ -2734,10 +2734,8 @@ class Game(object):
     def handle_pygame_events(self):
         m = pygame.mouse.get_pos()
         btn1, btn2, btn3 = pygame.mouse.get_pressed()
-#        print(btn1, btn2, btn3)
         for event in pygame.event.get():
             if android: m = event.pos
-            print("Got event",event, event.type, MOUSEBUTTONDOWN, m)
             if event.type == QUIT:
                 self.quit = True
                 return
