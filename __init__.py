@@ -2649,14 +2649,24 @@ class Game(object):
             from scripts.all_chapters import transmat_in, transmat_out
             transmat_out(self, self.player)
         elif ENABLE_EDITOR and key == K_F7:
-            self.camera.scene("aqbar")
-            self.player.relocate("aqbar")
+            self.camera.scene("aqsurfaceairlock")
+            self.player.relocate("aqsurfaceairlock")
         elif ENABLE_EDITOR and key == K_F8:
             self.camera.scene("aqexecairlock")
             self.player.relocate("aqexecairlock")
         elif ENABLE_EDITOR and key == K_F9:
             self.camera.scene("aqcleaners")
             self.player.relocate("aqcleaners")
+        elif ENABLE_EDITOR and key == K_F10:
+            opening = ["opening", "open"]
+            closing = ["closing", "closed"]
+            iairlock = self.items["Inner Airlock"]
+            oairlock = self.items["Outer Airlock"]
+            d1, d2 = (opening, closing) if iairlock.action.name == "closed" else (closing, opening)
+            iairlock.do_once(d1[0])
+            iairlock.do(d1[1])
+            oairlock.do_once(d2[0])
+            oairlock.do(d2[1])
 
         if self.enabled_editor == True and self.editing:
             if key == K_DOWN: 
