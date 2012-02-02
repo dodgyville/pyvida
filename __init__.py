@@ -3463,11 +3463,16 @@ class Game(object):
         
             text option to display and a function to call if the player selects this option.
             
-        """    
+        """ 
+        if android:
+            print("android skipping user input")
+            callback(self.game, None)
+            return
         msgbox = self.game.add(ModalItem(background, None, position).smart(self.game))
         txt = self.game.add(Input("input", (position[0]+30, position[1]+30), (840,170), text, wrap=660, callback=callback), False, ModalItem)
         txt.remove = [txt, msgbox]
         if self.game.testing: 
+            #XXX user input not implemented for android pyvida
             self.game.modals.remove(msgbox)
             self.game.modals.remove(txt)
             callback(self.game, txt)
