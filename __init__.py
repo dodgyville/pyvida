@@ -1,12 +1,32 @@
 from __future__ import print_function
 
 from datetime import datetime, timedelta, date
-import gc, glob, copy, inspect, logging, math, os, pdb, sys, operator, types, pickle, time
+import gc, glob, copy, inspect, math, os, sys, operator, types, pickle, time
+try:
+    import logging
+    import logging.handlers
+except ImportError:
+    logging = None
+
+try:
+    import pdb
+except ImportError:
+    pdb = None
+
+try:
+    from gettext import gettext
+except ImportError:
+    def gettext(txt):
+        return txt
+
 from itertools import chain
 from itertools import cycle
-import logging.handlers
 from math import sqrt, acos, degrees, atan2
-from new import instancemethod 
+try:
+    from new import instancemethod 
+except ImportError:
+    instancemethod = None
+
 from optparse import OptionParser
 from random import choice, randint
 
@@ -30,37 +50,52 @@ ENABLE_EDITOR = True
 ENABLE_PROFILING = True
 ENABLE_LOGGING = True
 
-if ENABLE_LOGGING:
-    log_level = logging.DEBUG #what level of debugging
-else:
-    log_level = logging.ERROR
+if logging:
+    if ENABLE_LOGGING:
+        log_level = logging.DEBUG #what level of debugging
+    else:
+        log_level = logging.ERROR
 
-LOG_FILENAME = 'pyvida4.log'
-log = logging.getLogger('pyvida4')
-log.setLevel(logging.DEBUG)
+    LOG_FILENAME = 'pyvida4.log'
+    log = logging.getLogger('pyvida4')
+    if logging: log.setLevel(logging.DEBUG)
 
-handler = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=2000000, backupCount=5)
-handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
-log.addHandler(handler)
+    handler = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=2000000, backupCount=5)
+    handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+    log.addHandler(handler)
+else: #redirect log to stdout
+    logging = True
+    class PrintLog(object):
+        pass
+        def debug(self, txt):
+            print(txt)
+        def info(self, txt):
+            print(txt)
+        def warning(self, txt):
+            print(txt)
+        def error(self, txt):
+            print(txt)
+    log = PrintLog()
 
-log.debug("\n\n======== STARTING RUN ===========")
+if logging:
+    if logging: log.debug("\n\n======== STARTING RUN ===========")
 
-if 'win32' in sys.platform: # check for win32 support
-    # win32 allows building of executables #    import py2exe
-    log.info("[Win32]")
-if 'darwin' in sys.platform: # check for OS X support
-    log.info("[MacOS]")
-if 'linux' in sys.platform:
-    log.info("[Linux]")
+    if 'win32' in sys.platform: # check for win32 support
+        # win32 allows building of executables #    import py2exe
+        if logging: log.info("[Win32]")
+    if 'darwin' in sys.platform: # check for OS X support
+        if logging: log.info("[MacOS]")
+    if 'linux' in sys.platform:
+        if logging: log.info("[Linux]")
 
 
-if not pygame.font: log.warning('Warning, fonts disabled')
-if not pygame.mixer: log.warning('Warning, sound disabled')
-log.warning("game.scene.camera panning not implemented yet")
-log.warning("broad try excepts around pygame.image.loads")
-log.warning("smart load should load non-idle action as default if there is only one action")
-log.warning("action.deltas can only be set via action.load")
-log.warning("actor.asks not fully implemented")
+    if not pygame.font: log.warning('Warning, fonts disabled')
+    if not pygame.mixer: log.warning('Warning, sound disabled')
+    if logging: log.warning("game.scene.camera panning not implemented yet")
+    if logging: log.warning("broad try excepts around pygame.image.loads")
+    if logging: log.warning("smart load should load non-idle action as default if there is only one action")
+    if logging: log.warning("action.deltas can only be set via action.load")
+    if logging: log.warning("actor.asks not fully implemented")
 
 
 from pygame import Surface        
@@ -116,11 +151,11 @@ def use_init_variables(original_class):
             setattr(self, key, value)
         original_class._init_(self, *args, **kws)
 
-    if type(original_class.__init__) == instancemethod:
+    if instancemethod and type(original_class.__init__) == instancemethod:
       original_class._init_ = original_class.__init__
       original_class.__init__ = __init__
     else:
-        log.warning("unable to use_init_variables on %s"%original_class)
+        if logging: log.warning("unable to use_init_variables on %s"%original_class)
     return original_class
 
 def create_event(q):
@@ -130,7 +165,7 @@ def use_on_events(name, bases, dic):
     """ create a small method for each "on_<x>" queue function """
     for queue_method in [x for x in dic.keys() if x[:3] == 'on_']:
         qname = queue_method[3:]
-        log.debug("class %s has queue function %s available"%(name.lower(), qname))
+        if logging: log.debug("class %s has queue function %s available"%(name.lower(), qname))
         dic[qname] = create_event(dic[queue_method])
     return type(name, bases, dic)
 
@@ -260,7 +295,7 @@ scene_path = []
 def scene_search(scene, target): #are scenes connected via portals?
     global scene_path
     if not scene or not scene.name:
-        log.warning("Strange scene search %s"%scene_path)
+        if logging: log.warning("Strange scene search %s"%scene_path)
         return False
     scene_path.append(scene)
     if scene.name.upper() == target:
@@ -289,23 +324,23 @@ def process_step(game, step):
         game.scene.analytics_count += 1
     
     if function_name == "interact":
-        log.info("TEST SUITE: %s with %s"%(function_name, actor))
+        if logging: log.info("TEST SUITE: %s with %s"%(function_name, actor))
         game.mouse_mode = MOUSE_INTERACT
     elif function_name == "look":
-        log.info("TEST SUITE: %s at %s"%(function_name, actor))
+        if logging: log.info("TEST SUITE: %s at %s"%(function_name, actor))
         game.mouse_mode = MOUSE_LOOK
     elif function_name == "use": 
         actee = step[2]
-        log.info("TEST SUITE: %s %s on %s"%(function_name, actor, actee))
+        if logging: log.info("TEST SUITE: %s %s on %s"%(function_name, actor, actee))
         game.mouse_mode = MOUSE_USE
         if actee not in game.player.inventory:
-            log.warning("Item %s not in player's inventory"%actee)
+            if logging: log.warning("Item %s not in player's inventory"%actee)
         if actee in game.items: 
             actee = game.items[actee]
         elif actee in game.actors:
             actee = game.actors[actee]
         else:
-            log.error("Can't do test suite trigger use, unable to find %s in game objects"%actee)
+            if logging: log.error("Can't do test suite trigger use, unable to find %s in game objects"%actee)
             if actee not in game.missing_actors: game.missing_actors.append(actee)
             fail = True
         if not fail: game.mouse_cursor = actee
@@ -316,16 +351,16 @@ def process_step(game, step):
             scene = scene_search(game.scene, actor.upper())
             if scene != False:
                 scene._add(game.player)
-                log.info("Player goes %s"%([x.name for x in scene_path]))
+                if logging: log.info("Player goes %s"%([x.name for x in scene_path]))
                 game.camera.scene(scene)
             else:
-                log.error("Unable to get player from scene %s to scene %s"%(game.scene.name, actor))
+                if logging: log.error("Unable to get player from scene %s to scene %s"%(game.scene.name, actor))
         else:
-            log.error("Going from no scene to scene %s"%actor)
+            if logging: log.error("Going from no scene to scene %s"%actor)
         return
     elif function_name == "location": #check current location matches scene "actor"
         if game.scene.name != actor:
-            log.error("Current scene should be %s, but is currently %s"%(actor, game.scene.name))
+            if logging: log.error("Current scene should be %s, but is currently %s"%(actor, game.scene.name))
         return
     elif function_name == "toggle": #toggle a setting in the game
         if hasattr(game, actor): game.__dict__[actor] = not game.__dict__[actor]
@@ -345,13 +380,13 @@ def process_step(game, step):
                 game._trigger(i)
                 return
     if not fail:
-        log.error("Unable to find actor %s in modals, menu or current scene (%s) objects"%(actor, game.scene.name))
+        if logging: log.error("Unable to find actor %s in modals, menu or current scene (%s) objects"%(actor, game.scene.name))
         if actor not in game.missing_actors and actor not in game.actors and actor not in game.items: game.missing_actors.append(actor)
     game.errors += 1
     if game.errors == 2:
-        log.warning("TEST SUITE SUGGESTS GAME HAS GONE OFF THE RAILS AT THIS POINT")
+        if logging: log.warning("TEST SUITE SUGGESTS GAME HAS GONE OFF THE RAILS AT THIS POINT")
         t = game.steps_complete * 30 #30 seconds per step
-        log.info("This occurred at %s steps, estimated at %s.%s minutes"%(game.steps_complete, t/60, t%60))
+        if logging: log.info("This occurred at %s steps, estimated at %s.%s minutes"%(game.steps_complete, t/60, t%60))
 
 
 def prepare_tests(game, suites, log_file=None, user_control=None):#, setup_fn, exit_fn = on_exit, report = True, wait=10.1):
@@ -365,11 +400,10 @@ def prepare_tests(game, suites, log_file=None, user_control=None):#, setup_fn, e
         LOG_FILENAME = log_file
         handler = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=2000000, backupCount=5)
         handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
-        log.addHandler(handler)    
+        if logging: log.addHandler(handler)    
 
-    log = log    
-    log.info("===[TESTING REPORT FOR %s]==="%game.name.upper())
-    log.debug("%s"%date.today().strftime("%Y_%m_%d"))
+    if logging: log.info("===[TESTING REPORT FOR %s]==="%game.name.upper())
+    if logging: log.debug("%s"%date.today().strftime("%Y_%m_%d"))
     game.testing = True
     game.tests = [i for sublist in suites for i in sublist]  #all tests, flattened in order
     game.fps = int(1000.0/100) #fast debug
@@ -381,7 +415,7 @@ def load_image(fname):
     try:
         im = pygame.image.load(fname)
     except:
-        log.warning("unable to load image %s"%fname)
+        if logging: log.warning("unable to load image %s"%fname)
     return im
 
 def crosshair(screen, pt, colour=(255,100,100)):
@@ -440,7 +474,7 @@ def get_point(game, destination):
 def relative_position(game, parent, pos):
     """ Take global pos and work out where that is inside parent """
     mx,my=pos[0],pos[1]
-    log.warning("relative_position ignores anchor points, scaling and rotation")
+    if logging: log.warning("relative_position ignores anchor points, scaling and rotation")
     return parent.x-mx, parent.y-my
 
 def get_function(basic):
@@ -503,6 +537,10 @@ class Action(object):
         self.deltas = None
         self.avg_delta_x, self.avg_delta_y = 0,0 #for calculating astar
         self.actor = actor
+        if not instancemethod:
+            self.fname = fname
+            self.actor = actor
+            self.name = name
 
     def unload(self):  #action.unload
          self.images = []
@@ -514,7 +552,7 @@ class Action(object):
             return self.images[self.index%self.count]
         else:
             img = Surface((10,10))
-            log.debug("action %s has no images"%self.name)
+            if logging: log.debug("action %s has no images"%self.name)
         return img
         
     def update(self, dt): #action.update
@@ -541,28 +579,31 @@ class Action(object):
                 try:
                     num, w, h  = [int(i) for i in f.readlines()]
                 except ValueError, err:
-                    log.error("Can't read values in %s.%s.montage"%(self.name, fname))
+                    if logging: log.error("Can't read values in %s.%s.montage"%(self.name, fname))
                     num,w,h = 0,0,0
             master_image = pygame.image.load(fname + ".png").convert_alpha()
             master_width, master_height = master_image.get_size()
             if master_width/num != w:
                 w = master_width/num
                 h = master_height
-                log.warning("%s montage file for actor %s does not match image dimensions, will guess dimensions (%i, %i)"%(fname, self.name, w, h))
+                if logging: log.warning("%s montage file for actor %s does not match image dimensions, will guess dimensions (%i, %i)"%(fname, self.name, w, h))
             for i in xrange(0, num):
                try:
                     self.images.append(master_image.subsurface((i*w,0,w,h)))
                except ValueError, e:
-                    log.error("ValueError: %s (does .montage file match actual image dimensions?)")
+                    if logging: log.error("ValueError: %s (does .montage file match actual image dimensions?)")
         self.count = len(self.images)
         
         #load the deltas for moving the animation
         if os.path.isfile(fname+".delta"):  #load deltas
-            log.info("found delta file for action %s"%fname)
+            if logging: log.info("found delta file for action %s"%fname)
             self.deltas = []
             for line in open(fname+".delta",'r'):
-                x,y = line.strip().split(" ")
-                self.deltas.append((int(x), int(y)))
+                try:
+                    x,y = line.strip().split(" ")
+                    self.deltas.append((int(x), int(y)))
+                except ValueError:
+                    if logging: log.warning("Unable to import all deltas %s"%line)
             tx, ty = tuple(sum(t) for t in zip(*self.deltas)) #sum of the x,y deltas
             self.avg_delta_x, self.avg_delta_y = tx/len(self.deltas),ty/len(self.deltas) #for calculating astar        
         else:
@@ -579,7 +620,7 @@ class Action(object):
                 try:
                     self.ax, self.ay  = [int(i) for i in f.readlines()]
                 except ValueError, err:
-                    log.error("Can't read values in %s.%s.offset"%(self.name, fname))
+                    if logging: log.error("Can't read values in %s.%s.offset"%(self.name, fname))
                     self.ax, self.ay = 0,0
        
         return self
@@ -797,7 +838,7 @@ class Actor(object):
             myd = os.path.join(d, self.name)
             images = glob.glob(os.path.join(d, "%s/*.png"%self.name))
             if os.path.isdir(myd) and len(glob.glob("%s/*"%myd)) == 0:
-                log.info("creating placeholder file in empty %s dir"%self.name)
+                if logging: log.info("creating placeholder file in empty %s dir"%self.name)
                 f = open(os.path.join(d, "%s/placeholder.txt"%self.name),"a")
                 f.close()
         for action_fname in images: #load actions for this actor
@@ -813,14 +854,14 @@ class Actor(object):
         if self.action and self.action.image:
             r = self.action.image.get_rect()
             self._clickable_area = Rect(0, 0, r.w, r.h)
-            log.debug("Setting %s _clickable area to %s"%(self.name, self._clickable_area))
+            if logging: log.debug("Setting %s _clickable area to %s"%(self.name, self._clickable_area))
         else:
             if not isinstance(self, Portal):
-                log.warning("%s %s smart load unable to get clickable area from action image, using default"%(self.__class__, self.name))
+                if logging: log.warning("%s %s smart load unable to get clickable area from action image, using default"%(self.__class__, self.name))
             self._clickable_area = DEFAULT_CLICKABLE
 #        except:
-#            log.warning("unable to load idle.png for %s"%self.name)
-        log.debug("smart load %s %s clickable %s and actions %s"%(type(self), self.name, self._clickable_area, self.actions.keys()))
+#            if logging: log.warning("unable to load idle.png for %s"%self.name)
+        if logging: log.debug("smart load %s %s clickable %s and actions %s"%(type(self), self.name, self._clickable_area, self.actions.keys()))
         return self
 
     def _count_actions_add(self, action, c):
@@ -833,7 +874,7 @@ class Actor(object):
         pass
 
     def trigger_look(self):
-        log.debug("Player looks at %s"%self.name)
+        if logging: log.debug("Player looks at %s"%self.name)
         self.game.mouse_mode = MOUSE_INTERACT #reset mouse mode
         if self.look: #if user has supplied a look override
             self.look(self.game, self, self.game.player)
@@ -844,27 +885,27 @@ class Actor(object):
                 script(self.game, self, self.game.player)
             else:
                  #warn if using default vida look
-                log.warning("no look script for %s (write a def %s(game, %s, player): function)"%(self.name, basic, slugify(self.name).lower()))
+                if logging: log.warning("no look script for %s (write a def %s(game, %s, player): function)"%(self.name, basic, slugify(self.name).lower()))
                 
                 self._look_default(self.game, self, self.game.player)
 
 
     def trigger_use(self, actor):
         #user actor on this actee
-#        log.warn("should look for def %s_use_%s"%(slugify(self.name),slugify(obj.name)))
-#        log.warn("using objects on %s not implemented"%self.name)
+#        if logging: log.warn("should look for def %s_use_%s"%(slugify(self.name),slugify(obj.name)))
+#        if logging: log.warn("using objects on %s not implemented"%self.name)
          if type(actor) == str: 
             if actor in self.game.items: actor = self.game.items[actor]
             if actor in self.game.actors: actor = self.game.actors[actor]
             if type(actor) == str: 
-                log.error("%s trigger use unable to find %s in game objects"%(self.name, actor))
+                if logging: log.error("%s trigger use unable to find %s in game objects"%(self.name, actor))
                 return
                 
          if self.game.analyse_scene == self.scene: #if we are watching this scene, store extra info
             add_object_to_scene_analysis(self.game, actor)
             add_object_to_scene_analysis(self.game, self)
             
-         log.info("Player uses %s on %s"%(actor.name, self.name))
+         if logging: log.info("Player uses %s on %s"%(actor.name, self.name))
 #        if self.use: #if user has supplied a look override
 #           self.use(self.game, self, self.game.player)
 #        else: #else, search several namespaces or use a default
@@ -874,7 +915,7 @@ class Actor(object):
          basic = "%s_use_%s"%(slug_actee, slug_actor)
          if actor.name in self.uses: #use a specially defined use method
             basic = self.uses[actor.name]
-            log.info("Using custom use script %s for actor %s"%(basic, actor.name))
+            if logging: log.info("Using custom use script %s for actor %s"%(basic, actor.name))
          script = get_function(basic)
          if script:
                 script(self.game, self, actor)
@@ -888,23 +929,23 @@ class Actor(object):
         """ find an interact function for this actor and call it """
 #        fn = self._get_interact()
  #       if self.interact: fn = self.interact
-#        log.debug("player interact with %s"%self.name)
+#        if logging: log.debug("player interact with %s"%self.name)
         self.game.mouse_mode = MOUSE_INTERACT #reset mouse mode
         if self.interact: #if user has supplied an interact override
             if type(self.interact) == str: self.interact = get_function(self.interact)
             n = self.interact.__name__ if self.interact else "self.interact is None"
-            log.debug("Player interact (%s) with %s"%(n, self.name))
+            if logging: log.debug("Player interact (%s) with %s"%(n, self.name))
             self.interact(self.game, self, self.game.player)
         else: #else, search several namespaces or use a default
             basic = "interact_%s"%slugify(self.name)
             script = get_function(basic)
             if script:
                 script(self.game, self, self.game.player)
-                log.debug("Player interact (%s) with %s"%(script.__name__, self.name))
+                if logging: log.debug("Player interact (%s) with %s"%(script.__name__, self.name))
             else:
                 #warn if using default vida interact
                 if not isinstance(self, Portal):
-                    log.warning("No interact script for %s (write a def %s(game, %s, player): function)"%(self.name, basic, slugify(self.name)))
+                    if logging: log.warning("No interact script for %s (write a def %s(game, %s, player): function)"%(self.name, basic, slugify(self.name)))
                 self._interact_default(self.game, self, self.game.player)
 
 
@@ -1085,9 +1126,9 @@ class Actor(object):
             self.action = self.actions[action]
             self.action.mode = mode
             if self.action.mode in [ONCE, ONCE_BLOCK]: self.action.index = 0  #reset action for non-looping anims
-            log.debug("actor %s does action %s"%(self.name, action))
+            if logging: log.debug("actor %s does action %s"%(self.name, action))
         else:
-            log.error("actor %s missing action %s"%(self.name, action))
+            if logging: log.error("actor %s missing action %s"%(self.name, action))
 
     def on_do(self, action, mode=LOOP, repeats=0): #actor.on_do
         """ 
@@ -1127,11 +1168,11 @@ class Actor(object):
         """
         pt = get_point(self.game, destination)
         self.x, self.y = pt
-        log.debug("actor %s placed at %s"%(self.name, destination))
+        if logging: log.debug("actor %s placed at %s"%(self.name, destination))
         self._event_finish(block=False)
         
     def on_finish_fade(self):
-        log.debug("finish fade %s"%self._alpha)
+        if logging: log.debug("finish fade %s"%self._alpha)
         if self._alpha == self._alpha_target:
             self._event_finish()
              
@@ -1171,7 +1212,7 @@ class Actor(object):
 
     def on_set_actions(self, actions, prefix=None, postfix=None):
         """ Take a list of actions and replace them with prefix_action eg set_actions(["idle", "over"], "off") """
-        log.info("player.set_actions using prefix %s on %s"%(prefix, actions))
+        if logging: log.info("player.set_actions using prefix %s on %s"%(prefix, actions))
         self.editor_clean = False #actor no longer has permissions as set by editor
         for i in actions: 
             if prefix:
@@ -1183,7 +1224,7 @@ class Actor(object):
     
     def on_backup_actions(self, actions, prefix):
         """ Take a list of actions and make copies with prefix_action """       
-        log.info("player.backup_actions using prefix %s on %s"%(prefix, actions))
+        if logging: log.info("player.backup_actions using prefix %s on %s"%(prefix, actions))
         for i in actions:
             key = "%s_%s"%(prefix, i)
             if key in self.actions: self.actions[key] = self.actions[i]
@@ -1255,16 +1296,16 @@ class Actor(object):
         self._sx, self._sy = pt[0], pt[1]
         self._event_finish(block=False)
 
-    def on_relocate(self, scene, destination=None): #actor.relocate
+    def _relocate(self, scene, destination=None): #actor.relocate
         # """ relocate this actor to scene at destination instantly """ 
         if scene == None:
-            log.error("Unable to relocate %s to non-existent scene, relocating on current scene"%self.name)
+            if logging: log.error("Unable to relocate %s to non-existent scene, relocating on current scene"%self.name)
             scene = self.game.scene
         if type(scene) == str:
             if scene in self.game.scenes:
                 scene = self.game.scenes[scene]
             else:
-                log.error("Unable to relocate %s to non-existent scene %s, relocating on current scene"%(self.name, scene))
+                if logging: log.error("Unable to relocate %s to non-existent scene %s, relocating on current scene"%(self.name, scene))
                 scene = self.game.scene
         if destination:
             pt = get_point(self.game, destination)
@@ -1284,21 +1325,23 @@ class Actor(object):
         self.editor_clean = False #actor no longer in position placed by editor
         self._event_finish(block=False)
     
+    def on_relocate(self, scene, destination=None): #actor.relocate
+        self._relocate(scene, destination)
     
     def on_resize(self, start, end, duration):
         """ animate resizing of character """
-        log.debug("actor.resize not implemented yet")
+        if logging: log.debug("actor.resize not implemented yet")
         self._event_finish(block=False)
 
     def on_rotate(self, start, end, duration):
         """ A queuing function. Animate rotation of character """
-        log.debug("actor.rotation not implemented yet")
+        if logging: log.debug("actor.rotation not implemented yet")
         self._event_finish(block=False)
 
     def on_set_alpha(self, alpha, block=False):
         if alpha < 0: alpha = 0
         if alpha > 1.0: alpha = 1.0
-        log.debug("%s set alpha %s"%(self.name, alpha))
+        if logging: log.debug("%s set alpha %s"%(self.name, alpha))
         self._alpha = alpha
         self._alpha_target = alpha
         self._event_finish(block=block)
@@ -1336,12 +1379,12 @@ class Actor(object):
             action = paction
         deltas = None
         if action:
-            log.debug("queue_motion %s %s"%(action.name, action.deltas))
+            if logging: log.debug("queue_motion %s %s"%(action.name, action.deltas))
             deltas = action.deltas
         else:
-            log.warning("queue_motion %s missing for actor %s"%(paction, self.name))
+            if logging: log.warning("queue_motion %s missing for actor %s"%(paction, self.name))
         if not deltas:
-            log.error("No deltas for action %s on actor %s, can't move."%(paction, self.name))
+            if logging: log.error("No deltas for action %s on actor %s, can't move."%(paction, self.name))
             return
         minx = 2 #when moving, what is the minimum move value (to stop scaling stranding an actor)
         miny = 2
@@ -1384,12 +1427,12 @@ class Actor(object):
 #        print(self.name, self.x,self.y,"to",x,y,"points",nodes,"solids",solids,"path",p)
 #        return
         if p == False:
-            log.warning("%s unable to find path from %s to %s (walkrea: %s)"%(self.name, (self.x, self.y), (x,y), walkarea))
+            if logging: log.warning("%s unable to find path from %s to %s (walkrea: %s)"%(self.name, (self.x, self.y), (x,y), walkarea))
             self._do('idle')
             if self.game: self.game._event_finish(success=False) #signal to game event queue this event is done
             return None
         n = p[1] #short term goal is the next node
-        log.debug("astar short term goal is from (%s, %s) to %s"%(self.x, self.y, n))
+        if logging: log.debug("astar short term goal is from (%s, %s) to %s"%(self.x, self.y, n))
         dx, dy = n[0] - self.x, n[1] - self.y
         if dx < 0: #left
             if abs(dx) < abs(dy): #up/down since y distance is greater
@@ -1428,7 +1471,7 @@ class Actor(object):
             if "idle" in self.actions: self.action = self.actions['idle'] #XXX: magical variables, special cases, urgh
 #            if isinstance(self, MenuItem) or isinstance(self, Collection):
             self.x, self.y = self._tx, self._ty
-            log.debug("actor %s has arrived at %s on scene %s"%(self.name, destination, self.scene.name if self.scene else "none"))
+            if logging: log.debug("actor %s has arrived at %s on scene %s"%(self.name, destination, self.scene.name if self.scene else "none"))
             self._motion_queue = [] #empty motion queue
             self.game._event_finish() #signal to game event queue this event is done            
             return True
@@ -1470,7 +1513,7 @@ class Actor(object):
             walkarea_fail = True
             for w in self.scene.walkareas:
                 if w.polygon.collide(x,y): walkarea_fail = False
-            if walkarea_fail and ignore==False: log.warning("Destination point (%s, %s) not inside walkarea "%(x,y))                
+            if logging and walkarea_fail and ignore==False: log.warning("Destination point (%s, %s) not inside walkarea "%(x,y))                
         if self.game.testing == True or self.game.enabled_editor: 
             if self.game.analyse_characters: #count walk actions as occuring for analysis
                 for w in walk_actions: self._count_actions_add(w, 5)
@@ -1502,9 +1545,9 @@ class Actor(object):
         """
         if fact in self.facts:
             self.facts.remove(fact)
-            log.debug("Forgetting fact '%s' for player %s"%(fact, self.name))
+            if logging: log.debug("Forgetting fact '%s' for player %s"%(fact, self.name))
         else:
-            log.warning("Can't forget fact '%s' ... was not in memory."%(fact))
+            if logging: log.warning("Can't forget fact '%s' ... was not in memory."%(fact))
             
         #self._event_finish()
 
@@ -1551,8 +1594,8 @@ class Actor(object):
             if sfx == -1  #, try and guess sound file 
             action = None #which action to display
         """
-        log.info("Actor %s says: %s"%(self.name, text))
-#        log.warning("")
+        if logging: log.info("Actor %s says: %s"%(self.name, text))
+#        if logging: log.warning("")
         if self.game.testing: 
             self._event_finish()
             return
@@ -1627,7 +1670,7 @@ class Actor(object):
                     fn(self.game, self, self.game.player)
                     self._event_finish()
                     return
-            log.error("Unable to select %s option in on_ask '%s'"%(next_step, args[0]))
+            if logging: log.error("Unable to select %s option in on_ask '%s'"%(next_step, args[0]))
             return
                     
         msgbox.options = []
@@ -1718,12 +1761,12 @@ class Portal(Item):
         if actor == None: actor = self.game.player
         if not self.link:
             self.game.player.says("It doesn't look like that goes anywhere.")
-            log.error("portal %s has no link"%self.name)
+            if logging: log.error("portal %s has no link"%self.name)
             return
         if self.link.scene == None:
-            log.error("Unable to travel through portal %s"%self.name)
+            if logging: log.error("Unable to travel through portal %s"%self.name)
         else:
-            log.info("Portal - actor %s goes from scene %s to %s"%(actor.name, self.scene.name, self.link.scene.name))
+            if logging: log.info("Portal - actor %s goes from scene %s to %s"%(actor.name, self.scene.name, self.link.scene.name))
         self.leave(actor)
         actor.relocate(self.link.scene, (self.link.ox, self.link.oy)) #moves player to scene
         self.game.camera.scene(self.link.scene) #change the scene
@@ -1831,7 +1874,7 @@ class Text(Actor):
             self.font = Font(fname, self.size)
         except:
             self.font = None
-            log.error("text %s unable to load or initialise font %s"%(self.name, fname))
+            if logging: log.error("text %s unable to load or initialise font %s"%(self.name, fname))
             
         if not self.font:
             img = Surface((10,10))
@@ -1931,7 +1974,7 @@ class Collection(MenuItem):
             if type(i) != Collection:
                 i._update(dt)
             else:
-                log.warning("Collection %s trying to update collection %s"%(self.name, i.name))
+                if logging: log.warning("Collection %s trying to update collection %s"%(self.name, i.name))
 
     def _get_sorted(self):
         if self._sorted_objects == None:
@@ -1947,9 +1990,9 @@ class Collection(MenuItem):
         show = self._get_sorted()[self.index:]
         for i in show:
             if hasattr(i, "_cr") and collide(i._cr, mx, my): 
-                log.debug("Clicked on %s in collection %s"%(i.name, self.name))
+                if logging: log.debug("Clicked on %s in collection %s"%(i.name, self.name))
                 return i
-        log.debug("Clicked on collection %s, but no object at that point"%(self.name))
+        if logging: log.debug("Clicked on collection %s, but no object at that point"%(self.name))
         return None
         
         
@@ -1971,7 +2014,7 @@ class Collection(MenuItem):
             w,h = self.action.image.get_width(), self.action.image.get_height()
         else:
             w,h = 0, 0
-            log.warning("Collection %s missing an action"%self.name)
+            if logging: log.warning("Collection %s missing an action"%self.name)
 
         show = self._get_sorted()[self.index:]
         for i in show:
@@ -2041,9 +2084,15 @@ class Scene(object):
                 self.foreground.append(f)
         scale_name = os.path.join(sdir, "scene.scale")
         if os.path.isfile(scale_name):
-            with open(scale_name, "r") as f:
+            f = open(scale_name, "r")
+            line = f.readline()
+            while line:
+                if logging: log.debug("Loading scale info for %s"%self.name)
                 actor, factor = f.readline().split("\t")
+                print(actor)
                 self.scales[actor] = float(factor)
+                line = f.readline()
+            f.close()
         if len(self.walkareas) == 0:
             self.walkareas.append(WalkArea().smart(game))
 #            self.addWalkarea(walkarea)
@@ -2078,7 +2127,7 @@ class Scene(object):
             if obj in self.objects:
                 obj = self.objects[obj]
             else:
-                log.warning("Object %s not in this scene %s"%(obj, self.name))
+                if logging: log.warning("Object %s not in this scene %s"%(obj, self.name))
                 return
         obj.scene = None
         del self.objects[obj.name]
@@ -2098,7 +2147,7 @@ class Scene(object):
         if os.path.isfile(bname):
             self.background(bname)
         else:
-            log.error("scene %s has no image %s available"%(self.name, background))
+            if logging: log.error("scene %s has no image %s available"%(self.name, background))
         self._event_finish()
         
     def on_clean(self, objs): #remove items not in this list from the scene
@@ -2123,7 +2172,7 @@ class Scene(object):
             
         if obj.name in self.scales.keys():
             obj.scale = self.scales[obj.name]
-        log.debug("Add %s to scene %s"%(obj.name, self.name))
+        if logging: log.debug("Add %s to scene %s"%(obj.name, self.name))
 
     def on_add(self, obj): #scene.add
         self._add(obj)
@@ -2149,26 +2198,26 @@ class Camera(object):
     def on_scene(self, scene):
         """ change the current scene """
         if scene == None:
-            log.error("Can't change to non-existent scene, staying on current scene")
+            if logging: log.error("Can't change to non-existent scene, staying on current scene")
             scene = self.game.scene
         if type(scene) == str:
             if scene in self.game.scenes:
                 scene = self.game.scenes[scene]
             else:
-                log.error("camera on_scene: unable to find scene %s"%scene)
+                if logging: log.error("camera on_scene: unable to find scene %s"%scene)
                 scene = self.game.scene
         self.game.scene = scene
-        log.debug("changing scene to %s"%scene.name)
+        if logging: log.debug("changing scene to %s"%scene.name)
         if self.game.scene and self.game.screen:
            self.game.screen.blit(self.game.scene.background(), (0, 0))
         self.game._event_finish()
     
     def on_fade_out(self, block=True):
-        log.error("camera.fade_out not implement yet")
+        if logging: log.error("camera.fade_out not implement yet")
         self.game._event_finish(block=block)
         
     def on_fade_in(self, block=True):
-        log.error("camera.fade_in not implement yet")
+        if logging: log.error("camera.fade_in not implement yet")
         self.game._event_finish(block=block)
 
 
@@ -2205,7 +2254,7 @@ class Game(object):
     existing = False #is there a game in progress (either loaded or saved)
    
     def __init__(self, name="Untitled Game", fullscreen=False):
-        log.debug("game object created at %s"%datetime.now())
+        if logging: log.debug("game object created at %s"%datetime.now())
 #        log = log
         self.allow_save = False #are we in the middle of a game, if so, allow save
         self.game = self
@@ -2293,7 +2342,7 @@ class Game(object):
            data = pickle.load(f)
         print(data)
         if self.reset_game == None:
-            log.error("Unable to load save game, reset_game value not set on game object")
+            if logging: log.error("Unable to load save game, reset_game value not set on game object")
         else:
             self.headless = True #switch off pygame rendering
             data.append([toggle, "headless"])
@@ -2330,7 +2379,7 @@ class Game(object):
         if replace == False:
            if obj.name in self.items or obj.name in self.actors:
                 existing_obj = self.items[obj.name] if obj.name in self.items else self.actors[obj.name]
-                log.warning("Adding %s (%s), but already in item or actor dictionary as %s"%(obj.name, obj.__class__, existing_obj.__class__))
+                if logging: log.warning("Adding %s (%s), but already in item or actor dictionary as %s"%(obj.name, obj.__class__, existing_obj.__class__))
         if force_cls:
             if force_cls == ModalItem:
                 self.modals.append(obj)
@@ -2338,7 +2387,7 @@ class Game(object):
             elif force_cls == MenuItem:
                 self.items[obj.name] = obj
             else:
-                log.error("forcing objects to type %s not implement in game.add"%force_cls)
+                if logging: log.error("forcing objects to type %s not implement in game.add"%force_cls)
         else:
             if isinstance(obj, Scene):
                 self.scenes[obj.name] = obj
@@ -2360,7 +2409,7 @@ class Game(object):
             elif isinstance(obj, Actor):
                 self.actors[obj.name] = obj
             else:
-                log.error("%s is an unknown %s type, so failed to add to game"%(obj.name, type(obj)))
+                if logging: log.error("%s is an unknown %s type, so failed to add to game"%(obj.name, type(obj)))
         obj.game = self
         return obj
         #self._event_finish()
@@ -2396,12 +2445,12 @@ class Game(object):
         for obj_cls in [Actor, Item, Portal, Scene]:
             dname = "%s_dir"%obj_cls.__name__.lower()
             for name in os.listdir(getattr(self, dname)):
-                log.debug("game.smart loading %s %s"%(obj_cls.__name__.lower(), name))
+                if logging: log.debug("game.smart loading %s %s"%(obj_cls.__name__.lower(), name))
                 #if there is already a non-custom Actor or Item with that name, warn!
                 if obj_cls == Actor and name in self.actors and self.actors[name].__class__ == Actor:
-                    log.warning("game.smart skipping %s, already an actor with this name!"%(name))
+                    if logging: log.warning("game.smart skipping %s, already an actor with this name!"%(name))
                 elif obj_cls == Item and name in self.items  and self.actors[name].__class__ == Item:
-                    log.warning("game.smart skipping %s, already an item with this name!"%(name))
+                    if logging: log.warning("game.smart skipping %s, already an item with this name!"%(name))
                 else:
                     if type(player)==str and player == name:
                         a = player_class(name)
@@ -2421,7 +2470,7 @@ class Game(object):
             if guess_link and guess_link in self.items:
                 self.items[pname].link = self.items[guess_link]
             else:
-                log.warning("game.smart unable to guess link for %s"%pname)
+                if logging: log.warning("game.smart unable to guess link for %s"%pname)
         if type(player) == str: player = self.actors[player]
         if player: self.player = player
         if not running_headless: self.set_headless(False) #restore headless state
@@ -2533,7 +2582,9 @@ class Game(object):
                 return
                 
         elif self.scene: #regular game interaction
+            print("mouse up on scene")
             for i in self.scene.objects.values(): #then objects in the scene
+                print("test collide",i.name, i.collide(x,y))
                 if i.collide(x,y) and (i.allow_use or i.allow_interact or i.allow_look):
 #                   if i.actions.has_key('down'): i.action = i.actions['down']
                     if self.mouse_mode == MOUSE_USE or i is not self.player: #only click on player in USE mode
@@ -2541,6 +2592,7 @@ class Game(object):
                         return
             #or finally, try and walk the player there.
             if self.player and self.player in self.scene.objects.values():
+                print("trigger goto",x,y)
                 self.player.goto((x,y))
 
     def _on_mouse_move_scene(self, x, y, button, modifiers):
@@ -2684,6 +2736,8 @@ class Game(object):
         btn1, btn2, btn3 = pygame.mouse.get_pressed()
 #        print(btn1, btn2, btn3)
         for event in pygame.event.get():
+            if android: m = event.pos
+            print("Got event",event, event.type, MOUSEBUTTONDOWN, m)
             if event.type == QUIT:
                 self.quit = True
                 return
@@ -2710,7 +2764,7 @@ class Game(object):
                 cursor_pwd = os.path.join(os.getcwd(), os.path.join(self.interface_dir, value))
                 self.mouse_cursors[key] = pygame.image.load(cursor_pwd).convert_alpha()
             except:
-                log.warning("Can't find game's %s cursor, so defaulting to unimplemented pyvida one"%value)
+                if logging: log.warning("Can't find game's %s cursor, so defaulting to unimplemented pyvida one"%value)
     
     def _load_editor(self):
             """ Load the ingame edit menu """
@@ -2720,7 +2774,7 @@ class Game(object):
                 self.debug_font = Font(fname, 12)
             except:
                 self.debug_font = None
-                log.error("font %s unable to load or initialise for game"%fname)
+                if logging: log.error("font %s unable to load or initialise for game"%fname)
         
             #setup editor menu
             def editor_load(game, menuItem, player):
@@ -2793,10 +2847,10 @@ class Game(object):
                     objects = game.scene.objects.values()
                     if game.editing == None: game.editing = objects[0]
                     i = (objects.index(game.editing) + v)%len(objects)
-                    log.debug("editor cycle: switch object %s to %s"%(game.editing, objects[i]))
+                    if logging: log.debug("editor cycle: switch object %s to %s"%(game.editing, objects[i]))
                     game.set_editing(objects[i])
                 else:
-                    log.warning("editor cycle: no scene or objects in scene to iterate through")
+                    if logging: log.warning("editor cycle: no scene or objects in scene to iterate through")
 
             def editor_next(game, collection, player):
                 return _editor_cycle(game, collection, player, 1)
@@ -3053,34 +3107,34 @@ class Game(object):
     def finish_tests(self):
         """ called when test runner is ending or handing back control """
         if len(self.missing_actors)>0:
-            log.error("The following actors were never loaded:")
+            if logging: log.error("The following actors were never loaded:")
             for i in self.missing_actors: log.error(i)
         scenes = sorted(self.scenes.values(), key=lambda x: x.analytics_count, reverse=True)
-        log.info("Scenes listed in order of time spent")
+        if logging: log.info("Scenes listed in order of time spent")
         for s in scenes:
             t = s.analytics_count * 30
-            log.info("%s - %s steps (%s.%s minutes)"%(s.name, s.analytics_count, t/60, t%60))
+            if logging: log.info("%s - %s steps (%s.%s minutes)"%(s.name, s.analytics_count, t/60, t%60))
         actors = sorted(self.actors.values(), key=lambda x: x.analytics_count, reverse=True)
-        log.info("Actors listed in order of interactions")
+        if logging: log.info("Actors listed in order of interactions")
         for s in actors:
             t = s.analytics_count * 30
-            log.info("%s - %s interactions (%s.%s minutes)"%(s.name, s.analytics_count, t/60, t%60))
+            if logging: log.info("%s - %s interactions (%s.%s minutes)"%(s.name, s.analytics_count, t/60, t%60))
         if self.analyse_characters:
-            log.info("Objects with action calls")
+            if logging: log.info("Objects with action calls")
             for i in (self.actors.values() + self.items.values()):
                 actions = sorted(i._count_actions.iteritems(), key=operator.itemgetter(1))
-                log.info("%s: %s"%(i.name, actions))
+                if logging: log.info("%s: %s"%(i.name, actions))
         if self.analyse_scene:
             scene = self.analyse_scene
             if type(scene) == str:
-                log.warning("Asked to watch scene %s but it was never loaded"%scene)
+                if logging: log.warning("Asked to watch scene %s but it was never loaded"%scene)
             else:
-                log.info("ANALYSED SCENE %s"%scene.name)
-                log.info("Used actors %s"%[x.name for x in scene._total_actors])
-                log.info("Used items %s"%[x.name for x in scene._total_items])
+                if logging: log.info("ANALYSED SCENE %s"%scene.name)
+                if logging: log.info("Used actors %s"%[x.name for x in scene._total_actors])
+                if logging: log.info("Used items %s"%[x.name for x in scene._total_items])
         
         t = self.steps_complete * 30 #30 seconds per step
-        log.info("Finished %s steps, estimated at %s.%s minutes"%(self.steps_complete, t/60, t%60))
+        if logging: log.info("Finished %s steps, estimated at %s.%s minutes"%(self.steps_complete, t/60, t%60))
     
         
     def run(self, splash=None, callback=None, icon=None):
@@ -3136,7 +3190,10 @@ class Game(object):
             flags |= pygame.FULLSCREEN
             self.fullscreen = True
         self.screen = screen = pygame.display.set_mode((1024, 768), flags)
-        
+
+        if android:
+            android.init()
+#            android.map_key(android.KEYCODE_BACK, pygame.K_ESCAPE)        
         
         #do post pygame init loading
         #set up mouse cursors
@@ -3150,7 +3207,7 @@ class Game(object):
             self.font = Font(fname, size)
         except:
             self.font = None
-            log.error("game unable to load or initialise font %s"%fname)
+            if logging: log.error("game unable to load or initialise font %s"%fname)
         
         
         if self.scene and self.screen:
@@ -3171,7 +3228,7 @@ class Game(object):
         
         while self.quit == False: #game.draw game.update
             if not self.headless: pygame.time.delay(self.fps)
-            if android is not None and android.check_pause():
+            if android and android.check_pause():
                 android.wait_for_resume()
             
             if self.scene:
@@ -3277,14 +3334,14 @@ class Game(object):
         if not self._event: #waiting, so do an immediate process 
             e = self.events.pop(0) #stored as [(function, args))]
             if e[0].__name__ not in ["on_add", "on_relocate", "on_rescale","on_reclickable", "on_reanchor", "on_restand", "on_retalk", "on_resolid"]:
-                log.debug("Doing event %s"%e[0].__name__)
+                if logging: log.debug("Doing event %s"%e[0].__name__)
 
             self._event = e
             e[0](*e[1], **e[2]) #call the function with the args and kwargs
     
     def queue_event(self, event, *args, **kwargs):
         self.events.append((event, args, kwargs))
-#        log.debug("events %s"%self.events)
+#        if logging: log.debug("events %s"%self.events)
         return args[0]
 
     def stuff_event(self, event, *args, **kwargs):
@@ -3295,7 +3352,7 @@ class Game(object):
 
     def _event_finish(self, success=True, block=True): #Game.on_event_finish
         """ start the next event in the game scripter """
-#        log.debug("finished event %s, remaining:"%(self._event, self.events)
+#        if logging: log.debug("finished event %s, remaining:"%(self._event, self.events)
         self._event = None
         self._last_event_success = success
         if block==False: self.handle_events() #run next event immediately
@@ -3306,7 +3363,7 @@ class Game(object):
             
     def remove(self, obj):
         """ remove from the game so that garbage collection can free it up """
-        log.warning("game.remove not implemented yet")        
+        if logging: log.warning("game.remove not implemented yet")        
         
 #    def on_move(self, scene, destination):
 #        """ transition to scene, and move player if available """    
@@ -3332,15 +3389,15 @@ class Game(object):
             if scene in self.scenes:
                 scene = self.scenes[scene]
             else:
-                log.error("load state: unable to find scene %s"%scene)
+                if logging: log.error("load state: unable to find scene %s"%scene)
                 return
         sfname = os.path.join(self.scene_dir, os.path.join(scene.name, state))
         sfname = "%s.py"%sfname
         variables= {}
         if not os.path.exists(sfname):
-            log.error("load state: state not found for scene %s: %s"%(scene.name, sfname))
+            if logging: log.error("load state: state not found for scene %s: %s"%(scene.name, sfname))
         else:
-            log.debug("load state: load %s for scene %s"%(sfname, scene.name))
+            if logging: log.debug("load state: load %s for scene %s"%(sfname, scene.name))
             scene._last_state = sfname
             execfile( sfname, variables)
             variables['load_state'](self, scene)
@@ -3357,12 +3414,16 @@ class Game(object):
         
     def on_wait(self, seconds): #game.wait
         self._wait = datetime.now() + timedelta(seconds=seconds)
-        log.debug("waiting until %s"%datetime.now())
+        if logging: log.debug("waiting until %s"%datetime.now())
         
     def finished_wait(self):
-        log.debug("finished wait at %s"%datetime.now())
+        if logging: log.debug("finished wait at %s"%datetime.now())
         self._wait = None
         self._event_finish()
+
+    def on_relocate(self, obj, scene, destination):
+        if type(obj) == str: obj = self.actors[obj] #XXX should check items, and fail gracefully too
+        obj._relocate(scene, destination)
 
     def on_set_headless(self, headless=False):
         """ switch game engine between headless and non-headless mode, restrict events to per clock tick, etc """
@@ -3376,7 +3437,7 @@ class Game(object):
     def on_splash(self, image, callback, duration, immediately=False):
 #        """ show a splash screen then pass to callback after duration """
  #       self.
-        log.warning("game.splash ignores duration and clicks")
+        if logging: log.warning("game.splash ignores duration and clicks")
         scene = Scene(image)
         scene.background(image)
         #add scene to game, change over to that scene
@@ -3440,7 +3501,7 @@ class Game(object):
 #                    fn(self.game, self, self.game.player)
 #                    self._event_finish()
 #                    return
-#            log.error("Unable to select %s option in on_ask '%s'"%(next_step, args[0]))
+#            if logging: log.error("Unable to select %s option in on_ask '%s'"%(next_step, args[0]))
 #            return
                     
         for i, qfn in enumerate(args[1:]): #add the response options
@@ -3473,16 +3534,16 @@ class Game(object):
             if i in self.items: 
                 self.menu.append(self.items[i])
             else:
-                log.error("Menu item %s not found in MenuItem collection"%i)
-        log.debug("set menu to %s"%[x.name for x in self.menu])
+                if logging: log.error("Menu item %s not found in MenuItem collection"%i)
+        if logging: log.debug("set menu to %s"%[x.name for x in self.menu])
         self._event_finish()        
         
     def on_menu_clear(self):
         """ clear all menus """
-        log.warning("game.menu_clear should use game.remove --- why???")
+        if logging: log.warning("game.menu_clear should use game.remove --- why???")
         #for i in self.menu:
         #    del self.menu[i]
-        log.debug("clear menu %s"%[x.name for x in self.menu])
+        if logging: log.debug("clear menu %s"%[x.name for x in self.menu])
         self.menu = []
         self._menus = []
         self._event_finish()        
@@ -3490,7 +3551,7 @@ class Game(object):
     def on_menu_fadeOut(self): 
         """ animate hiding the menu """
         for i in reversed(self.menu): self.stuff_event(i.on_goto, (i.out_x,i.out_y))
-        log.debug("fadeOut menu using goto %s"%[x.name for x in self.menu])
+        if logging: log.debug("fadeOut menu using goto %s"%[x.name for x in self.menu])
         self._event_finish()
         
     def on_menu_hide(self, menu_items = None):
@@ -3500,24 +3561,24 @@ class Game(object):
         for i in menu_items:
             if type(i) == str: i = self.items[i]
             self.stuff_event(i.on_place, (i.out_x, i.out_y))
-        log.debug("hide menu using place %s"%[x.name for x in self.menu])
+        if logging: log.debug("hide menu using place %s"%[x.name for x in self.menu])
         self._event_finish()
 
     def on_menu_show(self):
         """ show the menu """
         for i in self.menu: self.stuff_event(i.on_place, (i.in_x,i.in_y))
-        log.debug("show menu using place %s"%[x.name for x in self.menu])
+        if logging: log.debug("show menu using place %s"%[x.name for x in self.menu])
         self._event_finish()
         
     def on_menu_fadeIn(self): 
         """ animate showing the menu """
-        log.debug("fadeIn menu, telling items to goto %s"%[x.name for x in self.menu])
+        if logging: log.debug("fadeIn menu, telling items to goto %s"%[x.name for x in self.menu])
         for i in reversed(self.menu): self.stuff_event(i.on_goto, (i.in_x,i.in_y))
         self._event_finish()
         
     def on_menu_push(self):
         """ push this menu to the list of menus and clear the current menu """
-        log.debug("push menu %s, %s"%([x.name for x in self.menu], self._menus))
+        if logging: log.debug("push menu %s, %s"%([x.name for x in self.menu], self._menus))
         if self.menu:
             self._menus.append(self.menu)
             self.menu = []
@@ -3526,6 +3587,6 @@ class Game(object):
     def on_menu_pop(self):
         """ pull a menu off the list of menus """
         if self._menus: self.menu = self._menus.pop()
-        log.debug("pop menu %s"%[x.name for x in self.menu])
+        if logging: log.debug("pop menu %s"%[x.name for x in self.menu])
         self._event_finish()
         
