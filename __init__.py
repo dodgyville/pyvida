@@ -1328,10 +1328,18 @@ class Actor(object):
     def on_relocate(self, scene, destination=None): #actor.relocate
         self._relocate(scene, destination)
     
-    def on_resize(self, start, end, duration):
+    def resize(self, start, end, duration):
         """ animate resizing of character """
-        if logging: log.debug("actor.resize not implemented yet")
-        self._event_finish(block=False)
+#        if logging: log.debug("actor.resize not implemented yet")
+        frames = (duration*1000)/self.game.fps
+#        tick = float(duration/self.game.fps  #number of ticks for this anim
+        step = (end - start)/frames #how much to change the scale each tick
+        self.rescale(start)
+#        import pdb; pdb.set_trace()
+        for i in xrange(0, int(frames)):
+            self.rescale(self._scale+step*i)
+            self.game.wait(0) #wait at least one frame        
+#        self._event_finish(block=False)
 
     def on_rotate(self, start, end, duration):
         """ A queuing function. Animate rotation of character """
@@ -1759,6 +1767,9 @@ class Portal(Item):
     def travel(self, actor=None):
         """ default interact method for a portal, march player through portal and change scene """
         if actor == None: actor = self.game.player
+        if actor == None:
+            log.warning("No actor available for this portal")
+            return
         if not self.link:
             self.game.player.says("It doesn't look like that goes anywhere.")
             if logging: log.error("portal %s has no link"%self.name)
@@ -3545,7 +3556,7 @@ class Game(object):
         if logging: log.debug("set menu to %s"%[x.name for x in self.menu])
         self._event_finish()        
         
-    def on_menu_clear(self):
+    def on_menus_clear(self):
         """ clear all menus """
         if logging: log.warning("game.menu_clear should use game.remove --- why???")
         #for i in self.menu:
@@ -3554,6 +3565,16 @@ class Game(object):
         self.menu = []
         self._menus = []
         self._event_finish()        
+
+    def on_menu_clear(self, menu_items = None):
+        """ clear current menu """
+        if not menu_items:
+            menu_items = self.menu
+        for i in menu_items:
+            if type(i) == str: i = self.items[i]        
+            self.menu.remove(i)
+        self._event_finish()       
+       
 
     def on_menu_fadeOut(self): 
         """ animate hiding the menu """
