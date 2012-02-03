@@ -2560,12 +2560,11 @@ class Game(object):
             else:        #edit single point (eg location, stand, anchor) 
                 self.editing_index = 0 #must be not-None to trigger drag
             
-
     def _on_mouse_up(self, x, y, button, modifiers): #single button interface
         if button<>1: 
             print("SUB BUTTON PRESSED")
             self.mouse_mode = MOUSE_LOOK #subaltern btn pressed 
-        if len(self.modals) > 0: #modals first
+        if not self.enabled_editor and len(self.modals) > 0: #modals first, but ignore them if in edit mode
             for i in self.modals:
                 if i.collide(x,y): #always trigger interact on modals
                     i.trigger_interact()
@@ -2701,11 +2700,16 @@ class Game(object):
             from scripts.all_chapters import transmat_in, transmat_out
             transmat_out(self, self.player)
         elif ENABLE_EDITOR and key == K_F7:
-            self.camera.scene("aqsurfaceairlock")
-            self.player.relocate("aqsurfaceairlock")
+#            self.player.gets(choice(self.items.values()))
+            cogs = self.items["Cogs"]        
+            cogs.do("cracked")
         elif ENABLE_EDITOR and key == K_F8:
-            self.camera.scene("aqexecairlock")
-            self.player.relocate("aqexecairlock")
+            cogs = self.items["Cogs"]        
+            cogs.do("jammed")
+#            self.camera.scene("aqsurfaceairlock")
+#            self.player.relocate("aqsurfaceairlock")
+#            self.camera.scene("aqexecairlock")
+#            self.player.relocate("aqexecairlock")
         elif ENABLE_EDITOR and key == K_F9:
             self.camera.scene("aqcleaners")
             self.player.relocate("aqcleaners")
