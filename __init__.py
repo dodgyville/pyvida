@@ -1354,14 +1354,14 @@ class Actor(object):
         self._alpha_target = alpha
         self._event_finish(block=block)
     
-    def move(self, delta, ignore=False):
+    def on_move(self, delta, ignore=False):
         """ A pseudo-queuing function: move relative to the current position
         
             Example::
             
                 player.move((-50,0)) #will make the player walk -50 from their current position """        
         destination = (self.x + delta[0], self.y + delta[1])
-        self.goto(destination, ignore=ignore)
+        self.on_goto(destination, ignore=ignore)
 
     def moveto(self, delta):
         """ deprecated verson of move """
@@ -3200,7 +3200,8 @@ class Game(object):
             pygame.display.set_icon(pygame.image.load(icon))
         flags = 0
         if options.fullscreen:
-            flags |= pygame.FULLSCREEN
+            flags |= pygame.FULLSCREEN 
+#            flags |= pygame.HWSURFACE
             self.fullscreen = True
         self.screen = screen = pygame.display.set_mode((1024, 768), flags)
 
