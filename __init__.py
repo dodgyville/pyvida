@@ -550,6 +550,10 @@ class Action(object):
     def image(self): #return the current image
         if self.images:
             return self.images[self.index%self.count]
+        elif self.fname: #try and load images for this actor
+            print("loading images for usage")
+            self.load()
+            return self.images[self.index%self.count]
         else:
             img = Surface((10,10))
             if logging: log.debug("action %s has no images"%self.name)
@@ -565,6 +569,7 @@ class Action(object):
             self.index =self.count-1
 
         if self.actor and self.mode == ONCE_BLOCK and self.index >= self.count-1: self.actor._event_finish()
+
         
     def load(self): 
         """Load an anim from a montage file"""
@@ -862,6 +867,9 @@ class Actor(object):
 #        except:
 #            if logging: log.warning("unable to load idle.png for %s"%self.name)
         if logging: log.debug("smart load %s %s clickable %s and actions %s"%(type(self), self.name, self._clickable_area, self.actions.keys()))
+        if self.game and self.game.memory_save:
+#            print("unload %s"%self.name)
+            self._unload()
         return self
 
     def _count_actions_add(self, action, c):
@@ -888,7 +896,6 @@ class Actor(object):
                 if logging: log.warning("no look script for %s (write a def %s(game, %s, player): function)"%(self.name, basic, slugify(self.name).lower()))
                 
                 self._look_default(self.game, self, self.game.player)
-
 
     def trigger_use(self, actor):
         #user actor on this actee
@@ -1229,6 +1236,16 @@ class Actor(object):
             key = "%s_%s"%(prefix, i)
             if key in self.actions: self.actions[key] = self.actions[i]
         self._event_finish()
+
+
+    def _unload(self):
+        """ unload graphics from memory """
+        for a in self.actions.values(): a.unload()
+
+    def on_unload(self):
+        self._unload()
+        self._event_finish(block=False)
+
 
     def on_hide(self, interactive=False):
         """ A queuing function: hide the actor, including from all click and hover events 
@@ -2065,6 +2082,7 @@ class Scene(object):
         self.editlocked = False #stop ingame editor from overwriting file
         self.game = None
         self._background = None
+        self._background_fname = None
         self._last_state = None #name of last state loaded using load_state
         self.walkareas = [] #a list of WalkArea objects
         self.cx, self.cy = 512,384 #camera pointing at position (center of screen)
@@ -2128,9 +2146,18 @@ class Scene(object):
         return self.background()
 
     def background(self, fname=None): #get or set the background image
+        if fname == None and self._background == None and self._background_fname: #load image
+            fname = self._background_fname
+            
         if fname:
             self._background = load_image(fname)
+            self._background_fname = fname
         return self._background
+
+    def on_unload(self):
+        """ unload the images from memory """
+        self._background = None
+        self._event_finish()      
 
     def _remove(self, obj):
         """ remove object from the scene """
@@ -2314,6 +2341,7 @@ class Game(object):
         self.artreactor = None #which directory to store screenshots
         self.artreactor_scene = None #which was the last scene the artreactor took a screenshot of
         self.analyse_characters = False
+        self.memory_save = True #run in low memory mode by default
         
         #editor
         self.debug_font = None
@@ -2486,6 +2514,15 @@ class Game(object):
         if player: self.player = player
         if not running_headless: self.set_headless(False) #restore headless state
         self._event_finish(block=False)
+#        print("memory after game.smart")
+#        from meliae import scanner
+#        scanner.dump_all_objects('pyvida4memory.json')
+#        from meliae import loader
+#        om = loader.load('pyvida4memory.json')
+#        om.remove_expensive_references()
+#        print(om.summarize())
+#        dicts = om.get_all('dict')
+        
                 
     def on_set_editing(self, obj, objects=None):
         self.editing = obj
@@ -3162,6 +3199,7 @@ class Game(object):
         parser.add_option("-i", "--inventory", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
         parser.add_option("-d", "--detailed <scene>", dest="analyse_scene", help="Print lots of info about one scene (best used with test runner)")
         parser.add_option("-r", "--random", action="store_true", dest="stresstest", help="Randomly deviate from walkthrough to stress test robustness of scripting")
+        parser.add_option("-m", "--memory", action="store_false", dest="memory_save", help="Run game in high memory mode")
 
 
 #        parser.add_option("-l", "--list", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
@@ -3175,6 +3213,9 @@ class Game(object):
         self.steps_complete = 0
         if options.test_inventory: self.test_inventory = True
         if options.profiling: self.profiling = True
+        if options.memory_save == False: 
+            print("Using high memory option")
+            self.memory_save = False
         if options.analyse_characters: 
             print("Using analyse characters")
             self.analyse_characters = True
