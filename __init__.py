@@ -1982,6 +1982,7 @@ class Collection(MenuItem):
         self.index = 0 #where in the index to start showing
         self.sort_by = ALPHABETICAL
         self.cdx, self.cdy = 50,50 #width
+        self._on_mouse_move = self._on_mouse_move_collection
   
     def add(self, *args):
         for a in args:
@@ -2024,7 +2025,7 @@ class Collection(MenuItem):
         return None
         
         
-    def _on_mouse_move(self, x, y, button, modifiers): #collection.mouse_move single button interface
+    def _on_mouse_move_collection(self, x, y, button, modifiers): #collection.mouse_move single button interface
         """ when hovering over an object in the collection, show the item name 
         """
         m = pygame.mouse.get_pos()
@@ -2341,9 +2342,9 @@ class Game(object):
         self.artreactor = None #which directory to store screenshots
         self.artreactor_scene = None #which was the last scene the artreactor took a screenshot of
         self.analyse_characters = False
-        self.memory_save = True #run in low memory mode by default
+        self.memory_save = False #run in high memory mode by default
         
-        #editor
+        #editor--
         self.debug_font = None
         self.enabled_editor = False
 
@@ -3199,7 +3200,7 @@ class Game(object):
         parser.add_option("-i", "--inventory", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
         parser.add_option("-d", "--detailed <scene>", dest="analyse_scene", help="Print lots of info about one scene (best used with test runner)")
         parser.add_option("-r", "--random", action="store_true", dest="stresstest", help="Randomly deviate from walkthrough to stress test robustness of scripting")
-        parser.add_option("-m", "--memory", action="store_false", dest="memory_save", help="Run game in high memory mode")
+        parser.add_option("-m", "--memory", action="store_true", dest="memory_save", help="Run game in low memory mode")
 
 
 #        parser.add_option("-l", "--list", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
@@ -3213,9 +3214,11 @@ class Game(object):
         self.steps_complete = 0
         if options.test_inventory: self.test_inventory = True
         if options.profiling: self.profiling = True
-        if options.memory_save == False: 
-            print("Using high memory option")
-            self.memory_save = False
+        if android: #switch on memory safe mode for android by default
+            self.memory_save = True
+        if options.memory_save == True: 
+            self.memory_save = True
+        if self.memory_save: print("Using low memory option")
         if options.analyse_characters: 
             print("Using analyse characters")
             self.analyse_characters = True
