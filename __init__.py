@@ -1227,6 +1227,8 @@ class Actor(object):
             else:
                 key = "%s_%s"%(i, postfix)
             if key in self.actions: self.actions[i] = self.actions[key]
+        if self != self.game.player: 
+            print("actions: %s"%self.actions.keys())
         self._event_finish()
     
     def on_backup_actions(self, actions, prefix):
@@ -2233,6 +2235,9 @@ class Camera(object):
     __metaclass__ = use_on_events
     def __init__(self, game=None):
         self.game = game
+        self._effect = None #what effect are we applying?
+        self._count = 0
+        self._image = None
         
     def on_scene(self, scene):
         """ change the current scene """
@@ -2250,14 +2255,51 @@ class Camera(object):
         if self.game.scene and self.game.screen:
            self.game.screen.blit(self.game.scene.background(), (0, 0))
         self.game._event_finish()
+  
+    def _effect_fade_out(self, screen):
+        """ called per clock tick to fade out current screen, return True if finished """
+        self._count += 1
+        COUNT = 20
+        step = 255.0/COUNT
+        self._image.set_alpha(int(step*self._count))
+        if self._count > COUNT: return True
+
+    def _effect_fade_in(self, screen):
+        """ called per clock tick to fade out current screen, return True if finished """
+        self._count += 1
+        COUNT = 20
+        step = 255.0/COUNT
+        self._image.set_alpha(255-int(step*self._count))
+        if self._count > COUNT: 
+            self._image = None #remove camera lens filter
+            return True
+
+    def draw(self, screen): #return a big rect
+        if self._image:
+            return screen.blit(self._image, (0,0))
+        else:
+            return None
     
-    def on_fade_out(self, block=True):
-        if logging: log.error("camera.fade_out not implement yet")
+    def _finished_effect(self, block=False):
+        """ finished current effect """
+        self._effect = None
+        self._count = 0
         self.game._event_finish(block=block)
+
+    def on_reset(self): 
+        """ remove any camera effects """
+        self._image = None
+        self.game._event_finish(block=False)
+
+    def on_fade_out(self, block=True):
+        if logging: log.info("camera.fade_out requested")
+        self._image = pygame.Surface((1024, 768))
+        self._effect = self._effect_fade_out
         
     def on_fade_in(self, block=True):
-        if logging: log.error("camera.fade_in not implement yet")
-        self.game._event_finish(block=block)
+        if logging: log.info("camera.fade_in requested")
+        self._image = pygame.Surface((1024, 768))
+        self._effect = self._effect_fade_in
 
 
 EDIT_CLICKABLE = "clickable_area"
@@ -2750,15 +2792,9 @@ class Game(object):
             transmat_out(self, self.player)
         elif ENABLE_EDITOR and key == K_F7:
 #            self.player.gets(choice(self.items.values()))
-            cogs = self.items["Cogs"]        
-            cogs.do("cracked")
+            self.camera.fade_out()
         elif ENABLE_EDITOR and key == K_F8:
-            cogs = self.items["Cogs"]        
-            cogs.do("jammed")
-#            self.camera.scene("aqsurfaceairlock")
-#            self.player.relocate("aqsurfaceairlock")
-#            self.camera.scene("aqexecairlock")
-#            self.player.relocate("aqexecairlock")
+            self.camera.fade_in()
         elif ENABLE_EDITOR and key == K_F9:
             self.camera.scene("aqcleaners")
             self.player.relocate("aqcleaners")
@@ -3142,7 +3178,7 @@ class Game(object):
                 self.add(MenuItem("e_%s"%v, editor_point, (100+i*30, 45), (100+i*30,-50), v[0], display_text=v).smart(self))
             self.items['e_clickable'].interact = editor_edit_rect
             self.items['e_solid'].interact = editor_edit_rect
-            self.items['e_out'].set_actions(["idle"], "off")
+            self.items['e_out'].set_actions(["idle"], postfix="off")
             self.items['e_out'].do("idle")
 
             e = self.add(MenuItem("e_object_allow_draw", editor_toggle_draw, (350, 45), (350,-50), v[0]).smart(self))            
@@ -3157,6 +3193,7 @@ class Game(object):
 
     def finish_tests(self):
         """ called when test runner is ending or handing back control """
+        if logging: log.error("Tests completed with %s errors"%(self.errors))
         if len(self.missing_actors)>0:
             if logging: log.error("The following actors were never loaded:")
             for i in self.missing_actors: log.error(i)
@@ -3304,7 +3341,7 @@ class Game(object):
                 self.handle_events()
             else: #wait until time passes
                 if datetime.now() > self._wait: self.finished_wait()
-
+                
             if self.scene and self.screen: #update objects
                 for group in [self.scene.objects.values(), self.menu, self.modals]:
                     for obj in group: obj._update(dt)
@@ -3337,7 +3374,13 @@ class Game(object):
             #colour = (255,0,0)
             #pygame.draw.line(self.screen, colour, (pt[0],pt[1]-5), (pt[0],pt[1]+5))
             #pygame.draw.line(self.screen, colour, (pt[0]-5,pt[1]), (pt[0]+5,pt[1]))
-            
+
+            if self.camera and self.camera._effect:
+                finished = self.camera._effect(self.screen)
+                if finished: self.camera._finished_effect()
+                
+            if self.camera: 
+                debug_rect = self.camera.draw(self.screen) #apply any camera effects                
             
             if not self.headless:
                 pygame.display.flip() #show updated display to user
@@ -3471,6 +3514,10 @@ class Game(object):
         self._event_finish()
         
     def on_wait(self, seconds): #game.wait
+        if self.game.testing:
+            if logging: log.debug("testing skips wait event")
+            self._event_finish()
+            return
         self._wait = datetime.now() + timedelta(seconds=seconds)
         if logging: log.debug("waiting until %s"%datetime.now())
         
