@@ -480,6 +480,8 @@ def relative_position(game, parent, pos):
 def get_function(basic):
     """ Search memory for a function that matches this name """
     script = None
+    if basic == "interact_transmat_control":
+        if logging: log.info(sys.modules['__main__'])
     if hasattr(sys.modules['__main__'], basic):
           script = getattr(sys.modules['__main__'], basic)
     elif hasattr(sys.modules['__main__'], basic.lower()):
@@ -1227,8 +1229,6 @@ class Actor(object):
             else:
                 key = "%s_%s"%(i, postfix)
             if key in self.actions: self.actions[i] = self.actions[key]
-        if self != self.game.player: 
-            print("actions: %s"%self.actions.keys())
         self._event_finish()
     
     def on_backup_actions(self, actions, prefix):
@@ -1651,6 +1651,7 @@ class Actor(object):
         portrait = self.game.add(portrait, False, ModalItem)
         ok = self.game.add(Item("ok").smart(self.game), False, ModalItem)
         ok.interact = close_msgbox
+        
         self.game.stuff_event(ok.on_place, (900,250))
         self.game.stuff_event(portrait.on_place, (65,52))
         self.game.stuff_event(txt.on_place, (220,60))
@@ -2086,6 +2087,7 @@ class Scene(object):
         self.game = None
         self._background = None
         self._background_fname = None
+        self._rect = None #area to redraw if needed
         self._last_state = None #name of last state loaded using load_state
         self.walkareas = [] #a list of WalkArea objects
         self.cx, self.cy = 512,384 #camera pointing at position (center of screen)
@@ -2093,6 +2095,7 @@ class Scene(object):
         self.editable = True #will it appear in the editor (eg portals list)
         self.analytics_count = 0 #used by test runner to measure how "popular" a scene is.
         self.foreground = [] #items to draw in the foreground
+        self.music_fname = None
 
     def _event_finish(self, success=True, block=True): 
         return self.game._event_finish(success, block)
@@ -2142,7 +2145,9 @@ class Scene(object):
     draw = Actor.draw #scene.draw
        
     def clear(self): #scene.clear
-        img = None
+        if self._rect:
+            self.game.screen.blit(self.game.scene.background(), self._rect, self._rect)
+            self._rect = None
 
     def _image(self):
         """ return an image for this object """
@@ -2155,6 +2160,8 @@ class Scene(object):
         if fname:
             self._background = load_image(fname)
             self._background_fname = fname
+            self._rect = Rect(0,0,1024,768) #tell pyvida to redraw the whole screen to get the new background
+            #XXX ^^^ won't work on resolution other than 1024x768
         return self._background
 
     def on_unload(self):
@@ -2197,6 +2204,10 @@ class Scene(object):
         self._event_finish()
                 
 
+    def on_music(self, fname): #set the music for this scene
+        self.music_fname = fname
+        self._event_finish()
+
     def on_reset_editor_clean(self):
         #reset the editor_clean flag on all objects in this scene.
         for i in self.objects.values(): i.editor_clean = True
@@ -2225,8 +2236,33 @@ class Mixer(object):
     def __init__(self, game=None):
         self.game = game
 
-    def on_music_play(self):
-        pygame.mixer.music.play()
+    def _music_play(self, fname=None):
+        if fname: 
+            if os.path.exists(fname):
+                log.info("Loading music file %s"%fname)
+                pygame.mixer.music.load(fname)
+            else:
+                log.warning("Music file %s missing."%fname)
+                pygame.mixer.music.stop()
+                return
+        pygame.mixer.music.play(-1) #loop indefinitely
+        
+    def on_music_play(self, fname=None):
+        self._music_play(fname=fname)
+        self.game._event_finish()
+        
+    def _music_fade_out(self):
+        pygame.mixer.music.fadeout(200)
+
+    def on_music_fade_out(self):
+        self._music_fade_out()
+        self.game._event_finish()
+        
+    def _music_stop(self):
+        pygame.mixer.music.stop()
+
+    def on_music_stop(self):
+        self._music_stop()
         self.game._event_finish()
 
 
@@ -2239,8 +2275,9 @@ class Camera(object):
         self._count = 0
         self._image = None
         
-    def on_scene(self, scene):
+    def _scene(self, scene):
         """ change the current scene """
+        game = self.game
         if scene == None:
             if logging: log.error("Can't change to non-existent scene, staying on current scene")
             scene = self.game.scene
@@ -2254,6 +2291,14 @@ class Camera(object):
         if logging: log.debug("changing scene to %s"%scene.name)
         if self.game.scene and self.game.screen:
            self.game.screen.blit(self.game.scene.background(), (0, 0))
+        #start music for this scene
+        if game.scene.music_fname:
+            self.game.mixer._music_play(game.scene.music_fname)
+#        else:
+#            self.game.mixer._music_fade_out()
+
+    def on_scene(self, scene):
+        self._scene(scene)
         self.game._event_finish()
   
     def _effect_fade_out(self, screen):
@@ -2494,7 +2539,7 @@ class Game(object):
                 if logging: log.error("%s is an unknown %s type, so failed to add to game"%(obj.name, type(obj)))
         obj.game = self
         return obj
-        #self._event_finish()
+
         
     def info(self, text, x, y): #game.info
         """ On screen at one time can be an info text (eg an object name or menu hover) 
@@ -3099,6 +3144,7 @@ class Game(object):
                 if not os.path.exists(d): os.makedirs(d)
                 obj = Actor(name).smart(game)
                 game.add(obj)
+                import pdb; pdb.set_trace()
                 if hasattr(self, "e_objects"): self.e_objects = None #free add object collection
                 editor_collection_close(game, btn.collection, player)
                 
@@ -3111,6 +3157,7 @@ class Game(object):
                 if not os.path.exists(d): os.makedirs(d)
                 obj = Item(name).smart(game)
                 game.add(obj)
+                import pdb; pdb.set_trace()
                 if hasattr(self, "e_objects"): self.e_objects = None #free add object collection
                 editor_collection_close(game, btn.collection, player)
 
@@ -3521,7 +3568,7 @@ class Game(object):
         self._wait = datetime.now() + timedelta(seconds=seconds)
         if logging: log.debug("waiting until %s"%datetime.now())
         
-    def finished_wait(self):
+    def finished_wait(self, ):
         if logging: log.debug("finished wait at %s"%datetime.now())
         self._wait = None
         self._event_finish()
@@ -3547,22 +3594,13 @@ class Game(object):
         scene.background(image)
         #add scene to game, change over to that scene
         self.add(scene)
-#        self.scene(scene)
-        self.stuff_event(self.camera.on_scene, scene)
+        self.camera._scene(scene)
         if self.screen:
             self.screen.blit(scene.background(), (0, 0))
             pygame.display.flip()            
-        
-        #create and add a modal to block input
-#        modal = Modal(image)
-#        modal._clickable_area = [0,0,1024,768]
-        self._event_finish() #finish the event
+#        self._event_finish() #finish the event
+        self.on_wait(duration) #does the event_finish for us
         if callback: callback(self)
-#        def close_splash(self, 
-#        modal.interact = 
-#        self.add(modal)
-        #add timed event for callback
-#        self.
         
 
     def user_input(self, text, callback, position=(100,170), background="msgbox"):
