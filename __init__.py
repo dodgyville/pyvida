@@ -2030,8 +2030,7 @@ class Collection(MenuItem):
         if self._sorted_objects == None:
             show = self.objects.values()
             self._sorted_objects = sorted(show, key=lambda x: x.name.lower(), reverse=False)
-        return self._sorted_objects
-        
+        return self._sorted_objects      
 
     def get_object(self, pos):
         """ Return the object at this spot on the screen in the collection """
@@ -3005,8 +3004,8 @@ class Game(object):
                     f.write('    from pyvida import WalkArea, Rect\n')
                     f.write('    import os\n')
                     f.write('    scene.clean(["%s"])\n'%objects) #remove old actors and items
-                    if scene.music_fname:
-                        f.write('    scene.music(%s)\n'%scene.music_fname)
+                    if game.scene.music_fname:
+                        f.write('    scene.music(%s)\n'%game.scene.music_fname)
                     f.write('    scene.walkareas = [')
                     for w in game.scene.walkareas:
                         walkarea = str(w.polygon.vertexarray)
@@ -3215,7 +3214,8 @@ class Game(object):
                 if not os.path.exists(d): os.makedirs(d)
                 obj = Actor(name).smart(game)
                 game.add(obj)
-                import pdb; pdb.set_trace()
+                btn.collection.add(obj)
+ #               import pdb; pdb.set_trace()
                 if hasattr(self, "e_objects"): self.e_objects = None #free add object collection
                 editor_collection_close(game, btn.collection, player)
                 
@@ -3228,7 +3228,8 @@ class Game(object):
                 if not os.path.exists(d): os.makedirs(d)
                 obj = Item(name).smart(game)
                 game.add(obj)
-                import pdb; pdb.set_trace()
+                btn.collection.add(obj)
+#                import pdb; pdb.set_trace()
                 if hasattr(self, "e_objects"): self.e_objects = None #free add object collection
                 editor_collection_close(game, btn.collection, player)
 
