@@ -480,12 +480,12 @@ def relative_position(game, parent, pos):
 def get_function(basic):
     """ Search memory for a function that matches this name """
     script = None
+    module = "main" if android else "__main__" #which module to search for functions
     if basic == "interact_transmat_control":
-        if logging: log.info(sys.modules['__main__'])
-    if hasattr(sys.modules['__main__'], basic):
-          script = getattr(sys.modules['__main__'], basic)
-    elif hasattr(sys.modules['__main__'], basic.lower()):
-          script = getattr(sys.modules['__main__'], basic.lower())
+    if hasattr(sys.modules[module], basic):
+          script = getattr(sys.modules[module], basic)
+    elif hasattr(sys.modules[module], basic.lower()):
+          script = getattr(sys.modules[module], basic.lower())
     return script
 
 #### pyvida helper functions ####
@@ -2260,26 +2260,26 @@ class Mixer(object):
         if fname: 
             if os.path.exists(fname):
                 log.info("Loading music file %s"%fname)
-                pygame.mixer.music.load(fname)
+                if pygame.mixer: pygame.mixer.music.load(fname)
             else:
                 log.warning("Music file %s missing."%fname)
-                pygame.mixer.music.stop()
+                if pygame.mixer: pygame.mixer.music.stop()
                 return
-        pygame.mixer.music.play(-1) #loop indefinitely
+        if pygame.mixer: pygame.mixer.music.play(-1) #loop indefinitely
         
     def on_music_play(self, fname=None):
         self._music_play(fname=fname)
         self.game._event_finish()
         
     def _music_fade_out(self):
-        pygame.mixer.music.fadeout(200)
+        if pygame.mixer: pygame.mixer.music.fadeout(200)
 
     def on_music_fade_out(self):
         self._music_fade_out()
         self.game._event_finish()
         
     def _music_stop(self):
-        pygame.mixer.music.stop()
+        if pygame.mixer: pygame.mixer.music.stop()
 
     def on_music_stop(self):
         self._music_stop()
@@ -3439,7 +3439,7 @@ class Game(object):
         
         #set up music
         if self.settings:
-            pygame.mixer.music.set_volume(self.settings.music_volume)
+            if pygame.mixer: pygame.mixer.music.set_volume(self.settings.music_volume)
 
 
         if ENABLE_EDITOR: #editor enabled for this game instance
