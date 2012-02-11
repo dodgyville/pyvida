@@ -553,7 +553,7 @@ class Action(object):
         if self.images:
             return self.images[self.index%self.count]
         elif self.fname: #try and load images for this actor
-            print("loading images for usage")
+            log.debug("loading images for usage")
             self.load()
             return self.images[self.index%self.count]
         else:
@@ -749,7 +749,9 @@ class Actor(object):
 
     def get_ax(self): #anchor points
         scale = self.action.scale if self.action else 1 
-        return self.x - self._ax * scale
+        ax = self._ax
+        if self.action: ax += self.action.ax #this action's specific displacement
+        return self.x - ax * scale
     def set_ax(self, ax): 
         scale = (1.0/self.action.scale) if self.action else 1     
         self._ax = (self.x - ax)*scale
@@ -757,7 +759,9 @@ class Actor(object):
 
     def get_ay(self): 
         scale = self.action.scale if self.action else 1 
-        return self.y - self._ay * scale
+        ay = self._ay
+        if self.action: ay += self.action.ay #this action's specific displacement
+        return self.y - ay * scale
     def set_ay(self, ay): 
         scale = (1.0/self.action.scale) if self.action else 1     
         self._ay = (self.y - ay)*scale
@@ -870,7 +874,6 @@ class Actor(object):
 #            if logging: log.warning("unable to load idle.png for %s"%self.name)
         if logging: log.debug("smart load %s %s clickable %s and actions %s"%(type(self), self.name, self._clickable_area, self.actions.keys()))
         if self.game and self.game.memory_save:
-#            print("unload %s"%self.name)
             self._unload()
         return self
 
@@ -1456,6 +1459,7 @@ class Actor(object):
         if p == False:
             if logging: log.warning("%s unable to find path from %s to %s (walkrea: %s)"%(self.name, (self.x, self.y), (x,y), walkarea))
             self._do('idle')
+            if self.game: self.game.block = False
             if self.game: self.game._event_finish(success=False) #signal to game event queue this event is done
             return None
         n = p[1] #short term goal is the next node
@@ -1501,10 +1505,8 @@ class Actor(object):
             if logging: log.debug("actor %s has arrived at %s on scene %s"%(self.name, destination, self.scene.name if self.scene else "none"))
             self._motion_queue = [] #empty motion queue
             self.game._event_finish() #signal to game event queue this event is done            
+            if self.game: self.game.block = False
             return True
-            
-
-
         return False
     
     def on_goto(self, destination, block=True, modal=False, ignore=False):
@@ -1525,6 +1527,7 @@ class Actor(object):
                 modal = [True|False] #block user input until action reaches destination
                 block = [True|False] #block other events from running until actor reaches dest
         """    
+        if self.game: self.game.block = True
         self._motion_queue_ignore = ignore
         if type(destination) == str:
             destination = (self.game.actors[destination].sx, self.game.actors[destination].sy)
@@ -1546,6 +1549,7 @@ class Actor(object):
                 for w in walk_actions: self._count_actions_add(w, 5)
             self.x, self.y = x, y #skip straight to point for testing/editing
         elif self.scene and walkarea_fail == True and ignore==False: #not testing, and failed walk area test
+            if self.game: self.game.block = False
             self.game._event_finish(success=False) #signal to game event queue this event is done    
             return       
 
@@ -1626,21 +1630,36 @@ class Actor(object):
         if self.game.testing: 
             self._event_finish()
             return
+        self.game.block = True #stop other events until says finished
+        self._event_finish(block=True) #remove the on_says
 
-        self.game.stuff_event(self.on_wait, None)
-        def close_msgbox(game, actor, player):
+        self.game.stuff_event(self.on_wait, None) #push an on_wait as the final event in this script
+        def close_msgbox(game, box, player):
+            if game._event and not game._event[0] == msg.actor.on_wait: return
             try:
-                game.modals.remove(game.items[background])
-                game.modals.remove(game.items["txt"])
-                game.modals.remove(game.items["ok"])
-                game.modals.remove(game.items["portrait"])            
+                t = game.remove_related_events(game.items[background])
+                game.modals.remove(t)
+                t = game.remove_related_events(game.items["txt"])
+                game.modals.remove(t)
+                t = game.remove_related_events(game.items["ok"])
+                game.modals.remove(t)
+                t = game.remove_related_events(game.items["portrait"])
+                game.modals.remove(t)            
             except ValueError:
                 pass
-            self._event_finish()
-        msg = self.game.add(ModalItem(background, close_msgbox,(54,-400)).smart(self.game))
+            game.block = False #release event lock
+            self._event_finish() #should remove the on_wait event
+            
+        TOP = False
+        if TOP: #place text boxes on top of screen
+            oy, iy = -400, 40
+        else:
+            oy, iy = 1200, 360
+        msg = self.game.add(ModalItem(background, close_msgbox,(54, oy)).smart(self.game))
+        msg.actor = self
         kwargs = {'wrap':660,}
         if self.font_colour != None: kwargs["colour"] = self.font_colour
-        txt = self.game.add(Text("txt", (220,-200), (840,170), text, **kwargs), False, ModalItem)
+        txt = self.game.add(Text("txt", (220, oy + 200), (840, iy+130), text, **kwargs), False, ModalItem)
         
         #get a portrait for this speech
         if type(action) == str: action = self.actions[action]
@@ -1652,11 +1671,10 @@ class Actor(object):
         ok = self.game.add(Item("ok").smart(self.game), False, ModalItem)
         ok.interact = close_msgbox
         
-        self.game.stuff_event(ok.on_place, (900,250))
-        self.game.stuff_event(portrait.on_place, (65,52))
-        self.game.stuff_event(txt.on_place, (220,60))
-        self.game.stuff_event(msg.on_goto, (54,40))
-        self._event_finish()
+        self.game.stuff_event(ok.on_place, (900, iy+210))
+        self.game.stuff_event(portrait.on_place, (65, iy+12))
+        self.game.stuff_event(txt.on_place, (220, iy+20))
+        self.game.stuff_event(msg.on_goto, (54, iy))
     
     def on_asks(self, *args):
         """ A pseudo-queuing function. Display a speech bubble with text and several replies, and wait for player to pick one.
@@ -2178,7 +2196,10 @@ class Scene(object):
                 if logging: log.warning("Object %s not in this scene %s"%(obj, self.name))
                 return
         obj.scene = None
-        del self.objects[obj.name]
+        if obj.name in self.objects:
+            del self.objects[obj.name]
+        else:
+            log.warning("%s not in scene %s"%(obj.name, self.name))
 
     def on_remove(self, obj): #scene.remove
         """ queued function for removing object from the scene """
@@ -2347,6 +2368,40 @@ class Camera(object):
         self._effect = self._effect_fade_in
 
 
+
+#If we use text reveal
+SLOW = 0
+NORMAL = 1
+FAST = 2
+class Settings(object):
+    """ game settings saveable by user """
+    def __init__(self):
+        self.music_on = True
+        self.sfx_on = True
+        self.voices_on = True
+        
+        self.music_volume = 0.6
+        self.sfx_volume = 0.8
+        self.voices_volume = 0.8
+        
+        self.resolution_x = 1024
+        self.resolution_y = 768
+        
+        self.allow_internet = True #check for updates and report stats
+        self.allow_internet_debug = True #send profiling reports home
+        
+        self.fullscreen = True
+        self.textspeed = NORMAL
+        
+        self.extras_unlocked = False
+        self.undies_unlocked = True #can player toggle uniform?
+        self.commentary = False #is director's commentary on?
+        self.undies_only = False #will minogue play entire game in undies?
+        
+        self.invert_mouse = False #for lefties
+        self.language = "en"
+
+
 EDIT_CLICKABLE = "clickable_area"
 EDIT_SOLID = "solid_area"
         
@@ -2391,6 +2446,7 @@ class Game(object):
         self.events = []
         self._event = None
         self._last_event_success = True #did the last even succeed or fail
+        self.block = False #block click events
         
         self.save_game = [] #a list of events caused by this player to get to this point in game
         self.reset_game = None #which function can we call to reset the game state to a safe point (eg start of chapter)
@@ -2649,13 +2705,13 @@ class Game(object):
     def _trigger(self, obj):
         t = time.time()
         """ trigger use, look or interact, depending on mouse_mode """
-        if self.player and self.scene and self.player in self.scene.objects.values() and obj != self.player: self.player.goto(obj)
         if self.mouse_mode == MOUSE_LOOK:
             self.game.save_game.append([look, obj.name, t])
             if obj.allow_look: obj.trigger_look()
         elif self.mouse_mode == MOUSE_INTERACT:
             self.game.save_game.append([interact, obj.name, t])
             if obj.allow_interact:
+#                self.click(obj)
                 obj.trigger_interact()
             elif self.testing:
                 log.warning("Trying to do interact on %s when interact disabled"%obj.name)
@@ -2667,6 +2723,11 @@ class Game(object):
                 obj.trigger_use(self.mouse_cursor)
             self.mouse_cursor = MOUSE_POINTER
             self.mouse_mode = MOUSE_INTERACT
+
+    def on_trigger(self, obj):
+        self.block = False
+        self._trigger(obj)
+        self._event_finish()
 
     def _on_mouse_down(self, x, y, button, modifiers): #single button interface
 #        if self.menu_mouse_pressed == True: return
@@ -2713,6 +2774,8 @@ class Game(object):
                 self.menu_mouse_pressed = True
                 return
                 
+        if self.block: return #don't allow interacts if event lock is activated
+        
         if self.enabled_editor and self.scene: #finish edit point or rect or walkarea point
             if self.editing: #finish move
 #                self.editing_point = None
@@ -2724,7 +2787,10 @@ class Game(object):
                 if i.collide(x,y) and (i.allow_use or i.allow_interact or i.allow_look):
 #                   if i.actions.has_key('down'): i.action = i.actions['down']
                     if self.mouse_mode == MOUSE_USE or i is not self.player: #only click on player in USE mode
-                        self._trigger(i) #trigger look, use or interact
+                        self.block = True
+                        if self.player and self.scene and self.player in self.scene.objects.values() and i != self.player: self.player.goto(i)
+                    
+                        self.trigger(i) #trigger look, use or interact
                         return
             #or finally, try and walk the player there.
             if self.player and self.player in self.scene.objects.values():
@@ -2801,6 +2867,7 @@ class Game(object):
                     if i.actions.has_key('idle'): 
                         i.action = i.actions['idle']
         if menu_capture == True: return
+        if self.block: return #don't allow interacts if event lock is activated
         self._on_mouse_move_scene(x, y, button, modifiers)
 
     def _on_key_press(self, key, unicode_key):
@@ -2824,9 +2891,9 @@ class Game(object):
         elif ENABLE_EDITOR and key == K_F3: #kill an event if stuck in the event queue
             self._event_finish()      
         elif ENABLE_EDITOR and key == K_F4:
-            self.player.do_once("undressed_lookleft")
+            self.player.do_once("dress")
 #            self.player.do_once("undressed_lookright")
-            self.player.do("undressed_lookright",mode=ONCE_BLOCK)
+#            self.player.do("undressed_lookright",mode=ONCE_BLOCK)
             self.player.do("idle")
 #            self.player.do("undressed_lookleft2")
         elif ENABLE_EDITOR and key == K_F5:
@@ -2876,6 +2943,7 @@ class Game(object):
             elif event.type == MOUSEBUTTONDOWN:
                 self._on_mouse_down(m[0], m[1], event.button, None)
             elif event.type == MOUSEBUTTONUP:
+                if self._event and self._event[0] == self.player.on_wait: self._event_finish()
                 self._on_mouse_up(m[0], m[1], event.button, None)
             elif event.type == KEYDOWN:
                 self._on_key_press(event.key, event.dict['unicode'])
@@ -2935,7 +3003,10 @@ class Game(object):
                     f.write("# generated by ingame editor v0.1\n\n")
                     f.write("def load_state(game, scene):\n")
                     f.write('    from pyvida import WalkArea, Rect\n')
+                    f.write('    import os\n')
                     f.write('    scene.clean(["%s"])\n'%objects) #remove old actors and items
+                    if scene.music_fname:
+                        f.write('    scene.music(%s)\n'%scene.music_fname)
                     f.write('    scene.walkareas = [')
                     for w in game.scene.walkareas:
                         walkarea = str(w.polygon.vertexarray)
@@ -3361,6 +3432,11 @@ class Game(object):
             pygame.display.flip() #show updated display to user
 
         pygame.display.set_caption(self.name)
+        
+        #set up music
+        if self.settings:
+            pygame.mixer.music.set_volume(self.settings.music_volume)
+
 
         if ENABLE_EDITOR: #editor enabled for this game instance
             self._load_editor()
@@ -3497,12 +3573,20 @@ class Game(object):
         self.events.insert(0, (event, args, kwargs)) #insert function call, args and kwargs to events
         return args[0] if len(args)>0 else None
 
+    def remove_related_events(self, obj):
+        """ remove events from queue that related to this object """
+        for i, e in enumerate(self.events):
+            a = getattr(e[0], "im_self", None)
+            if a == obj: 
+                self.events.remove(e)
+        return obj
 
     def _event_finish(self, success=True, block=True): #Game.on_event_finish
         """ start the next event in the game scripter """
 #        if logging: log.debug("finished event %s, remaining:"%(self._event, self.events)
         self._event = None
         self._last_event_success = success
+        pygame.event.clear() #clear pygame event queue
         if block==False: self.handle_events() #run next event immediately
     
     def walkthroughs(self, suites):
