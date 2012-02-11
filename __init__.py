@@ -3081,17 +3081,21 @@ class Game(object):
                     game.editing._solid_area = DEFAULT_SOLID
                 game.editing_point = rects[menu_item.name]
 
+            def _editor_add_object_to_scene(game, scene, obj):
+                if obj and game.scene:
+                    obj.x, obj.y = 500,400
+                    obj._editor_add_to_scene = True #let exported know this is new to this scene
+                    game.scene.add(obj)
+                    game.set_editing(obj)
+
             def editor_select_object(game, collection, player):
                 """ select an object from the collection and add to the scene """
                 m = pygame.mouse.get_pos()
                 mx,my = relative_position(game, collection, m)
                 obj = collection.get_object(m)
+                _editor_add_object_to_scene(game, game.scene, obj)
                 if obj and game.scene:
-                    obj.x, obj.y = 500,400
-                    obj._editor_add_to_scene = True #let exported know this is new to this scene
-                    game.scene.add(obj)
                     editor_collection_close(game, collection, player)
-                    game.set_editing(obj)
 
             def editor_add(game, menuItem, player):
                 """ set up the collection object """
@@ -3182,19 +3186,17 @@ class Game(object):
                 game.player.relocate(scene)
                 editor_collection_close(game, collection, player)
 
-
             def editor_collection_newscene(game, btn, player):
-                print("What is the name of this scene to create? (blank to abort)")
-                name = raw_input(">")
-                if name=="": return
-                d = os.path.join(game.scene_dir, name)
-                if not os.path.exists(d): os.makedirs(d)
-                obj = Scene(name).smart(game)
-                game.add(obj)
-                btn.collection.e_scenes = None
-                editor_collection_close(game, btn.collection, player)
-                
-                
+                def e_newscene_cb(game, inp):
+                    name = inp.value
+                    if name=="": return
+                    d = os.path.join(game.scene_dir, name)
+                    if not os.path.exists(d): os.makedirs(d)
+                    obj = Scene(name).smart(game)
+                    game.add(obj)
+                    btn.collection.e_scenes = None
+                    editor_collection_close(game, btn.collection, player)
+                game.user_input("What is the name of this scene to create? (blank to abort)", e_newscene_cb)
 
             def editor_collection_next(game, btn, player):
                 """ move an index in a collection object in the editor, shared with e_portals and e_objects """
@@ -3207,31 +3209,32 @@ class Game(object):
                 if btn.collection.index <= 0: btn.collection.index = 0
                 
             def editor_collection_newactor(game, btn, player):
-                print("What is the name of this actor to create? (blank to abort)")
-                name = raw_input(">")
-                if name=="": return
-                d = os.path.join(game.actor_dir, name)
-                if not os.path.exists(d): os.makedirs(d)
-                obj = Actor(name).smart(game)
-                game.add(obj)
-                btn.collection.add(obj)
- #               import pdb; pdb.set_trace()
-                if hasattr(self, "e_objects"): self.e_objects = None #free add object collection
-                editor_collection_close(game, btn.collection, player)
-                
+                def e_newactor_cb(game, inp):
+                    name = inp.value
+                    if name=="": return
+                    d = os.path.join(game.actor_dir, name)
+                    if not os.path.exists(d): os.makedirs(d)
+                    obj = Actor(name).smart(game)
+                    game.add(obj)
+                    btn.collection.add(obj)
+                    if hasattr(self, "e_objects"): self.e_objects = None #free add object collection
+                    _editor_add_object_to_scene(game, game.scene, obj)
+                    editor_collection_close(game, btn.collection, player)
+                game.user_input("What is the name of this actor to create? (blank to abort)", e_newactor_cb)                
                 
             def editor_collection_newitem(game, btn, player):
-                print("What is the name of this item to create? (blank to abort)")
-                name = raw_input(">")
-                if name=="": return
-                d = os.path.join(game.item_dir, name)
-                if not os.path.exists(d): os.makedirs(d)
-                obj = Item(name).smart(game)
-                game.add(obj)
-                btn.collection.add(obj)
-#                import pdb; pdb.set_trace()
-                if hasattr(self, "e_objects"): self.e_objects = None #free add object collection
-                editor_collection_close(game, btn.collection, player)
+                def e_newitem_cb(game, inp):
+                    name = inp.value
+                    if name=="": return
+                    d = os.path.join(game.item_dir, name)
+                    if not os.path.exists(d): os.makedirs(d)
+                    obj = Item(name).smart(game)
+                    game.add(obj)
+                    btn.collection.add(obj)
+                    if hasattr(self, "e_objects"): self.e_objects = None #free add object collection
+                    _editor_add_object_to_scene(game, game.scene, obj)
+                    editor_collection_close(game, btn.collection, player)
+                game.user_input("What is the name of this item to create? (blank to abort)", e_newitem_cb)
 
                 
             def editor_collection_close(game, collection, player):
