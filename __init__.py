@@ -1655,6 +1655,7 @@ class Actor(object):
             oy, iy = -400, 40
         else:
             oy, iy = 1200, 360
+            oy, iy = 3600, 360
         msg = self.game.add(ModalItem(background, close_msgbox,(54, oy)).smart(self.game))
         msg.actor = self
         kwargs = {'wrap':660,}
@@ -1860,14 +1861,15 @@ def text_to_image(text, font, colour, maxwidth,offset=None):
     """ Convert block of text to wrapped image """
     text = wrapline(text, font, maxwidth)
     _offset = offset if offset else 0
-    if len(text) == 1:
+    dx, dy = 10,10
+    if len(text) == 1: #single line
 #        img = font.render(text[0], True, colour)
         info_image = font.render(text[0], True, (0,0,0))
-        size = info_image.get_width() + _offset, info_image.get_height() + _offset
+        size = info_image.get_width() + _offset + dx, info_image.get_height() + _offset + dy
         img = Surface(size, pygame.SRCALPHA, 32)
-        img.blit(info_image, (_offset, _offset))
+        img.blit(info_image, (dx + _offset, dy + _offset))
         info_image = font.render(text[0], True, colour)
-        img.blit(info_image, (0, 0))
+        img.blit(info_image, (dx, dy))
         return img
 
     h= font.size(text[0])[1]
@@ -1878,9 +1880,9 @@ def text_to_image(text, font, colour, maxwidth,offset=None):
         #shadow
         if offset:
             img_line = font.render(t, True, (0,0,0))
-            img.blit(img_line, (10+offset, i * h + 10+offset))
+            img.blit(img_line, (dx + offset, i * h + dy + offset))
         img_line = font.render(t, True, colour)
-        img.blit(img_line, (10, i * h + 10))
+        img.blit(img_line, (dx, i * h + dy))
 
     return img
 
@@ -1951,6 +1953,10 @@ class Input(Text):
         self.maxlength = maxlength #number of characters
         self.callback = callback
         self.remove = [] #associated items to remove when this input is finished (eg background box)
+
+#    def collide(self, x,y): #modals cover the whole screen?
+#        return True
+
 
     def update_text(self): #rebuild the text image
         self.text = "%s\n%s"%(self._text, self.value)
@@ -2876,6 +2882,9 @@ class Game(object):
                 if len(i.value)< i.maxlength and addable:
                     i.value += unicode_key
                     i.update_text()
+                if len(i.value)>0 and unicode_key == "\b": #backspace
+                    i.value = i.value[:-1]
+                    i.update_text()
                 if len(unicode_key)>0 and unicode_key in "\n\r\t":
                     for remove_item in i.remove: #remove all elements of the input box (Eg background too)
                         self.modals.remove(remove_item)
@@ -3709,7 +3718,9 @@ class Game(object):
             print("android skipping user input")
             callback(self.game, None)
             return
+        def interact_msgbox(game, msgbox, player): pass #block modals and menu but let Input object handle user input
         msgbox = self.game.add(ModalItem(background, None, position).smart(self.game))
+        msgbox.interact = interact_msgbox
         txt = self.game.add(Input("input", (position[0]+30, position[1]+30), (840,170), text, wrap=660, callback=callback), False, ModalItem)
         txt.remove = [txt, msgbox]
         if self.game.testing: 
