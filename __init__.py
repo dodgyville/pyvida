@@ -1654,8 +1654,8 @@ class Actor(object):
         if TOP: #place text boxes on top of screen
             oy, iy = -400, 40
         else:
-            oy, iy = 1200, 360
-            oy, iy = 3600, 360
+#            oy, iy = 1200, 360
+            oy, iy = 360, 360
         msg = self.game.add(ModalItem(background, close_msgbox,(54, oy)).smart(self.game))
         msg.actor = self
         kwargs = {'wrap':660,}
