@@ -2385,7 +2385,8 @@ class Settings(object):
         self.sfx_on = True
         self.voices_on = True
         
-        self.music_volume = 0.6
+#        self.music_volume = 0.6
+        self.music_volume = 0.0 #XXX music disabled by default
         self.sfx_volume = 0.8
         self.voices_volume = 0.8
         
@@ -2763,7 +2764,11 @@ class Game(object):
                 self.editing_index = 0 #must be not-None to trigger drag
             
     def _on_mouse_up(self, x, y, button, modifiers): #single button interface
-        if button<>1: 
+        if self.game and self.game.settings and self.game.settings.invert_mouse: #inverted mouse
+            if button==1:
+                print("SUB BUTTON PRESSED (inverted)")
+                self.mouse_mode = MOUSE_LOOK #subaltern btn pressed 
+        elif button<>1: 
             print("SUB BUTTON PRESSED")
             self.mouse_mode = MOUSE_LOOK #subaltern btn pressed 
         if not self.enabled_editor and len(self.modals) > 0: #modals first, but ignore them if in edit mode
@@ -3449,7 +3454,6 @@ class Game(object):
         #set up music
         if self.settings:
             pygame.mixer.music.set_volume(self.settings.music_volume)
-
 
         if ENABLE_EDITOR: #editor enabled for this game instance
             self._load_editor()
