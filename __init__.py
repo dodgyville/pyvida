@@ -15,6 +15,11 @@ except ImportError:
     pdb = None
 
 try:
+    import traceback
+except ImportError:
+    traceback = None
+
+try:
     from gettext import gettext
 except ImportError:
     def gettext(txt):
@@ -953,7 +958,17 @@ class Actor(object):
             basic = "interact_%s"%slugify(self.name)
             script = get_function(basic)
             if script:
-                script(self.game, self, self.game.player)
+                if self.game.testing: #throw exceptions when testing
+                    script(self.game, self, self.game.player)
+                else:
+                    try:
+                        script(self.game, self, self.game.player)
+                    except:
+                        log.error("Exception in %s"%script.__name__)
+                        print("\nError running %s\n"%script.__name__)
+                        if traceback: traceback.print_exc(file=sys.stdout)
+                        print("\n\n")
+                        
                 if logging: log.debug("Player interact (%s) with %s"%(script.__name__, self.name))
             else:
                 #warn if using default vida interact
@@ -2544,11 +2559,12 @@ class Game(object):
             for fn in dir(sys.modules[i]): #update main namespace with new functions
                 new_fn = getattr(sys.modules[i], fn)
                 if hasattr(new_fn, "__call__"): setattr(sys.modules[module], new_fn.__name__, new_fn)
-        #update actor.interact .look and .uses values too.
+        #XXX update actor.look and .uses values too.
         for i in (self.actors.values() + self.items.values()):
             if i.interact: 
                 if type(i.interact) != str:
-                    i.interact = get_function(i.interact.__name__)
+                    new_fn = get_function(i.interact.__name__)
+                    if new_fn: i.interact = new_fn #only replace if function found, else rely on existing fn
         log.info("Editor has done a module reload")
             
         
