@@ -1,4 +1,5 @@
 from __future__ import print_function
+import __builtin__
 
 from datetime import datetime, timedelta, date
 import gc, glob, copy, inspect, math, os, sys, operator, types, pickle, time
@@ -479,9 +480,9 @@ def relative_position(game, parent, pos):
 
 def get_function(basic):
     """ Search memory for a function that matches this name """
+    if hasattr(basic, "__call__"): basic = basic.__name__
     script = None
     module = "main" if android else "__main__" #which module to search for functions
-    if basic == "interact_transmat_control":
     if hasattr(sys.modules[module], basic):
           script = getattr(sys.modules[module], basic)
     elif hasattr(sys.modules[module], basic.lower()):
@@ -492,7 +493,7 @@ def get_function(basic):
 def editor_menu(game):
     game.menu_fadeOut()
     game.menu_push() #hide and push old menu to storage
-    game.set_menu("e_load", "e_save", "e_add", "e_delete", "e_prev", "e_next", "e_walk", "e_portal", "e_scene", "e_step")
+    game.set_menu("e_load", "e_save", "e_add", "e_delete", "e_prev", "e_next", "e_walk", "e_portal", "e_scene", "e_step", "e_reload")
     game.menu_hide()
     game.menu_fadeIn()
 
@@ -1321,13 +1322,13 @@ class Actor(object):
     def _relocate(self, scene, destination=None): #actor.relocate
         # """ relocate this actor to scene at destination instantly """ 
         if scene == None:
-            if logging: log.error("Unable to relocate %s to non-existent scene, relocating on current scene"%self.name)
+            if logging: log.error("Unable to relocate %s to non-existent scene (None), relocating on current scene %s"%(self.name, self.game.scene.name))
             scene = self.game.scene
         if type(scene) == str:
             if scene in self.game.scenes:
                 scene = self.game.scenes[scene]
             else:
-                if logging: log.error("Unable to relocate %s to non-existent scene %s, relocating on current scene"%(self.name, scene))
+                if logging: log.error("Unable to relocate %s to non-existent scene %s, relocating on current scene %s"%(self.name, scene, self.game.scene.name))
                 scene = self.game.scene
         if destination:
             pt = get_point(self.game, destination)
@@ -1543,7 +1544,7 @@ class Actor(object):
             walkarea_fail = True
             for w in self.scene.walkareas:
                 if w.polygon.collide(x,y): walkarea_fail = False
-            if logging and walkarea_fail and ignore==False: log.warning("Destination point (%s, %s) not inside walkarea "%(x,y))                
+            if logging and walkarea_fail and ignore==False: log.warning("Destination point (%s, %s) not inside %s walkarea "%(x,y, self.scene.name))                
         if self.game.testing == True or self.game.enabled_editor: 
             if self.game.analyse_characters: #count walk actions as occuring for analysis
                 for w in walk_actions: self._count_actions_add(w, 5)
@@ -1660,7 +1661,7 @@ class Actor(object):
         msg.actor = self
         kwargs = {'wrap':660,}
         if self.font_colour != None: kwargs["colour"] = self.font_colour
-        txt = self.game.add(Text("txt", (220, oy + 200), (840, iy+130), text, **kwargs), False, ModalItem)
+        txt = self.game.add(Text("txt", (220, oy + 20), (840, iy+130), text, **kwargs), False, ModalItem)
         
         #get a portrait for this speech
         if type(action) == str: action = self.actions[action]
@@ -1799,9 +1800,17 @@ class Portal(Item):
         actor.goto((self.sx, self.sy), ignore=True) #walk into scene        
 
     def leave(self, actor=None):
+        """ leave through this door """
         if actor == None: actor = self.game.player
         actor.goto((self.sx, self.sy))
         actor.goto((self.ox, self.oy), ignore=True) 
+        
+    def exit(self, actor=None):
+        """ arrive at this door's portal's entrance """
+        if actor == None: actor = self.game.player
+        actor.relocate(self.link.scene, (self.link.ox, self.link.oy)) #moves player to scene
+        self.game.camera.scene(self.link.scene) #change the scene
+        actor.goto((self.link.sx, self.link.sy), ignore=True) #walk into scene        
         
     def travel(self, actor=None):
         """ default interact method for a portal, march player through portal and change scene """
@@ -1818,10 +1827,7 @@ class Portal(Item):
         else:
             if logging: log.info("Portal - actor %s goes from scene %s to %s"%(actor.name, self.scene.name, self.link.scene.name))
         self.leave(actor)
-        actor.relocate(self.link.scene, (self.link.ox, self.link.oy)) #moves player to scene
-        self.game.camera.scene(self.link.scene) #change the scene
-        actor.goto((self.link.sx, self.link.sy), ignore=True) #walk into scene        
-
+        self.exit(actor)
 
 #wrapline courtesy http://www.pygame.org/wiki/TextWrapping 
 def truncline(text, font, maxwidth):
@@ -2483,6 +2489,7 @@ class Game(object):
         self.missing_actors = [] #list of actors mentioned in walkthrough that are never loaded
         self.test_inventory = False #heavy duty testing of inventory against scene objects
         self.step = None #current step in the walkthroughs
+        self._modules = {} #list of game-related python modules and their file modification date
 
         #profiling
         self.profiling = False 
@@ -2508,6 +2515,42 @@ class Game(object):
         fps = DEFAULT_FRAME_RATE 
         self.fps = int(1000.0/fps)
         self.fullscreen = fullscreen
+        
+    def set_modules(self, modules):        
+        """ when editor reloads modules, which modules are game related? """
+        for i in modules:
+            self._modules[i] = 0 
+        self.check_modules() #set initial timestamp record
+        
+    def check_modules(self):
+        """ poll system to see if python files have changed """
+        modified = False
+        for i in self._modules.keys(): #for modules we are watching
+            fname = sys.modules[i].__file__
+            fname, ext = os.path.splitext(fname)
+            if ext == ".pyc": ext = ".py"
+            fname = "%s%s"%(fname, ext)
+            ntime = os.stat(fname).st_mtime #check the modified timestamp
+            if ntime > self._modules[i]: #if modified since last check, return True
+                self._modules[i] = ntime
+                modified = True
+        return modified
+        
+    def reload_modules(self):
+        print("RELOAD MODULES")
+        module = "main" if android else "__main__" #which module to search for functions
+        for i in self._modules:
+            reload(sys.modules[i])
+            for fn in dir(sys.modules[i]): #update main namespace with new functions
+                new_fn = getattr(sys.modules[i], fn)
+                if hasattr(new_fn, "__call__"): setattr(sys.modules[module], new_fn.__name__, new_fn)
+        #update actor.interact .look and .uses values too.
+        for i in (self.actors.values() + self.items.values()):
+            if i.interact: 
+                if type(i.interact) != str:
+                    i.interact = get_function(i.interact.__name__)
+        log.info("Editor has done a module reload")
+            
         
     def set_reset(game, fn): #inform the save game system that this fn can function as a reset point for savegames.
         t = time.time()
@@ -3005,54 +3048,56 @@ class Game(object):
                 for name, obj in game.scene.objects.items():
                     if obj.editor_clean == False:
                         print("%s has been changed since last save"%obj.name)    
-                print("What is the name of this %s state to save (no directory or .py)?"%self.scene.name)
-                state = raw_input(">")
-                if state=="": return
-                sfname = os.path.join(self.scene_dir, os.path.join(self.scene.name, state))
-                sfname = "%s.py"%sfname
-                keys = [x.name for x in game.scene.objects.values() if not isinstance(x, Portal) and x != game.player]
-                objects = '\",\"'.join(keys)
-                with open(sfname, 'w') as f:
-                    f.write("# generated by ingame editor v0.1\n\n")
-                    f.write("def load_state(game, scene):\n")
-                    f.write('    from pyvida import WalkArea, Rect\n')
-                    f.write('    import os\n')
-                    f.write('    scene.clean(["%s"])\n'%objects) #remove old actors and items
-                    if game.scene.music_fname:
-                        f.write('    scene.music(%s)\n'%game.scene.music_fname)
-                    f.write('    scene.walkareas = [')
-                    for w in game.scene.walkareas:
-                        walkarea = str(w.polygon.vertexarray)
-                        f.write('WalkArea().smart(game, %s),'%(walkarea))
-                    f.write(']\n')
-                    for name, obj in game.scene.objects.items():
-                        if obj != game.player:
-                            slug = slugify(name).lower()
-                            txt = "items" if isinstance(obj, Item) else "actors"
-                            f.write('    %s = game.%s["%s"]\n'%(slug, txt, name))
-                            r = obj._clickable_area
-                            f.write('    %s.reclickable(Rect(%s, %s, %s, %s))\n'%(slug, r.left, r.top, r.w, r.h))
-                            r = obj._solid_area
-                            f.write('    %s.resolid(Rect(%s, %s, %s, %s))\n'%(slug, r.left, r.top, r.w, r.h))
-                            if not (obj.allow_draw and obj.allow_update and obj.allow_interact and obj.allow_use and obj.allow_look):
-                                f.write('    %s.usage(%s, %s, %s, %s, %s)\n'%(slug, obj.allow_draw, obj.allow_update, obj.allow_look, obj.allow_interact, obj.allow_use))
-                            f.write('    %s.rescale(%0.2f)\n'%(slug, obj.scale))
-                            f.write('    %s.reanchor((%i, %i))\n'%(slug, obj._ax, obj._ay))
-                            f.write('    %s.restand((%i, %i))\n'%(slug, obj._sx, obj._sy))
-                            f.write('    %s.retalk((%i, %i))\n'%(slug, obj._nx, obj._ny))
-                            f.write('    %s.relocate(scene, (%i, %i))\n'%(slug, obj.x, obj.y))
-                            if obj.action and obj.action.name != "idle":
-                                f.write('    %s.do("%s")\n'%(slug, obj.action.name))
-                            if isinstance(obj, Portal): #special portal details
-                                ox,oy = obj._ox, obj._oy
-                                if (ox,oy) == (0,0): #guess outpoint
-                                    ox = -150 if obj.x < 512 else 1024+150
-                                    oy = obj.sy
-                                f.write('    %s.reout((%i, %i))\n'%(slug, ox, oy))
-                        else: #the player object
-                            f.write('    #%s.reanchor((%i, %i))\n'%(name, obj._ax, obj._ay))
-                            f.write('    scene.scales["default"] = %0.2f\n'%(obj.scale))
-                            f.write('    scene.scales["%s"] = %0.2f\n'%(name, obj.scale))
+                def e_save_state(game, inp):
+                    state = inp.value
+                    if state=="": return
+                    sfname = os.path.join(self.scene_dir, os.path.join(self.scene.name, state))
+                    sfname = "%s.py"%sfname
+                    keys = [x.name for x in game.scene.objects.values() if not isinstance(x, Portal) and x != game.player]
+                    objects = '\",\"'.join(keys)
+                    with open(sfname, 'w') as f:
+                        f.write("# generated by ingame editor v0.1\n\n")
+                        f.write("def load_state(game, scene):\n")
+                        f.write('    from pyvida import WalkArea, Rect\n')
+                        f.write('    import os\n')
+                        f.write('    scene.clean(["%s"])\n'%objects) #remove old actors and items
+                        if game.scene.music_fname:
+                            f.write('    scene.music(%s)\n'%game.scene.music_fname)
+                        f.write('    scene.walkareas = [')
+                        for w in game.scene.walkareas:
+                            walkarea = str(w.polygon.vertexarray)
+                            f.write('WalkArea().smart(game, %s),'%(walkarea))
+                        f.write(']\n')
+                        for name, obj in game.scene.objects.items():
+                            if obj != game.player:
+                                slug = slugify(name).lower()
+                                txt = "items" if isinstance(obj, Item) else "actors"
+                                f.write('    %s = game.%s["%s"]\n'%(slug, txt, name))
+                                r = obj._clickable_area
+                                f.write('    %s.reclickable(Rect(%s, %s, %s, %s))\n'%(slug, r.left, r.top, r.w, r.h))
+                                r = obj._solid_area
+                                f.write('    %s.resolid(Rect(%s, %s, %s, %s))\n'%(slug, r.left, r.top, r.w, r.h))
+                                if not (obj.allow_draw and obj.allow_update and obj.allow_interact and obj.allow_use and obj.allow_look):
+                                    f.write('    %s.usage(%s, %s, %s, %s, %s)\n'%(slug, obj.allow_draw, obj.allow_update, obj.allow_look, obj.allow_interact, obj.allow_use))
+                                f.write('    %s.rescale(%0.2f)\n'%(slug, obj.scale))
+                                f.write('    %s.reanchor((%i, %i))\n'%(slug, obj._ax, obj._ay))
+                                f.write('    %s.restand((%i, %i))\n'%(slug, obj._sx, obj._sy))
+                                f.write('    %s.retalk((%i, %i))\n'%(slug, obj._nx, obj._ny))
+                                f.write('    %s.relocate(scene, (%i, %i))\n'%(slug, obj.x, obj.y))
+                                if obj.action and obj.action.name != "idle":
+                                    f.write('    %s.do("%s")\n'%(slug, obj.action.name))
+                                if isinstance(obj, Portal): #special portal details
+                                    ox,oy = obj._ox, obj._oy
+                                    if (ox,oy) == (0,0): #guess outpoint
+                                        ox = -150 if obj.x < 512 else 1024+150
+                                        oy = obj.sy
+                                    f.write('    %s.reout((%i, %i))\n'%(slug, ox, oy))
+                            else: #the player object
+                                f.write('    #%s.reanchor((%i, %i))\n'%(name, obj._ax, obj._ay))
+                                f.write('    scene.scales["actors"] = %0.2f\n'%(obj.scale))
+                                f.write('    scene.scales["%s"] = %0.2f\n'%(name, obj.scale))
+                game.user_input("What is the name of this %s state to save (no directory or .py)?"%self.scene.name, e_save_state)
+
                     
             def _editor_cycle(game, collection, player, v):
                 if type(game.editing) == WalkArea: game.editing = None 
@@ -3083,6 +3128,10 @@ class Game(object):
                 game.testing = True
                 game.jump_to_step = 1
                 game.testing_message = False
+                
+            def editor_reload(game, menu_item, player):
+                """ Reload modules """
+                game.reload_modules()
                 
             def editor_edit_rect(game, menu_item, player):
                 if not game.editing:
@@ -3292,6 +3341,7 @@ class Game(object):
             self.add(MenuItem("e_portal", editor_portal, (330, 10), (330,-50), "p").smart(self))
             self.add(MenuItem("e_scene", editor_scene, (430, 10), (430,-50), "i", display_text="change scene").smart(self))
             self.add(MenuItem("e_step", editor_step, (470, 10), (470,-50), "n", display_text="next step").smart(self))
+            self.add(MenuItem("e_reload", editor_reload, (510, 10), (510,-50), "r", display_text="reload scripts").smart(self))
 
             #a collection widget for adding objects to a scene
             c = self.add(Collection("e_objects", editor_select_object, (300, 100), (300,-600), K_ESCAPE).smart(self))
@@ -3460,9 +3510,17 @@ class Game(object):
         
         if callback: callback(self)
         dt = 12 #time passed
-        
+        loop = 0
         while self.quit == False: #game.draw game.update
+            loop += 1
             if not self.headless: pygame.time.delay(self.fps)
+            if ENABLE_EDITOR and loop%10 == 0: #if editor is available, watch code for changes
+                modified_modules = self.check_modules()
+                if modified_modules:
+                    self.reload_modules()
+#                    print("would try and reload now")
+            if loop >= 10000: loop = 0
+            
             if android and android.check_pause():
                 android.wait_for_resume()
             
@@ -3553,6 +3611,7 @@ class Game(object):
                         else: #assume step name has been given
                             if self.step[-1] == self.jump_to_step:
                                 return_to_player = True
+                                print("end run at step %s"%self.steps_complete)
                                 if self.jump_to_step == "set_trace": import pdb; pdb.set_trace()
                         if return_to_player: #hand control back to player
                             print("hand back!")
