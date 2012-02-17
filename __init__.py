@@ -657,7 +657,7 @@ class WalkArea(object):
 
     def clear(self):
         if self.active == False: return
-        if self._rect:
+        if self._rect and self.game.screen:
             self.game.screen.blit(self.game.scene.background(), self._rect, self._rect)
 
     def draw(self): #walkarea.draw
@@ -1495,6 +1495,9 @@ class Actor(object):
     
     def _test_goto_point(self, destination):
         """ If player is at point, set to idle and finish event """
+        if destination == (None, None):
+            if logging: log.warning("Destination is empty for %s"%self.name)
+            return True
         x,y = destination
         fuzz = 10
         if self.action:
@@ -1512,7 +1515,6 @@ class Actor(object):
             self.x = self._tx
 #            print("*************** arrived at same x value, force goto")
             self._motion_queue = [] #force a*star to recalculate (will probably start a vertical walk)
-
 
         if x - fuzz - dx  < self.x < x + fuzz +dx and y - fuzz - dy < self.y < y + fuzz + dy: #arrived at point, end event
             if "idle" in self.actions: self.action = self.actions['idle'] #XXX: magical variables, special cases, urgh
@@ -1671,10 +1673,13 @@ class Actor(object):
             oy, iy = -400, 40
         else:
 #            oy, iy = 1200, 360
-            oy, iy = 360, 360
+            if self.game.resolution == (800,480):
+                oy, iy = 190, 160
+            else:
+                oy, iy = 390, 360
         msg = self.game.add(ModalItem(background, close_msgbox,(54, oy)).smart(self.game))
         msg.actor = self
-        kwargs = {'wrap':660,}
+        kwargs = {'wrap':self.game.SAYS_WIDTH,}
         if self.font_colour != None: kwargs["colour"] = self.font_colour
         txt = self.game.add(Text("txt", (220, oy + 20), (840, iy+130), text, **kwargs), False, ModalItem)
         
@@ -1910,7 +1915,7 @@ def text_to_image(text, font, colour, maxwidth,offset=None):
 
 class Text(Actor):
     """ Display text on the screen """
-    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=26, wrap=2000):
+    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=26, wrap=2000, font="data/fonts/vera.ttf"):
         Actor.__init__(self, name)
         self.x, self.y = pos
         self.w, self.h = dimensions
@@ -1919,6 +1924,7 @@ class Text(Actor):
         self.wrap = wrap
         self.size = size
         self.colour = colour
+        self.fname = font
         self.img = self._img = self._generate_text(text, colour)
         self._mouse_move_img = self._generate_text(text, (255,255,255))
         self.mouse_move_enabled = False
@@ -1929,6 +1935,7 @@ class Text(Actor):
 
     def update_text(self): #rebuild the text image
         self.img = self._img = self._generate_text(self.text, self.colour)
+        self._mouse_move_img = self._generate_text(self.text, (255,255,255))        
 
     def _on_mouse_move_utility(self, x, y, button, modifiers): #text.mouse_move single button interface
         self.img = self._mouse_move_img
@@ -1936,17 +1943,15 @@ class Text(Actor):
     def _on_mouse_leave_utility(self, x, y, button, modifiers): #text.mouse_move mouse has left
         self.img = self._img
 
-
     def _collide(self, x,y):
         return self.clickable_area.collidepoint(x,y)
 
     def _generate_text(self, text, colour=(255,255,255)):
-        fname = "data/fonts/vera.ttf"
         try:
-            self.font = Font(fname, self.size)
+            self.font = Font(self.fname, self.size)
         except:
             self.font = None
-            if logging: log.error("text %s unable to load or initialise font %s"%(self.name, fname))
+            if logging: log.error("text %s unable to load or initialise font %s"%(self.name, self.fname))
             
         if not self.font:
             img = Surface((10,10))
@@ -2013,9 +2018,14 @@ ALPHABETICAL = 0
 
 class MenuText(Text, MenuItem):
     """ Use a text in the menu """
-    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=26, wrap=2000, interact=None, spos=(None, None), hpos=(None, None), key=None):
+    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=26, wrap=2000, interact=None, spos=(None, None), hpos=(None, None), key=None, font="data/fonts/vera.ttf"):
         MenuItem.__init__(self, name, interact, spos, hpos, key, text)
-        Text.__init__(self,  name, pos, dimensions, text, colour, size, wrap)
+        Text.__init__(self,  name, pos, dimensions, text, colour, size, wrap, font)
+        self.interact = interact
+        self._on_mouse_move = self._on_mouse_move_utility #switch on mouse over change
+        self._on_mouse_leave = self._on_mouse_leave_utility #switch on mouse over change
+        self.x, self.y = hpos
+        
     
     
 class Collection(MenuItem):
@@ -2201,11 +2211,10 @@ class Scene(object):
         if fname == None and self._background == None and self._background_fname: #load image
             fname = self._background_fname
             
-        if fname:
+        if fname and self.game:
             self._background = load_image(fname)
             self._background_fname = fname
-            self._rect = Rect(0,0,1024,768) #tell pyvida to redraw the whole screen to get the new background
-            #XXX ^^^ won't work on resolution other than 1024x768
+            self._rect = Rect(0,0,self.game.resolution[0],self.game.resolution[1]) #tell pyvida to redraw the whole screen to get the new background
         return self._background
 
     def on_unload(self):
@@ -2245,7 +2254,7 @@ class Scene(object):
             if logging: log.error("scene %s has no image %s available"%(self.name, background))
         self._event_finish()
         
-    def on_clean(self, objs): #remove items not in this list from the scene
+    def on_clean(self, objs=[]): #remove items not in this list from the scene
         for i in self.objects.values():
             if i.name not in objs and not isinstance(i, Portal) and i != self.game.player: self._remove(i)
         self._event_finish()
@@ -2273,9 +2282,9 @@ class Scene(object):
             obj.scale = self.scales[obj.name]
         if logging: log.debug("Add %s to scene %s"%(obj.name, self.name))
 
-    def on_add(self, obj): #scene.add
+    def on_add(self, obj, block=False): #scene.add
         self._add(obj)
-        self._event_finish()
+        self._event_finish(block=block)
 
 class Mixer(object):
     """ Handles sound and music """
@@ -2335,9 +2344,13 @@ class Camera(object):
                 if logging: log.error("camera on_scene: unable to find scene %s"%scene)
                 scene = self.game.scene
         self.game.scene = scene
+           
         if logging: log.debug("changing scene to %s"%scene.name)
         if self.game.scene and self.game.screen:
-           self.game.screen.blit(self.game.scene.background(), (0, 0))
+            if self.game.scene.background():
+                self.game.screen.blit(self.game.scene.background(), (0, 0))
+            else:
+                if logging: log.warning("No background for scene %s"%self.game.scene.name)
         #start music for this scene
         if game.scene.music_fname:
             self.game.mixer._music_play(game.scene.music_fname)
@@ -2345,7 +2358,22 @@ class Camera(object):
 #            self.game.mixer._music_fade_out()
 
     def on_scene(self, scene):
+        if type(scene) == str:
+            if scene in self.game.scenes:
+                scene = self.game.scenes[scene]
+            else:
+                if logging: log.error("camera on_scene: unable to find scene %s"%scene)
+                scene = self.game.scene
+
+        #check for a precamera script to run
+        precamera_fn = get_function("precamera_%s"%slugify(scene.name))
+        if precamera_fn: precamera_fn(self.game, scene, self.game.player)
+        
         self._scene(scene)
+
+        #check for a postcamera script to run
+        postcamera_fn = get_function("postcamera_%s"%slugify(scene.name))
+        if postcamera_fn: postcamera_fn(self.game, scene, self.game.player)
         self.game._event_finish()
   
     def _effect_fade_out(self, screen):
@@ -2385,15 +2413,13 @@ class Camera(object):
 
     def on_fade_out(self, block=True):
         if logging: log.info("camera.fade_out requested")
-        self._image = pygame.Surface((1024, 768))
+        self._image = pygame.Surface(self.game.resolution)
         self._effect = self._effect_fade_out
         
     def on_fade_in(self, block=True):
         if logging: log.info("camera.fade_in requested")
-        self._image = pygame.Surface((1024, 768))
+        self._image = pygame.Surface(self.game.resolution)
         self._effect = self._effect_fade_in
-
-
 
 #If we use text reveal
 SLOW = 0
@@ -2461,7 +2487,7 @@ class Game(object):
     screen = None
     existing = False #is there a game in progress (either loaded or saved)
    
-    def __init__(self, name="Untitled Game", fullscreen=False):
+    def __init__(self, name="Untitled Game", fullscreen=False, resolution=(1024,768)):
         if logging: log.debug("game object created at %s"%datetime.now())
 #        log = log
         self.allow_save = False #are we in the middle of a game, if so, allow save
@@ -2479,6 +2505,7 @@ class Game(object):
         self.reset_game = None #which function can we call to reset the game state to a safe point (eg start of chapter)
         self.testing = False
         self.headless = False #run game without pygame graphics?
+        self.resolution = resolution
 
         self.scene = None
         self.player = None
@@ -2523,6 +2550,7 @@ class Game(object):
         self.info_colour = (255,255,220)
         self.info_image = None
         self.info_position = None
+        self.SAYS_WIDTH = 660  #what is the wrap for text in the on_says event?
         
         #variables for special events such as on_wait
         self._wait = None #what time to hold processing events to
@@ -2692,6 +2720,7 @@ class Game(object):
         if not running_headless: self.set_headless(True) #ignore clock ticks while loading
         for obj_cls in [Actor, Item, Portal, Scene]:
             dname = "%s_dir"%obj_cls.__name__.lower()
+            if not os.path.exists(getattr(self, dname)): continue #skip directory if non-existent
             for name in os.listdir(getattr(self, dname)):
                 if logging: log.debug("game.smart loading %s %s"%(obj_cls.__name__.lower(), name))
                 #if there is already a non-custom Actor or Item with that name, warn!
@@ -2867,9 +2896,12 @@ class Game(object):
 
     def _on_mouse_move_scene(self, x, y, button, modifiers):
         """ possibly draw overlay text """
-        if self.player and self.scene:
+        if self.scene:
             for i in self.scene.objects.values(): #then objects in the scene
-                if i is not self.player and i.collide(x,y) and (i.allow_interact or i.allow_use or i.allow_look):
+                if i.collide(x,y) and i._on_mouse_move: 
+                        i._on_mouse_move(x, y, button, modifiers)
+                if not i.collide(x,y) and i._on_mouse_leave: i._on_mouse_leave(x, y, button, modifiers)
+                if i is not None and i is not self.player and i.collide(x,y) and (i.allow_interact or i.allow_use or i.allow_look):
                     if isinstance(i, Portal) and self.mouse_mode != MOUSE_USE:
                         self.mouse_cursor = MOUSE_LEFT if i._x<512 else MOUSE_RIGHT
                     elif self.mouse_mode == MOUSE_LOOK:
@@ -2935,6 +2967,9 @@ class Game(object):
                 if i.action and i.action.name == "over" and (i.allow_interact or i.allow_use or i.allow_look):
                     if i.actions.has_key('idle'): 
                         i.action = i.actions['idle']
+                #menu text should go back to non-highlighted
+                if isinstance(i, MenuText) and i._on_mouse_leave: i._on_mouse_leave(x, y, button, modifiers)
+                        
         if menu_capture == True: return
         if self.block: return #don't allow interacts if event lock is activated
         self._on_mouse_move_scene(x, y, button, modifiers)
@@ -2955,7 +2990,7 @@ class Game(object):
                     i.callback(self, i)
                 return
         for i in self.menu:
-            if key == i.key: i.trigger_interact() #print("bound to menu item")
+            if key == i.key: i.trigger_interact() #"bound to menu item"
         if ENABLE_EDITOR and key == K_F1:
             self.toggle_editor()
         elif ENABLE_EDITOR and key == K_F2: #allow set_trace if not fullscreen
@@ -3015,7 +3050,7 @@ class Game(object):
             elif event.type == MOUSEBUTTONDOWN:
                 self._on_mouse_down(m[0], m[1], event.button, None)
             elif event.type == MOUSEBUTTONUP:
-                if self._event and self._event[0] == self.player.on_wait: self._event_finish()
+                if self._event and self._event[0].im_self and self._event[0] == self._event[0].im_self.on_wait: self._event_finish()
                 self._on_mouse_up(m[0], m[1], event.button, None)
             elif event.type == KEYDOWN:
                 self._on_key_press(event.key, event.dict['unicode'])
@@ -3050,11 +3085,11 @@ class Game(object):
         
             #setup editor menu
             def editor_load(game, menuItem, player):
-                print("What is the name of this state to load (no directory or .py)?")
-                state = raw_input(">")
-                if state=="": return
-#                sfname = os.path.join(self.scene_dir, os.path.join(self.scene.name, state))
-                self.load_state(game.scene, state)
+                def e_load_state(game, inp):
+                    state = inp.value
+                    if state=="": return
+                    self.load_state(game.scene, state)
+                game.user_input("What is the name of this %s state to load (no directory or .py)?"%self.scene.name, e_load_state)
 
 
             def editor_save(game, menuItem, player):
@@ -3105,7 +3140,7 @@ class Game(object):
                                 if isinstance(obj, Portal): #special portal details
                                     ox,oy = obj._ox, obj._oy
                                     if (ox,oy) == (0,0): #guess outpoint
-                                        ox = -150 if obj.x < 512 else 1024+150
+                                        ox = -150 if obj.x < game.resolution[0]/2 else game.resolution[0]+150
                                         oy = obj.sy
                                     f.write('    %s.reout((%i, %i))\n'%(slug, ox, oy))
                             else: #the player object
@@ -3262,7 +3297,7 @@ class Game(object):
                 game.editing_index = None
                 game.editing_point = None
                 game.camera.scene(scene)
-                game.player.relocate(scene)
+                if game.player: game.player.relocate(scene)
                 editor_collection_close(game, collection, player)
 
             def editor_collection_newscene(game, btn, player):
@@ -3486,7 +3521,7 @@ class Game(object):
             flags |= pygame.FULLSCREEN 
 #            flags |= pygame.HWSURFACE
             self.fullscreen = True
-        self.screen = screen = pygame.display.set_mode((1024, 768), flags)
+        self.screen = screen = pygame.display.set_mode(self.resolution, flags)
 
         if android:
             android.init()
@@ -3502,7 +3537,7 @@ class Game(object):
         size = 18
         try:
             self.font = Font(fname, size)
-        except:
+        except IOError:
             self.font = None
             if logging: log.error("game unable to load or initialise font %s"%fname)
         
@@ -3511,6 +3546,7 @@ class Game(object):
            self.screen.blit(self.scene.background(), (0, 0))
         elif self.screen and splash:
             scene = Scene(splash)
+            scene.game = self
             scene.background(splash)
             self.screen.blit(scene.background(), (0, 0))
             pygame.display.flip() #show updated display to user
@@ -3534,7 +3570,7 @@ class Game(object):
                 modified_modules = self.check_modules()
                 if modified_modules:
                     self.reload_modules()
-#                    print("would try and reload now")
+#                    "would try and reload now")
             if loop >= 10000: loop = 0
             
             if android and android.check_pause():
@@ -3571,7 +3607,10 @@ class Game(object):
             #draw mouse
             m = pygame.mouse.get_pos()
             if type(self.mouse_cursor) == int: #use a mouse cursor image
-                mouse_image = self.mouse_cursors[self.mouse_cursor]
+                if self.mouse_cursor in self.mouse_cursors:
+                    mouse_image = self.mouse_cursors[self.mouse_cursor]
+                else:
+                    if logging: log.error("Missing mouse cursor %s"%self.mouse_cursor)
             elif self.mouse_cursor != None: #use an object (actor or item) image
                 mouse_image = self.mouse_cursor.action.image
             cursor_rect = self.screen.blit(mouse_image, (m[0]-15, m[1]-15))
@@ -3772,8 +3811,9 @@ class Game(object):
         self.add(scene)
         self.camera._scene(scene)
         if self.screen:
-            self.screen.blit(scene.background(), (0, 0))
-            pygame.display.flip()            
+            if scene.background():
+                self.screen.blit(scene.background(), (0, 0))
+                pygame.display.flip()            
 #        self._event_finish() #finish the event
         self.on_wait(duration) #does the event_finish for us
         if callback: callback(self)
