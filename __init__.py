@@ -829,7 +829,7 @@ class Actor(object):
     def solid_area(self):
         return self._solid_area.move(self.x, self.y)  
         
-    def smart(self, game, img=None): #actor.smart
+    def smart(self, game, img=None, using=None): #actor.smart
         """ 
         Intelligently load as many animations and details about this actor/item.
         
@@ -838,7 +838,15 @@ class Actor(object):
         If no <img>, smart will load all .PNG files in data/actors/<Actor Name> as actions available for this actor.
 
         If there is an <img>, create an idle action for that.
+        
+        If <using>, use that directory to smart load into a new object with <name>
         """
+        if using:
+            if logging: log.info("actor.smart - using %s for smart load instead of real name %s"%(using, self.name))
+            name = using
+        else:
+            name = self.name
+        if not self.game: self.game = game
         if isinstance(self, MenuItem) or isinstance(self, Collection):
             d = game.menuitem_dir
         elif isinstance(self, ModalItem):
@@ -852,11 +860,15 @@ class Actor(object):
         if img:
             images = [img]
         else:
-            myd = os.path.join(d, self.name)
-            images = glob.glob(os.path.join(d, "%s/*.png"%self.name))
+            myd = os.path.join(d, name)
+            
+            if not os.path.isdir(myd): #fallback to pyvida defaults
+                this_dir, this_filename = os.path.split(__file__)
+                myd = os.path.join(this_dir, d, name)
+            images = glob.glob(os.path.join(myd, "*.png"))
             if os.path.isdir(myd) and len(glob.glob("%s/*"%myd)) == 0:
-                if logging: log.info("creating placeholder file in empty %s dir"%self.name)
-                f = open(os.path.join(d, "%s/placeholder.txt"%self.name),"a")
+                if logging: log.info("creating placeholder file in empty %s dir"%name)
+                f = open(os.path.join(d, "%s/placeholder.txt"%name),"a")
                 f.close()
         for action_fname in images: #load actions for this actor
             action_name = os.path.splitext(os.path.basename(action_fname))[0]
@@ -1373,7 +1385,6 @@ class Actor(object):
 #        tick = float(duration/self.game.fps  #number of ticks for this anim
         step = (end - start)/frames #how much to change the scale each tick
         self.rescale(start)
-#        import pdb; pdb.set_trace()
         for i in xrange(0, int(frames)):
             self.rescale(self._scale+step*i)
             self.game.wait(0) #wait at least one frame        
@@ -1555,7 +1566,6 @@ class Actor(object):
         d = self.speed
         
         #available walk actions for this character
-#        if self.name == "Dome Guard": import pdb; pdb.set_trace()
         walk_actions = [wx for wx in self.actions.keys() if wx in ["left", "right", "up", "down"]]
         if self.scene: #test point will be inside a walkarea
             walkarea_fail = True
@@ -2150,6 +2160,7 @@ class Scene(object):
         self.analytics_count = 0 #used by test runner to measure how "popular" a scene is.
         self.foreground = [] #items to draw in the foreground
         self.music_fname = None
+        self._on_mouse_move = None #if mouse is moving on this scene, do this call back
 
     def _event_finish(self, success=True, block=True): 
         return self.game._event_finish(success, block)
@@ -2366,15 +2377,18 @@ class Camera(object):
                 scene = self.game.scene
 
         #check for a precamera script to run
-        precamera_fn = get_function("precamera_%s"%slugify(scene.name))
-        if precamera_fn: precamera_fn(self.game, scene, self.game.player)
+        if scene:
+            precamera_fn = get_function("precamera_%s"%slugify(scene.name))
+            if precamera_fn: precamera_fn(self.game, scene, self.game.player)
         
         self._scene(scene)
 
         #check for a postcamera script to run
-        postcamera_fn = get_function("postcamera_%s"%slugify(scene.name))
-        if postcamera_fn: postcamera_fn(self.game, scene, self.game.player)
+        if scene:
+            postcamera_fn = get_function("postcamera_%s"%slugify(scene.name))
+            if postcamera_fn: postcamera_fn(self.game, scene, self.game.player)
         self.game._event_finish()
+
   
     def _effect_fade_out(self, screen):
         """ called per clock tick to fade out current screen, return True if finished """
@@ -2897,6 +2911,8 @@ class Game(object):
     def _on_mouse_move_scene(self, x, y, button, modifiers):
         """ possibly draw overlay text """
         if self.scene:
+            if self.scene._on_mouse_move:
+                self.scene._on_mouse_move(x,y,button,modifiers)
             for i in self.scene.objects.values(): #then objects in the scene
                 if i.collide(x,y) and i._on_mouse_move: 
                         i._on_mouse_move(x, y, button, modifiers)
@@ -3645,9 +3661,9 @@ class Game(object):
                 self.artreactor_scene = self.scene
             
             #hide mouse
-            if self.scene: self.screen.blit(self.scene.background(), cursor_rect, cursor_rect)
-            if self.info_image: self.screen.blit(self.scene.background(), info_rect, info_rect)
-            if debug_rect: self.screen.blit(self.scene.background(), debug_rect, debug_rect)
+            if self.scene and self.scene.background(): self.screen.blit(self.scene.background(), cursor_rect, cursor_rect)
+            if self.info_image and self.scene.background(): self.screen.blit(self.scene.background(), info_rect, info_rect)
+            if debug_rect and self.scene.background(): self.screen.blit(self.scene.background(), debug_rect, debug_rect)
 
             #if testing, instead of user input, pull an event off the test suite
             if self.testing and len(self.events) == 0 and not self._event: 
@@ -3917,10 +3933,11 @@ class Game(object):
     def on_menu_clear(self, menu_items = None):
         """ clear current menu """
         if not menu_items:
-            menu_items = self.menu
-        for i in menu_items:
-            if type(i) == str: i = self.items[i]        
-            self.menu.remove(i)
+            self.menu = []
+        else:
+            for i in menu_items:
+                if type(i) == str: i = self.items[i]        
+                self.menu.remove(i)
         self._event_finish()       
        
 
