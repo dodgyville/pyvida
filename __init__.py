@@ -690,6 +690,7 @@ class Actor(object):
         self._motion_queue_ignore = False #is this motion queue ignoring walkareas?
         self.action = None
         self.actions = {}
+        self._tint = None #when tinting an image, use this with BLEND_MULT
         
         self._alpha = 1.0
         self._alpha_target = 1.0
@@ -1001,7 +1002,7 @@ class Actor(object):
 
     def clear(self):
 #        self.game.screen.blit(self.game.scene.background(), (self.x, self.y), self._image.get_rect())
-        if self._rect:
+        if self._rect and self.game.scene.background():
             self.game.screen.blit(self.game.scene.background(), self._rect, self._rect)
         if self.game.editing == self:
             r = self._crosshair((255,0,0), (self.ax, self.ay))
@@ -1032,6 +1033,9 @@ class Actor(object):
                 h = int(img.get_height() * self.scale)
                 img = pygame.transform.smoothscale(img, (w, h))
             img.set_alpha(self._alpha)
+            if self._tint:
+                img.fill(self._tint, special_flags=BLEND_MULT) #BLEND_MIN)
+            
             r = img.get_rect().move(self.ax, self.ay)
             if self._alpha != 1.0:
                 self._rect = blit_alpha(self.game.screen, img, r, self._alpha*255)
@@ -1238,6 +1242,19 @@ class Actor(object):
         self._alpha_target = 1.0
 #        self.game.stuff_event(self.finish_fade, self)
         self._event_finish(block=block)
+
+    def on_tint(self, colour=None):
+        if colour:
+#            temp = pygame.Surface(100,100).convert()
+#            temp.fill
+#            temp.blit(target, (-x, -y))
+#            temp.blit(source, (0, 0))
+#            temp.set_alpha(opacity)        
+#            r = target.blit(temp, location)
+            self._tint = colour
+        else:
+            self._tint = None
+        self._event_finish(block=False)
 
     def on_fade_out(self, block=True):
         """
@@ -3076,7 +3093,7 @@ class Game(object):
             elif event.type == MOUSEBUTTONDOWN:
                 self._on_mouse_down(m[0], m[1], event.button, None)
             elif event.type == MOUSEBUTTONUP:
-                if self._event and self._event[0].im_self and self._event[0] == self._event[0].im_self.on_wait: self._event_finish()
+                if self._event and hasattr(self._event[0], "im_self") and self._event[0].im_self and self._event[0] == self._event[0].im_self.on_wait: self._event_finish()
                 self._on_mouse_up(m[0], m[1], event.button, None)
             elif event.type == KEYDOWN:
                 self._on_key_press(event.key, event.dict['unicode'])
