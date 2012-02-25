@@ -134,7 +134,7 @@ PINGPONG = 1
 ONCE_BLOCK = 2 #play action once, only throw event_finished at end
 ONCE = 3
 
-DEFAULT_FRAME_RATE = 16 #100
+DEFAULT_FRAME_RATE = 20 #100
 
 def use_init_variables(original_class):
     """ Take the value of the args to the init function and assign them to the objects' attributes """
@@ -328,16 +328,21 @@ def process_step(game, step):
     game.mouse_mode = MOUSE_LOOK
     if game.scene and game.errors < 2 and function_name != "location": #increment time spent in current scene
         game.scene.analytics_count += 1
+
+    if function_name != "use":
+        label = " (%s)"%step[2] if len(step) == 3 else "" #interact/look/goto/location has a label
+    else:
+        label = ""
     
     if function_name == "interact":
-        if logging: log.info("TEST SUITE: %s with %s"%(function_name, actor))
+        if logging: log.info("TEST SUITE: %s%s. %s with %s"%(game.steps_complete, label, function_name, actor))
         game.mouse_mode = MOUSE_INTERACT
     elif function_name == "look":
-        if logging: log.info("TEST SUITE: %s at %s"%(function_name, actor))
+        if logging: log.info("TEST SUITE: %s%s. %s at %s"%(game.steps_complete, label, function_name, actor))
         game.mouse_mode = MOUSE_LOOK
     elif function_name == "use": 
-        actee = step[2]
-        if logging: log.info("TEST SUITE: %s %s on %s"%(function_name, actor, actee))
+        actee = step[2] 
+        if logging: log.info("TEST SUITE: %s%s. %s %s on %s"%(game.steps_complete, label, function_name, actor, actee))
         game.mouse_mode = MOUSE_USE
         if actee not in game.player.inventory:
             if logging: log.warning("Item %s not in player's inventory"%actee)
@@ -357,7 +362,7 @@ def process_step(game, step):
             scene = scene_search(game.scene, actor.upper())
             if scene != False:
                 scene._add(game.player)
-                if logging: log.info("Player goes %s"%([x.name for x in scene_path]))
+                if logging: log.info("TEST SUITE: %s. Player goes %s"%(game.steps_complete, [x.name for x in scene_path]))
                 game.camera.scene(scene)
             else:
                 if logging: log.error("Unable to get player from scene %s to scene %s"%(game.scene.name, actor))
@@ -962,7 +967,12 @@ class Actor(object):
 #        if logging: log.debug("player interact with %s"%self.name)
         self.game.mouse_mode = MOUSE_INTERACT #reset mouse mode
         if self.interact: #if user has supplied an interact override
-            if type(self.interact) == str: self.interact = get_function(self.interact)
+            if type(self.interact) == str: 
+                interact = get_function(self.interact)
+                if interact: 
+                    self.interact = interact
+                else:
+                    if logging: log.error("Unable to find interact fn %s"%self.interact)
             n = self.interact.__name__ if self.interact else "self.interact is None"
             if logging: log.debug("Player interact (%s) with %s"%(n, self.name))
             self.interact(self.game, self, self.game.player)
@@ -1684,14 +1694,14 @@ class Actor(object):
         else:
 #            oy, iy = 1200, 360
             if self.game.resolution == (800,480):
-                oy, iy = 190, 160
+                oy, oy2, iy = 190, -400, 160
             else:
-                oy, iy = 390, 360
+                oy, oy2, iy = 490, 800, 360
         msg = self.game.add(ModalItem(background, close_msgbox,(54, oy)).smart(self.game))
         msg.actor = self
         kwargs = {'wrap':self.game.SAYS_WIDTH,}
         if self.font_colour != None: kwargs["colour"] = self.font_colour
-        txt = self.game.add(Text("txt", (220, oy + 20), (840, iy+130), text, **kwargs), False, ModalItem)
+        txt = self.game.add(Text("txt", (220, oy2 + 20), (840, iy+130), text, **kwargs), False, ModalItem)
         
         #get a portrait for this speech
         if type(action) == str: action = self.actions[action]
@@ -2181,7 +2191,7 @@ class Scene(object):
 #                a = Item(fname, x=x, y=y).createAction("idle", bname+fname)
                 f = self.game.add(Item("%s_%s"%(self.name, fname)).smart(game, element))
                 f.x, f.y = x,y
-                self.foreground.append(f)
+                self.foreground.append(f) #add foreground items as items
         scale_name = os.path.join(sdir, "scene.scale")
         if os.path.isfile(scale_name):
             f = open(scale_name, "r")
@@ -3593,7 +3603,7 @@ class Game(object):
                 android.wait_for_resume()
             
             if self.scene:
-                blank = [self.scene.objects.values(), self.menu, self.modals]
+                blank = [self.scene.objects.values(), self.scene.foreground, self.menu, self.modals]
             else:
                 blank = [self.menu, self.modals]
 
