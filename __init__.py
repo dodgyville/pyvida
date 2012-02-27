@@ -503,7 +503,7 @@ def get_function(basic):
 def editor_menu(game):
     game.menu_fadeOut()
     game.menu_push() #hide and push old menu to storage
-    game.set_menu("e_load", "e_save", "e_add", "e_delete", "e_prev", "e_next", "e_walk", "e_portal", "e_scene", "e_step", "e_reload")
+    game.set_menu("e_load", "e_save", "e_add", "e_delete", "e_prev", "e_next", "e_walk", "e_portal", "e_scene", "e_step", "e_reload", "e_jump")
     game.menu_hide()
     game.menu_fadeIn()
 
@@ -1167,8 +1167,8 @@ class Actor(object):
             "There's nothing cool about that.",
             "It looks unremarkable to me."]
         else: #probably an Actor object
-            c = ["They're not very interesting",
-            "I prefer to look at the good looking",
+            c = ["They're not very interesting.",
+            "I prefer to look at the good looking.",
             ]
         if self.game.player: self.game.player.says(choice(c))
         self._event_finish()
@@ -1666,7 +1666,82 @@ class Actor(object):
         if type(item) == str: item = self.game.items[item]
         self.inventory[item.name] = item
         return item
+
+
+    def _gets(self, item, remove=True):
+        if type(item) == str: 
+            if item in self.game.items:
+                item = self.game.items[item]
+            elif item in self.game.actors:
+                item = self.game.actors[item]
+            else:
+                log.error("Unable to give %s the item %s, not in game."%(self.name, item))
+                self._event_finish()
+                return None
+        if item: log.info("Actor %s gets: %s"%(self.name, item.name))
+        self.inventory[item.name] = item
+        if remove == True and item.scene: item.scene._remove(item)
+        return item
+
+    def on_gets(self, item, remove=True):
+        """ add item to inventory, remove from scene if remove == True """
+        item = self._gets(item, remove)
+        if item == None: return
+
+        if self.game.testing: 
+            self._event_finish()
+            return
+        background = "getbox"
+        if self.game and self == self.game.player:
+            text = "%s added to your inventory!"%item.name.title()
+        else:
+            text = "%s gets %s!"%(self.name, item.name.title())
+#        self.game.stuff_event(item.on_remove)
+        self.game.stuff_event(self.on_wait, None)
+        oax, oay,oscale = item._ax, item._ay, item._scale #old anchors
+        x,y = 370,80
+        dx, dy = 0, 0 #shift the anchor point of item so it appears on top of everything else
+
+        #scale the image to an appropriate size
+        sw,sh = 300,300 #preferred width or height
+        iw,ih = item.action.image.get_size() if item.action else (100,100)
+        ratio_w = float(sw)/iw
+        ratio_h = float(sh)/ih
+        nw1, nh1 = int(iw*ratio_w), int(ih*ratio_w)
+        nw2, nh2 = int(iw*ratio_h), int(ih*ratio_h)
+        if nh1>sh: 
+            ndx,ndy = nw2, nh2
+            rescale = item._scale * ratio_h
+        else:
+            ndx,ndy = nw1, nh1
+            rescale = item._scale * ratio_w
         
+        def close_msgbox(game, actor, player):
+#            return
+            game.modals.remove(game.items[background])
+            game.modals.remove(item)
+            game.modals.remove(game.items["txt"])
+            game.modals.remove(game.items["ok"])
+            item.scene._remove(item) #removed the modal, also have to remove the item from the scene
+#            self.game.stuff_event(item.on_relocate, self.game.scene, (450,350))       
+            self.game.stuff_event(item.on_reanchor, (oax, oay))
+            self.game.stuff_event(item.on_rescale, oscale)
+            self._event_finish()
+        msgbox = self.game.add(ModalItem(background, close_msgbox,(300,-400)).smart(self.game))
+        txt = self.game.add(Text("txt", (280,-80), (840,170), text, wrap=800), False, ModalItem)
+
+        ok = self.game.add(Item("ok").smart(self.game), False, ModalItem)
+        ntiem = self.game.add(item, False, ModalItem) #add item as a modal
+        self.game.stuff_event(ok.on_place, (562,280))
+        
+        self.game.stuff_event(item.on_reanchor, (0, -dy))
+        self.game.stuff_event(item.on_rescale, rescale)
+        self.game.stuff_event(item.on_relocate, self.game.scene, (x, y))
+        
+        self.game.stuff_event(txt.on_place, (280,150))
+        self.game.stuff_event(msgbox.on_goto, (300,40))
+        self._event_finish()
+
     def on_says(self, text, sfx=-1, block=True, modal=True, font=None, action=None, background="msgbox"):
         """ A queuing function. Display a speech bubble with text and wait for player to close it.
         
@@ -1747,7 +1822,7 @@ class Actor(object):
             def foe_function(game, guard, player):
                 guard.says("Then you shall not pass.")
                 
-            guard.says("Friend or foe?", ("Friend", friend_function), ("Foe", foe_function))
+            guard.asks("Friend or foe?", ("Friend", friend_function), ("Foe", foe_function))
         
         Options::
         
@@ -1779,9 +1854,11 @@ class Actor(object):
             return
                     
         msgbox.options = []
+        oy, oy2, iy = 490, 800, 360 #XXX magic variables for 1024x768
+        
         for i, qfn in enumerate(args[1:]): #add the response options
             q, fn = qfn
-            opt = self.game.add(Text("opt%s"%i, (100,-80), (840,180), q, wrap=660) , False, ModalItem)
+            opt = self.game.add(Text("opt%s"%i, (100,oy2), (840,180), q, wrap=660) , False, ModalItem)
             def close_modal_then_callback(game, menuItem, player): #close the modal ask box and then run the callback
                 elements = ["msgbox", "txt", "ok", "portrait"]
                 elements.extend(menuItem.msgbox.options)
@@ -1797,7 +1874,7 @@ class Actor(object):
             opt.collide = opt._collide #switch on mouse over box
             opt.msgbox = msgbox
             msgbox.options.append(opt.name)
-            self.game.stuff_event(opt.on_place, (250,90+i*40))
+            self.game.stuff_event(opt.on_place, (250,iy+60+i*40))
         
     def on_remove(self): #remove this actor from its scene
         if self.scene:
@@ -3226,6 +3303,22 @@ class Game(object):
             def editor_reload(game, menu_item, player):
                 """ Reload modules """
                 game.reload_modules()
+
+            def editor_jump(game, btn, player): #jump to step
+                def e_jump_cb(game, inp):
+                    step = inp.value
+                    if step=="": return
+                    game.testing = True
+                    game.tests = copy.copy(self._walkthroughs)
+                    game.steps_complete = 0
+#                    game.headless = True
+                    game.reset_game(self)
+                    if step.isdigit():
+                        game.jump_to_step = int(step) #automatically run to <step> in walkthrough
+                    else:
+                        game.jump_to_step = step
+                game.user_input("Step? (blank to abort)", e_jump_cb)                
+                
                 
             def editor_edit_rect(game, menu_item, player):
                 if not game.editing:
@@ -3435,7 +3528,8 @@ class Game(object):
             self.add(MenuItem("e_portal", editor_portal, (330, 10), (330,-50), "p").smart(self))
             self.add(MenuItem("e_scene", editor_scene, (430, 10), (430,-50), "i", display_text="change scene").smart(self))
             self.add(MenuItem("e_step", editor_step, (470, 10), (470,-50), "n", display_text="next step").smart(self))
-            self.add(MenuItem("e_reload", editor_reload, (510, 10), (510,-50), "r", display_text="reload scripts").smart(self))
+            self.add(MenuItem("e_jump", editor_jump, (510, 10), (510,-50), "j", display_text="jump to step").smart(self))
+            self.add(MenuItem("e_reload", editor_reload, (550, 10), (550,-50), "r", display_text="reload scripts").smart(self))
 
             #a collection widget for adding objects to a scene
             c = self.add(Collection("e_objects", editor_select_object, (300, 100), (300,-600), K_ESCAPE).smart(self))
@@ -3548,7 +3642,7 @@ class Game(object):
         if options.analyse_scene: self.analyse_scene = options.analyse_scene
         if options.step: #switch on test runner to step through walkthrough
             self.testing = True
-            self.tests = self._walkthroughs
+            self.tests = copy.copy(self._walkthroughs)
             if options.step.isdigit():
                 self.jump_to_step = int(options.step) #automatically run to <step> in walkthrough
             else:
