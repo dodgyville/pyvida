@@ -404,7 +404,7 @@ def prepare_tests(game, suites, log_file=None, user_control=None):#, setup_fn, e
     """
     If user_control is an integer <n> or a string <s>, try and pause at step <n> in the suite or at command with name <s>
     
-    Call it before the game.run function
+    Call it before the game run function
     """
     global log
     if log_file: #push log to file
@@ -573,16 +573,20 @@ class Action(object):
         return img
         
     def update(self, dt): #action.update
-        self.index += self.step
         if self.mode == PINGPONG and self.index == -1: 
             self.step = 1
             self.index = 0
         if self.mode == PINGPONG and self.index == self.count: 
             self.step = -1
             self.index =self.count-1
-
-        if self.actor and self.mode == ONCE_BLOCK and self.index >= self.count-1: self.actor._event_finish()
-
+        if self.actor and self.index >= self.count-1: 
+            if self.actor._action_queue: #do the next action of the actor's background action queue
+                self.actor._action_index += 1
+                i = self.actor._action_index
+                self.actor.action = self.actor._action_queue[i%len(self.actor._action_queue)]
+                self.actor.action.index = 0
+            if self.mode == ONCE_BLOCK: self.actor._event_finish(block=False)
+        self.index += self.step
         
     def load(self): 
         """Load an anim from a montage file"""
@@ -690,7 +694,11 @@ class Actor(object):
         self._motion_queue_ignore = False #is this motion queue ignoring walkareas?
         self.action = None
         self.actions = {}
-        self._tint = None #when tinting an image, use this with BLEND_MULT
+        self.mode = LOOP #the default mode for action_queue on this actor
+        self._action_queue = [] #cycle through theses
+        self._action_index = 0
+        self._tint = None #when tinting an image, use this rgb colour with BLEND_MULT
+        
         
         self._alpha = 1.0
         self._alpha_target = 1.0
@@ -732,7 +740,7 @@ class Actor(object):
         self.analytics_count = 0 #used by test runner to measure how "popular" an actor is.
         self._count_actions = {} #dict containing action name and number of times used
     
-    def _event_finish(self, success=True, block=True): 
+    def _event_finish(self, success=True, block=True):  #actor.event_finish
         return self.game._event_finish(success, block)
 
     def get_x(self): return self._x #position
@@ -870,6 +878,7 @@ class Actor(object):
             
             if not os.path.isdir(myd): #fallback to pyvida defaults
                 this_dir, this_filename = os.path.split(__file__)
+                log.debug("Unable to find %s, falling back to %s"%(myd, this_dir))
                 myd = os.path.join(this_dir, d, name)
             images = glob.glob(os.path.join(myd, "*.png"))
             if os.path.isdir(myd) and len(glob.glob("%s/*"%myd)) == 0:
@@ -1176,6 +1185,7 @@ class Actor(object):
     def _do(self, action, mode=LOOP, repeats=0):
         if type(action) == Action: action = action.name
         if self.game and self.game.analyse_characters: self._count_actions_add(action, 1) #profiling
+        self.mode = mode
         if action in self.actions.keys():
             self.action = self.actions[action]
             self.action.mode = mode
@@ -1788,7 +1798,7 @@ class Actor(object):
             if self.game.resolution == (800,480):
                 oy, oy2, iy = 190, -400, 160
             else:
-                oy, oy2, iy = 490, 800, 360
+                oy, oy2, iy = 420, 800, 360
         msg = self.game.add(ModalItem(background, close_msgbox,(54, oy)).smart(self.game))
         msg.actor = self
         kwargs = {'wrap':self.game.SAYS_WIDTH,}
@@ -1864,7 +1874,7 @@ class Actor(object):
                 elements.extend(menuItem.msgbox.options)
                 for i in elements:
                     if game.items[i] in game.modals: game.modals.remove(game.items[i])
-                menuItem.callback(game, self, player)
+                if menuItem.callback: menuItem.callback(game, self, player)
                 self._event_finish()
 
             opt.callback = fn
@@ -2266,7 +2276,7 @@ class Scene(object):
         self.music_fname = None
         self._on_mouse_move = None #if mouse is moving on this scene, do this call back
 
-    def _event_finish(self, success=True, block=True): 
+    def _event_finish(self, success=True, block=True):  #scene.event_finish
         return self.game._event_finish(success, block)
 
     def smart(self, game): #scene.smart
@@ -2323,13 +2333,15 @@ class Scene(object):
         return self.background()
 
     def background(self, fname=None): #get or set the background image
+        if fname: log.debug("Set background for scene %s to %s"%(self.name, fname))
         if fname == None and self._background == None and self._background_fname: #load image
             fname = self._background_fname
             
-        if fname and self.game:
+        if fname:
             self._background = load_image(fname)
             self._background_fname = fname
-            self._rect = Rect(0,0,self.game.resolution[0],self.game.resolution[1]) #tell pyvida to redraw the whole screen to get the new background
+            if self.game:
+                self._rect = Rect(0,0,self.game.resolution[0],self.game.resolution[1]) #tell pyvida to redraw the whole screen to get the new background
         return self._background
 
     def on_unload(self):
@@ -2434,6 +2446,22 @@ class Mixer(object):
 
     def on_music_stop(self):
         self._music_stop()
+        self.game._event_finish()
+
+
+    def _sfx_play(self, fname=None):
+        sfx = None
+        if fname: 
+            if os.path.exists(fname):
+                log.info("Loading sfx file %s"%fname)
+                if pygame.mixer: sfx = pygame.mixer.Sound(fname)
+            else:
+                log.warning("Music sfx %s missing."%fname)
+                return
+        if pygame.mixer and sfx: sfx.play() #play once
+
+    def on_sfx_play(self, fname=None):
+        self._sfx_play(fname)
         self.game._event_finish()
 
 
@@ -3233,7 +3261,7 @@ class Game(object):
                         f.write('    import os\n')
                         f.write('    scene.clean(["%s"])\n'%objects) #remove old actors and items
                         if game.scene.music_fname:
-                            f.write('    scene.music(%s)\n'%game.scene.music_fname)
+                            f.write('    scene.music("%s")\n'%game.scene.music_fname)
                         f.write('    scene.walkareas = [')
                         for w in game.scene.walkareas:
                             walkarea = str(w.polygon.vertexarray)
@@ -3729,17 +3757,16 @@ class Game(object):
             else: #wait until time passes
                 if datetime.now() > self._wait: self.finished_wait()
                 
-            if self.scene and self.screen: #update objects
-                for group in [self.scene.objects.values(), self.menu, self.modals]:
-                    for obj in group: obj._update(dt)
-
             if self.scene and self.screen: #draw objects
                 objects = sorted(self.scene.objects.values(), key=lambda x: x.y, reverse=False)
 #                menu_objects = sorted(self.menu, key=lambda x: x.y, reverse=False)
                 for group in [objects, self.scene.foreground, self.menu, self.modals]:
                     for obj in group: obj.draw()
                 for w in self.scene.walkareas: w.draw() #draw walkarea if editing
-                    
+
+            if self.scene and self.screen: #update objects
+                for group in [self.scene.objects.values(), self.menu, self.modals]:
+                    for obj in group: obj._update(dt)
                                 
             #draw mouse
             m = pygame.mouse.get_pos()
@@ -3943,6 +3970,7 @@ class Game(object):
  #       self.
         if logging: log.warning("game.splash ignores duration and clicks")
         scene = Scene(image)
+        scene.game = self
         scene.background(image)
         #add scene to game, change over to that scene
         self.add(scene)
