@@ -1748,7 +1748,7 @@ class Actor(object):
         self.game.stuff_event(item.on_rescale, rescale)
         self.game.stuff_event(item.on_relocate, self.game.scene, (x, y))
         
-        self.game.stuff_event(txt.on_place, (280,150))
+        self.game.stuff_event(txt.on_place, (280,450))
         self.game.stuff_event(msgbox.on_goto, (300,40))
         self._event_finish()
 
@@ -1884,7 +1884,7 @@ class Actor(object):
             opt.collide = opt._collide #switch on mouse over box
             opt.msgbox = msgbox
             msgbox.options.append(opt.name)
-            self.game.stuff_event(opt.on_place, (250,iy+60+i*40))
+            self.game.stuff_event(opt.on_place, (250,iy+90+i*40))
         
     def on_remove(self): #remove this actor from its scene
         if self.scene:
@@ -2428,7 +2428,7 @@ class Mixer(object):
                 log.warning("Music file %s missing."%fname)
                 if pygame.mixer: pygame.mixer.music.stop()
                 return
-        if pygame.mixer: pygame.mixer.music.play(-1) #loop indefinitely
+        if pygame.mixer and not self.game.testing: pygame.mixer.music.play(-1) #loop indefinitely
         
     def on_music_play(self, fname=None):
         self._music_play(fname=fname)
@@ -2458,7 +2458,7 @@ class Mixer(object):
             else:
                 log.warning("Music sfx %s missing."%fname)
                 return
-        if pygame.mixer and sfx: sfx.play() #play once
+        if pygame.mixer and sfx and not self.game.testing: sfx.play() #play once
 
     def on_sfx_play(self, fname=None):
         self._sfx_play(fname)
