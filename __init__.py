@@ -892,7 +892,8 @@ class Actor(object):
             if type(self) == Actor and action_name=="idle":
                 self._ax = int(action.image.get_width()/2)
                 self._ay = int(action.image.get_height() * 0.85)            
-        if self.action == None and len(self.actions)>0: self.action = self.actions.values()[0] #or default to first loaded
+        if self.action == None and len(self.actions)>0 and self.actions.keys() != ["portrait"]: 
+            self.action = self.actions.values()[0] #or default to first loaded
 #        try:
 #            self._image = pygame.image.load(os.path.join(d, "%s/idle.png"%self.name)).convert_alpha()
         if self.action and self.action.image:
@@ -1752,7 +1753,7 @@ class Actor(object):
         self.game.stuff_event(msgbox.on_goto, (300,40))
         self._event_finish()
 
-    def on_says(self, text, sfx=-1, block=True, modal=True, font=None, action=None, background="msgbox"):
+    def on_says(self, text, action="portrait", sfx=-1, block=True, modal=True, font=None, background="msgbox"):
         """ A queuing function. Display a speech bubble with text and wait for player to close it.
         
         Examples::
@@ -1806,7 +1807,7 @@ class Actor(object):
         txt = self.game.add(Text("txt", (220, oy2 + 20), (840, iy+130), text, **kwargs), False, ModalItem)
         
         #get a portrait for this speech
-        if type(action) == str: action = self.actions[action]
+        if type(action) == str: action = self.actions.get(action, None)
         if not action: action = self.actions.get("portrait", self.actions.get("idle", None))
         
         portrait = Item("portrait")
@@ -1857,7 +1858,7 @@ class Actor(object):
             next_step = self.game.tests.pop(0)
             for q,fn in args[1:]:
                 if q in next_step:
-                    fn(self.game, self, self.game.player)
+                    if fn: fn(self.game, self, self.game.player)
                     self._event_finish()
                     return
             if logging: log.error("Unable to select %s option in on_ask '%s'"%(next_step, args[0]))
