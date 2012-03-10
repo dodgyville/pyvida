@@ -136,6 +136,8 @@ ONCE = 3
 
 DEFAULT_FRAME_RATE = 20 #100
 
+DEFAULT_FONT = "data/fonts/vera.ttf"
+
 def use_init_variables(original_class):
     """ Take the value of the args to the init function and assign them to the objects' attributes """
     def __init__(self, *args, **kws):
@@ -703,7 +705,8 @@ class Actor(object):
         self._alpha = 1.0
         self._alpha_target = 1.0
         
-        self.font_speech = None #use default
+        self.font_speech = None #use default font (from game)
+        self.font_speech_size = None #use default font size (from game)
         self.font_colour = None #use default
         self._x, self._y = -1000,-1000  # place in scene, offscreen at start
         self._sx, self._sy = 0,0    # stand point
@@ -1753,7 +1756,7 @@ class Actor(object):
         self.game.stuff_event(msgbox.on_goto, (300,40))
         self._event_finish()
 
-    def on_says(self, text, action="portrait", sfx=-1, block=True, modal=True, font=None, background="msgbox"):
+    def on_says(self, text, action="portrait", sfx=-1, block=True, modal=True, font=None, background="msgbox", size=None):
         """ A queuing function. Display a speech bubble with text and wait for player to close it.
         
         Examples::
@@ -1804,6 +1807,20 @@ class Actor(object):
         msg.actor = self
         kwargs = {'wrap':self.game.SAYS_WIDTH,}
         if self.font_colour != None: kwargs["colour"] = self.font_colour
+        if font:
+            kwargs["font"] = font 
+        elif self.font_speech:
+            kwargs["font"] = self.font_speech
+        elif self.game and self.game.font_speech:
+            kwargs["font"] = self.game.font_speech
+        if size:
+            kwargs["size"] = size
+        elif self.font_speech_size:
+            kwargs["size"] = self.font_speech_size
+        elif self.game and self.game.font_speech_size:
+            kwargs["size"] = self.game.font_speech_size
+
+            
         txt = self.game.add(Text("txt", (220, oy2 + 20), (840, iy+130), text, **kwargs), False, ModalItem)
         
         #get a portrait for this speech
@@ -2040,7 +2057,7 @@ def text_to_image(text, font, colour, maxwidth,offset=None):
 
 class Text(Actor):
     """ Display text on the screen """
-    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=26, wrap=2000, font="data/fonts/vera.ttf"):
+    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=26, wrap=2000, font=None):
         Actor.__init__(self, name)
         self.x, self.y = pos
         self.w, self.h = dimensions
@@ -2049,6 +2066,7 @@ class Text(Actor):
         self.wrap = wrap
         self.size = size
         self.colour = colour
+        if not font: font = DEFAULT_FONT
         self.fname = font
         self.img = self._img = self._generate_text(text, colour)
         self._mouse_move_img = self._generate_text(text, (255,255,255))
@@ -2143,7 +2161,7 @@ ALPHABETICAL = 0
 
 class MenuText(Text, MenuItem):
     """ Use a text in the menu """
-    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=26, wrap=2000, interact=None, spos=(None, None), hpos=(None, None), key=None, font="data/fonts/vera.ttf"):
+    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=26, wrap=2000, interact=None, spos=(None, None), hpos=(None, None), key=None, font=DEFAULT_FONT):
         MenuItem.__init__(self, name, interact, spos, hpos, key, text)
         Text.__init__(self,  name, pos, dimensions, text, colour, size, wrap, font)
         self.interact = interact
@@ -2609,11 +2627,6 @@ EDIT_SOLID = "solid_area"
 class Game(object):
     __metaclass__ = use_on_events
    
-    voice_volume = 1.0
-    effects_volume = 1.0
-    music_volume = 1.0
-    mute_all = False
-    font_speech = None
     
     editing = None #which actor or walkarea are we editing
     editing_point = None #which point or rect are we editing
@@ -2637,6 +2650,14 @@ class Game(object):
     def __init__(self, name="Untitled Game", fullscreen=False, resolution=(1024,768)):
         if logging: log.debug("game object created at %s"%datetime.now())
 #        log = log
+        self.voice_volume = 1.0
+        self.effects_volume = 1.0
+        self.music_volume = 1.0
+        self.mute_all = False
+        self.font_speech = None
+        self.font_speech_size = None
+
+
         self.allow_save = False #are we in the middle of a game, if so, allow save
         self.game = self
         self.name = name
@@ -3049,7 +3070,9 @@ class Game(object):
             for i in self.scene.objects.values(): #then objects in the scene
                 if i.collide(x,y) and i._on_mouse_move: 
                         i._on_mouse_move(x, y, button, modifiers)
-                if not i.collide(x,y) and i._on_mouse_leave: i._on_mouse_leave(x, y, button, modifiers)
+                if not i.collide(x,y) and i._on_mouse_leave:
+                    if self.mouse_mode == MOUSE_USE: i._tint = None
+                    i._on_mouse_leave(x, y, button, modifiers)
                 if i is not None and i is not self.player and i.collide(x,y) and (i.allow_interact or i.allow_use or i.allow_look):
                     if isinstance(i, Portal) and self.mouse_mode != MOUSE_USE:
                         self.mouse_cursor = MOUSE_LEFT if i._x<512 else MOUSE_RIGHT
@@ -3057,6 +3080,8 @@ class Game(object):
                         self.mouse_cursor = MOUSE_CROSSHAIR #MOUSE_EYES
                     elif self.mouse_mode != MOUSE_USE:
                         self.mouse_cursor = MOUSE_CROSSHAIR
+                    elif self.mouse_mode == MOUSE_USE: #tint object
+                        i._tint = (255,200,200)
                     t = i.name if i.display_text == None else i.display_text                    
                     self.info(t, i.nx,i.ny)
 #                   self.text_image = self.font.render(i.name, True, self.text_colour)
@@ -3699,7 +3724,8 @@ class Game(object):
         self._load_mouse_cursors()
         
         #set up default game font
-        fname = "data/fonts/vera.ttf"
+        global DEFAULT_FONT 
+        fname = DEFAULT_FONT
         size = 18
         try:
             self.font = Font(fname, size)
