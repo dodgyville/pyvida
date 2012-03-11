@@ -1705,11 +1705,16 @@ class Actor(object):
         if self.game.testing: 
             self._event_finish()
             return
-        background = "getbox"
+
+        background = "msgbox"
         if self.game and self == self.game.player:
             text = "%s added to your inventory!"%item.name.title()
         else:
             text = "%s gets %s!"%(self.name, item.name.title())
+
+        item.on_says(text)
+        return
+
 #        self.game.stuff_event(item.on_remove)
         self.game.stuff_event(self.on_wait, None)
         oax, oay,oscale = item._ax, item._ay, item._scale #old anchors
@@ -1835,7 +1840,7 @@ class Actor(object):
         
         self.game.stuff_event(ok.on_place, (900, iy+210))
         self.game.stuff_event(portrait.on_place, (65, iy+12))
-        self.game.stuff_event(txt.on_place, (220, iy+20))
+        self.game.stuff_event(txt.on_place, (220, iy+5))
         self.game.stuff_event(msg.on_goto, (54, iy))
     
     def on_asks(self, *args):
@@ -1886,7 +1891,11 @@ class Actor(object):
         
         for i, qfn in enumerate(args[1:]): #add the response options
             q, fn = qfn
-            opt = self.game.add(Text("opt%s"%i, (100,oy2), (840,180), q, wrap=660) , False, ModalItem)
+            kwargs = {}
+            if self.game.player and self.game.player.font_speech:
+                kwargs["font"] = self.game.player.font_speech
+                
+            opt = self.game.add(Text("opt%s"%i, (100,oy2), (840,180), q, wrap=660, **kwargs) , False, ModalItem)
             def close_modal_then_callback(game, menuItem, player): #close the modal ask box and then run the callback
                 elements = ["msgbox", "txt", "ok", "portrait"]
                 elements.extend(menuItem.msgbox.options)
@@ -1902,7 +1911,7 @@ class Actor(object):
             opt.collide = opt._collide #switch on mouse over box
             opt.msgbox = msgbox
             msgbox.options.append(opt.name)
-            self.game.stuff_event(opt.on_place, (250,iy+90+i*40))
+            self.game.stuff_event(opt.on_place, (250,iy+100+i*40))
         
     def on_remove(self): #remove this actor from its scene
         if self.scene:
