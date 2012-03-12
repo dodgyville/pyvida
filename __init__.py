@@ -1894,7 +1894,9 @@ class Actor(object):
             kwargs = {}
             if self.game.player and self.game.player.font_speech:
                 kwargs["font"] = self.game.player.font_speech
-                
+            elif self.game and self.game.font_speech:
+                kwargs["font"] = self.game.font_speech
+            if self.game and self.game.player and self.game.player.font_colour != None: kwargs["colour"] = self.game.player.font_colour
             opt = self.game.add(Text("opt%s"%i, (100,oy2), (840,180), q, wrap=660, **kwargs) , False, ModalItem)
             def close_modal_then_callback(game, menuItem, player): #close the modal ask box and then run the callback
                 elements = ["msgbox", "txt", "ok", "portrait"]
@@ -2960,7 +2962,7 @@ class Game(object):
             
     def toggle_editor(self):
             if self.enabled_editor:  #switch off editor
-                self.menu_fadeOut()
+                #self.menu_fadeOut()
                 self.menu_pop()
                 self.menu_fadeIn()
                 self.editing = None
@@ -3080,7 +3082,7 @@ class Game(object):
                 if i.collide(x,y) and i._on_mouse_move: 
                         i._on_mouse_move(x, y, button, modifiers)
                 if not i.collide(x,y) and i._on_mouse_leave:
-                    if self.mouse_mode == MOUSE_USE: i._tint = None
+#                    if self.mouse_mode == MOUSE_USE: i._tint = None
                     i._on_mouse_leave(x, y, button, modifiers)
                 if i is not None and i is not self.player and i.collide(x,y) and (i.allow_interact or i.allow_use or i.allow_look):
                     if isinstance(i, Portal) and self.mouse_mode != MOUSE_USE:
@@ -3089,8 +3091,8 @@ class Game(object):
                         self.mouse_cursor = MOUSE_CROSSHAIR #MOUSE_EYES
                     elif self.mouse_mode != MOUSE_USE:
                         self.mouse_cursor = MOUSE_CROSSHAIR
-                    elif self.mouse_mode == MOUSE_USE: #tint object
-                        i._tint = (255,200,200)
+ #                   elif self.mouse_mode == MOUSE_USE: #tint object
+ #                       i._tint = (255,200,200)
                     t = i.name if i.display_text == None else i.display_text                    
                     self.info(t, i.nx,i.ny)
 #                   self.text_image = self.font.render(i.name, True, self.text_colour)
@@ -3421,7 +3423,7 @@ class Game(object):
                     if i.editable and type(i) not in [Collection, MenuItem]: e_objects.objects[i.name] = i
                 for i in game.items.values():
                     if i.editable and type(i) not in [Portal, Collection, MenuItem]: e_objects.objects[i.name] = i
-                game.menu_fadeOut()
+                #game.menu_fadeOut()
                 game.menu_push() #hide and push old menu to storage
                 game.set_menu("e_close", "e_objects_next", "e_objects_prev", "e_objects_newitem", "e_objects_newactor", "e_objects")
                 game.menu_hide()
@@ -3442,7 +3444,7 @@ class Game(object):
                 e_portals.objects = {}
                 for i in game.scenes.values():
                     if i.editable: e_portals.objects[i.name] = i
-                game.menu_fadeOut()
+                #game.menu_fadeOut()
                 game.menu_push() #hide and push old menu to storage
                 game.set_menu("e_close", "e_portals")
                 game.menu_hide()
@@ -3457,7 +3459,7 @@ class Game(object):
                 e_scenes.objects = {}
                 for i in game.scenes.values():
                     if i.editable: e_scenes.objects[i.name] = i
-                game.menu_fadeOut()
+                #game.menu_fadeOut()
                 game.menu_push() #hide and push old menu to storage
                 game.set_menu("e_close", "e_newscene", "e_scenes")
                 game.menu_hide()
