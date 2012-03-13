@@ -3330,6 +3330,10 @@ class Game(object):
                                     f.write('    %s.reout((%i, %i))\n'%(slug, ox, oy))
                             else: #the player object
                                 f.write('    #%s.reanchor((%i, %i))\n'%(name, obj._ax, obj._ay))
+                                for key, val in self.scene.scales.items():
+                                    if key in self.actors:
+                                        val = self.actors[key]
+                                        f.write('    scene.scales["%s"] = %0.2f\n'%(val.name, val.scale))
                                 f.write('    scene.scales["actors"] = %0.2f\n'%(obj.scale))
                                 f.write('    scene.scales["%s"] = %0.2f\n'%(name, obj.scale))
                 game.user_input("What is the name of this %s state to save (no directory or .py)?"%self.scene.name, e_save_state)
