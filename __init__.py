@@ -2165,6 +2165,7 @@ class MenuItem(Actor):
   #          self.key = None
         self.x, self.y = spos
         self.in_x, self.in_y = spos #special in point reentry point
+        if hpos == (None, None): hpos = (spos[0], -200) #default hide point is off top of screen
         self.out_x, self.out_y = hpos #special hide point for menu items
         self.display_text = display_text #by default no overlay on menu items
 
@@ -2173,12 +2174,13 @@ ALPHABETICAL = 0
 class MenuText(Text, MenuItem):
     """ Use a text in the menu """
     def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=26, wrap=2000, interact=None, spos=(None, None), hpos=(None, None), key=None, font=DEFAULT_FONT):
+        if spos == (None, None): spos = pos
         MenuItem.__init__(self, name, interact, spos, hpos, key, text)
         Text.__init__(self,  name, pos, dimensions, text, colour, size, wrap, font)
         self.interact = interact
         self._on_mouse_move = self._on_mouse_move_utility #switch on mouse over change
         self._on_mouse_leave = self._on_mouse_leave_utility #switch on mouse over change
-        self.x, self.y = hpos
+        self.x, self.y = self.out_x, self.out_y #default hiding at first
         
     
     
@@ -2437,6 +2439,8 @@ class Scene(object):
             
         if obj.name in self.scales.keys():
             obj.scale = self.scales[obj.name]
+        elif "actors" in self.scales.keys() and not isinstance(obj, Item): #actor
+            obj.scale = self.scales["actors"]
         if logging: log.debug("Add %s to scene %s"%(obj.name, self.name))
 
     def on_add(self, obj, block=False): #scene.add
@@ -2667,6 +2671,7 @@ class Game(object):
         self.mute_all = False
         self.font_speech = None
         self.font_speech_size = None
+        self.settings = None #settings to save between sessions
 
 
         self.allow_save = False #are we in the middle of a game, if so, allow save
@@ -3256,7 +3261,11 @@ class Game(object):
                 cursor_pwd = os.path.join(os.getcwd(), os.path.join(self.interface_dir, value))
                 self.mouse_cursors[key] = pygame.image.load(cursor_pwd).convert_alpha()
             except:
-                if logging: log.warning("Can't find game's %s cursor, so defaulting to unimplemented pyvida one"%value)
+                if logging: log.warning("Can't find local %s cursor, so defaulting to pyvida one"%value)
+                this_dir, this_filename = os.path.split(__file__)
+                myf = os.path.join(this_dir, "data/interface", value)
+                if os.path.isfile(myf):
+                    self.mouse_cursors[key] = pygame.image.load(myf).convert_alpha()
     
     def _load_editor(self):
             """ Load the ingame edit menu """
@@ -3482,7 +3491,10 @@ class Game(object):
                     os.makedirs(d)
                 obj = Portal(name)
                 obj.game = game
-                obj.link = scene
+                #try and link
+                name = "%s_To_%s"%(scene.name.title(), game.scene.name.title())
+                link = game.items.get(name, None)
+                if link: obj.link = link
                 if obj and game.scene:
                     obj.x, obj.y = 500,400
                     obj._clickable_area = DEFAULT_CLICKABLE
@@ -3812,6 +3824,7 @@ class Game(object):
                                 
             #draw mouse
             m = pygame.mouse.get_pos()
+            mouse_image = None
             if type(self.mouse_cursor) == int: #use a mouse cursor image
                 if self.mouse_cursor in self.mouse_cursors:
                     mouse_image = self.mouse_cursors[self.mouse_cursor]
@@ -3819,7 +3832,7 @@ class Game(object):
                     if logging: log.error("Missing mouse cursor %s"%self.mouse_cursor)
             elif self.mouse_cursor != None: #use an object (actor or item) image
                 mouse_image = self.mouse_cursor.action.image
-            cursor_rect = self.screen.blit(mouse_image, (m[0]-15, m[1]-15))
+            if mouse_image: cursor_rect = self.screen.blit(mouse_image, (m[0]-15, m[1]-15))
 
             #draw info text if available
             if self.info_image:
@@ -3838,8 +3851,9 @@ class Game(object):
                 finished = self.camera._effect(self.screen)
                 if finished: self.camera._finished_effect()
                 
-            if self.camera: 
-                debug_rect = self.camera.draw(self.screen) #apply any camera effects                
+            if self.camera:
+                t = self.camera.draw(self.screen)
+                debug_rect = debug_rect.union(t) if debug_rect else t #apply any camera effects                
             
             if not self.headless:
                 pygame.display.flip() #show updated display to user
