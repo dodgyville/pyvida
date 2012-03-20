@@ -994,7 +994,7 @@ class Actor(object):
             basic = "interact_%s"%slugify(self.name)
             script = get_function(basic)
             if script:
-                if self.game.testing: #throw exceptions when testing
+                if not self.game.catch_exceptions: #allow exceptions to crash engine
                     script(self.game, self, self.game.player)
                 else:
                     try:
@@ -2716,7 +2716,8 @@ class Game(object):
         self.test_inventory = False #heavy duty testing of inventory against scene objects
         self.step = None #current step in the walkthroughs
         self._modules = {} #list of game-related python modules and their file modification date
-
+        self.catch_exceptions = True #engine will try and continue after encountering exception
+        
         #profiling
         self.profiling = False 
         self.enabled_profiling = False
@@ -3700,6 +3701,7 @@ class Game(object):
         parser.add_option("-d", "--detailed <scene>", dest="analyse_scene", help="Print lots of info about one scene (best used with test runner)")
         parser.add_option("-r", "--random", action="store_true", dest="stresstest", help="Randomly deviate from walkthrough to stress test robustness of scripting")
         parser.add_option("-m", "--memory", action="store_true", dest="memory_save", help="Run game in low memory mode")
+        parser.add_option("-e", "--exceptions", action="store_true", dest="allow_exceptions", help="Switch off exception catching.")
 
 
 #        parser.add_option("-l", "--list", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
@@ -3715,6 +3717,8 @@ class Game(object):
         if options.profiling: self.profiling = True
         if android: #switch on memory safe mode for android by default
             self.memory_save = True
+        if options.allow_exceptions == True:
+            self.catch_exceptions = False
         if options.memory_save == True: 
             self.memory_save = True
         if self.memory_save: print("Using low memory option")
@@ -3919,7 +3923,7 @@ class Game(object):
                 if logging: log.debug("Doing event %s"%e[0].__name__)
 
             self._event = e
-            if self.testing:
+            if self.catch_exceptions:
                 try:
                     e[0](*e[1], **e[2]) #call the function with the args and kwargs
                 except:
@@ -4035,6 +4039,11 @@ class Game(object):
         """ switch game engine between headless and non-headless mode, restrict events to per clock tick, etc """
         self.headless = headless
         self._event_finish()
+
+    def on_set_player(self, actor):
+        """ switch the player object that is controlled by the user """
+        self.player = actor
+        self._event_finish(block=False)
 
     def on_set_fps(self, fps):
         self.fps = fps
