@@ -2439,8 +2439,8 @@ class Scene(object):
             
         if obj.name in self.scales.keys():
             obj.scale = self.scales[obj.name]
-        elif "actors" in self.scales.keys() and not isinstance(obj, Item): #actor
-            obj.scale = self.scales["actors"]
+#        elif "actors" in self.scales.keys() and not isinstance(obj, Item): #actor
+#            obj.scale = self.scales["actors"]
         if logging: log.debug("Add %s to scene %s"%(obj.name, self.name))
 
     def on_add(self, obj, block=False): #scene.add
@@ -2767,7 +2767,14 @@ class Game(object):
         print("RELOAD MODULES")
         module = "main" if android else "__main__" #which module to search for functions
         for i in self._modules:
-            reload(sys.modules[i])
+            try:
+                reload(sys.modules[i])
+            except:
+                log.error("Exception in reload_modules")
+                print("\nError reloading %s\n"%sys.modules[i])
+                if traceback: traceback.print_exc(file=sys.stdout)
+                print("\n\n")
+                self._event_finish()
             for fn in dir(sys.modules[i]): #update main namespace with new functions
                 new_fn = getattr(sys.modules[i], fn)
                 if hasattr(new_fn, "__call__"): setattr(sys.modules[module], new_fn.__name__, new_fn)
@@ -3344,7 +3351,7 @@ class Game(object):
                                         val = self.actors[key]
                                         f.write('    scene.scales["%s"] = %0.2f\n'%(val.name, val.scale))
                                 f.write('    scene.scales["actors"] = %0.2f\n'%(obj.scale))
-                                f.write('    scene.scales["%s"] = %0.2f\n'%(name, obj.scale))
+#                                f.write('    scene.scales["%s"] = %0.2f\n'%(name, obj.scale))
                 game.user_input("What is the name of this %s state to save (no directory or .py)?"%self.scene.name, e_save_state)
 
                     
@@ -3853,7 +3860,7 @@ class Game(object):
                 
             if self.camera:
                 t = self.camera.draw(self.screen)
-                debug_rect = debug_rect.union(t) if debug_rect else t #apply any camera effects                
+                if t: debug_rect = debug_rect.union(t) if debug_rect else t #apply any camera effects                
             
             if not self.headless:
                 pygame.display.flip() #show updated display to user
@@ -3912,7 +3919,19 @@ class Game(object):
                 if logging: log.debug("Doing event %s"%e[0].__name__)
 
             self._event = e
-            e[0](*e[1], **e[2]) #call the function with the args and kwargs
+            if self.testing:
+                try:
+                    e[0](*e[1], **e[2]) #call the function with the args and kwargs
+                except:
+                    log.error("Exception in handle_events")
+                    print("\nError running fn %s (%s, %s)\n"%e)
+                    if traceback: traceback.print_exc(file=sys.stdout)
+                    print("\n\n")
+                    self._event_finish()
+
+            else:
+                e[0](*e[1], **e[2]) #call the function with the args and kwargs
+
     
     def queue_event(self, event, *args, **kwargs):
         self.events.append((event, args, kwargs))
