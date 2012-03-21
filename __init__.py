@@ -1013,7 +1013,7 @@ class Actor(object):
                 self._interact_default(self.game, self, self.game.player)
 
 
-    def clear(self):
+    def clear(self): #actor.clear
 #        self.game.screen.blit(self.game.scene.background(), (self.x, self.y), self._image.get_rect())
         if self._rect and self.game.scene.background():
             self.game.screen.blit(self.game.scene.background(), self._rect, self._rect)
@@ -2403,7 +2403,7 @@ class Scene(object):
             self._remove(obj)
         self._event_finish()
 
-    def on_do(self, background):
+    def on_do(self, background): #scene.do
         """ replace the background with the image in the scene's directory """        
         sdir = os.path.join(os.getcwd(),os.path.join(self.game.scene_dir, self.name))
         bname = os.path.join(sdir, "%s.png"%background)
@@ -3811,7 +3811,7 @@ class Game(object):
                 android.wait_for_resume()
             
             if self.scene:
-                blank = [self.scene.objects.values(), self.scene.foreground, self.menu, self.modals]
+                blank = [[self.scene], self.scene.objects.values(), self.scene.foreground, self.menu, self.modals]
             else:
                 blank = [self.menu, self.modals]
 
