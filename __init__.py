@@ -346,7 +346,7 @@ def process_step(game, step):
         actee = step[2] 
         if logging: log.info("TEST SUITE: %s%s. %s %s on %s"%(game.steps_complete, label, function_name, actor, actee))
         game.mouse_mode = MOUSE_USE
-        if actee not in game.player.inventory:
+        if game.player and actee not in game.player.inventory:
             if logging: log.warning("Item %s not in player's inventory"%actee)
         if actee in game.items: 
             actee = game.items[actee]
@@ -1214,7 +1214,7 @@ class Actor(object):
         if self.action == None: #can't find action, continue with next event
             self._event_finish() 
             return
-        if self.action.mode != ONCE_BLOCK:
+        if self.action.mode != ONCE_BLOCK: #once block anims block all events
             self._event_finish()
             
     def on_do_once(self, action):
@@ -1622,7 +1622,7 @@ class Actor(object):
             self.game._event_finish(success=False) #signal to game event queue this event is done    
             return       
 
-        ignore = True #XXX goto ingnores walkareas
+        ignore = True #XXX goto ignores walkareas
 
         if self._test_goto_point(destination): 
             return
@@ -2563,16 +2563,18 @@ class Camera(object):
         step = 255.0/COUNT
         self._image.set_alpha(int(step*self._count))
         if self._count > COUNT: return True
+        return False
 
     def _effect_fade_in(self, screen):
         """ called per clock tick to fade out current screen, return True if finished """
         self._count += 1
         COUNT = 20
         step = 255.0/COUNT
-        self._image.set_alpha(255-int(step*self._count))
+        self._image.set_alpha(255 -int(step*self._count))
         if self._count > COUNT: 
             self._image = None #remove camera lens filter
             return True
+        return False #event not finished
 
     def draw(self, screen): #return a big rect
         if self._image:
@@ -2592,14 +2594,16 @@ class Camera(object):
         self.game._event_finish(block=False)
 
     def on_fade_out(self, block=True):
+        """ event finish sent by _finished_effect """
         if logging: log.info("camera.fade_out requested")
         self._image = pygame.Surface(self.game.resolution)
         self._effect = self._effect_fade_out
         
     def on_fade_in(self, block=True):
+        """ event finish sent by _finished_effect """
         if logging: log.info("camera.fade_in requested")
         self._image = pygame.Surface(self.game.resolution)
-        self._effect = self._effect_fade_in
+        self._effect = self._effect_fade_in 
 
 #If we use text reveal
 SLOW = 0
@@ -4026,6 +4030,9 @@ class Game(object):
         self._wait = datetime.now() + timedelta(seconds=seconds)
         if logging: log.debug("waiting until %s"%datetime.now())
         
+#    def wait_until_finished(self):
+#        """ wait here for the 
+        
     def finished_wait(self, ):
         if logging: log.debug("finished wait at %s"%datetime.now())
         self._wait = None
@@ -4042,6 +4049,7 @@ class Game(object):
 
     def on_set_player(self, actor):
         """ switch the player object that is controlled by the user """
+        if type(actor) == str: actor = self.actors[actor]
         self.player = actor
         self._event_finish(block=False)
 
