@@ -56,6 +56,12 @@ ENABLE_EDITOR = True
 ENABLE_PROFILING = True
 ENABLE_LOGGING = True
 
+
+SELECT = 0 #manually select an item
+EDIT = 1  #can click on item to change focus
+
+EDITOR_MODE = EDIT
+
 if logging:
     if ENABLE_LOGGING:
         log_level = logging.DEBUG #what level of debugging
@@ -131,8 +137,9 @@ DEBUG_SCALE = 11
 #Animation modes
 LOOP = 0
 PINGPONG = 1
-ONCE_BLOCK = 2 #play action once, only throw event_finished at end
+ONCE_BLOCK = 2 #play action once, only throw event_finished at end (based on image count)
 ONCE = 3
+ONCE_BLOCK_DELTA = 4 #play action once, based on action deltas
 
 DEFAULT_FRAME_RATE = 20 #100
 
@@ -509,20 +516,21 @@ def editor_menu(game):
     game.menu_hide()
     game.menu_fadeIn()
 
-def editor_point(game, menuItem, player):
+def editor_point(game, menuItem, player, editing=None):
     #click on an editor button for editing a point
-    if not game.editing: return
+    if not editing: editing = game.editing
+    if not editing: return
     if type(menuItem) == str: menuItem = game.items[menuItem]
-    if type(game.editing) == WalkArea: return
-    points = {"e_location": (game.editing.set_x, game.editing.set_y),
-              "e_anchor": (game.editing.set_ax, game.editing.set_ay),
-              "e_stand": (game.editing.set_sx, game.editing.set_sy),
-              "e_talk": (game.editing.set_nx, game.editing.set_ny),
-              "e_scale": (game.editing.adjust_scale_x, game.editing.adjust_scale_y),
+    if type(editing) == WalkArea: return
+    points = {"e_location": (editing.set_x, editing.set_y),
+              "e_anchor": (editing.set_ax, editing.set_ay),
+              "e_stand": (editing.set_sx, editing.set_sy),
+              "e_talk": (editing.set_nx, editing.set_ny),
+              "e_scale": (editing.adjust_scale_x, editing.adjust_scale_y),
                     }
                     
-    if hasattr(game.editing, "set_ox"):
-        points["e_out"] = (game.editing.set_ox, game.editing.set_oy)
+    if hasattr(editing, "set_ox"):
+        points["e_out"] = (editing.set_ox, editing.set_oy)
 
     if menuItem.name in points:
         game.editing_point = points[menuItem.name]
@@ -1047,6 +1055,8 @@ class Actor(object):
                 img = pygame.transform.smoothscale(img, (w, h))
             img.set_alpha(self._alpha)
             if self._tint:
+                img = img.copy()
+                #s1.set_alpha(s0.get_alpha())            
                 img.fill(self._tint, special_flags=BLEND_MULT) #BLEND_MIN)
             
             r = img.get_rect().move(self.ax, self.ay)
@@ -1110,6 +1120,9 @@ class Actor(object):
             dx, dy = self.action.deltas[self.action.index%count]
             self.x += dx
             self.y += dy
+            if self.action.mode == ONCE_BLOCK_DELTA and self.action.index >= count-1:
+                self._event_finish(block=False)
+#                self.action.index = 0
             
         dx = 0
         dy = 0
@@ -1134,9 +1147,14 @@ class Actor(object):
         if hasattr(self, "update"): #run this actor's personalised update function
             self.update(dt)
         
-    def collide(self, x,y):
-        return self.clickable_area.collidepoint(x,y)
-#        return collide(self._clickable_area, x, y)
+    def collide(self, x,y, image=False):
+        """ collide with actor's clickable 
+            if image is true, ignore clickable and collide with image.
+        """
+        if not image:
+            return self.clickable_area.collidepoint(x,y)
+        else:
+            return collide(self._image().get_rect().move(self.x, self.y), x, y)
         
     def on_animation_mode(self, action, mode):
         """ 
@@ -1193,7 +1211,7 @@ class Actor(object):
         if action in self.actions.keys():
             self.action = self.actions[action]
             self.action.mode = mode
-            if self.action.mode in [ONCE, ONCE_BLOCK]: self.action.index = 0  #reset action for non-looping anims
+            if self.action.mode in [ONCE, ONCE_BLOCK, ONCE_BLOCK_DELTA]: self.action.index = 0  #reset action for non-looping anims
             if logging: log.debug("actor %s does action %s"%(self.name, action))
         else:
             if logging: log.error("actor %s missing action %s"%(self.name, action))
@@ -1214,12 +1232,15 @@ class Actor(object):
         if self.action == None: #can't find action, continue with next event
             self._event_finish() 
             return
-        if self.action.mode != ONCE_BLOCK: #once block anims block all events
+        if self.action.mode not in [ONCE_BLOCK, ONCE_BLOCK_DELTA]: #once block anims block all events
             self._event_finish()
             
-    def on_do_once(self, action):
+    def on_do_once(self, action, delta=False):
         """ Does an action, blocking, once. """            
-        self.on_do(action, ONCE_BLOCK)
+        if delta:
+            self.on_do(action, ONCE_BLOCK_DELTA)
+        else:
+            self.on_do(action, ONCE_BLOCK)
         
     def on_place(self, destination):
         """ 
@@ -1601,6 +1622,8 @@ class Actor(object):
         self._motion_queue_ignore = ignore
         if type(destination) == str:
             destination = (self.game.actors[destination].sx, self.game.actors[destination].sy)
+        elif type(destination) == int: #if an int, assume it's using the existing y
+            destination = (destination, self.y)
         elif type(destination) != tuple:
             destination = (destination.sx, destination.sy)
         x,y = self._tx, self._ty = destination
@@ -2596,12 +2619,18 @@ class Camera(object):
     def on_fade_out(self, block=True):
         """ event finish sent by _finished_effect """
         if logging: log.info("camera.fade_out requested")
+        if self.game and self.game.headless: 
+            self.game._event_finish(block=False)
+            return
         self._image = pygame.Surface(self.game.resolution)
         self._effect = self._effect_fade_out
         
     def on_fade_in(self, block=True):
         """ event finish sent by _finished_effect """
         if logging: log.info("camera.fade_in requested")
+        if self.game and self.game.headless: 
+            self.game._event_finish(block=False)
+            return
         self._image = pygame.Surface(self.game.resolution)
         self._effect = self._effect_fade_in 
 
@@ -2959,6 +2988,7 @@ class Game(object):
         
                 
     def on_set_editing(self, obj, objects=None):
+        print("switch to %s"%obj.name)
         self.editing = obj
         for i in ["allow_draw", "allow_look", "allow_interact", "allow_use"]:
             btn = self.items["e_object_%s"%i]
@@ -3045,6 +3075,10 @@ class Game(object):
                         closest_distance = dist
                 if self.editing_index != None: return
             else:        #edit single point (eg location, stand, anchor) 
+                for i in self.scene.objects.values(): #for single point editing, allow clicking on other actors to steal focus
+                    if i.collide(x,y, image=True):
+                        self.set_editing(i)
+                        editor_point(self, self.items["e_location"], self.player, editing=i) 
                 self.editing_index = 0 #must be not-None to trigger drag
             
     def _on_mouse_up(self, x, y, button, modifiers): #single button interface
@@ -3074,6 +3108,9 @@ class Game(object):
             if self.editing: #finish move
 #                self.editing_point = None
                 self.editing_index = None
+                if EDITOR_MODE == EDIT: #lose focus
+                    print("lose focus from %s"%self.editing.name)
+#                    self.editing = None
                 return
                 
         elif self.scene: #regular game interaction
