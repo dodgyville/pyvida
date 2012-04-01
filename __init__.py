@@ -60,7 +60,8 @@ ENABLE_LOGGING = True
 SELECT = 0 #manually select an item
 EDIT = 1  #can click on item to change focus
 
-EDITOR_MODE = EDIT
+#EDITOR_MODE = EDIT
+EDITOR_MODE = SELECT
 
 if logging:
     if ENABLE_LOGGING:
@@ -2228,6 +2229,7 @@ class Collection(MenuItem):
             else: obj = a
             self.objects[obj.name] = obj
             self._sorted_objects = None
+            if "collection" in obj.actions.values: obj.do("collection")
 
     def empty(self):
         self.objects = {}
@@ -2988,7 +2990,6 @@ class Game(object):
         
                 
     def on_set_editing(self, obj, objects=None):
-        print("switch to %s"%obj.name)
         self.editing = obj
         for i in ["allow_draw", "allow_look", "allow_interact", "allow_use"]:
             btn = self.items["e_object_%s"%i]
@@ -3076,7 +3077,7 @@ class Game(object):
                 if self.editing_index != None: return
             else:        #edit single point (eg location, stand, anchor) 
                 for i in self.scene.objects.values(): #for single point editing, allow clicking on other actors to steal focus
-                    if i.collide(x,y, image=True):
+                    if EDITOR_MODE == EDIT and i.collide(x,y, image=True):
                         self.set_editing(i)
                         editor_point(self, self.items["e_location"], self.player, editing=i) 
                 self.editing_index = 0 #must be not-None to trigger drag
@@ -4093,6 +4094,58 @@ class Game(object):
     def on_set_fps(self, fps):
         self.fps = fps
         self._event_finish()
+
+    def on_popup(self, text, image="msgbox", sfx=-1, block=True, modal=True,):
+        """ A queuing function. Display an image and wait for player to close it.
+        
+        Examples::
+        
+            player.says("Hello world!")  #will use "portrait" action or "idle"
+            player.says("Hello world!", action="happy") #will use player's happy action
+        
+        Options::
+        
+            if sfx == -1  #, try and guess sound file 
+            action = None #which action to display
+        """
+        if logging: log.info("Game popup: %s (%s)"%(text, image))
+#        if logging: log.warning("")
+        if self.game.testing: 
+            self._event_finish()
+            return
+        self.block = True #stop other events until says finished
+        self._event_finish(block=True) #remove the on_says
+
+        self.stuff_event(self.on_wait, None) #push an on_wait as the final event in this script
+        def close_msgbox(game, box, player):
+            if game._event and not game._event[0] == msg.actor.on_wait: return
+            try:
+                t = game.remove_related_events(game.items[background])
+                game.modals.remove(t)
+                t = game.remove_related_events(game.items["ok"])
+                game.modals.remove(t)
+            except ValueError:
+                pass
+            game.block = False #release event lock
+            self._event_finish() #should remove the on_wait event
+            
+        TOP = False
+        if TOP: #place text boxes on top of screen
+            oy, iy = -400, 40
+        else:
+#            oy, iy = 1200, 360
+            if self.game.resolution == (800,480):
+                oy, oy2, iy = 190, -400, 160
+            else:
+                oy, oy2, iy = 420, 800, 360
+        msg = self.add(ModalItem(image, close_msgbox,(54, oy)).smart(self.game))
+        msg.actor = self
+            
+        ok = self.game.add(Item("ok").smart(self.game), False, ModalItem)
+        ok.interact = close_msgbox
+        
+        self.game.stuff_event(ok.on_place, (900, iy+210))
+        self.game.stuff_event(msg.on_goto, (54, iy))
 
     def on_splash(self, image, callback, duration, immediately=False):
 #        """ show a splash screen then pass to callback after duration """
