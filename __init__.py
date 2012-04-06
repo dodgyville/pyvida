@@ -4274,16 +4274,20 @@ class Game(object):
         self._event_finish()       
        
 
-    def on_menu_fadeOut(self): 
+    def on_menu_fadeOut(self, menu_items=None): 
         """ animate hiding the menu """
-        for i in reversed(self.menu): self.stuff_event(i.on_goto, (i.out_x,i.out_y))
-        if logging: log.debug("fadeOut menu using goto %s"%[x.name for x in self.menu])
+        if not menu_items:
+            menu_items = self.menu
+        if type(menu_items) in [tuple, str]: menu_items = [menu_items]
+        for i in reversed(menu_items): self.stuff_event(i.on_goto, (i.out_x,i.out_y))
+        if logging: log.debug("fadeOut menu using goto %s"%[x.name for x in menu_items])
         self._event_finish()
         
     def on_menu_hide(self, menu_items = None):
         """ hide the menu (all or partial)"""
         if not menu_items:
             menu_items = self.menu
+        if type(menu_items) in [tuple, str]: menu_items = [menu_items]
         for i in menu_items:
             if type(i) == str: i = self.items[i]
             self.stuff_event(i.on_place, (i.out_x, i.out_y))
@@ -4296,10 +4300,13 @@ class Game(object):
         if logging: log.debug("show menu using place %s"%[x.name for x in self.menu])
         self._event_finish()
         
-    def on_menu_fadeIn(self): 
+    def on_menu_fadeIn(self, menu_items=None): 
         """ animate showing the menu """
-        if logging: log.debug("fadeIn menu, telling items to goto %s"%[x.name for x in self.menu])
-        for i in reversed(self.menu): self.stuff_event(i.on_goto, (i.in_x,i.in_y))
+        if not menu_items:
+            menu_items = self.menu
+        if type(menu_items) in [tuple, str]: menu_items = [menu_items]
+        if logging: log.debug("fadeIn menu, telling items to goto %s"%[x.name for x in menu_items])
+        for i in reversed(menu_items): self.stuff_event(i.on_goto, (i.in_x,i.in_y))
         self._event_finish()
         
     def on_menu_push(self):
