@@ -709,7 +709,7 @@ class Actor(object):
         self._action_queue = [] #cycle through theses
         self._action_index = 0
         self._tint = None #when tinting an image, use this rgb colour with BLEND_MULT
-        
+        self._blit_flag = 0 #BLEND_MULT #mode to use with blits
         
         self._alpha = 1.0
         self._alpha_target = 1.0
@@ -1064,7 +1064,7 @@ class Actor(object):
             if self._alpha != 1.0:
                 self._rect = blit_alpha(self.game.screen, img, r, self._alpha*255)
             else:
-                self._rect = self.game.screen.blit(img, r)
+                self._rect = self.game.screen.blit(img, r, special_flags=self._blit_flag)
             if self.game.editing == self: #draw bounding box
                 r2 = r.inflate(-2,-2)
                 pygame.draw.rect(self.game.screen, (0,255,0), r2, 1)
@@ -1431,7 +1431,9 @@ class Actor(object):
                     if type(scene_item) != Portal:
                         actee, actor = slugify(scene_item.name), slugify(inventory_item.name)
                         basic = "%s_use_%s"%(actee, actor)
-                        if get_function(basic) == None: #would use default if player tried this combo
+                        fn = get_function(basic)
+                        if not fn and inventory_item.name in scene_item.uses: fn = scene_item.uses[inventory_item.name]
+                        if fn == None: #would use default if player tried this combo
                             if scene_item.allow_use: log.warning("%s default use script missing: def %s(game, %s, %s)"%(scene.name, basic, actee.lower(), actor.lower()))
 
         self.game.stuff_event(scene.on_add, self)
@@ -1736,7 +1738,7 @@ class Actor(object):
         else:
             text = "%s gets %s!"%(self.name, item.name.title())
 
-        item.on_says(text)
+        item.on_says(text, action="portrait")
         return
 
 #        self.game.stuff_event(item.on_remove)
@@ -2229,7 +2231,7 @@ class Collection(MenuItem):
             else: obj = a
             self.objects[obj.name] = obj
             self._sorted_objects = None
-            if "collection" in obj.actions.values: obj.do("collection")
+            if "collection" in obj.actions.keys(): obj.do("collection")
 
     def empty(self):
         self.objects = {}
