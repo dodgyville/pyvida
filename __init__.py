@@ -1418,8 +1418,9 @@ class Actor(object):
             if scene in self.game.scenes:
                 scene = self.game.scenes[scene]
             else:
-                if logging: log.error("Unable to relocate %s to non-existent scene %s, relocating on current scene %s"%(self.name, scene, self.game.scene.name))
-                scene = self.game.scene
+                if logging: log.error("Unable to relocate %s to non-existent scene %s, leaving."%(self.name, scene))
+                self._event_finish(block=False)
+                return
         if destination:
             pt = get_point(self.game, destination)
             self.x, self.y = pt
@@ -4122,7 +4123,7 @@ class Game(object):
         def close_msgbox(game, box, player):
             if game._event and not game._event[0] == msg.actor.on_wait: return
             try:
-                t = game.remove_related_events(game.items[background])
+                t = game.remove_related_events(game.items[image])
                 game.modals.remove(t)
                 t = game.remove_related_events(game.items["ok"])
                 game.modals.remove(t)
@@ -4278,7 +4279,7 @@ class Game(object):
         """ animate hiding the menu """
         if not menu_items:
             menu_items = self.menu
-        if type(menu_items) not in [tuple, str]: menu_items = [menu_items]
+        if type(menu_items) not in [tuple, list]: menu_items = [menu_items]
         for i in reversed(menu_items): self.stuff_event(i.on_goto, (i.out_x,i.out_y))
         if logging: log.debug("fadeOut menu using goto %s"%[x.name for x in menu_items])
         self._event_finish()
@@ -4287,7 +4288,7 @@ class Game(object):
         """ hide the menu (all or partial)"""
         if not menu_items:
             menu_items = self.menu
-        if type(menu_items) not in [tuple, str]: menu_items = [menu_items]
+        if type(menu_items) not in [tuple, list]: menu_items = [menu_items]
         for i in menu_items:
             if type(i) == str: i = self.items[i]
             self.stuff_event(i.on_place, (i.out_x, i.out_y))
@@ -4304,7 +4305,7 @@ class Game(object):
         """ animate showing the menu """
         if not menu_items:
             menu_items = self.menu
-        if type(menu_items) not in [tuple, str]: menu_items = [menu_items]
+        if type(menu_items) not in [tuple, list]: menu_items = [menu_items]
         if logging: log.debug("fadeIn menu, telling items to goto %s"%[x.name for x in menu_items])
         for i in reversed(menu_items): self.stuff_event(i.on_goto, (i.in_x,i.in_y))
         self._event_finish()
