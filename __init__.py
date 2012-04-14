@@ -141,6 +141,7 @@ PINGPONG = 1
 ONCE_BLOCK = 2 #play action once, only throw event_finished at end (based on image count)
 ONCE = 3
 ONCE_BLOCK_DELTA = 4 #play action once, based on action deltas
+REPEAT = 5 #loop action, but reset position each cycle
 
 DEFAULT_FRAME_RATE = 20 #100
 
@@ -597,6 +598,11 @@ class Action(object):
                 self.actor.action = self.actor._action_queue[i%len(self.actor._action_queue)]
                 self.actor.action.index = 0
             if self.mode == ONCE_BLOCK: self.actor._event_finish(block=False)
+            if self.mode == REPEAT: #move actor back to start of action
+                self.actor._x, self.actor._y = self._ox, self._oy
+#                self.actor._x -= int(float(self.avg_delta_x) * self.actor.scale) * (self.count+1)
+ #               self.actor._y -= int(float(self.avg_delta_y) * self.actor.scale) * (self.count+1)
+                self.index = 0
         self.index += self.step
         
     def load(self): 
@@ -1230,6 +1236,7 @@ class Actor(object):
         player.do("shrug")
         """
         self._do(action, mode=mode, repeats=repeats)
+        if mode == REPEAT: self.action._ox, self.action._oy = self._x, self._y #store current position
         if self.action == None: #can't find action, continue with next event
             self._event_finish() 
             return
@@ -3567,7 +3574,9 @@ class Game(object):
                 game.editing_index = None
                 game.editing_point = None
                 game.camera.scene(scene)
-                if game.player: game.player.relocate(scene)
+                if game.player: 
+                    game.player.relocate(scene)
+                    game.player.do("idle")
                 editor_collection_close(game, collection, player)
 
             def editor_collection_newscene(game, btn, player):
@@ -3797,9 +3806,7 @@ class Game(object):
             self.fullscreen = True
         self.screen = screen = pygame.display.set_mode(self.resolution, flags)
 
-        if android:
-            android.init()
-#            android.map_key(android.KEYCODE_BACK, pygame.K_ESCAPE)        
+        if android: android.init() #initialise android framework ASAP
         
         #do post pygame init loading
         #set up mouse cursors
