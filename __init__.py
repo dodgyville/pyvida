@@ -1532,6 +1532,7 @@ class Actor(object):
         objects = self.scene.objects.values() if self.scene else []
         walkarea = walkareas[0] if walkareas else [] #XXX assumes only 1 walkarea per scene
         for a in objects: #set up solid areas you can't walk through
+            continue #XXX ignore solidareas for the moment
             if a != self.game.player:
                 if a.solid_area.collidepoint(x,y):
                     print("goto point is inside solid area")
@@ -3343,6 +3344,7 @@ class Game(object):
                     state = inp.value
                     if state=="": return
                     self.load_state(game.scene, state)
+                    game.editing = None
                 game.user_input("What is the name of this %s state to load (no directory or .py)?"%self.scene.name, e_load_state)
 
 
