@@ -2280,7 +2280,8 @@ class Collection(MenuItem):
         m = pygame.mouse.get_pos()
         obj = self.get_object(m)
         if obj:
-            self.game.info(obj.name, x-10, y-10)
+            name = obj.display_text if obj.display_text else obj.name
+            self.game.info(name, x-10, y-10)
 
     def draw(self):
         Actor.draw(self)
@@ -4125,10 +4126,14 @@ class Game(object):
         if self.game.testing: 
             self._event_finish()
             return
+        #XXX on_popup disabled at the moment
+#        self.player.says("TODO: [pop up %s]"%image)
+        self._event_finish()            
+        return
         self.block = True #stop other events until says finished
         self._event_finish(block=True) #remove the on_says
 
-        self.stuff_event(self.on_wait, None) #push an on_wait as the final event in this script
+        self.stuff_event(self.game.on_wait, None) #push an on_wait as the final event in this script
         def close_msgbox(game, box, player):
             if game._event and not game._event[0] == msg.actor.on_wait: return
             try:
