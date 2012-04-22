@@ -386,6 +386,8 @@ def process_step(game, step):
         return
     elif function_name == "toggle": #toggle a setting in the game
         if hasattr(game, actor): game.__dict__[actor] = not game.__dict__[actor]
+        log.info("toggle headless")
+        return
     for i in game.modals: #try modals first
         if actor == i.name:
             i.trigger_interact()
@@ -1915,7 +1917,9 @@ class Actor(object):
             next_step = self.game.tests.pop(0)
             for q,fn in args[1:]:
                 if q in next_step:
-                    if fn: fn(self.game, self, self.game.player)
+                    if fn: 
+#                        self.game.save_game.append([fn, obj.name, datetime.now()])
+                        fn(self.game, self, self.game.player)
                     self._event_finish()
                     return
             if logging: log.error("Unable to select %s option in on_ask '%s'"%(next_step, args[0]))
@@ -1936,6 +1940,8 @@ class Actor(object):
             def close_modal_then_callback(game, menuItem, player): #close the modal ask box and then run the callback
                 elements = ["msgbox", "txt", "ok", "portrait"]
                 elements.extend(menuItem.msgbox.options)
+                self.game.save_game.append([interact, q, datetime.now()])
+               
                 for i in elements:
                     if game.items[i] in game.modals: game.modals.remove(game.items[i])
                 if menuItem.callback: menuItem.callback(game, self, player)
