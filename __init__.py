@@ -2845,11 +2845,9 @@ class Game(object):
         
     def save(self, fname): #save the game current game object
         """ save the game current game object """
-        print(self.save_game)
         with open(fname, "w") as f:
            pickle.dump(self.save_game_info, f)
            pickle.dump(self.save_game, f)
-        print("pickled \n")
             
     def load(self, fname): #game.load - load a game state
         with open(fname, "r") as f:
@@ -2860,7 +2858,7 @@ class Game(object):
             if logging: log.error("Unable to load save game, reset_game value not set on game object")
         else:
             self.headless = True #switch off pygame rendering
-            data.append([toggle, "headless"])
+            data.append([toggle, "headless", datetime.now()])
             self.reset_game(self)
             self.testing = True
             self.tests = [d[:-1] for d in data] #strip time info off save game
