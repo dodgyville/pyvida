@@ -389,7 +389,10 @@ def process_step(game, step):
         log.info("toggle headless")
         return
     for i in game.modals: #try modals first
-        if actor == i.name:
+        possible_names = [i.name]
+        if hasattr(i, "text"): possible_names.append(i.text)
+        if hasattr(i, "display_name"): possible_names.append(i.display_name)
+        if actor in possible_names:
             i.trigger_interact()
             return
     for i in game.menu: #then menu
@@ -1905,26 +1908,32 @@ class Actor(object):
         def collide_never(x,y): #for asks, most modals can't be clicked, only the txt modelitam options can.
             return False
 
-        for m in self.game.modals[-4:]: #for the new says elements, allow clicking on voice options
+        msgbox = None
+        if not self.game.testing: #disable on_says modals (non-existent when test true)
+            modals = self.game.modals[-4:] #from on_saves
+        else: #fake a model when testing
+            #XXX hiding off screen to avoid redraw but this is resolution dependent
+            msgbox = self.game.add(ModalItem("msgbox", pos=(1024,768)).smart(self.game))
+            msgbox.actor = self
+            modals = [msgbox]
+        
+        for m in modals: #for the new says elements, allow clicking on voice options
             if m.name != "ok":
                 m.collide = collide_never
             if m.name == "msgbox":
                 msgbox = m
   
-#    game.set_menu("inventory_cancel", "inventory_back")
-#    game.set_menu("inventory_back")
-        if self.game.testing:
-            next_step = self.game.tests.pop(0)
-            for q,fn in args[1:]:
-                if q in next_step:
-                    if fn: 
-#                        self.game.save_game.append([fn, obj.name, datetime.now()])
-                        fn(self.game, self, self.game.player)
-                    self._event_finish()
-                    return
-            if logging: log.error("Unable to select %s option in on_ask '%s'"%(next_step, args[0]))
-            return
-                    
+#        if self.game.testing:
+#            next_step = self.game.tests.pop(0)
+#            for q,fn in args[1:]:
+#                if q in next_step:
+#                    if fn: 
+#                        fn(self.game, self, self.game.player)
+#                    self._event_finish()
+#                    return
+#            if logging: log.error("Unable to select %s option in on_ask '%s'"%(next_step, args[0]))
+#            return
+
         msgbox.options = []
         oy, oy2, iy = 490, 800, 360 #XXX magic variables for 1024x768
         
@@ -1938,10 +1947,9 @@ class Actor(object):
             if self.game and self.game.player and self.game.player.font_colour != None: kwargs["colour"] = self.game.player.font_colour
             opt = self.game.add(Text("opt%s"%i, (100,oy2), (840,180), q, wrap=660, **kwargs) , False, ModalItem)
             def close_modal_then_callback(game, menuItem, player): #close the modal ask box and then run the callback
-                elements = ["msgbox", "txt", "ok", "portrait"]
+                elements = [x.name for x in modals] #["msgbox", "txt", "ok", "portrait"]
                 elements.extend(menuItem.msgbox.options)
-                self.game.save_game.append([interact, q, datetime.now()])
-               
+                self.game.save_game.append([interact, menuItem.text, datetime.now()])
                 for i in elements:
                     if game.items[i] in game.modals: game.modals.remove(game.items[i])
                 if menuItem.callback: menuItem.callback(game, self, player)
@@ -2349,6 +2357,7 @@ class Scene(object):
         self.analytics_count = 0 #used by test runner to measure how "popular" a scene is.
         self.foreground = [] #items to draw in the foreground
         self.music_fname = None
+        self.display_text = ""
         self._on_mouse_move = None #if mouse is moving on this scene, do this call back
 
     def _event_finish(self, success=True, block=True):  #scene.event_finish
@@ -2739,6 +2748,7 @@ class Game(object):
         self.block = False #block click events
         
         self.save_game = [] #a list of events caused by this player to get to this point in game
+        self.save_title = ""  #title to display for save game
         self.reset_game = None #which function can we call to reset the game state to a safe point (eg start of chapter)
         self.testing = False
         self.headless = False #run game without pygame graphics?
@@ -2847,7 +2857,7 @@ class Game(object):
         
     @property
     def save_game_info(self):   
-        return {"version": VERSION_SAVE, "reset": self.reset_game }
+        return {"version": VERSION_SAVE, "reset": self.reset_game, "title":self.save_title, "datetime":datetime.now() }
         
     def save(self, fname): #save the game current game object
         """ save the game current game object """
@@ -2855,11 +2865,16 @@ class Game(object):
            pickle.dump(self.save_game_info, f)
            pickle.dump(self.save_game, f)
             
-    def load(self, fname): #game.load - load a game state
+    def _load(self, fname, meta_only=False): 
+        data = None
         with open(fname, "r") as f:
            meta = pickle.load(f)
-           data = pickle.load(f)
-        print(data)
+           if not meta_only:
+               data = pickle.load(f)
+        return meta, data
+        
+    def load(self, fname): #game.load - load a game state
+        meta, data = self._load(fname)        
         if self.reset_game == None:
             if logging: log.error("Unable to load save game, reset_game value not set on game object")
         else:
