@@ -2711,13 +2711,13 @@ class Game(object):
     
     enabled_editor = False
     
-    actor_dir = "data/actors"
-    item_dir = "data/items"
-    menuitem_dir = "data/menu" 
-    scene_dir = "data/scenes"
-    interface_dir = "data/interface"
-    portal_dir = "data/portals"
-    music_dir = "data/music"
+    actor_dir = os.path.join("data", "actors")
+    item_dir = os.path.join("data", "items")
+    menuitem_dir = os.path.join("data", "menu") 
+    scene_dir = os.path.join("data", "scenes")
+    interface_dir = os.path.join("data", "interface")
+    portal_dir = os.path.join("data", "portals")
+    music_dir = os.path.join("data", "music")
     save_dir = "saves"
 
     quit = False
@@ -2753,6 +2753,9 @@ class Game(object):
         self.testing = False
         self.headless = False #run game without pygame graphics?
         self.resolution = resolution
+        self.progress_bar_count = 0 #how many event steps in this progress block
+        self.progress_bar_index = 0 #how far along the event list are we for this progress block
+        self.progress_bar_renderer = None #if exists, call during loop
 
         self.scene = None
         self.player = None
@@ -2966,20 +2969,27 @@ class Game(object):
             self.info_image = text_to_image(text, self.font, colour, 150, offset=1)
         self.info_position = (x,y)
 
-    def on_smart(self, player=None, player_class=Actor): #game.smart
+    def on_smart(self, player=None, player_class=Actor, draw_progress_bar=None): #game.smart
         """ cycle through the actors, items and scenes and load the available objects 
             it is very common to have custom methods on the player, so allow smart
             to use a custom class
             player is the the first actor the user controls.
             player_class can be used to override the player class with a custom one.
+            draw_progress_bar is the fn that handles the drawing of a progress bar on this screen
         """
         portals = []
         running_headless = self.headless
         if not running_headless: self.set_headless(True) #ignore clock ticks while loading
+        if draw_progress_bar:
+            self.progress_bar_renderer = draw_progress_bar
+            self.progress_bar_index = 0
+            self.progress_bar_count = 0
         for obj_cls in [Actor, Item, Portal, Scene]:
             dname = "%s_dir"%obj_cls.__name__.lower()
             if not os.path.exists(getattr(self, dname)): continue #skip directory if non-existent
             for name in os.listdir(getattr(self, dname)):
+                if draw_progress_bar: 
+                    self.progress_bar_count += 1
                 if logging: log.debug("game.smart loading %s %s"%(obj_cls.__name__.lower(), name))
                 #if there is already a non-custom Actor or Item with that name, warn!
                 if obj_cls == Actor and name in self.actors and self.actors[name].__class__ == Actor:
@@ -2995,9 +3005,10 @@ class Game(object):
                     a.smart(self)
                     if a.__class__ == Portal: portals.append(a.name)
                     
-                    
+                            
 #            if obj_cls == Portal: #guess portal links based on name, do before scene loads
         for pname in portals: #try and guess portal links
+            if draw_progress_bar: self.progress_bar_count += 1
             links = pname.split("_To_")
             guess_link = None
             if len(links)>1: #name format matches guess
@@ -3010,6 +3021,8 @@ class Game(object):
         if player: self.player = player
         if not running_headless: self.set_headless(False) #restore headless state
         self._event_finish(block=False)
+        if draw_progress_bar: print("progress bar will be",self.progress_bar_count)
+        
 #        print("memory after game.smart")
 #        from meliae import scanner
 #        scanner.dump_all_objects('pyvida4memory.json')
@@ -3896,6 +3909,7 @@ class Game(object):
             else: #wait until time passes
                 if datetime.now() > self._wait: self.finished_wait()
                 
+                
             if self.scene and self.screen: #draw objects
                 objects = sorted(self.scene.objects.values(), key=lambda x: x.y, reverse=False)
 #                menu_objects = sorted(self.menu, key=lambda x: x.y, reverse=False)
@@ -3992,6 +4006,12 @@ class Game(object):
         if len(self.events) == 0:  return #wait for user
                 
         if not self._event: #waiting, so do an immediate process 
+            if self.progress_bar_count>0: #advance the progress bar if there is one.
+                self.progress_bar_index += 1 
+                if self.screen and self.progress_bar_renderer and self.progress_bar_index%10 == 0: #draw progress bar                
+                    self.progress_bar_renderer(self, self.screen)
+                if self.progress_bar_index >= self.progress_bar_count: #switch off progress bar
+                    self.progress_bar_count, self.progress_bar_index, self.progress_bar_renderer = 0,0,None
             e = self.events.pop(0) #stored as [(function, args))]
             if e[0].__name__ not in ["on_add", "on_relocate", "on_rescale","on_reclickable", "on_reanchor", "on_restand", "on_retalk", "on_resolid"]:
                 if logging: log.debug("Doing event %s"%e[0].__name__)
@@ -4184,7 +4204,8 @@ class Game(object):
         self.game.stuff_event(msg.on_goto, (54, iy))
 
     def on_splash(self, image, callback, duration, immediately=False):
-#        """ show a splash screen then pass to callback after duration """
+        """ show a splash screen then pass to callback after duration 
+        """
  #       self.
         if logging: log.warning("game.splash ignores duration and clicks")
         scene = Scene(image)
