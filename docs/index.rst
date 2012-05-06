@@ -24,6 +24,7 @@ Contents:
    sceneedit.rst
    assets.rst
    scripting.rst
+   running.rst
    extras.rst
    technical.rst
    reference.rst

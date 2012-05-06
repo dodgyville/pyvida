@@ -2,7 +2,7 @@ from __future__ import print_function
 import __builtin__
 
 from datetime import datetime, timedelta, date
-import gc, glob, copy, inspect, math, os, sys, operator, types, pickle, time
+import gc, glob, copy, inspect, math, os, sys, operator, types, pickle, time, re
 try:
     import logging
     import logging.handlers
@@ -348,12 +348,15 @@ def process_step(game, step):
     if function_name == "interact":
         if logging: log.info("TEST SUITE: %s%s. %s with %s"%(game.steps_complete, label, function_name, actor))
         game.mouse_mode = MOUSE_INTERACT
+        if game.output_walkthrough: print("Click on %s."%(actor))
     elif function_name == "look":
         if logging: log.info("TEST SUITE: %s%s. %s at %s"%(game.steps_complete, label, function_name, actor))
         game.mouse_mode = MOUSE_LOOK
+        if game.output_walkthrough: print("Look at %s."%(actor))
     elif function_name == "use": 
         actee = step[2] 
         if logging: log.info("TEST SUITE: %s%s. %s %s on %s"%(game.steps_complete, label, function_name, actor, actee))
+        if game.output_walkthrough: print("Use %s on %s."%(actee, actor))
         game.mouse_mode = MOUSE_USE
         if game.player and actee not in game.player.inventory:
             if logging: log.warning("Item %s not in player's inventory"%actee)
@@ -371,6 +374,7 @@ def process_step(game, step):
         scene_path = []
         if game.scene:
             scene = scene_search(game.scene, actor.upper())
+            if game.output_walkthrough and scene: print("Goto %s."%(scene.name))
             if scene != False:
                 scene._add(game.player)
                 if logging: log.info("TEST SUITE: %s. Player goes %s"%(game.steps_complete, [x.name for x in scene_path]))
@@ -381,6 +385,7 @@ def process_step(game, step):
             if logging: log.error("Going from no scene to scene %s"%actor)
         return
     elif function_name == "location": #check current location matches scene "actor"
+        if game.output_walkthrough: print("Player should be at %s."%(actor))
         if game.scene.name != actor:
             if logging: log.error("Current scene should be %s, but is currently %s"%(actor, game.scene.name))
         return
@@ -1741,7 +1746,7 @@ class Actor(object):
         """ add item to inventory, remove from scene if remove == True """
         item = self._gets(item, remove)
         if item == None: return
-
+        if self.game and self.game.output_walkthrough: print("%s gets %s."%(self.name, item.name))
         if self.game.testing: 
             self._event_finish()
             return
@@ -1916,13 +1921,14 @@ class Actor(object):
             msgbox = self.game.add(ModalItem("msgbox", pos=(1024,768)).smart(self.game))
             msgbox.actor = self
             modals = [msgbox]
+        if self.game and self.game.output_walkthrough: print("%s asks \"%s\"."%(self.name, args[0]))
         
         for m in modals: #for the new says elements, allow clicking on voice options
             if m.name != "ok":
                 m.collide = collide_never
             if m.name == "msgbox":
                 msgbox = m
-  
+   
 #        if self.game.testing:
 #            next_step = self.game.tests.pop(0)
 #            for q,fn in args[1:]:
@@ -2028,7 +2034,7 @@ class Portal(Item):
         actor.goto((self.ox, self.oy), ignore=True) 
         
     def exit(self, actor=None):
-        """ arrive at this door's portal's entrance """
+        """ arrive at this door's portal's exit """
         if actor == None: actor = self.game.player
         actor.relocate(self.link.scene, (self.link.ox, self.link.oy)) #moves player to scene
         self.game.camera.scene(self.link.scene) #change the scene
@@ -2783,6 +2789,7 @@ class Game(object):
         self.step = None #current step in the walkthroughs
         self._modules = {} #list of game-related python modules and their file modification date
         self.catch_exceptions = True #engine will try and continue after encountering exception
+        self.output_walkthrough = False
         
         #profiling
         self.profiling = False 
@@ -3791,6 +3798,7 @@ class Game(object):
         parser.add_option("-r", "--random", action="store_true", dest="stresstest", help="Randomly deviate from walkthrough to stress test robustness of scripting")
         parser.add_option("-m", "--memory", action="store_true", dest="memory_save", help="Run game in low memory mode")
         parser.add_option("-e", "--exceptions", action="store_true", dest="allow_exceptions", help="Switch off exception catching.")
+        parser.add_option("-w", "--walkthrough", action="store_true", dest="output_walkthrough", help="Print a human readable walkthrough of this game, based on test suites.")
 
 
 #        parser.add_option("-l", "--list", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
@@ -3814,6 +3822,8 @@ class Game(object):
         if options.analyse_characters: 
             print("Using analyse characters")
             self.analyse_characters = True
+        if options.output_walkthrough:
+            self.output_walkthrough = True
         if options.artreactor: 
             t = date.today()
             dname = "artreactor_%s_%s_%s"%(t.year, t.month, t.day)
@@ -4126,6 +4136,16 @@ class Game(object):
     def finished_wait(self, ):
         if logging: log.debug("finished wait at %s"%datetime.now())
         self._wait = None
+        self._event_finish()
+
+    def on_stdout(self, txt):
+        """ helper queueing function for printing messages to stdout (eg when using --w flag), with basic django-style parsing """
+        vals = re.findall(r'{{([^{]+)}}', txt)
+        for i, v in enumerate(re.finditer(r'{{([^{]+)}}', txt)):
+            v2 = vals[i].strip()
+            v2 = v2.replace("game.", "self.")
+            v2 = eval(v2)
+            print("%s%s%s"%(txt[:v.start()],v2,txt[v.end():]))
         self._event_finish()
 
     def on_relocate(self, obj, scene, destination):
