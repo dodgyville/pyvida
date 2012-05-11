@@ -566,6 +566,7 @@ class Action(object):
         self.repeats = 0 #how many times to do this action
         self.scale = 1.0
         self.ax, self.ay = 0,0 #anchor point, relative to actor's anchor point
+        self._raw_width, self._raw_height = 0,0 #dimensions of raw action image
         
         #deltas
         self.delta_index = 0 #index to deltas
@@ -594,6 +595,11 @@ class Action(object):
             if logging: log.debug("action %s has no images"%self.name)
         return img
         
+#    def _reverse_images(self):
+ #       """ reverse the images in this action """   
+#        new_img = pygame.Surface((width, height), flags=0, Surface)     
+        
+        
     def update(self, dt): #action.update
         if self.mode == PINGPONG and self.index == -1: 
             self.step = 1
@@ -614,6 +620,17 @@ class Action(object):
  #               self.actor._y -= int(float(self.avg_delta_y) * self.actor.scale) * (self.count+1)
                 self.index = 0
         self.index += self.step
+
+    def save(self):
+        """ Save the action images, delta and offset """
+        fname = os.path.splitext(self.fname)[0]
+        width, height = self._raw_width, self._raw_height
+        new_img = pygame.Surface((width, height), pygame.SRCALPHA, 32)
+        for i, img in enumerate(self.images):
+            r = img.get_rect().move(i*img.get_width(),0)
+            rect = new_img.blit(img, r)
+        pygame.image.save(new_img, "testsave_%s.png"%self.name)
+
         
     def load(self): 
         """Load an anim from a montage file"""
@@ -622,7 +639,8 @@ class Action(object):
         
         #load the image and slice info if necessary
         if not os.path.isfile(fname+".montage"):
-            self.images = [pygame.image.load(fname+".png").convert_alpha()]
+            self.images = [pygame.image.load(fname+".png").convert_alpha()] #single image
+            self._raw_width, self._raw_height = self.images[0].get_size()
         else:
             with open(fname+".montage", "r") as f:
                 try:
@@ -632,6 +650,7 @@ class Action(object):
                     num,w,h = 0,0,0
             master_image = pygame.image.load(fname + ".png").convert_alpha()
             master_width, master_height = master_image.get_size()
+            self._raw_width, self._raw_height = master_width, master_height
             if master_width/num != w:
                 w = master_width/num
                 h = master_height
@@ -1135,8 +1154,9 @@ class Actor(object):
         if l == 0 and self.action and self.action.deltas: #use action delta
             count = len(self.action.deltas)
             dx, dy = self.action.deltas[self.action.index%count]
-            self.x += dx
-            self.y += dy
+            if self.game and not self.game._editing_deltas: #only move actor if not editing action
+                self.x += dx
+                self.y += dy
             if self.action.mode == ONCE_BLOCK_DELTA and self.action.index >= count-1:
                 self._event_finish(block=False)
 #                self.action.index = 0
@@ -2803,6 +2823,7 @@ class Game(object):
         #editor--
         self.debug_font = None
         self.enabled_editor = False
+        self._editing_deltas = False #are we in the action editor
 
         #set up text overlay image
         self.info_colour = (255,255,220)
@@ -3053,7 +3074,7 @@ class Game(object):
         self.items['e_out'].do("idle")
 
         if self.items["e_location"] not in self.menu:
-            mitems = ["e_location", "e_anchor", "e_stand", "e_scale", "e_talk", "e_clickable", "e_solid", "e_out", "e_object_allow_draw", "e_object_allow_look", "e_object_allow_interact", "e_object_allow_use", "e_add_walkareapoint"]
+            mitems = ["e_location", "e_anchor", "e_stand", "e_scale", "e_talk", "e_clickable", "e_solid", "e_out", "e_object_allow_draw", "e_object_allow_look", "e_object_allow_interact", "e_object_allow_use", "e_add_walkareapoint", "e_actions"]
             self.set_menu(*mitems)
             self.menu_hide(mitems)
             self.menu_fadeIn()
@@ -3171,7 +3192,7 @@ class Game(object):
 #                   if i.actions.has_key('down'): i.action = i.actions['down']
                     if self.mouse_mode == MOUSE_USE or i is not self.player: #only click on player in USE mode
                         self.block = True
-                        if self.player and self.scene and self.player in self.scene.objects.values() and i != self.player: self.player.goto(i)
+                        if self.mouse_mode != MOUSE_LOOK and self.player and self.scene and self.player in self.scene.objects.values() and i != self.player: self.player.goto(i)
                     
                         self.trigger(i) #trigger look, use or interact
                         return
@@ -3702,7 +3723,61 @@ class Game(object):
                 if game.editing:
                     game.editing.allow_look = not game.editing.allow_look
                     btn.do("idle_off") if not game.editing.allow_look else btn.do("idle_on")
-            
+                    
+            def editor_actions(game, btn, player):
+                """ switch to action editor """
+                game.menu_fadeOut()
+                game.menu_push() #hide and push old menu to storage
+                game.set_menu("e_action_prev", "e_action_next", "e_action_reverse", "e_action_save", "e_actions_close")
+                game.setattr("_editing_deltas", True)
+                self.set_fps(int(1000.0/DEFAULT_FRAME_RATE)) #slow action for debugging
+                game.menu_hide()
+                game.menu_fadeIn()
+
+            def _editor_action_cycle(game, actor, i=1):
+                action_names = sorted(actor.actions)
+                current_index = action_names.index(actor.action.name)
+                current_index += i
+                if current_index < 0: current_index = len(action_names) - 1
+                if current_index >= len(action_names): current_index = 0
+                print(current_index, len(action_names), action_names[:10])
+                actor.do(action_names[current_index])
+
+            def editor_action_next(game, btn, player):
+                _editor_action_cycle(game, game.editing)
+
+            def editor_action_prev(game, btn, player):
+                _editor_action_cycle(game, game.editing, -1)
+                
+            def editor_action_reverse(game, btn, player):
+                """ reverse the frames of an action """
+                self.editing.action.images.reverse()
+
+            def editor_action_save(game, btn, player):
+                """ save the frames, offset and deltas of an action """
+                log.warning("Action save not done yet")
+                log.info("Action %s saved for object %s"%(self.editing.action.name, self.editing.name))
+                self.editing.action.save()
+
+                
+            def editor_actions_close(game, btn, player):
+                game.setattr("_editing_deltas", False)
+                self.menu_pop()
+                self.menu_fadeIn()
+                self.set_fps(int(1000.0/100)) #fast debug
+
+            #load menu for action editor
+            x,y=50,10
+            for i, btn in enumerate([
+                        ("e_action_prev", editor_action_prev, "p"),
+                        ("e_action_next", editor_action_next, "n"),
+                        ("e_action_reverse", editor_action_reverse, "r"),
+                        ("e_action_save", editor_action_save, "s"),
+                        ("e_actions_close", editor_actions_close, "x")]):
+                txt,fn,k = btn
+                self.add(MenuItem(txt, fn, (x+i*40, y), (x+i*40,-50), k).smart(self))
+                
+            #load menu for editor
             self.add(MenuItem("e_load", editor_load, (50, 10), (50,-50), "l").smart(self))
             self.add(MenuItem("e_save", editor_save, (90, 10), (90,-50), "s").smart(self))
             self.add(MenuItem("e_add", editor_add, (130, 10), (130,-50), "a").smart(self))
@@ -3748,6 +3823,8 @@ class Game(object):
             e.do("idle_on")
             e = self.add(MenuItem("e_object_allow_use", editor_toggle_use, (440, 45), (440,-50), v[0]).smart(self))            
             e.do("idle_on")
+            self.add(MenuItem("e_actions", editor_actions, (500, 45), (500,-50), v[0]).smart(self))            
+            
             self.add(MenuItem("e_add_walkareapoint", editor_add_walkareapoint, (550, 45), (550,-50), v[0]).smart(self))            
 
     def finish_tests(self):
@@ -3949,7 +4026,17 @@ class Game(object):
 
             debug_rect = None            
             if self.enabled_editor == True and self.debug_font:
-                debug_rect = self.screen.blit(self.debug_font.render("%i, %i"%(m[0], m[1]), True, (255,255,120)), (950,10))
+                dcol = (255,255,120)
+                debug_rect = self.screen.blit(self.debug_font.render("%i, %i"%(m[0], m[1]), True, dcol), (950,10))
+                if isinstance(self.editing, Actor):
+                    action, size = "none", ""
+                    if self.editing.action:
+                        actor_img = self.editing.action.image
+                        action = self.editing.action.name
+                        size = " %ix%i"%(actor_img.get_width(), actor_img.get_height())
+                    img_obj_details = self.debug_font.render("%s (%s%s)"%(self.editing.name, action, size), True, dcol)
+                    rect_obj_details = self.screen.blit(img_obj_details, (1000-img_obj_details.get_width(), 40))
+                    debug_rect.union_ip(rect_obj_details)
                 
             #pt = m
             #colour = (255,0,0)
@@ -4147,6 +4234,12 @@ class Game(object):
             v2 = eval(v2)
             print("%s%s%s"%(txt[:v.start()],v2,txt[v.end():]))
         self._event_finish()
+
+    def on_setattr(self, attr, val):
+        """ helper function for setting attributes on the Game object """
+        setattr(self, attr, val)
+        self._event_finish()
+        
 
     def on_relocate(self, obj, scene, destination):
         if type(obj) == str: obj = self.actors[obj] #XXX should check items, and fail gracefully too
