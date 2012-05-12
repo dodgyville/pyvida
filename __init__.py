@@ -45,6 +45,8 @@ VERSION_MAJOR = 1 #major incompatibilities
 VERSION_MINOR = 0 #minor/bug fixes, can run same scripts
 VERSION_SAVE = 1  #save/load version, only change on incompatible changes
 
+GOTO_LOOK = True  #should player walk to object when looking at it
+
 try:
     import android
 except ImportError:
@@ -62,6 +64,9 @@ EDIT = 1  #can click on item to change focus
 
 #EDITOR_MODE = EDIT
 EDITOR_MODE = SELECT
+EDITING_ACTOR = 0
+EDITING_ACTION = 1
+EDITING_DELTA = 2
 
 if logging:
     if ENABLE_LOGGING:
@@ -629,8 +634,22 @@ class Action(object):
         for i, img in enumerate(self.images):
             r = img.get_rect().move(i*img.get_width(),0)
             rect = new_img.blit(img, r)
-        pygame.image.save(new_img, "testsave_%s.png"%self.name)
+        #backup old files
+        for ext in [".png", ".offset", ".delta"]:
+            dst = "%s%s.prev"%(fname, ext)
+            if os.path.isfile(fname+ext):
+                print("moving",fname+ext,dst)
+                os.rename(fname+ext, dst)
 
+        if (self.ax, self.ay) != (0, 0):
+            with open(fname+".offset", "w") as f:
+                f.write("%s\n%s\n"%(self.ax, self.ay))
+        if self.deltas:
+            pass
+ #           with open(fname+".delta", "w") as f:
+ #               f.write("%s\n%s\n"%(self.ax, self.ay))
+                
+        pygame.image.save(new_img, self.fname)
         
     def load(self): 
         """Load an anim from a montage file"""
@@ -1081,28 +1100,43 @@ class Actor(object):
             img = self.action.image
         return img
 
+    def _draw_image(self, img, pos):
+        if self.scale != 1.0:
+            w = int(img.get_width() * self.scale)
+            h = int(img.get_height() * self.scale)
+            img = pygame.transform.smoothscale(img, (w, h))
+        img.set_alpha(self._alpha)
+        if self._tint:
+            img = img.copy()
+            #s1.set_alpha(s0.get_alpha())            
+            img.fill(self._tint, special_flags=BLEND_MULT) #BLEND_MIN)
+        
+        r = img.get_rect().move(pos)
+        if self._alpha != 1.0:
+            self._rect = blit_alpha(self.game.screen, img, r, self._alpha*255)
+        else:
+            self._rect = self.game.screen.blit(img, r, special_flags=self._blit_flag)
+        if self.game.editing == self: #draw bounding box
+            r2 = r.inflate(-2,-2)
+            pygame.draw.rect(self.game.screen, (0,255,0), r2, 1)
+    
+
     def draw(self): #actor.draw
+        if self.game and self.game.editing and self.game.editing_mode == EDITING_DELTA: #onion skin for delta edit
+            for i, alpha in [(0,0.8), (-1,0.3), (1,0.5)]: #order, alphas and number of frames to draw
+                index = (self.action.index+i)%self.action.count
+                img = self.action.images[index]
+                dx,dy =0, 0
+                if self.action.deltas:
+                    dindex = (self.action.index+i)%len(self.action.deltas)
+                    dx,dy = self.action.deltas[dindex]
+                self._draw_image(img, (self.ax+dx, self.ay+dy))
+            return 
+            
         if not self.allow_draw: return
         img = self._image()
         if img: 
-            if self.scale != 1.0:
-                w = int(img.get_width() * self.scale)
-                h = int(img.get_height() * self.scale)
-                img = pygame.transform.smoothscale(img, (w, h))
-            img.set_alpha(self._alpha)
-            if self._tint:
-                img = img.copy()
-                #s1.set_alpha(s0.get_alpha())            
-                img.fill(self._tint, special_flags=BLEND_MULT) #BLEND_MIN)
-            
-            r = img.get_rect().move(self.ax, self.ay)
-            if self._alpha != 1.0:
-                self._rect = blit_alpha(self.game.screen, img, r, self._alpha*255)
-            else:
-                self._rect = self.game.screen.blit(img, r, special_flags=self._blit_flag)
-            if self.game.editing == self: #draw bounding box
-                r2 = r.inflate(-2,-2)
-                pygame.draw.rect(self.game.screen, (0,255,0), r2, 1)
+            self._draw_image(img, (self.ax, self.ay))
         else:
             self._rect = pygame.Rect(self.x, self.y,0,0)
         
@@ -1149,12 +1183,14 @@ class Actor(object):
     def _update(self, dt): #actor.update
         """ update this actor within the game """
         if not self.allow_update: return
+        if self.game and self.game.editing and self.game.editing_mode == EDITING_DELTA: return
+        
         l = len(self._motion_queue)
         
         if l == 0 and self.action and self.action.deltas: #use action delta
             count = len(self.action.deltas)
             dx, dy = self.action.deltas[self.action.index%count]
-            if self.game and not self.game._editing_deltas: #only move actor if not editing action
+            if self.game and self.game.editing_mode == EDITING_ACTOR: #only move actor if not editing action
                 self.x += dx
                 self.y += dy
             if self.action.mode == ONCE_BLOCK_DELTA and self.action.index >= count-1:
@@ -2823,7 +2859,8 @@ class Game(object):
         #editor--
         self.debug_font = None
         self.enabled_editor = False
-        self._editing_deltas = False #are we in the action editor
+        self.editing_mode = EDITING_ACTOR
+#        self._editing_deltas = False #are we in the action editor
 
         #set up text overlay image
         self.info_colour = (255,255,220)
@@ -3192,7 +3229,8 @@ class Game(object):
 #                   if i.actions.has_key('down'): i.action = i.actions['down']
                     if self.mouse_mode == MOUSE_USE or i is not self.player: #only click on player in USE mode
                         self.block = True
-                        if self.mouse_mode != MOUSE_LOOK and self.player and self.scene and self.player in self.scene.objects.values() and i != self.player: self.player.goto(i)
+                        if self.player and self.scene and self.player in self.scene.objects.values() and i != self.player: 
+                            if self.mouse_mode != MOUSE_LOOK or GOTO_LOOK: self.player.goto(i)
                     
                         self.trigger(i) #trigger look, use or interact
                         return
@@ -3341,14 +3379,36 @@ class Game(object):
             oairlock.do(d2[1])
 
         if self.enabled_editor == True and self.editing:
-            if key == K_DOWN: 
-                self.editing._y += 1
-            elif key == K_UP:
-                self.editing._y -= 1
-            elif key == K_LEFT:
-                self.editing._x -= 1
-            elif key == K_RIGHT:
-                self.editing._x += 1
+            if self.editing_mode == EDITING_ACTION:
+                if key == K_DOWN: 
+                    self.editing.action.ay -= 1
+                elif key == K_UP:
+                    self.editing.action.ay += 1
+                elif key == K_LEFT:
+                    self.editing.action.ax += 1
+                elif key == K_RIGHT:
+                    self.editing.action.ax -= 1
+            elif self.editing_mode == EDITING_DELTA:
+                count = len(self.editing.action.deltas)
+                dx, dy = self.editing.action.deltas[self.action.index%count]
+                if key == K_DOWN: 
+                    dy -= 1
+                elif key == K_UP:
+                    dy += 1
+                elif key == K_LEFT:
+                    dx += 1
+                elif key == K_RIGHT:
+                    dx -= 1
+                self.editing.action.deltas[self.action.index%count] = (dx,dy)
+            else:
+                if key == K_DOWN: 
+                    self.editing._y += 1
+                elif key == K_UP:
+                    self.editing._y -= 1
+                elif key == K_LEFT:
+                    self.editing._x -= 1
+                elif key == K_RIGHT:
+                    self.editing._x += 1
             
 
     def handle_pygame_events(self):
@@ -3728,8 +3788,8 @@ class Game(object):
                 """ switch to action editor """
                 game.menu_fadeOut()
                 game.menu_push() #hide and push old menu to storage
-                game.set_menu("e_action_prev", "e_action_next", "e_action_reverse", "e_action_save", "e_actions_close")
-                game.setattr("_editing_deltas", True)
+                game.set_menu("e_action_prev", "e_action_next", "e_action_reverse", "e_action_delta", "e_action_save", "e_actions_close")
+                game.setattr("editing_mode", EDITING_ACTION)
                 self.set_fps(int(1000.0/DEFAULT_FRAME_RATE)) #slow action for debugging
                 game.menu_hide()
                 game.menu_fadeIn()
@@ -3737,10 +3797,16 @@ class Game(object):
             def _editor_action_cycle(game, actor, i=1):
                 action_names = sorted(actor.actions)
                 current_index = action_names.index(actor.action.name)
+                print("found %s at pos %i"%(actor.action.name, current_index))
                 current_index += i
-                if current_index < 0: current_index = len(action_names) - 1
-                if current_index >= len(action_names): current_index = 0
-                print(current_index, len(action_names), action_names[:10])
+                if current_index < 0: 
+                    print("***switch to top",len(action_names)-1)
+                    current_index = len(action_names) - 1
+                if current_index >= len(action_names): 
+                    current_index = 0
+                    print("***switch to bottom")
+                    
+#                print(actor.action.name, current_index, i, len(action_names), action_names[:10])
                 actor.do(action_names[current_index])
 
             def editor_action_next(game, btn, player):
@@ -3759,9 +3825,27 @@ class Game(object):
                 log.info("Action %s saved for object %s"%(self.editing.action.name, self.editing.name))
                 self.editing.action.save()
 
+            def editor_frame_next(game, btn, player, i=1):
+                self.editing.action.index += i
+                
+            def editor_frame_prev(game, btn, player):
+                editor_frame_next(game, btn, player, -1)
+
+            def editor_delta_close(game, btn, player):
+                game.setattr("editing_mode", EDITING_ACTION)
+                self.menu_pop()
+                self.menu_fadeIn()
+
+            def editor_action_delta(game, btn, player):
+                game.menu_fadeOut()
+                game.menu_push() #hide and push old menu to storage
+                game.set_menu("e_frame_next", "e_frame_prev", "e_delta_close")
+                game.setattr("editing_mode", EDITING_DELTA)
+                game.menu_hide()
+                game.menu_fadeIn()
                 
             def editor_actions_close(game, btn, player):
-                game.setattr("_editing_deltas", False)
+                game.setattr("editing_mode", EDITING_ACTOR)
                 self.menu_pop()
                 self.menu_fadeIn()
                 self.set_fps(int(1000.0/100)) #fast debug
@@ -3773,7 +3857,17 @@ class Game(object):
                         ("e_action_next", editor_action_next, "n"),
                         ("e_action_reverse", editor_action_reverse, "r"),
                         ("e_action_save", editor_action_save, "s"),
+                        ("e_action_delta", editor_action_delta, "s"),
                         ("e_actions_close", editor_actions_close, "x")]):
+                txt,fn,k = btn
+                self.add(MenuItem(txt, fn, (x+i*40, y), (x+i*40,-50), k).smart(self))
+
+            #load menu for delta editor
+            x,y=50,10
+            for i, btn in enumerate([
+                        ("e_frame_prev", editor_action_prev, "p"),
+                        ("e_frame_next", editor_action_next, "n"),
+                        ("e_delta_close", editor_delta_close, "x")]):
                 txt,fn,k = btn
                 self.add(MenuItem(txt, fn, (x+i*40, y), (x+i*40,-50), k).smart(self))
                 
