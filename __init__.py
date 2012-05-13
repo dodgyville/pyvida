@@ -544,6 +544,7 @@ def editor_point(game, menuItem, player, editing=None):
               "e_stand": (editing.set_sx, editing.set_sy),
               "e_talk": (editing.set_nx, editing.set_ny),
               "e_scale": (editing.adjust_scale_x, editing.adjust_scale_y),
+              "e_action_scale": (editing.adjust_scale_x, editing.adjust_scale_y),
                     }
                     
     if hasattr(editing, "set_ox"):
@@ -645,9 +646,9 @@ class Action(object):
             with open(fname+".offset", "w") as f:
                 f.write("%s\n%s\n"%(self.ax, self.ay))
         if self.deltas:
-            pass
- #           with open(fname+".delta", "w") as f:
- #               f.write("%s\n%s\n"%(self.ax, self.ay))
+            with open(fname+".delta", "w") as f:
+                for dx,dy in self.deltas:
+                 f.write("%s %s\n"%(dx, dy))
                 
         pygame.image.save(new_img, self.fname)
         
@@ -1100,43 +1101,49 @@ class Actor(object):
             img = self.action.image
         return img
 
-    def _draw_image(self, img, pos):
+    def _draw_image(self, img, pos, tint = None, alpha=1.0):
         if self.scale != 1.0:
             w = int(img.get_width() * self.scale)
             h = int(img.get_height() * self.scale)
             img = pygame.transform.smoothscale(img, (w, h))
-        img.set_alpha(self._alpha)
-        if self._tint:
+        img.set_alpha(alpha)
+        if tint:
             img = img.copy()
             #s1.set_alpha(s0.get_alpha())            
-            img.fill(self._tint, special_flags=BLEND_MULT) #BLEND_MIN)
+            img.fill(tint, special_flags=BLEND_MULT) #BLEND_MIN)
         
         r = img.get_rect().move(pos)
-        if self._alpha != 1.0:
-            self._rect = blit_alpha(self.game.screen, img, r, self._alpha*255)
+        if alpha != 1.0:
+            _rect = blit_alpha(self.game.screen, img, r, alpha*255)
         else:
-            self._rect = self.game.screen.blit(img, r, special_flags=self._blit_flag)
+            _rect = self.game.screen.blit(img, r, special_flags=self._blit_flag)
         if self.game.editing == self: #draw bounding box
             r2 = r.inflate(-2,-2)
             pygame.draw.rect(self.game.screen, (0,255,0), r2, 1)
-    
+        return _rect
 
     def draw(self): #actor.draw
-        if self.game and self.game.editing and self.game.editing_mode == EDITING_DELTA: #onion skin for delta edit
-            for i, alpha in [(0,0.8), (-1,0.3), (1,0.5)]: #order, alphas and number of frames to draw
+        if self.game and self.game.editing == self and self.game.editing.action and self.game.editing_mode == EDITING_DELTA: #onion skin for delta edit
+            self._rect = pygame.Rect(self.x, self.y, 0, 0)
+            ax,ay = self.ax, self.ay
+            for i, tint, alpha in [(-1, (200,0,0), 0.4), (0, None, 1.0), (1, (0,0,200), 0.4)]: #order, alphas and number of frames to draw
                 index = (self.action.index+i)%self.action.count
                 img = self.action.images[index]
-                dx,dy =0, 0
+                cx,cy,dx,dy=0,0,0,0
                 if self.action.deltas:
+#                    cindex = (self.action.index)%len(self.action.deltas) #centre image
+ #                   cx,cy = self.action.deltas[cindex]
                     dindex = (self.action.index+i)%len(self.action.deltas)
                     dx,dy = self.action.deltas[dindex]
-                self._draw_image(img, (self.ax+dx, self.ay+dy))
+                    ax += dx
+                    ay += dy 
+                self._rect.union_ip(self._draw_image(img, (ax, ay), tint, alpha))
             return 
             
         if not self.allow_draw: return
         img = self._image()
         if img: 
-            self._draw_image(img, (self.ax, self.ay))
+            self._rect = self._draw_image(img, (self.ax, self.ay), self._tint, self._alpha)
         else:
             self._rect = pygame.Rect(self.x, self.y,0,0)
         
@@ -2550,7 +2557,8 @@ class Scene(object):
         obj.scene = self
         if self.game.analyse_scene == self: #if we are watching this scene closely, store more info
             add_object_to_analysis(self.game, obj)
-            
+        if obj.name == "control":
+            obj.scale = scene.scales["actors"]
         if obj.name in self.scales.keys():
             obj.scale = self.scales[obj.name]
 #        elif "actors" in self.scales.keys() and not isinstance(obj, Item): #actor
@@ -3216,7 +3224,6 @@ class Game(object):
         
         if self.enabled_editor and self.scene: #finish edit point or rect or walkarea point
             if self.editing: #finish move
-#                self.editing_point = None
                 self.editing_index = None
                 if EDITOR_MODE == EDIT: #lose focus
                     print("lose focus from %s"%self.editing.name)
@@ -3293,6 +3300,8 @@ class Game(object):
             elif self.editing_point != None: #move single point
                 self.editing_point[0](x)
                 if len(self.editing_point)>1: self.editing_point[1](y)
+                if self.editing_mode == EDITING_ACTION:
+                    print("scaled action %s by %f, so new height is %f"%(self.editing.action.name, self.editing.scale, self.editing.scale*self.editing.action._raw_height))
             return
         menu_capture = False #has the mouse found an item in the menu
         for i in self.modals:
@@ -3388,18 +3397,19 @@ class Game(object):
                     self.editing.action.ax += 1
                 elif key == K_RIGHT:
                     self.editing.action.ax -= 1
-            elif self.editing_mode == EDITING_DELTA:
+            elif self.editing_mode == EDITING_DELTA and self.editing.action.deltas:
                 count = len(self.editing.action.deltas)
-                dx, dy = self.editing.action.deltas[self.action.index%count]
+                index = (self.editing.action.index+1)%count
+                dx, dy = self.editing.action.deltas[index]
                 if key == K_DOWN: 
-                    dy -= 1
-                elif key == K_UP:
                     dy += 1
+                elif key == K_UP:
+                    dy -= 1
                 elif key == K_LEFT:
-                    dx += 1
-                elif key == K_RIGHT:
                     dx -= 1
-                self.editing.action.deltas[self.action.index%count] = (dx,dy)
+                elif key == K_RIGHT:
+                    dx += 1
+                self.editing.action.deltas[index] = (dx,dy)
             else:
                 if key == K_DOWN: 
                     self.editing._y += 1
@@ -3788,26 +3798,21 @@ class Game(object):
                 """ switch to action editor """
                 game.menu_fadeOut()
                 game.menu_push() #hide and push old menu to storage
-                game.set_menu("e_action_prev", "e_action_next", "e_action_reverse", "e_action_delta", "e_action_save", "e_actions_close")
+                game.set_menu("e_action_prev", "e_action_next", "e_action_reverse", "e_action_delta", "e_action_scale", "e_action_save", "e_actions_close")
                 game.setattr("editing_mode", EDITING_ACTION)
                 self.set_fps(int(1000.0/DEFAULT_FRAME_RATE)) #slow action for debugging
                 game.menu_hide()
                 game.menu_fadeIn()
 
             def _editor_action_cycle(game, actor, i=1):
-                action_names = sorted(actor.actions)
+                action_names = sorted([x.name for x in set(actor.actions.values())])
                 current_index = action_names.index(actor.action.name)
-                print("found %s at pos %i"%(actor.action.name, current_index))
                 current_index += i
                 if current_index < 0: 
-                    print("***switch to top",len(action_names)-1)
                     current_index = len(action_names) - 1
                 if current_index >= len(action_names): 
                     current_index = 0
-                    print("***switch to bottom")
-                    
-#                print(actor.action.name, current_index, i, len(action_names), action_names[:10])
-                actor.do(action_names[current_index])
+                actor._do(action_names[current_index])
 
             def editor_action_next(game, btn, player):
                 _editor_action_cycle(game, game.editing)
@@ -3818,6 +3823,12 @@ class Game(object):
             def editor_action_reverse(game, btn, player):
                 """ reverse the frames of an action """
                 self.editing.action.images.reverse()
+
+            def editor_action_scale(game, btn, player):
+                """ demo scale for action """
+                self.editing.action.images.reverse()
+                print(self.editing.scale)
+
 
             def editor_action_save(game, btn, player):
                 """ save the frames, offset and deltas of an action """
@@ -3856,6 +3867,7 @@ class Game(object):
                         ("e_action_prev", editor_action_prev, "p"),
                         ("e_action_next", editor_action_next, "n"),
                         ("e_action_reverse", editor_action_reverse, "r"),
+                        ("e_action_scale", editor_point, "c"),
                         ("e_action_save", editor_action_save, "s"),
                         ("e_action_delta", editor_action_delta, "s"),
                         ("e_actions_close", editor_actions_close, "x")]):
@@ -3865,8 +3877,8 @@ class Game(object):
             #load menu for delta editor
             x,y=50,10
             for i, btn in enumerate([
-                        ("e_frame_prev", editor_action_prev, "p"),
-                        ("e_frame_next", editor_action_next, "n"),
+                        ("e_frame_prev", editor_frame_prev, "p"),
+                        ("e_frame_next", editor_frame_next, "n"),
                         ("e_delta_close", editor_delta_close, "x")]):
                 txt,fn,k = btn
                 self.add(MenuItem(txt, fn, (x+i*40, y), (x+i*40,-50), k).smart(self))
