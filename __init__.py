@@ -2,7 +2,7 @@ from __future__ import print_function
 import __builtin__
 
 from datetime import datetime, timedelta, date
-import gc, glob, copy, inspect, math, os, sys, operator, types, pickle, time, re
+import gc, glob, copy, inspect, math, os, operator, pickle, types, sys, time, re
 try:
     import logging
     import logging.handlers
@@ -27,7 +27,7 @@ except ImportError:
 
 from itertools import chain
 from itertools import cycle
-from math import sqrt, acos, degrees, atan2
+from math import sqrt, acos, degrees, atan2, radians, cos, sin
 try:
     from new import instancemethod 
 except ImportError:
@@ -588,14 +588,15 @@ class Action(object):
          self.images = []
        
         
-    @property
-    def image(self): #return the current image
+#    @property
+    def image(self, i=None): #return the current image
+        i = self.index if not i else i
         if self.images:
-            return self.images[self.index%self.count]
+            return self.images[i%self.count]
         elif self.fname: #try and load images for this actor
             log.debug("loading images for usage")
             self.load()
-            return self.images[self.index%self.count]
+            return self.images[i%self.count]
         else:
             img = Surface((10,10))
             if logging: log.debug("action %s has no images"%self.name)
@@ -957,14 +958,14 @@ class Actor(object):
             action = self.actions[action_name] = Action(self, action_name, action_fname).load()
             if action_name == "idle": self.action = action
             if type(self) == Actor and action_name=="idle":
-                self._ax = int(action.image.get_width()/2)
-                self._ay = int(action.image.get_height() * 0.85)            
+                self._ax = int(action.image().get_width()/2)
+                self._ay = int(action.image().get_height() * 0.85)            
         if self.action == None and len(self.actions)>0 and self.actions.keys() != ["portrait"]: 
             self.action = self.actions.values()[0] #or default to first loaded
 #        try:
 #            self._image = pygame.image.load(os.path.join(d, "%s/idle.png"%self.name)).convert_alpha()
-        if self.action and self.action.image:
-            r = self.action.image.get_rect()
+        if self.action and self.action.image():
+            r = self.action.image().get_rect()
             self._clickable_area = Rect(0, 0, r.w, r.h)
             if logging: log.debug("Setting %s _clickable area to %s"%(self.name, self._clickable_area))
         else:
@@ -1098,7 +1099,7 @@ class Actor(object):
         """ return an image for this actor """
         img = None
         if self.action: 
-            img = self.action.image
+            img = self.action.image()
         return img
 
     def _draw_image(self, img, pos, tint = None, alpha=1.0):
@@ -1422,6 +1423,16 @@ class Actor(object):
         self._unload()
         self._event_finish(block=False)
 
+    def on_deltas(self, deltas):
+        """ A queuing function: set the deltas on the current action 
+        
+            Example::
+            
+            player.deltas([(0,0), (-1,0)])
+        """
+        self.action.deltas = deltas
+        self.action.index = 0
+        self._event_finish(block=False)
 
     def on_hide(self, interactive=False):
         """ A queuing function: hide the actor, including from all click and hover events 
@@ -1831,7 +1842,7 @@ class Actor(object):
 
         #scale the image to an appropriate size
         sw,sh = 300,300 #preferred width or height
-        iw,ih = item.action.image.get_size() if item.action else (100,100)
+        iw,ih = item.action.image().get_size() if item.action else (100,100)
         ratio_w = float(sw)/iw
         ratio_h = float(sh)/ih
         nw1, nh1 = int(iw*ratio_w), int(ih*ratio_w)
@@ -2014,8 +2025,17 @@ class Actor(object):
             elif self.game and self.game.font_speech:
                 kwargs["font"] = self.game.font_speech
             if self.game and self.game.player and self.game.player.font_colour != None: kwargs["colour"] = self.game.player.font_colour
+            
+            #dim the colour of the option if we have already selected it.
+            remember = (self.name, q)
+            if remember in self.game._selected_options and "colour" in kwargs:
+                r,g,b= kwargs["colour"]
+                kwargs["colour"] = (r/2, g/2, b/2)
+            
             opt = self.game.add(Text("opt%s"%i, (100,oy2), (840,180), q, wrap=660, **kwargs) , False, ModalItem)
             def close_modal_then_callback(game, menuItem, player): #close the modal ask box and then run the callback
+                remember = (self.name, menuItem.text)
+                if remember not in game._selected_options and menuItem.callback: game._selected_options.append(remember)
                 elements = [x.name for x in modals] #["msgbox", "txt", "ok", "portrait"]
                 elements.extend(menuItem.msgbox.options)
                 self.game.save_game.append([interact, menuItem.text, datetime.now()])
@@ -2120,6 +2140,106 @@ class Portal(Item):
         self.leave(actor)
         self.exit(actor)
 
+
+
+EMITTER_SMOKE = {"name":"smoke", "number":10, "frames":20, "direction":0, "fov":30, "speed":3, "acceleration":(0, 0), "size_start":0.5, "size_end":1.0, "alpha_start":1.0, "alpha_end":0.0}
+
+class Particle(object):
+    def __init__(self, x, y, ax, ay, speed, direction):
+        self.index = 0
+        self.x = x
+        self.y = y
+        self.ax, self.ay = ax, ay
+        self.speed = speed
+        self.direction = direction
+        self.hidden = True #hide for first run
+
+class Emitter(Item):
+    """ A special class for doing emitter effects 
+        smoke = Emmitter(**EMITTER_SMOKE)
+    """
+    __metaclass__ = use_on_events    
+    def __init__(self, name, number, frames, direction, fov, speed, acceleration, size_start, size_end, alpha_start, alpha_end):
+        Item.__init__(self, name)
+        self.name = name
+        self.number = number
+        self.frames = frames
+        self.direction = direction
+        self.fov = fov
+        self.speed = speed
+        self.acceleration = acceleration #in the x,y directions
+        self.size_start = size_start
+        self.size_end = size_end
+        self.alpha_start, self.alpha_end = alpha_start, alpha_end
+        self._reset()
+
+
+    def _add_particles(self, num=1):
+        for x in xrange(0,num):
+            d = randint(self.direction-float(self.fov/2), self.direction+float(self.fov/2))
+            self.particles.append(Particle(self.x, self.y, self._ax, self._ay, self.speed, d))
+            p = self.particles[-1]
+            p.index = randint(0, self.frames)
+            for j in xrange(0, self.frames): #fast forward particle to mid position
+                self._update_particle(0, p)
+            p.hidden = True
+
+    def on_add_particles(self, num):
+        self._add_particles(num=num)
+        self._event_finish(block=False)
+    
+    def _reset(self):
+        """ rebuild emitter """
+        self.particles = []
+        self._add_particles(self.frames)
+    
+    def on_reset(self):
+        self._reset()
+        self._event_finish(block=False)
+    
+    def on_set_variable(self, variable, v):
+        setattr(self, variable, v)    
+        self._event_finish(block=False)
+    
+    
+    def on_fastforward(self, frames=0):
+        """ run the particle simulation for x frames """
+        self._event_finish(block=False)
+    
+    def _update_particle(self, dt, p):
+        r = math.radians(p.direction)
+        a = self.speed * cos(r)
+        o = self.speed * sin(r)
+        p.y -= a
+        p.x += o
+        p.index +=  1
+        if p.index >= self.frames: #reset
+            p.x, p.y = self.x, self.y
+            p.index = 0
+            p.hidden = False
+    
+    def _update(self, dt): #slosh.update
+        Item._update(self, dt)
+        for p in self.particles:
+            self._update_particle(dt, p)
+            
+    def draw(self):
+        img = self._image()
+        if not self.action: 
+            if logging: log.error("Emitter %s has no actions"%(self.name))
+            return
+            
+        self._rect = pygame.Rect(self.x, self.y, 0, 0)            
+        for p in self.particles:
+            img = self.action.image()
+            alpha = self.alpha_start - (abs(float(self.alpha_end - self.alpha_start)/self.frames) * p.index)
+            if img and not p.hidden: 
+                self._rect.union_ip(self._draw_image(img, (p.x-p.ax, p.y-p.ay), self._tint, alpha))
+    
+#        if self.img:
+ #           r = self.img.get_rect().move(self.x, self.y)    
+
+
 #wrapline courtesy http://www.pygame.org/wiki/TextWrapping 
 def truncline(text, font, maxwidth):
         real=len(text)       
@@ -2205,7 +2325,8 @@ class Text(Actor):
         self._on_mouse_move = self._on_mouse_leave = None
         self._clickable_area = self.img.get_rect()
 
-    def update_text(self): #rebuild the text image
+    def update_text(self, txt=""): #rebuild the text image
+        if txt: self.text = txt
         self.img = self._img = self._generate_text(self.text, self.colour)
         self._mouse_move_img = self._generate_text(self.text, (255,255,255))        
 
@@ -2290,7 +2411,7 @@ class MenuItem(Actor):
 ALPHABETICAL = 0
 
 class MenuText(Text, MenuItem):
-    """ Use a text in the menu """
+    """ Use text to generate a menu item """
     def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=26, wrap=2000, interact=None, spos=(None, None), hpos=(None, None), key=None, font=DEFAULT_FONT):
         if spos == (None, None): spos = pos
         MenuItem.__init__(self, name, interact, spos, hpos, key, text)
@@ -2373,7 +2494,7 @@ class Collection(MenuItem):
         x,y = sx,sy
         dx,dy=self.cdx, self.cdy  #width
         if self.action:
-            w,h = self.action.image.get_width(), self.action.image.get_height()
+            w,h = self.action.image().get_width(), self.action.image().get_height()
         else:
             w,h = 0, 0
             if logging: log.warning("Collection %s missing an action"%self.name)
@@ -2794,7 +2915,7 @@ class Game(object):
     screen = None
     existing = False #is there a game in progress (either loaded or saved)
    
-    def __init__(self, name="Untitled Game", fullscreen=False, resolution=(1024,768)):
+    def __init__(self, name="Untitled Game", engine=VERSION_MAJOR, fullscreen=False, resolution=(1024,768)):
         if logging: log.debug("game object created at %s"%datetime.now())
 #        log = log
         self.voice_volume = 1.0
@@ -2816,6 +2937,7 @@ class Game(object):
         self._event = None
         self._last_event_success = True #did the last even succeed or fail
         self.block = False #block click events
+        self._selected_options = [] #keep track of convo trees
         
         self.save_game = [] #a list of events caused by this player to get to this point in game
         self.save_title = ""  #title to display for save game
@@ -3127,6 +3249,7 @@ class Game(object):
             
     def toggle_editor(self):
             if self.enabled_editor:  #switch off editor
+                if self.editing_mode != EDITING_ACTOR: return
                 #self.menu_fadeOut()
                 self.menu_pop()
                 self.menu_fadeIn()
@@ -3374,9 +3497,14 @@ class Game(object):
         elif ENABLE_EDITOR and key == K_F8:
             self.camera.fade_in()
         elif ENABLE_EDITOR and key == K_F9:
-            self.camera.scene("aqcleaners")
-            self.player.relocate("aqcleaners")
+            from scripts.chapter10 import citadel_external
+            for o in self.scenes["casteroid"].objects.values(): o.smart(self)
+            citadel_external(self, self.player)
+            self.camera.scene(self.player.scene)
+ #           self.player.relocate("aqcleaners")
         elif ENABLE_EDITOR and key == K_F10:
+            for o in self.scenes["cguards"].objects.values(): o.smart(self)
+            return
             opening = ["opening", "open"]
             closing = ["closing", "closed"]
             iairlock = self.items["Inner Airlock"]
@@ -4123,7 +4251,7 @@ class Game(object):
                 else:
                     if logging: log.error("Missing mouse cursor %s"%self.mouse_cursor)
             elif self.mouse_cursor != None: #use an object (actor or item) image
-                mouse_image = self.mouse_cursor.action.image
+                mouse_image = self.mouse_cursor.action.image()
             if mouse_image: cursor_rect = self.screen.blit(mouse_image, (m[0]-15, m[1]-15))
 
             #draw info text if available
@@ -4137,7 +4265,7 @@ class Game(object):
                 if isinstance(self.editing, Actor):
                     action, size = "none", ""
                     if self.editing.action:
-                        actor_img = self.editing.action.image
+                        actor_img = self.editing.action.image()
                         action = self.editing.action.name
                         size = " %ix%i"%(actor_img.get_width(), actor_img.get_height())
                     img_obj_details = self.debug_font.render("%s (%s%s)"%(self.editing.name, action, size), True, dcol)
