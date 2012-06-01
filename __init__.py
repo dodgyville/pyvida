@@ -527,11 +527,11 @@ def get_function(basic):
 
 #### pyvida helper functions ####
 def editor_menu(game):
-    game.menu_fadeOut()
+    game.menu_fade_out()
     game.menu_push() #hide and push old menu to storage
     game.set_menu("e_load", "e_save", "e_add", "e_delete", "e_prev", "e_next", "e_walk", "e_portal", "e_scene", "e_step", "e_reload", "e_jump")
     game.menu_hide()
-    game.menu_fadeIn()
+    game.menu_fade_in()
 
 def editor_point(game, menuItem, player, editing=None):
     #click on an editor button for editing a point
@@ -1981,7 +1981,7 @@ class Actor(object):
             tuples containing a text option to display and a function to call if the player selects this option.
             
         """    
-#        game.menu_fadeOut()
+#        game.menu_fade_out()
 #        game.menu_push() #hide and push old menu to storage
         self.on_says(args[0])
         def collide_never(x,y): #for asks, most modals can't be clicked, only the txt modelitam options can.
@@ -2153,6 +2153,7 @@ class Particle(object):
         self.speed = speed
         self.direction = direction
         self.hidden = True #hide for first run
+        self.terminate = False #don't renew this particle if True
 
 class Emitter(Item):
     """ A special class for doing emitter effects 
@@ -2188,6 +2189,13 @@ class Emitter(Item):
         self._add_particles(num=num)
         self._event_finish(block=False)
     
+    def on_limit_particles(self, num):
+        """ restrict the number of particles to num through attrition """
+        for p in self.particles[num:]:
+            p.terminate = True
+        self._event_finish(block=False)
+        
+    
     def _reset(self):
         """ rebuild emitter """
         self.particles = []
@@ -2217,6 +2225,8 @@ class Emitter(Item):
             p.x, p.y = self.x, self.y
             p.index = 0
             p.hidden = False
+            if p.terminate == True:
+                self.particles.remove(p)
     
     def _update(self, dt): #slosh.update
         Item._update(self, dt)
@@ -3244,15 +3254,15 @@ class Game(object):
             mitems = ["e_location", "e_anchor", "e_stand", "e_scale", "e_talk", "e_clickable", "e_solid", "e_out", "e_object_allow_draw", "e_object_allow_look", "e_object_allow_interact", "e_object_allow_use", "e_add_walkareapoint", "e_actions"]
             self.set_menu(*mitems)
             self.menu_hide(mitems)
-            self.menu_fadeIn()
+            self.menu_fade_in()
         self._event_finish(block=False)
             
     def toggle_editor(self):
             if self.enabled_editor:  #switch off editor
                 if self.editing_mode != EDITING_ACTOR: return
-                #self.menu_fadeOut()
+                #self.menu_fade_out()
                 self.menu_pop()
-                self.menu_fadeIn()
+                self.menu_fade_in()
                 self.editing = None
                 self.enabled_editor = False
                 if hasattr(self, "e_objects"): self.e_objects = None #free add object collection
@@ -3757,11 +3767,11 @@ class Game(object):
                     if i.editable and type(i) not in [Collection, MenuItem]: e_objects.objects[i.name] = i
                 for i in game.items.values():
                     if i.editable and type(i) not in [Portal, Collection, MenuItem]: e_objects.objects[i.name] = i
-                #game.menu_fadeOut()
+                #game.menu_fade_out()
                 game.menu_push() #hide and push old menu to storage
                 game.set_menu("e_close", "e_objects_next", "e_objects_prev", "e_objects_newitem", "e_objects_newactor", "e_objects")
                 game.menu_hide()
-                game.menu_fadeIn()
+                game.menu_fade_in()
                 
             def editor_delete(game, menuItem, player):
                 """ remove current object from scene """                
@@ -3778,11 +3788,11 @@ class Game(object):
                 e_portals.objects = {}
                 for i in game.scenes.values():
                     if i.editable: e_portals.objects[i.name] = i
-                #game.menu_fadeOut()
+                #game.menu_fade_out()
                 game.menu_push() #hide and push old menu to storage
                 game.set_menu("e_close", "e_portals")
                 game.menu_hide()
-                game.menu_fadeIn()                
+                game.menu_fade_in()                
 
             def editor_scene(game, menuItem, player):
                 """ set up the collection object for scenes """
@@ -3793,11 +3803,11 @@ class Game(object):
                 e_scenes.objects = {}
                 for i in game.scenes.values():
                     if i.editable: e_scenes.objects[i.name] = i
-                #game.menu_fadeOut()
+                #game.menu_fade_out()
                 game.menu_push() #hide and push old menu to storage
                 game.set_menu("e_close", "e_newscene", "e_scenes")
                 game.menu_hide()
-                game.menu_fadeIn()                
+                game.menu_fade_in()                
 
 
             def editor_select_portal(game, collection, player):
@@ -3893,9 +3903,9 @@ class Game(object):
                 
             def editor_collection_close(game, collection, player):
                 """ close an collection object in the editor, shared with e_portals and e_objects """
-                game.menu_fadeOut()
+                game.menu_fade_out()
                 game.menu_pop()
-                game.menu_fadeIn()
+                game.menu_fade_in()
             
             def editor_toggle_draw(game, btn, player):    
                 """ toggle visible on obj """
@@ -3924,13 +3934,13 @@ class Game(object):
                     
             def editor_actions(game, btn, player):
                 """ switch to action editor """
-                game.menu_fadeOut()
+                game.menu_fade_out()
                 game.menu_push() #hide and push old menu to storage
                 game.set_menu("e_action_prev", "e_action_next", "e_action_reverse", "e_action_delta", "e_action_scale", "e_action_save", "e_actions_close")
                 game.setattr("editing_mode", EDITING_ACTION)
                 self.set_fps(int(1000.0/DEFAULT_FRAME_RATE)) #slow action for debugging
                 game.menu_hide()
-                game.menu_fadeIn()
+                game.menu_fade_in()
 
             def _editor_action_cycle(game, actor, i=1):
                 action_names = sorted([x.name for x in set(actor.actions.values())])
@@ -3973,20 +3983,20 @@ class Game(object):
             def editor_delta_close(game, btn, player):
                 game.setattr("editing_mode", EDITING_ACTION)
                 self.menu_pop()
-                self.menu_fadeIn()
+                self.menu_fade_in()
 
             def editor_action_delta(game, btn, player):
-                game.menu_fadeOut()
+                game.menu_fade_out()
                 game.menu_push() #hide and push old menu to storage
                 game.set_menu("e_frame_next", "e_frame_prev", "e_delta_close")
                 game.setattr("editing_mode", EDITING_DELTA)
                 game.menu_hide()
-                game.menu_fadeIn()
+                game.menu_fade_in()
                 
             def editor_actions_close(game, btn, player):
                 game.setattr("editing_mode", EDITING_ACTOR)
                 self.menu_pop()
-                self.menu_fadeIn()
+                self.menu_fade_in()
                 self.set_fps(int(1000.0/100)) #fast debug
 
             #load menu for action editor
@@ -4670,13 +4680,14 @@ class Game(object):
         if not menu_items:
             self.menu = []
         else:
+            if not hasattr(menu_items, '__iter__'): menu_items = [menu_items]
             for i in menu_items:
                 if type(i) == str: i = self.items[i]        
                 self.menu.remove(i)
         self._event_finish()       
        
 
-    def on_menu_fadeOut(self, menu_items=None): 
+    def on_menu_fade_out(self, menu_items=None): 
         """ animate hiding the menu """
         if not menu_items:
             menu_items = self.menu
@@ -4702,7 +4713,7 @@ class Game(object):
         if logging: log.debug("show menu using place %s"%[x.name for x in self.menu])
         self._event_finish()
         
-    def on_menu_fadeIn(self, menu_items=None): 
+    def on_menu_fade_in(self, menu_items=None): 
         """ animate showing the menu """
         if not menu_items:
             menu_items = self.menu
