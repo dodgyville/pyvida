@@ -4255,14 +4255,23 @@ class Game(object):
             #draw mouse
             m = pygame.mouse.get_pos()
             mouse_image = None
+            cursor_rect = None
             if type(self.mouse_cursor) == int: #use a mouse cursor image
                 if self.mouse_cursor in self.mouse_cursors:
                     mouse_image = self.mouse_cursors[self.mouse_cursor]
                 else:
                     if logging: log.error("Missing mouse cursor %s"%self.mouse_cursor)
             elif self.mouse_cursor != None: #use an object (actor or item) image
-                mouse_image = self.mouse_cursor.action.image()
-            if mouse_image: cursor_rect = self.screen.blit(mouse_image, (m[0]-15, m[1]-15))
+                obj_image = self.mouse_cursor.action.image()
+                mouse_image = self.mouse_cursors[MOUSE_POINTER]
+                cursor_rect = self.screen.blit(obj_image, (m[0], m[1]))
+                
+            if mouse_image: 
+                if cursor_rect:
+                    cursor_rect.union_ip(self.screen.blit(mouse_image, (m[0]-15, m[1]-15)))
+                else:
+                    cursor_rect = self.screen.blit(mouse_image, (m[0]-15, m[1]-15))
+
 
             #draw info text if available
             if self.info_image:
