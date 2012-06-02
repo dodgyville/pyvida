@@ -23,8 +23,10 @@ Contents:
    testing.rst
    sceneedit.rst
    assets.rst
+   emitters.rst
    scripting.rst
    running.rst
+   signals.rst
    extras.rst
    technical.rst
    reference.rst
