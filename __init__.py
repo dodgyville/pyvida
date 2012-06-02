@@ -109,11 +109,11 @@ if logging:
 
     if not pygame.font: log.warning('Warning, fonts disabled')
     if not pygame.mixer: log.warning('Warning, sound disabled')
-    if logging: log.warning("game.scene.camera panning not implemented yet")
-    if logging: log.warning("broad try excepts around pygame.image.loads")
-    if logging: log.warning("smart load should load non-idle action as default if there is only one action")
-    if logging: log.warning("action.deltas can only be set via action.load")
-    if logging: log.warning("actor.asks not fully implemented")
+    log.warning("game.scene.camera panning not implemented yet")
+    log.warning("broad try excepts around pygame.image.loads")
+    log.warning("smart load should load non-idle action as default if there is only one action")
+    log.warning("actor.asks not fully implemented")
+    log.warning("pre_interact signal not implemented")
 
 
 from pygame import Surface        
@@ -1055,6 +1055,7 @@ class Actor(object):
             n = self.interact.__name__ if self.interact else "self.interact is None"
             if logging: log.debug("Player interact (%s) with %s"%(n, self.name))
             self.interact(self.game, self, self.game.player)
+            script = self.interact
         else: #else, search several namespaces or use a default
             basic = "interact_%s"%slugify(self.name)
             script = get_function(basic)
@@ -1076,7 +1077,10 @@ class Actor(object):
                 if not isinstance(self, Portal):
                     if logging: log.warning("No interact script for %s (write a def %s(game, %s, player): function)"%(self.name, basic, slugify(self.name)))
                 self._interact_default(self.game, self, self.game.player)
-
+                script = self._interact_default
+        for receiver, sender in post_interact.receivers: #do the signals for post_interact
+            if isinstance(self, sender): 
+                receiver(self.game, self, self.game.player)
 
     def clear(self): #actor.clear
 #        self.game.screen.blit(self.game.scene.background(), (self.x, self.y), self._image.get_rect())
@@ -2104,12 +2108,19 @@ class Portal(Item):
         self._ox, self._oy = pt[0], pt[1]
         self._event_finish(block=False)
 
+    def _post_arrive(self, portal, actor):
+        for receiver, sender in post_arrive.receivers: #do the signals for post_interact
+#            if isinstance(portal, Portal): #signal receivers after arriving through this portal
+            receiver(self.game, portal, actor)
+    
+
     def arrive(self, actor=None):
         """ helper function for entering through this door """
         if actor == None: actor = self.game.player
         actor.relocate(self.scene, (self.ox, self.oy)) #moves player to scene
         actor.goto((self.sx, self.sy), ignore=True) #walk into scene        
-
+        self._post_arrive(self, actor)
+        
     def leave(self, actor=None):
         """ leave through this door """
         if actor == None: actor = self.game.player
@@ -2122,6 +2133,7 @@ class Portal(Item):
         actor.relocate(self.link.scene, (self.link.ox, self.link.oy)) #moves player to scene
         self.game.camera.scene(self.link.scene) #change the scene
         actor.goto((self.link.sx, self.link.sy), ignore=True) #walk into scene        
+        self._post_arrive(self.link, actor)
         
     def travel(self, actor=None):
         """ default interact method for a portal, march player through portal and change scene """
@@ -3513,7 +3525,11 @@ class Game(object):
             self.camera.scene(self.player.scene)
  #           self.player.relocate("aqcleaners")
         elif ENABLE_EDITOR and key == K_F10:
-            for o in self.scenes["cguards"].objects.values(): o.smart(self)
+#            for o in self.scenes["cguards"].objects.values(): o.smart(self)
+            from scripts.chapter11 import blastoff
+            self.player.relocate("cground",(150,500))
+            self.camera.scene("cground")
+            blastoff(self, None, self.player)
             return
             opening = ["opening", "open"]
             closing = ["closing", "closed"]
@@ -4379,7 +4395,6 @@ class Game(object):
 
             else:
                 e[0](*e[1], **e[2]) #call the function with the args and kwargs
-
     
     def queue_event(self, event, *args, **kwargs):
         self.events.append((event, args, kwargs))
@@ -4744,4 +4759,38 @@ class Game(object):
         if self._menus: self.menu = self._menus.pop()
         if logging: log.debug("pop menu %s"%[x.name for x in self.menu])
         self._event_finish()
+        
+        
+#signal dispatching, based on django.dispatch
+class Signal(object):
+    def __init__(self, providing_args=None):
+        self.receivers = []
+        if providing_args is None:
+            providing_args = []
+        self.providing_args = set(providing_args)
+       
+    def connect(self, receiver, sender):
+        self.receivers.append((receiver, sender))
+
+
+post_interact = Signal(providing_args=["game", "instance", "player"])
+pre_interact = Signal(providing_args=["game", "instance", "player"])
+post_arrive = Signal(providing_args=["game", "instance", "player"])
+
+def receiver(signal, **kwargs):
+    """
+    A decorator for connecting receivers to signals. Used by passing in the
+    signal and keyword arguments to connect::
+
+        @receiver(post_save, sender=MyModel)
+        def signal_receiver(sender, **kwargs):
+            ...
+
+    """
+    def _decorator(func):
+        signal.connect(func, **kwargs)
+        return func
+    return _decorator
+
+
         
