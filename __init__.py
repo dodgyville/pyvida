@@ -2027,7 +2027,7 @@ class Actor(object):
             
             opt = self.game.add(Text("opt%s"%i, (100,oy2), (840,180), q, wrap=660, **kwargs) , False, ModalItem)
             def close_modal_then_callback(game, menuItem, player): #close the modal ask box and then run the callback
-                remember = (self.name, self._question, menuItem.text)
+                remember = (self.name, menuItem.question, menuItem.text)
                 if remember not in game._selected_options and menuItem.callback: game._selected_options.append(remember)
                 elements = [x.name for x in modals] #["msgbox", "txt", "ok", "portrait"]
                 elements.extend(menuItem.msgbox.options)
@@ -2039,7 +2039,7 @@ class Actor(object):
 
             opt.callback = fn
             opt.interact = close_modal_then_callback
-            opt._question = args[0]
+            opt.question = args[0]
             opt._on_mouse_move = opt._on_mouse_move_utility #switch on mouse over change
             opt._on_mouse_leave = opt._on_mouse_leave_utility #switch on mouse over change
             opt.collide = opt._collide #switch on mouse over box
