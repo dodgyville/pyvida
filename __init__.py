@@ -2006,17 +2006,6 @@ class Actor(object):
                 m.collide = collide_never
             if m.name == "msgbox":
                 msgbox = m
-   
-#        if self.game.testing:
-#            next_step = self.game.tests.pop(0)
-#            for q,fn in args[1:]:
-#                if q in next_step:
-#                    if fn: 
-#                        fn(self.game, self, self.game.player)
-#                    self._event_finish()
-#                    return
-#            if logging: log.error("Unable to select %s option in on_ask '%s'"%(next_step, args[0]))
-#            return
 
         msgbox.options = []
         oy, oy2, iy = 490, 800, 360 #XXX magic variables for 1024x768
@@ -2038,7 +2027,7 @@ class Actor(object):
             
             opt = self.game.add(Text("opt%s"%i, (100,oy2), (840,180), q, wrap=660, **kwargs) , False, ModalItem)
             def close_modal_then_callback(game, menuItem, player): #close the modal ask box and then run the callback
-                remember = (self.name, menuItem.text)
+                remember = (self.name, self._question, menuItem.text)
                 if remember not in game._selected_options and menuItem.callback: game._selected_options.append(remember)
                 elements = [x.name for x in modals] #["msgbox", "txt", "ok", "portrait"]
                 elements.extend(menuItem.msgbox.options)
@@ -2050,6 +2039,7 @@ class Actor(object):
 
             opt.callback = fn
             opt.interact = close_modal_then_callback
+            opt._question = args[0]
             opt._on_mouse_move = opt._on_mouse_move_utility #switch on mouse over change
             opt._on_mouse_leave = opt._on_mouse_leave_utility #switch on mouse over change
             opt.collide = opt._collide #switch on mouse over box
@@ -3511,11 +3501,12 @@ class Game(object):
             from scripts.all_chapters import transmat_in, transmat_out
             transmat_in(self, self.player)
         elif ENABLE_EDITOR and key == K_F6:
-            from scripts.all_chapters import transmat_in, transmat_out
-            transmat_out(self, self.player)
+            self.player.relocate(self.scene, (190, 530))
         elif ENABLE_EDITOR and key == K_F7:
 #            self.player.gets(choice(self.items.values()))
-            self.camera.fade_out()
+            from scripts.all_chapters import pleasuretron_orbit_planet_cutscene
+            pleasuretron_orbit_planet_cutscene(self, self.actors["Pleasuretron"], "ncorbit")
+            #self.camera.fade_out()
         elif ENABLE_EDITOR and key == K_F8:
             self.camera.fade_in()
         elif ENABLE_EDITOR and key == K_F9:
