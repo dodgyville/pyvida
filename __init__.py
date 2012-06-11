@@ -2020,7 +2020,7 @@ class Actor(object):
             if self.game and self.game.player and self.game.player.font_colour != None: kwargs["colour"] = self.game.player.font_colour
             
             #dim the colour of the option if we have already selected it.
-            remember = (self.name, q)
+            remember = (self.name, args[0], q)
             if remember in self.game._selected_options and "colour" in kwargs:
                 r,g,b= kwargs["colour"]
                 kwargs["colour"] = (r/2, g/2, b/2)
@@ -2146,6 +2146,9 @@ class Portal(Item):
 
 EMITTER_SMOKE = {"name":"smoke", "number":10, "frames":20, "direction":0, "fov":30, "speed":3, "acceleration":(0, 0), "size_start":0.5, "size_end":1.0, "alpha_start":1.0, "alpha_end":0.0}
 
+EMITTER_SPARK = {"name":"spark", "number":10, "frames":12, "direction":190, "fov":20, "speed":4, "acceleration":(0, 0), "size_start":1.0, "size_end":1.0, "alpha_start":1.0, "alpha_end":0.0}
+
+
 class Particle(object):
     def __init__(self, x, y, ax, ay, speed, direction):
         self.index = 0
@@ -2201,7 +2204,7 @@ class Emitter(Item):
     def _reset(self):
         """ rebuild emitter """
         self.particles = []
-        self._add_particles(self.frames)
+        self._add_particles(self.number)
     
     def on_reset(self):
         self._reset()
@@ -3626,7 +3629,8 @@ class Game(object):
 
             def editor_save(game, menuItem, player):
                 if self.scene.editlocked == True:
-                    print("**** WARNING: The state file for this scene requests a lock, you may need to manually edit it")
+                    player.says("**** WARNING: The state file for this scene requests a lock, you may need to manually edit it.")
+                    return
                 if game.scene._last_state: print("SCENE STATE WAS LOADED FROM %s"%game.scene._last_state)
                 for name, obj in game.scene.objects.items():
                     if obj.editor_clean == False:
@@ -4352,6 +4356,7 @@ class Game(object):
                             if self.player and self.testing_message:
                                 if self.headless: self.headless = False #force visual if handing over to player
                                 self.player.says("Handing back control to you.")
+                                self.modals_clear()
                             self.finish_tests()
                             
                     
@@ -4680,6 +4685,13 @@ class Game(object):
         if logging: log.debug("set menu to %s"%[x.name for x in self.menu])
         self._event_finish()        
         
+        
+    def on_modals_clear(self):
+        if logging: log.debug("clear modals %s"%[x.name for x in self.modals])
+        self.modals = []
+        self._event_finish()        
+        
+            
     def on_menus_clear(self):
         """ clear all menus """
         if logging: log.warning("game.menu_clear should use game.remove --- why???")
