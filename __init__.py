@@ -1027,9 +1027,10 @@ class Actor(object):
          slug_actor = slugify(actor.name)
          slug_actee = slugify(self.name)
          basic = "%s_use_%s"%(slug_actee, slug_actor)
-         if actor.name in self.uses: #use a specially defined use method
-            basic = self.uses[actor.name]
-            if logging: log.info("Using custom use script %s for actor %s"%(basic, actor.name))
+         override_name = actor.name if actor.name in self.uses else "all"
+         if override_name in self.uses: #use a specially defined use method
+            basic = self.uses[override_name]
+            if logging: log.info("Using custom use script %s for actor %s"%(basic, override_name))
          script = get_function(basic)
          if script:
                 script(self.game, self, actor)
