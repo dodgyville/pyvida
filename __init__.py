@@ -3513,6 +3513,8 @@ class Game(object):
             #self.camera.fade_out()
         elif ENABLE_EDITOR and key == K_F8:
             self.camera.fade_in()
+            from scripts.all_chapters import catapult_rat_cutscene
+            catapult_rat_cutscene(self, self.actors["Disguised Rat"], self.player)
         elif ENABLE_EDITOR and key == K_F9:
             from scripts.chapter10 import citadel_external
             for o in self.scenes["casteroid"].objects.values(): o.smart(self)
@@ -4774,7 +4776,7 @@ class Signal(object):
         self.providing_args = set(providing_args)
        
     def connect(self, receiver, sender):
-        self.receivers.append((receiver, sender))
+        if (receiver, sender) not in self.receivers: self.receivers.append((receiver, sender))
 
 
 post_interact = Signal(providing_args=["game", "instance", "player"])
