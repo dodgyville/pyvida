@@ -2067,12 +2067,19 @@ class Item(Actor):
 class Portal(Item):
     __metaclass__ = use_on_events
     def __init__(self, *args, **kwargs):
-        Actor.__init__(self, *args, **kwargs)
+        Item.__init__(self, *args, **kwargs)
         self.link = None #which Portal does it link to?
         self._ox, self._oy = 0,0 #outpoint, relative to _x, _y
         self.display_text = "" #no overlay info text by default for a portal
+        self.display_exit = None #Image to use to show door exit
 #        self.interact = self._interact_default
 #        self.look = self._look
+
+    def smart(self, game, *args, **kwargs): #portal.smart
+        Item.smart(self, game, *args, **kwargs)
+        fname = os.path.join(os.getcwd(), os.path.join(game.interface_dir, "p_exit.png"))
+        if os.path.isfile(fname):
+            self.display_exit = pygame.image.load(fname).convert_alpha()        
 
     def get_oy(self): return self._oy + self._y
     def set_oy(self, oy): self._oy = oy - self._y
@@ -2082,9 +2089,13 @@ class Portal(Item):
     def set_ox(self, ox): self._ox = ox - self._x
     ox = property(get_ox, set_ox)   
 
-#    def draw(self):
- #       """ portals are invisible """
-  #      return
+    def draw(self): #portal.draw
+        Item.draw(self)
+        if self.game.show_portals and self.display_exit:
+            t = self._draw_image(self.display_exit, (self.nx, self.ny))
+            if t: self._rect = self._rect.union(t) if self._rect else t #apply any camera effects                
+        return
+
     def trigger_look(self): #portal look is the same as portal interact
         return self.trigger_interact()        
         
@@ -2239,7 +2250,7 @@ class Emitter(Item):
         for p in self.particles:
             self._update_particle(dt, p)
             
-    def draw(self):
+    def draw(self): #emitter.draw
         img = self._image()
         if not self.action: 
             if logging: log.error("Emitter %s has no actions"%(self.name))
@@ -2970,6 +2981,9 @@ class Game(object):
         self.actors = {}
         self.items = {}
         self.scenes = {}
+        
+        #settings
+        self.show_portals = True
     
         #always on screen
         self.menu = [] 
