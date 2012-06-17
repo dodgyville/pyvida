@@ -46,6 +46,7 @@ VERSION_MINOR = 0 #minor/bug fixes, can run same scripts
 VERSION_SAVE = 1  #save/load version, only change on incompatible changes
 
 GOTO_LOOK = True  #should player walk to object when looking at it
+GOTO_LOOK = False
 
 try:
     import android
@@ -1967,7 +1968,7 @@ class Actor(object):
         self.game.stuff_event(txt.on_place, (220, iy+5))
         self.game.stuff_event(msg.on_goto, (54, iy))
     
-    def on_asks(self, *args):
+    def on_asks(self, *args, **kwargs):
         """ A pseudo-queuing function. Display a speech bubble with text and several replies, and wait for player to pick one.
         
         Examples::
@@ -1988,7 +1989,7 @@ class Actor(object):
         """    
 #        game.menu_fade_out()
 #        game.menu_push() #hide and push old menu to storage
-        self.on_says(args[0])
+        self.on_says(args[0]) #XXX should pass in action
         def collide_never(x,y): #for asks, most modals can't be clicked, only the txt modelitam options can.
             return False
 
@@ -2112,9 +2113,11 @@ class Portal(Item):
 
     def _post_arrive(self, portal, actor):
         for receiver, sender in post_arrive.receivers: #do the signals for post_interact
-#            if isinstance(portal, Portal): #signal receivers after arriving through this portal
             receiver(self.game, portal, actor)
     
+    def _pre_leave(self, portal, actor):
+        for receiver, sender in pre_leave.receivers: #do the signals for post_interact
+            receiver(self.game, portal, actor)
 
     def arrive(self, actor=None):
         """ helper function for entering through this door """
@@ -2126,16 +2129,21 @@ class Portal(Item):
     def leave(self, actor=None):
         """ leave through this door """
         if actor == None: actor = self.game.player
+        self._pre_leave(self, actor)
         actor.goto((self.sx, self.sy))
         actor.goto((self.ox, self.oy), ignore=True) 
+
+    def exit_link(self, actor=None):
+        if actor == None: actor = self.game.player
+        actor.goto((self.link.sx, self.link.sy), ignore=True) #walk into scene        
+        self._post_arrive(self.link, actor)
         
     def exit(self, actor=None):
         """ arrive at this door's portal's exit """
         if actor == None: actor = self.game.player
         actor.relocate(self.link.scene, (self.link.ox, self.link.oy)) #moves player to scene
         self.game.camera.scene(self.link.scene) #change the scene
-        actor.goto((self.link.sx, self.link.sy), ignore=True) #walk into scene        
-        self._post_arrive(self.link, actor)
+        self.exit_link(actor)
         
     def travel(self, actor=None):
         """ default interact method for a portal, march player through portal and change scene """
@@ -2645,6 +2653,10 @@ class Scene(object):
                 self._rect = Rect(0,0,self.game.resolution[0],self.game.resolution[1]) #tell pyvida to redraw the whole screen to get the new background
         return self._background
 
+    def on_set_background(self, fname):
+        self.background(fname)
+        self._event_finish()        
+
     def on_unload(self):
         """ unload the images from memory """
         self._background = None
@@ -2893,7 +2905,7 @@ class Settings(object):
         self.voices_on = True
         
 #        self.music_volume = 0.6
-        self.music_volume = 0.0 #XXX music disabled by default
+        self.music_volume = 0.6 #XXX music disabled by default
         self.sfx_volume = 0.8
         self.voices_volume = 0.8
         
@@ -4795,6 +4807,7 @@ class Signal(object):
 
 post_interact = Signal(providing_args=["game", "instance", "player"])
 pre_interact = Signal(providing_args=["game", "instance", "player"])
+pre_leave = Signal(providing_args=["game", "instance", "player"])
 post_arrive = Signal(providing_args=["game", "instance", "player"])
 
 def receiver(signal, **kwargs):
@@ -4813,4 +4826,3 @@ def receiver(signal, **kwargs):
     return _decorator
 
 
-        
