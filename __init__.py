@@ -69,6 +69,9 @@ EDITING_ACTOR = 0
 EDITING_ACTION = 1
 EDITING_DELTA = 2
 
+#MUSIC MODES
+FADEOUT = 1
+
 if logging:
     if ENABLE_LOGGING:
         log_level = logging.DEBUG #what level of debugging
@@ -2811,10 +2814,10 @@ class Camera(object):
             else:
                 if logging: log.warning("No background for scene %s"%self.game.scene.name)
         #start music for this scene
-        if game.scene.music_fname:
+        if game.scene.music_fname == FADEOUT:
+            self.game.mixer._music_fade_out()
+        elif game.scene.music_fname:
             self.game.mixer._music_play(game.scene.music_fname)
-#        else:
-#            self.game.mixer._music_fade_out()
 
     def on_scene(self, scene):
         if type(scene) == str:
