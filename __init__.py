@@ -3662,7 +3662,6 @@ class Game(object):
             def editor_save(game, menuItem, player):
                 if self.scene.editlocked == True:
                     player.says("**** WARNING: The state file for this scene requests a lock, you may need to manually edit it.")
-                    return
                 if game.scene._last_state: print("SCENE STATE WAS LOADED FROM %s"%game.scene._last_state)
                 for name, obj in game.scene.objects.items():
                     if obj.editor_clean == False:
