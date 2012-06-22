@@ -4399,7 +4399,11 @@ class Game(object):
                             #self.tests = None
                             if self.player and self.testing_message:
                                 if self.headless: self.headless = False #force visual if handing over to player
-                                self.player.says("Handing back control to you.")
+                                if self.jump_to_step == "lachlan":
+                                    self.player.says("Previously in game. An alien fleet is attacking peaceful planets. As a last resort, Captain Elliott has been drafted  to find and defeat his ex-boyfriend (the alien leader). Arriving on New Camelot, Elliott has found a planet blissfully unaware it is about to be invaded ...")
+                                else:
+                                    self.player.says("Handing back control to you.")
+
                                 self.modals_clear()
                             self.finish_tests()
                             
