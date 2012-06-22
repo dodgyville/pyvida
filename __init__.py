@@ -2076,14 +2076,16 @@ class Portal(Item):
         self._ox, self._oy = 0,0 #outpoint, relative to _x, _y
         self.display_text = "" #no overlay info text by default for a portal
         self.display_exit = None #Image to use to show door exit
+        self.display_exit_inactive = None #Image to use to show door exit
 #        self.interact = self._interact_default
 #        self.look = self._look
 
     def smart(self, game, *args, **kwargs): #portal.smart
         Item.smart(self, game, *args, **kwargs)
-        fname = os.path.join(os.getcwd(), os.path.join(game.interface_dir, "p_exit.png"))
-        if os.path.isfile(fname):
-            self.display_exit = pygame.image.load(fname).convert_alpha()        
+        for p in ["", "_inactive"]:
+            fname = os.path.join(os.getcwd(), os.path.join(game.interface_dir, "p_exit%s.png"%p))
+            if os.path.isfile(fname):
+                setattr(self, "display_exit%s"%p, pygame.image.load(fname).convert_alpha())
 
     def get_oy(self): return self._oy + self._y
     def set_oy(self, oy): self._oy = oy - self._y
@@ -2095,8 +2097,9 @@ class Portal(Item):
 
     def draw(self): #portal.draw
         Item.draw(self)
-        if self.game.show_portals and self.display_exit:
-            t = self._draw_image(self.display_exit, (self.nx, self.ny))
+        if self.game.show_portals:
+            i = self.display_exit if self.allow_interact or self.allow_look else self.display_exit_inactive
+            t = self._draw_image(i, (self.nx, self.ny))
             if t: self._rect = self._rect.union(t) if self._rect else t #apply any camera effects                
         return
 
@@ -2414,9 +2417,15 @@ class Input(Text):
 #    def collide(self, x,y): #modals cover the whole screen?
 #        return True
 
+    def _update(self, dt):
+        Text._update(self, dt)
+        if self.game and self.game.loop%8 == 0:
+            self.value = self.value[:-1] if self.value[-1:] == "|" else "%s|"%self.value
+            self.update_text()
+                
 
     def update_text(self): #rebuild the text image
-        self.text = "%s\n%s"%(self._text, self.value)
+        self.text = "%s%s"%(self._text, self.value)
         self.img = self._img = self._generate_text(self.text, self.colour)
        
 
@@ -2767,6 +2776,9 @@ class Mixer(object):
         self._music_stop()
         self.game._event_finish()
 
+    def on_music_volume(self, val):
+        if pygame.mixer: pygame.mixer.music.set_volume(val)
+        self.game._event_finish()
 
     def _sfx_play(self, fname=None):
         sfx = None
@@ -2960,9 +2972,9 @@ class Game(object):
     def __init__(self, name="Untitled Game", engine=VERSION_MAJOR, fullscreen=False, resolution=(1024,768)):
         if logging: log.debug("game object created at %s"%datetime.now())
 #        log = log
-        self.voice_volume = 1.0
-        self.effects_volume = 1.0
-        self.music_volume = 1.0
+#        self.voice_volume = 1.0
+#        self.effects_volume = 1.0
+#        self.music_volume = 1.0
         self.mute_all = False
         self.font_speech = None
         self.font_speech_size = None
@@ -2986,6 +2998,7 @@ class Game(object):
         self.reset_game = None #which function can we call to reset the game state to a safe point (eg start of chapter)
         self.testing = False
         self.headless = False #run game without pygame graphics?
+        self.loop = 0 
         self.resolution = resolution
         self.progress_bar_count = 0 #how many event steps in this progress block
         self.progress_bar_index = 0 #how far along the event list are we for this progress block
@@ -3505,6 +3518,7 @@ class Game(object):
         for i in self.modals:
             if isinstance(i, Input): #inputs catch keyboard
                 addable = unicode_key.isalnum() or unicode_key in " .!+-_][}{"
+                if i.value[-1:] == "|": i.value = i.value[:-1] #remove blinking caret
                 if len(i.value)< i.maxlength and addable:
                     i.value += unicode_key
                     i.update_text()
@@ -4252,16 +4266,15 @@ class Game(object):
         
         if callback: callback(self)
         dt = 12 #time passed
-        loop = 0
         while self.quit == False: #game.draw game.update
-            loop += 1
+            self.loop += 1
             if not self.headless: pygame.time.delay(self.fps)
-            if ENABLE_EDITOR and loop%10 == 0: #if editor is available, watch code for changes
+            if ENABLE_EDITOR and self.loop%10 == 0: #if editor is available, watch code for changes
                 modified_modules = self.check_modules()
                 if modified_modules:
                     self.reload_modules()
 #                    "would try and reload now")
-            if loop >= 10000: loop = 0
+            if self.loop >= 10000: self.loop = 0
             
             if android and android.check_pause():
                 android.wait_for_resume()
@@ -4631,7 +4644,7 @@ class Game(object):
         if callback: callback(self)
         
 
-    def user_input(self, text, callback, position=(100,170), background="msgbox"):
+    def user_input(self, text, callback, position=(50,170), background="msgbox"):
         """ A pseudo-queuing function. Display a text input, and wait for player to type something and hit enter
         Examples::
         
