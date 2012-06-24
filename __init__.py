@@ -577,6 +577,8 @@ class Action(object):
         self.scale = 1.0
         self.ax, self.ay = 0,0 #anchor point, relative to actor's anchor point
         self._raw_width, self._raw_height = 0,0 #dimensions of raw action image
+        self.allow_draw = True 
+        self.allow_update = True #free deltas, etc
         
         #deltas
         self.delta_index = 0 #index to deltas
@@ -612,6 +614,8 @@ class Action(object):
         
         
     def update(self, dt): #action.update
+        if self.allow_update == False:
+            return
         if self.mode == PINGPONG and self.index == -1: 
             self.step = 1
             self.index = 0
@@ -1123,6 +1127,7 @@ class Actor(object):
             img.fill(tint, special_flags=BLEND_MULT) #BLEND_MIN)
         
         r = img.get_rect().move(pos)
+        
         if alpha != 1.0:
             _rect = blit_alpha(self.game.screen, img, r, alpha*255)
         else:
@@ -1212,7 +1217,6 @@ class Actor(object):
                 self.y += dy
             if self.action.mode == ONCE_BLOCK_DELTA and self.action.index >= count-1:
                 self._event_finish(block=False)
-#                self.action.index = 0
             
         dx = 0
         dy = 0
@@ -1395,14 +1399,6 @@ class Actor(object):
  #       self.game.stuff_event(self.finish_fade, self)
         self._event_finish(block=block)
 
-    def _set_usage(self, draw=None, update=None, look=None, interact=None, use=None, ):
-        """ Toggle the player->object interactions for this actor """
-        if draw != None: self.allow_draw = draw 
-        if update != None: self.allow_update = update
-        if look != None: self.allow_look = look
-        if interact != None: self.allow_interact = interact
-        if use != None: self.allow_use = use
-
     def on_set_actions(self, actions, prefix=None, postfix=None):
         """ Take a list of actions and replace them with prefix_action eg set_actions(["idle", "over"], "off") """
         if logging: log.info("player.set_actions using prefix %s on %s"%(prefix, actions))
@@ -1443,6 +1439,14 @@ class Actor(object):
         self.action.index = 0
         self._event_finish(block=False)
 
+    def _set_usage(self, draw=None, update=None, look=None, interact=None, use=None, ):
+        """ Toggle the player->object interactions for this actor """
+        if draw != None: self.allow_draw = draw 
+        if update != None: self.allow_update = update
+        if look != None: self.allow_look = look
+        if interact != None: self.allow_interact = interact
+        if use != None: self.allow_use = use
+
     def on_hide(self, interactive=False):
         """ A queuing function: hide the actor, including from all click and hover events 
         
@@ -1463,11 +1467,14 @@ class Actor(object):
         self._set_usage(draw=True, update=True) # switch everything on
         self._event_finish()
         
-        
     def on_usage(self, draw=None, update=None, look=None, interact=None, use=None):
         """ Set the player->object interact flags on this object """
         self._set_usage(draw=draw, update=update, look=look, interact=interact, use=use)
         self._event_finish()
+
+    def on_action_usage(self, update=None):
+        if update != None: self.action.allow_update = update
+        self._event_finish(block=False)
 
     def on_rescale(self, scale):
         """ A queuing function: scale the actor to a different size
@@ -2667,7 +2674,7 @@ class Scene(object):
 
     def on_set_background(self, fname):
         self.background(fname)
-        self._event_finish()        
+        self._event_finish(block=False)        
 
     def on_unload(self):
         """ unload the images from memory """
@@ -2711,6 +2718,24 @@ class Scene(object):
             if i.name not in objs and not isinstance(i, Portal) and i != self.game.player: self._remove(i)
         self._event_finish()
                 
+    
+    def _toggle_usage(self, objects, exclude, draw=False, update=False):
+        if not objects: objects = self.objects.values()
+        if type(objects) != list: objects = [objects]
+        if type(exclude) != list: exclude = [exclude]
+        objects = [self.objects[o] if type(o) == str else o for o in objects]
+        exclude = [self.objects[o] if type(o) == str else o for o in exclude]
+        for o in objects:
+            if o not in exclude:
+                o._set_usage(draw=draw, update=update)
+
+    def on_hide(self, objects=None, exclude=[]):
+        self._toggle_usage(objects, exclude, draw=False, update=False)
+        self._event_finish()
+
+    def on_show(self, objects=None, exclude=[]):
+        self._toggle_usage(objects, exclude, draw=True, update=True)
+        self._event_finish()
 
     def on_music(self, fname): #set the music for this scene
         self.music_fname = fname
@@ -2804,6 +2829,7 @@ class Camera(object):
         self._effect = None #what effect are we applying?
         self._count = 0
         self._image = None
+        self._viewport = None #only draw within this Rect
         
     def _scene(self, scene):
         """ change the current scene """
@@ -2850,6 +2876,13 @@ class Camera(object):
         if scene:
             postcamera_fn = get_function("postcamera_%s"%slugify(scene.name))
             if postcamera_fn: postcamera_fn(self.game, scene, self.game.player)
+        self.game._event_finish()
+
+    def on_viewport(self, rect=None):
+        self.game.screen.set_clip()
+        self.game.screen.fill((0,0,0))
+        self._viewport = rect
+        self.game.screen.set_clip(rect)
         self.game._event_finish()
 
   
@@ -3539,14 +3572,11 @@ class Game(object):
         elif ENABLE_EDITOR and key == K_F3: #kill an event if stuck in the event queue
             self._event_finish()      
         elif ENABLE_EDITOR and key == K_F4:
-            self.player.do_once("dress")
-#            self.player.do_once("undressed_lookright")
-#            self.player.do("undressed_lookright",mode=ONCE_BLOCK)
-            self.player.do("idle")
-#            self.player.do("undressed_lookleft2")
+            self.camera.scene("cdoors")
+            self.player.relocate("cdoors", (500,400))
         elif ENABLE_EDITOR and key == K_F5:
-            from scripts.all_chapters import transmat_in, transmat_out
-            transmat_in(self, self.player)
+            from scripts.chapter11 import interact_Damien
+            interact_Damien(self, self.actors["Damien"], self.player)
         elif ENABLE_EDITOR and key == K_F6:
             self.player.relocate(self.scene, (190, 530))
         elif ENABLE_EDITOR and key == K_F7:
@@ -3800,6 +3830,7 @@ class Game(object):
                 if obj and game.scene:
                     obj.x, obj.y = 500,400
                     obj._editor_add_to_scene = True #let exported know this is new to this scene
+                    obj.set_alpha(1.0)
                     game.scene.add(obj)
                     game.set_editing(obj)
 
