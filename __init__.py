@@ -2177,14 +2177,17 @@ class Portal(Item):
 
 
 
-EMITTER_SMOKE = {"name":"smoke", "number":10, "frames":20, "direction":0, "fov":30, "speed":3, "acceleration":(0, 0), "size_start":0.5, "size_end":1.0, "alpha_start":1.0, "alpha_end":0.0}
+EMITTER_SMOKE = {"name":"smoke", "number":10, "frames":20, "direction":0, "fov":30, "speed":3, "acceleration":(0, 0), "size_start":0.5, "size_end":1.0, "alpha_start":1.0, "alpha_end":0.0, "random_index":True}
 
-EMITTER_SPARK = {"name":"spark", "number":10, "frames":12, "direction":190, "fov":20, "speed":4, "acceleration":(0, 0), "size_start":1.0, "size_end":1.0, "alpha_start":1.0, "alpha_end":0.0}
+EMITTER_SPARK = {"name":"spark", "number":10, "frames":12, "direction":190, "fov":20, "speed":4, "acceleration":(0, 0), "size_start":1.0, "size_end":1.0, "alpha_start":1.0, "alpha_end":0.0, "random_index":True}
+
+EMITTER_BUBBLE = {"name":"bubble", "number":10, "frames":120, "direction":0, "fov":20, "speed":7, "acceleration":(0, 0), "size_start":1.0, "size_end":1.0, "alpha_start":1.0, "alpha_end":0.0, "random_index":True}
 
 
 class Particle(object):
     def __init__(self, x, y, ax, ay, speed, direction):
         self.index = 0
+        self.action_index = 0
         self.x = x
         self.y = y
         self.ax, self.ay = ax, ay
@@ -2198,7 +2201,7 @@ class Emitter(Item):
         smoke = Emmitter(**EMITTER_SMOKE)
     """
     __metaclass__ = use_on_events    
-    def __init__(self, name, number, frames, direction, fov, speed, acceleration, size_start, size_end, alpha_start, alpha_end):
+    def __init__(self, name, number, frames, direction, fov, speed, acceleration, size_start, size_end, alpha_start, alpha_end,random_index):
         Item.__init__(self, name)
         self.name = name
         self.number = number
@@ -2210,8 +2213,20 @@ class Emitter(Item):
         self.size_start = size_start
         self.size_end = size_end
         self.alpha_start, self.alpha_end = alpha_start, alpha_end
-        self._reset()
+        self.random_index = random_index #should each particle start mid-action?
 
+    @property
+    def summary(self):
+        fields = ["name", "number", "frames", "direction", "fov", "speed", "acceleration", "size_start", "size_end", "alpha_start", "alpha_end", "random_index"]
+        d = {}
+        for i in fields:
+            d[i] = getattr(self, i, None)  
+        return d
+
+    def smart(self, *args, **kwargs):
+        super(Item, self).smart(*args, **kwargs)
+        self._reset()        
+        return self
 
     def _add_particles(self, num=1):
         for x in xrange(0,num):
@@ -2219,6 +2234,8 @@ class Emitter(Item):
             self.particles.append(Particle(self.x, self.y, self._ax, self._ay, self.speed, d))
             p = self.particles[-1]
             p.index = randint(0, self.frames)
+            if self.random_index and self.action:
+                p.action_index = randint(0, self.action.count)
             for j in xrange(0, self.frames): #fast forward particle to mid position
                 self._update_particle(0, p)
             p.hidden = True
@@ -2259,6 +2276,7 @@ class Emitter(Item):
         p.y -= a
         p.x += o
         p.index +=  1
+        p.action_index += 1
         if p.index >= self.frames: #reset
             p.x, p.y = self.x, self.y
             p.index = 0
@@ -2266,20 +2284,22 @@ class Emitter(Item):
             if p.terminate == True:
                 self.particles.remove(p)
     
-    def _update(self, dt): #slosh.update
+    def _update(self, dt): #emitter.update
         Item._update(self, dt)
         for p in self.particles:
+#            print(p.action_index)
             self._update_particle(dt, p)
-            
+ #       print("--")
+                    
     def draw(self): #emitter.draw
-        img = self._image()
+#        img = self._image()
         if not self.action: 
             if logging: log.error("Emitter %s has no actions"%(self.name))
             return
             
         self._rect = pygame.Rect(self.x, self.y, 0, 0)            
         for p in self.particles:
-            img = self.action.image()
+            img = self.action.image(p.action_index)
             alpha = self.alpha_start - (abs(float(self.alpha_end - self.alpha_start)/self.frames) * p.index)
             if img and not p.hidden: 
                 self._rect.union_ip(self._draw_image(img, (p.x-p.ax, p.y-p.ay), self._tint, alpha))
@@ -2403,6 +2423,7 @@ class Text(Actor):
 
     def draw(self):
 #        print(self.action.name) if self.action else print("no action for Text %s"%self.text)
+        if self.game.testing: return
         if self.img:
             r = self.img.get_rect().move(self.x, self.y)    
 #            if self.game.editing == self:
@@ -3717,11 +3738,18 @@ class Game(object):
                     sfname = "%s.py"%sfname
                     keys = [x.name for x in game.scene.objects.values() if not isinstance(x, Portal) and x != game.player]
                     objects = '\",\"'.join(keys)
+                    has_emitter = False
+                    for name, obj in game.scene.objects.items():
+                        if isinstance(obj, Emitter): has_emitter=True
+                            
                     with open(sfname, 'w') as f:
                         f.write("# generated by ingame editor v0.1\n\n")
                         f.write("def load_state(game, scene):\n")
                         f.write('    from pyvida import WalkArea, Rect\n')
                         f.write('    import os\n')
+                        if has_emitter: 
+                            f.write('    import copy\n')
+                            f.write('    from pyvida import Emitter\n')
                         f.write('    scene.clean(["%s"])\n'%objects) #remove old actors and items
                         if game.scene.music_fname:
                             f.write('    scene.music("%s")\n'%game.scene.music_fname)
@@ -3734,7 +3762,12 @@ class Game(object):
                             if obj != game.player:
                                 slug = slugify(name).lower()
                                 txt = "items" if isinstance(obj, Item) else "actors"
-                                f.write('    %s = game.%s["%s"]\n'%(slug, txt, name))
+                                if isinstance(obj, Emitter):
+                                    em = str(obj.summary)
+                                    f.write("    em = %s\n"%em)
+                                    f.write('    %s = Emitter(**em).smart(game)\n'%slug)
+                                else:
+                                    f.write('    %s = game.%s["%s"]\n'%(slug, txt, name))
                                 r = obj._clickable_area
                                 f.write('    %s.reclickable(Rect(%s, %s, %s, %s))\n'%(slug, r.left, r.top, r.w, r.h))
                                 r = obj._solid_area
