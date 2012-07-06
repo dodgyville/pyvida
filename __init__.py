@@ -3086,7 +3086,7 @@ class Game(object):
         self.scenes = {}
         
         #settings
-        self.show_portals = True
+        self.show_portals = False
     
         #always on screen
         self.menu = [] 
