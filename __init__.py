@@ -2792,6 +2792,18 @@ class Mixer(object):
     __metaclass__ = use_on_events
     def __init__(self, game=None):
         self.game = game
+        self.music_break = 360000 #fade the music out every x milliseconds
+        self.music_break_length = 60000 #keep it quiet for y seconds
+        self.music_index = 0
+        
+    def update(self, dt): #mixer.update
+        self.music_index += dt
+        if self.music_index > self.music_break:
+            self._music_fade_out()
+        if self.music_index > self.music_break+self.music_break_length:
+            self._music_fade_in()
+            self.music_index = 0
+            
 
     def _music_play(self, fname=None):
         if fname: 
@@ -2802,6 +2814,7 @@ class Mixer(object):
                 log.warning("Music file %s missing."%fname)
                 if pygame.mixer: pygame.mixer.music.stop()
                 return
+        self.music_index = 0 #reset music counter
         if pygame.mixer and not self.game.testing: pygame.mixer.music.play(-1) #loop indefinitely
         
     def on_music_play(self, fname=None):
@@ -2811,9 +2824,17 @@ class Mixer(object):
     def _music_fade_out(self):
         if pygame.mixer: pygame.mixer.music.fadeout(200)
 
+    def _music_fade_in(self):
+        if pygame.mixer: pygame.mixer.music.fadein(200)
+
     def on_music_fade_out(self):
         self._music_fade_out()
         self.game._event_finish()
+
+    def on_music_fade_out(self):
+        self._music_fade_in()
+        self.game._event_finish()
+
         
     def _music_stop(self):
         if pygame.mixer: pygame.mixer.music.stop()
@@ -4329,7 +4350,7 @@ class Game(object):
             self._load_editor()
         
         if callback: callback(self)
-        dt = 12 #time passed
+        dt = self.fps #time passed (in miliseconds)
         while self.quit == False: #game.draw game.update
             self.loop += 1
             if not self.headless: pygame.time.delay(self.fps)
@@ -4459,7 +4480,7 @@ class Game(object):
                         if return_to_player: #hand control back to player
                             print("hand back!")
                             self.testing = False
-                            self.fps = int(1000.0/DEFAULT_FRAME_RATE)
+                            self.fps = int(1000.0/DEFAULT_FRAME_RATE) #this is actually miliseconds per frame
                             #self.tests = None
                             if self.player and self.testing_message:
                                 if self.headless: self.headless = False #force visual if handing over to player
