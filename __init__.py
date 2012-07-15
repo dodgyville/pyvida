@@ -69,6 +69,10 @@ EDITING_ACTOR = 0
 EDITING_ACTION = 1
 EDITING_DELTA = 2
 
+#on says position
+POSITION_BOTTOM = 0
+POSITION_TOP = 1
+
 #MUSIC MODES
 FADEOUT = 1
 
@@ -1896,7 +1900,7 @@ class Actor(object):
         self.game.stuff_event(msgbox.on_goto, (300,40))
         self._event_finish()
 
-    def on_says(self, text, action="portrait", sfx=-1, block=True, modal=True, font=None, background="msgbox", size=None):
+    def on_says(self, text, action="portrait", sfx=-1, block=True, modal=True, font=None, background="msgbox", size=None, position=POSITION_BOTTOM):
         """ A queuing function. Display a speech bubble with text and wait for player to close it.
         
         Examples::
@@ -1934,9 +1938,8 @@ class Actor(object):
             game.block = False #release event lock
             self._event_finish() #should remove the on_wait event
             
-        TOP = False
-        if TOP: #place text boxes on top of screen
-            oy, iy = -400, 40
+        if position == POSITION_TOP: #place text boxes on top of screen
+            oy, oy2, iy = 90, -400, 40
         else:
 #            oy, iy = 1200, 360
             if self.game.resolution == (800,480):
