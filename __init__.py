@@ -307,6 +307,8 @@ def use(): pass #stub
 
 def look(): pass #stub
 
+def has(): pass #stub
+
 def location(): pass #stub
 
 def select(): pass #stub
@@ -401,6 +403,11 @@ def process_step(game, step):
         if game.output_walkthrough: print("Player should be at %s."%(actor))
         if game.scene.name != actor:
             if logging: log.error("Current scene should be %s, but is currently %s"%(actor, game.scene.name))
+        return
+    elif function_name == "has": #check the player has item in inventory
+        if game.output_walkthrough: print("Player should have %s."%(actor))
+        if not game.player.has(actor):
+            if logging: log.error("Player should have %s in inventory, but does not."%(actor))
         return
     elif function_name == "toggle": #toggle a setting in the game
         if hasattr(game, actor): game.__dict__[actor] = not game.__dict__[actor]
