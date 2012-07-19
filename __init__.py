@@ -2435,12 +2435,7 @@ class Text(Actor):
 #        print(self.action.name) if self.action else print("no action for Text %s"%self.text)
         if self.game.testing: return
         if self.img:
-            r = self.img.get_rect().move(self.x, self.y)    
-#            if self.game.editing == self:
-#                r2 = r.inflate(-2,-2)
-#                pygame.draw.rect(self.game.screen, (0,255,0), r2, 2)
-#                self._crosshair((255,0,0), (self.ax, self.ay))
-            self._rect = self.game.screen.blit(self.img, r)
+            self._rect = self._draw_image(self.img, (self.x, self.y), self._tint, self._alpha)
 
 
 class Input(Text):
@@ -2794,7 +2789,9 @@ class Scene(object):
         if logging: log.debug("Add %s to scene %s"%(obj.name, self.name))
 
     def on_add(self, obj, block=False): #scene.add
-        self._add(obj)
+        if type(obj) != list: obj = [obj]
+        for i in obj:
+            self._add(i)
         self._event_finish(block=block)
 
 class Mixer(object):
