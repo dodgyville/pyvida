@@ -424,7 +424,6 @@ def process_step(game, step):
         if actor == i.name:
             i.trigger_interact()
             return
-#    if actor == "spare uniform": import pdb; pdb.set_trace()
     if game.scene and fail == False: #not sure what this does - I think this is the actual call
         for i in game.scene.objects.values():
             if actor == i.name:
@@ -2627,6 +2626,7 @@ class Scene(object):
         self.analytics_count = 0 #used by test runner to measure how "popular" a scene is.
         self.foreground = [] #items to draw in the foreground
         self.music_fname = None
+        self.ambient_fname = None        
         self.display_text = ""
         self._on_mouse_move = None #if mouse is moving on this scene, do this call back
 
@@ -2668,6 +2668,8 @@ class Scene(object):
         # if there is an initial state, load that automatically
         state_name = os.path.join(sdir, "initial.py")
         if os.path.isfile(state_name): game.load_state(self, "initial")
+        ambient_name = os.path.join(sdir, "ambient.ogg") #ambient sound to
+        if os.path.isfile(ambient_name): self.ambient_fname = ambient_name
         return self
 
     def _update(self, dt):
@@ -2806,8 +2808,10 @@ class Mixer(object):
     def update(self, dt): #mixer.update
         self.music_index += dt
         if self.music_index > self.music_break:
+            log.info("taking a music break, fading out")
             self._music_fade_out()
         if self.music_index > self.music_break+self.music_break_length:
+            log.info("finished taking a music break, fading in")
             self._music_fade_in()
             self.music_index = 0
             
@@ -2854,7 +2858,7 @@ class Mixer(object):
         if pygame.mixer: pygame.mixer.music.set_volume(val)
         self.game._event_finish()
 
-    def _sfx_play(self, fname=None):
+    def _sfx_play(self, fname=None, loops=0):
         sfx = None
         if fname: 
             if os.path.exists(fname):
@@ -2862,11 +2866,12 @@ class Mixer(object):
                 if pygame.mixer: sfx = pygame.mixer.Sound(fname)
             else:
                 log.warning("Music sfx %s missing."%fname)
-                return
-        if pygame.mixer and sfx and not self.game.testing: sfx.play() #play once
+                return sfx
+        if pygame.mixer and sfx and not self.game.testing: sfx.play(loops=loops) #play once
+        return sfx
 
-    def on_sfx_play(self, fname=None):
-        self._sfx_play(fname)
+    def on_sfx_play(self, fname=None, loops=0):
+        self._sfx_play(fname, loops=loops)
         self.game._event_finish()
 
 
@@ -2879,6 +2884,7 @@ class Camera(object):
         self._count = 0
         self._image = None
         self._viewport = None #only draw within this Rect
+        self._ambient_sound = None
         
     def _scene(self, scene):
         """ change the current scene """
@@ -2892,6 +2898,7 @@ class Camera(object):
             else:
                 if logging: log.error("camera on_scene: unable to find scene %s"%scene)
                 scene = self.game.scene
+        if self._ambient_sound: self._ambient_sound.stop()
         self.game.scene = scene
            
         if logging: log.debug("changing scene to %s"%scene.name)
@@ -2904,7 +2911,10 @@ class Camera(object):
         if game.scene.music_fname == FADEOUT:
             self.game.mixer._music_fade_out()
         elif game.scene.music_fname:
+            print("playing music")
             self.game.mixer._music_play(game.scene.music_fname)
+        if game.scene.ambient_fname:
+            self._ambient_sound = self.game.mixer._sfx_play(game.scene.ambient_fname, loops=-1)
 
     def on_scene(self, scene):
         if type(scene) == str:
@@ -3019,6 +3029,7 @@ class Settings(object):
         self.undies_unlocked = True #can player toggle uniform?
         self.commentary = False #is director's commentary on?
         self.undies_only = False #will minogue play entire game in undies?
+        self.bfj_highscore = 1000 #pejazzled highscore
         
         self.invert_mouse = False #for lefties
         self.language = "en"
@@ -3432,7 +3443,6 @@ class Game(object):
 
     def _on_mouse_down(self, x, y, button, modifiers): #single button interface
 #        if self.menu_mouse_pressed == True: return
-#        import pdb; pdb.set_trace()
         self.mouse_down = (x,y)
         for i in self.menu: 
             if i.collide(x,y): return #let mouse_up have a go at menu
@@ -3616,7 +3626,7 @@ class Game(object):
             if key == i.key: i.trigger_interact() #"bound to menu item"
         if ENABLE_EDITOR and key == K_F1:
             self.toggle_editor()
-        elif ENABLE_EDITOR and key == K_F2: #allow set_trace if not fullscreen
+        elif ENABLE_EDITOR and key == K_F2: #allow set trace if not fullscreen
             if not self.fullscreen: import pdb; pdb.set_trace()
         elif ENABLE_EDITOR and key == K_F3: #kill an event if stuck in the event queue
             self._event_finish()      
