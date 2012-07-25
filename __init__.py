@@ -1853,9 +1853,9 @@ class Actor(object):
 
         background = "msgbox"
         if self.game and self == self.game.player:
-            text = "%s added to your inventory!"%item.name.title()
+            text = "%s added to your inventory!"%item.display_text
         else:
-            text = "%s gets %s!"%(self.name, item.name.title())
+            text = "%s gets %s!"%(self.name, item.display_text)
 
         item.on_says(text, action="portrait")
         return
@@ -1920,7 +1920,8 @@ class Actor(object):
             action = None #which action to display
         """
         if logging: log.info("Actor %s says: %s"%(self.name, text))
-#        if logging: log.warning("")
+        if self.game.text:
+            print("%s says \"%s\""%(self.name, text)
         if self.game.testing: 
             self._event_finish()
             return
@@ -2496,6 +2497,7 @@ class MenuText(Text, MenuItem):
         MenuItem.__init__(self, name, interact, spos, hpos, key, text)
         Text.__init__(self,  name, pos, dimensions, text, colour, size, wrap, font)
         self.interact = interact
+        self.display_name = ""
         self._on_mouse_move = self._on_mouse_move_utility #switch on mouse over change
         self._on_mouse_leave = self._on_mouse_leave_utility #switch on mouse over change
         self.x, self.y = self.out_x, self.out_y #default hiding at first
@@ -2628,6 +2630,7 @@ class Scene(object):
         self.music_fname = None
         self.ambient_fname = None        
         self.display_text = ""
+        self.description = "There is no description for this scene" #text for blind users
         self._on_mouse_move = None #if mouse is moving on this scene, do this call back
 
     def _event_finish(self, success=True, block=True):  #scene.event_finish
@@ -2899,6 +2902,12 @@ class Camera(object):
                 if logging: log.error("camera on_scene: unable to find scene %s"%scene)
                 scene = self.game.scene
         if self._ambient_sound: self._ambient_sound.stop()
+        if self.game.text:
+            print("The view has changed to scene %s"%scene.name)
+            print(scene.description)
+            print("You can see:")
+            for i in scene.objects.values():
+                print(i.display_name)
         self.game.scene = scene
            
         if logging: log.debug("changing scene to %s"%scene.name)
@@ -3102,6 +3111,8 @@ class Game(object):
         self.actors = {}
         self.items = {}
         self.scenes = {}
+        #accesibility options
+        self.text = False #output game in plain text to stdout
         
         #settings
         self.show_portals = False
@@ -4265,9 +4276,11 @@ class Game(object):
         
     def run(self, splash=None, callback=None, icon=None):
         parser = OptionParser()
+        parser.add_option("-c", "--contrast", action="store_true", dest="high_contrast", help="Play game in high contrast mode (for vision impaired players)", default=False)
+        parser.add_option("-t", "--text", action="store_true", dest="text", help="Play game in text mode (for players with disabilities who use text-to-speech output)", default=False)
         parser.add_option("-f", "--fullscreen", action="store_true", dest="fullscreen", help="Play game in fullscreen mode", default=False)
         parser.add_option("-p", "--profile", action="store_true", dest="profiling", help="Record player movements for testing", default=False)        
-        parser.add_option("-c", "--characters", action="store_true", dest="analyse_characters", help="Print lots of info about actor and items to calculate art requirements", default=False)        
+        parser.add_option("-o", "--objects", action="store_true", dest="analyse_characters", help="Print lots of info about actor and items to calculate art requirements", default=False)        
 
         parser.add_option("-s", "--step", dest="step", help="Jump to step in walkthrough")
         parser.add_option("-H", "--headless", action="store_true", dest="headless", help="Run game as headless (no video)")
@@ -4295,6 +4308,9 @@ class Game(object):
             self.memory_save = True
         if options.allow_exceptions == True:
             self.catch_exceptions = False
+        if options.text == True:
+            print("Using text mode")
+            self.text = True
         if options.memory_save == True: 
             self.memory_save = True
         if self.memory_save: print("Using low memory option")
