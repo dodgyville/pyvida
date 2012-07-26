@@ -1853,59 +1853,14 @@ class Actor(object):
             return
 
         background = "msgbox"
+        name = item.display_text if item.display_text else item.name
         if self.game and self == self.game.player:
-            text = "%s added to your inventory!"%item.name.title()
+            text = "%s added to your inventory!"%name
         else:
-            text = "%s gets %s!"%(self.name, item.name.title())
+            text = "%s gets %s!"%(self.name, name)
 
         item.on_says(text, action="portrait")
         return
-
-#        self.game.stuff_event(item.on_remove)
-        self.game.stuff_event(self.on_wait, None)
-        oax, oay,oscale = item._ax, item._ay, item._scale #old anchors
-        x,y = 370,80
-        dx, dy = 0, 0 #shift the anchor point of item so it appears on top of everything else
-
-        #scale the image to an appropriate size
-        sw,sh = 300,300 #preferred width or height
-        iw,ih = item.action.image().get_size() if item.action else (100,100)
-        ratio_w = float(sw)/iw
-        ratio_h = float(sh)/ih
-        nw1, nh1 = int(iw*ratio_w), int(ih*ratio_w)
-        nw2, nh2 = int(iw*ratio_h), int(ih*ratio_h)
-        if nh1>sh: 
-            ndx,ndy = nw2, nh2
-            rescale = item._scale * ratio_h
-        else:
-            ndx,ndy = nw1, nh1
-            rescale = item._scale * ratio_w
-        
-        def close_msgbox(game, actor, player):
-#            return
-            game.modals.remove(game.items[background])
-            game.modals.remove(item)
-            game.modals.remove(game.items["txt"])
-            game.modals.remove(game.items["ok"])
-            item.scene._remove(item) #removed the modal, also have to remove the item from the scene
-#            self.game.stuff_event(item.on_relocate, self.game.scene, (450,350))       
-            self.game.stuff_event(item.on_reanchor, (oax, oay))
-            self.game.stuff_event(item.on_rescale, oscale)
-            self._event_finish()
-        msgbox = self.game.add(ModalItem(background, close_msgbox,(300,-400)).smart(self.game))
-        txt = self.game.add(Text("txt", (280,-80), (840,170), text, wrap=800), False, ModalItem)
-
-        ok = self.game.add(Item("ok").smart(self.game), False, ModalItem)
-        ntiem = self.game.add(item, False, ModalItem) #add item as a modal
-        self.game.stuff_event(ok.on_place, (562,280))
-        
-        self.game.stuff_event(item.on_reanchor, (0, -dy))
-        self.game.stuff_event(item.on_rescale, rescale)
-        self.game.stuff_event(item.on_relocate, self.game.scene, (x, y))
-        
-        self.game.stuff_event(txt.on_place, (280,450))
-        self.game.stuff_event(msgbox.on_goto, (300,40))
-        self._event_finish()
 
     def on_says(self, text, action="portrait", sfx=-1, block=True, modal=True, font=None, background="msgbox", size=None, position=POSITION_BOTTOM):
         """ A queuing function. Display a speech bubble with text and wait for player to close it.
@@ -1921,7 +1876,8 @@ class Actor(object):
             action = None #which action to display
         """
         if logging: log.info("Actor %s says: %s"%(self.name, text))
-#        if logging: log.warning("")
+        if self.game.text:
+            print("%s says \"%s\""%(self.name, text))
         if self.game.testing: 
             self._event_finish()
             return
@@ -2500,6 +2456,7 @@ class MenuText(Text, MenuItem):
         MenuItem.__init__(self, name, interact, spos, hpos, key, text)
         Text.__init__(self,  name, pos, dimensions, text, colour, size, wrap, font)
         self.interact = interact
+        self.display_name = ""
         self._on_mouse_move = self._on_mouse_move_utility #switch on mouse over change
         self._on_mouse_leave = self._on_mouse_leave_utility #switch on mouse over change
         self.x, self.y = self.out_x, self.out_y #default hiding at first
@@ -2632,6 +2589,7 @@ class Scene(object):
         self.music_fname = None
         self.ambient_fname = None        
         self.display_text = ""
+        self.description = "There is no description for this scene" #text for blind users
         self._on_mouse_move = None #if mouse is moving on this scene, do this call back
 
     def _event_finish(self, success=True, block=True):  #scene.event_finish
@@ -2903,6 +2861,12 @@ class Camera(object):
                 if logging: log.error("camera on_scene: unable to find scene %s"%scene)
                 scene = self.game.scene
         if self._ambient_sound: self._ambient_sound.stop()
+        if self.game.text:
+            print("The view has changed to scene %s"%scene.name)
+            print(scene.description)
+            print("You can see:")
+            for i in scene.objects.values():
+                print(i.display_name)
         self.game.scene = scene
            
         if logging: log.debug("changing scene to %s"%scene.name)
@@ -2915,7 +2879,7 @@ class Camera(object):
         if game.scene.music_fname == FADEOUT:
             self.game.mixer._music_fade_out()
         elif game.scene.music_fname:
-            print("playing music")
+            log.info("playing music {}".format(game.scene.music_fname))
             self.game.mixer._music_play(game.scene.music_fname)
         if game.scene.ambient_fname:
             self._ambient_sound = self.game.mixer._sfx_play(game.scene.ambient_fname, loops=-1)
@@ -3106,6 +3070,8 @@ class Game(object):
         self.actors = {}
         self.items = {}
         self.scenes = {}
+        #accesibility options
+        self.text = False #output game in plain text to stdout
         
         #settings
         self.show_portals = False
@@ -3533,19 +3499,18 @@ class Game(object):
                 if not i.collide(x,y) and i._on_mouse_leave:
 #                    if self.mouse_mode == MOUSE_USE: i._tint = None
                     i._on_mouse_leave(x, y, button, modifiers)
-                if i is not None and i is not self.player and i.collide(x,y) and (i.allow_interact or i.allow_use or i.allow_look):
-                    if isinstance(i, Portal) and self.mouse_mode != MOUSE_USE:
-                        self.mouse_cursor = MOUSE_LEFT if i._x<512 else MOUSE_RIGHT
-                    elif self.mouse_mode == MOUSE_LOOK:
-                        self.mouse_cursor = MOUSE_CROSSHAIR #MOUSE_EYES
-                    elif self.mouse_mode != MOUSE_USE:
-                        self.mouse_cursor = MOUSE_CROSSHAIR
- #                   elif self.mouse_mode == MOUSE_USE: #tint object
- #                       i._tint = (255,200,200)
-                    t = i.name if i.display_text == None else i.display_text                    
-                    self.info(t, i.nx,i.ny)
-#                   self.text_image = self.font.render(i.name, True, self.text_colour)
-                    return
+                if i is not None and i.collide(x,y) and (i.allow_interact or i.allow_use or i.allow_look):
+                    #if (i == self.player and self.mouse_mode == MOUSE_USE) or (i != self.player):
+                    if True:
+                        if isinstance(i, Portal) and self.mouse_mode != MOUSE_USE:
+                            self.mouse_cursor = MOUSE_LEFT if i._x<512 else MOUSE_RIGHT
+                        elif self.mouse_mode == MOUSE_LOOK:
+                            self.mouse_cursor = MOUSE_CROSSHAIR #MOUSE_EYES
+                        elif self.mouse_mode != MOUSE_USE:
+                            self.mouse_cursor = MOUSE_CROSSHAIR
+                        t = i.name if i.display_text == None else i.display_text                    
+                        self.info(t, i.nx,i.ny)
+                        return
     
 
 
@@ -4270,9 +4235,11 @@ class Game(object):
         
     def run(self, splash=None, callback=None, icon=None):
         parser = OptionParser()
+        parser.add_option("-c", "--contrast", action="store_true", dest="high_contrast", help="Play game in high contrast mode (for vision impaired players)", default=False)
+        parser.add_option("-t", "--text", action="store_true", dest="text", help="Play game in text mode (for players with disabilities who use text-to-speech output)", default=False)
         parser.add_option("-f", "--fullscreen", action="store_true", dest="fullscreen", help="Play game in fullscreen mode", default=False)
         parser.add_option("-p", "--profile", action="store_true", dest="profiling", help="Record player movements for testing", default=False)        
-        parser.add_option("-c", "--characters", action="store_true", dest="analyse_characters", help="Print lots of info about actor and items to calculate art requirements", default=False)        
+        parser.add_option("-o", "--objects", action="store_true", dest="analyse_characters", help="Print lots of info about actor and items to calculate art requirements", default=False)        
 
         parser.add_option("-s", "--step", dest="step", help="Jump to step in walkthrough")
         parser.add_option("-H", "--headless", action="store_true", dest="headless", help="Run game as headless (no video)")
@@ -4300,6 +4267,9 @@ class Game(object):
             self.memory_save = True
         if options.allow_exceptions == True:
             self.catch_exceptions = False
+        if options.text == True:
+            print("Using text mode")
+            self.text = True
         if options.memory_save == True: 
             self.memory_save = True
         if self.memory_save: print("Using low memory option")
