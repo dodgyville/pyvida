@@ -72,6 +72,7 @@ EDITING_DELTA = 2
 #on says position
 POSITION_BOTTOM = 0
 POSITION_TOP = 1
+POSITION_LOW = 2
 
 #MUSIC MODES
 FADEOUT = 1
@@ -1946,7 +1947,9 @@ class Actor(object):
             
         if position == POSITION_TOP: #place text boxes on top of screen
             oy, oy2, iy = 90, -400, 40
-        else:
+        elif position == POSITION_LOW: #lowest setting
+            oy, oy2, iy = 550, 800, 490
+        elif position == POSITION_BOTTOM:
 #            oy, iy = 1200, 360
             if self.game.resolution == (800,480):
                 oy, oy2, iy = 190, -400, 160
@@ -2223,6 +2226,7 @@ class Emitter(Item):
         self.size_end = size_end
         self.alpha_start, self.alpha_end = alpha_start, alpha_end
         self.random_index = random_index #should each particle start mid-action?
+        self.spawn = Rect(0,0,0,0) #size of spawning area (only w,h used)
 
     @property
     def summary(self):
@@ -2240,7 +2244,7 @@ class Emitter(Item):
     def _add_particles(self, num=1):
         for x in xrange(0,num):
             d = randint(self.direction-float(self.fov/2), self.direction+float(self.fov/2))
-            self.particles.append(Particle(self.x, self.y, self._ax, self._ay, self.speed, d))
+            self.particles.append(Particle(self.x + randint(0, self.spawn.w), self.y + randint(0, self.spawn.h), self._ax, self._ay, self.speed, d))
             p = self.particles[-1]
             p.index = randint(0, self.frames)
             if self.random_index and self.action:
@@ -2287,7 +2291,7 @@ class Emitter(Item):
         p.index +=  1
         p.action_index += 1
         if p.index >= self.frames: #reset
-            p.x, p.y = self.x, self.y
+            p.x, p.y = self.x+ randint(0, self.spawn.w), self.y + randint(0, self.spawn.h)
             p.index = 0
             p.hidden = False
             if p.terminate == True:
@@ -3637,11 +3641,12 @@ class Game(object):
             from scripts.chapter11 import interact_Damien
             interact_Damien(self, self.actors["Damien"], self.player)
         elif ENABLE_EDITOR and key == K_F6:
-            self.player.relocate(self.scene, (190, 530))
+            from scripts.chapter7 import _goodbyeboy_cutscene
+            _goodbyeboy_cutscene(self, None, self.player)
         elif ENABLE_EDITOR and key == K_F7:
 #            self.player.gets(choice(self.items.values()))
-            from scripts.all_chapters import pleasuretron_orbit_planet_cutscene
-            pleasuretron_orbit_planet_cutscene(self, self.actors["Pleasuretron"], "ncorbit")
+            from scripts.chapter3 import _cutscene_battle
+            _cutscene_battle(self, self.player)
             #self.camera.fade_out()
         elif ENABLE_EDITOR and key == K_F8:
             self.camera.fade_in()
