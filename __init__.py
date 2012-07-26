@@ -1852,59 +1852,14 @@ class Actor(object):
             return
 
         background = "msgbox"
+        name = item.display_text if item.display_text else item.name
         if self.game and self == self.game.player:
-            text = "%s added to your inventory!"%item.display_text
+            text = "%s added to your inventory!"%name
         else:
-            text = "%s gets %s!"%(self.name, item.display_text)
+            text = "%s gets %s!"%(self.name, name)
 
         item.on_says(text, action="portrait")
         return
-
-#        self.game.stuff_event(item.on_remove)
-        self.game.stuff_event(self.on_wait, None)
-        oax, oay,oscale = item._ax, item._ay, item._scale #old anchors
-        x,y = 370,80
-        dx, dy = 0, 0 #shift the anchor point of item so it appears on top of everything else
-
-        #scale the image to an appropriate size
-        sw,sh = 300,300 #preferred width or height
-        iw,ih = item.action.image().get_size() if item.action else (100,100)
-        ratio_w = float(sw)/iw
-        ratio_h = float(sh)/ih
-        nw1, nh1 = int(iw*ratio_w), int(ih*ratio_w)
-        nw2, nh2 = int(iw*ratio_h), int(ih*ratio_h)
-        if nh1>sh: 
-            ndx,ndy = nw2, nh2
-            rescale = item._scale * ratio_h
-        else:
-            ndx,ndy = nw1, nh1
-            rescale = item._scale * ratio_w
-        
-        def close_msgbox(game, actor, player):
-#            return
-            game.modals.remove(game.items[background])
-            game.modals.remove(item)
-            game.modals.remove(game.items["txt"])
-            game.modals.remove(game.items["ok"])
-            item.scene._remove(item) #removed the modal, also have to remove the item from the scene
-#            self.game.stuff_event(item.on_relocate, self.game.scene, (450,350))       
-            self.game.stuff_event(item.on_reanchor, (oax, oay))
-            self.game.stuff_event(item.on_rescale, oscale)
-            self._event_finish()
-        msgbox = self.game.add(ModalItem(background, close_msgbox,(300,-400)).smart(self.game))
-        txt = self.game.add(Text("txt", (280,-80), (840,170), text, wrap=800), False, ModalItem)
-
-        ok = self.game.add(Item("ok").smart(self.game), False, ModalItem)
-        ntiem = self.game.add(item, False, ModalItem) #add item as a modal
-        self.game.stuff_event(ok.on_place, (562,280))
-        
-        self.game.stuff_event(item.on_reanchor, (0, -dy))
-        self.game.stuff_event(item.on_rescale, rescale)
-        self.game.stuff_event(item.on_relocate, self.game.scene, (x, y))
-        
-        self.game.stuff_event(txt.on_place, (280,450))
-        self.game.stuff_event(msgbox.on_goto, (300,40))
-        self._event_finish()
 
     def on_says(self, text, action="portrait", sfx=-1, block=True, modal=True, font=None, background="msgbox", size=None, position=POSITION_BOTTOM):
         """ A queuing function. Display a speech bubble with text and wait for player to close it.
@@ -1921,7 +1876,7 @@ class Actor(object):
         """
         if logging: log.info("Actor %s says: %s"%(self.name, text))
         if self.game.text:
-            print("%s says \"%s\""%(self.name, text)
+            print("%s says \"%s\""%(self.name, text))
         if self.game.testing: 
             self._event_finish()
             return
@@ -2920,7 +2875,7 @@ class Camera(object):
         if game.scene.music_fname == FADEOUT:
             self.game.mixer._music_fade_out()
         elif game.scene.music_fname:
-            print("playing music")
+            log.info("playing music {}".format(game.scene.music_fname))
             self.game.mixer._music_play(game.scene.music_fname)
         if game.scene.ambient_fname:
             self._ambient_sound = self.game.mixer._sfx_play(game.scene.ambient_fname, loops=-1)
@@ -3540,19 +3495,18 @@ class Game(object):
                 if not i.collide(x,y) and i._on_mouse_leave:
 #                    if self.mouse_mode == MOUSE_USE: i._tint = None
                     i._on_mouse_leave(x, y, button, modifiers)
-                if i is not None and i is not self.player and i.collide(x,y) and (i.allow_interact or i.allow_use or i.allow_look):
-                    if isinstance(i, Portal) and self.mouse_mode != MOUSE_USE:
-                        self.mouse_cursor = MOUSE_LEFT if i._x<512 else MOUSE_RIGHT
-                    elif self.mouse_mode == MOUSE_LOOK:
-                        self.mouse_cursor = MOUSE_CROSSHAIR #MOUSE_EYES
-                    elif self.mouse_mode != MOUSE_USE:
-                        self.mouse_cursor = MOUSE_CROSSHAIR
- #                   elif self.mouse_mode == MOUSE_USE: #tint object
- #                       i._tint = (255,200,200)
-                    t = i.name if i.display_text == None else i.display_text                    
-                    self.info(t, i.nx,i.ny)
-#                   self.text_image = self.font.render(i.name, True, self.text_colour)
-                    return
+                if i is not None and i.collide(x,y) and (i.allow_interact or i.allow_use or i.allow_look):
+                    #if (i == self.player and self.mouse_mode == MOUSE_USE) or (i != self.player):
+                    if True:
+                        if isinstance(i, Portal) and self.mouse_mode != MOUSE_USE:
+                            self.mouse_cursor = MOUSE_LEFT if i._x<512 else MOUSE_RIGHT
+                        elif self.mouse_mode == MOUSE_LOOK:
+                            self.mouse_cursor = MOUSE_CROSSHAIR #MOUSE_EYES
+                        elif self.mouse_mode != MOUSE_USE:
+                            self.mouse_cursor = MOUSE_CROSSHAIR
+                        t = i.name if i.display_text == None else i.display_text                    
+                        self.info(t, i.nx,i.ny)
+                        return
     
 
 
