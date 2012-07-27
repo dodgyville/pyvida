@@ -2182,7 +2182,9 @@ class Emitter(Item):
         self.size_end = size_end
         self.alpha_start, self.alpha_end = alpha_start, alpha_end
         self.random_index = random_index #should each particle start mid-action?
-        self.spawn = Rect(0,0,0,0) #size of spawning area (only w,h used)
+        self._solid_area = Rect(0,0,0,0) #used for the spawn area
+        
+#        self.spawn = Rect(0,0,0,0) #size of spawning area (only w,h used)
 
     @property
     def summary(self):
@@ -2200,7 +2202,7 @@ class Emitter(Item):
     def _add_particles(self, num=1):
         for x in xrange(0,num):
             d = randint(self.direction-float(self.fov/2), self.direction+float(self.fov/2))
-            self.particles.append(Particle(self.x + randint(0, self.spawn.w), self.y + randint(0, self.spawn.h), self._ax, self._ay, self.speed, d))
+            self.particles.append(Particle(self.x + randint(0, self._solid_area.w), self.y + randint(0, self._solid_area.h), self._ax, self._ay, self.speed, d))
             p = self.particles[-1]
             p.index = randint(0, self.frames)
             if self.random_index and self.action:
@@ -2247,7 +2249,7 @@ class Emitter(Item):
         p.index +=  1
         p.action_index += 1
         if p.index >= self.frames: #reset
-            p.x, p.y = self.x+ randint(0, self.spawn.w), self.y + randint(0, self.spawn.h)
+            p.x, p.y = self.x+ randint(0, self._solid_area.w), self.y + randint(0, self._solid_area.h)
             p.index = 0
             p.hidden = False
             if p.terminate == True:
