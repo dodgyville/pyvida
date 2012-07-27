@@ -2007,6 +2007,8 @@ class Actor(object):
             
             opt = self.game.add(Text("opt%s"%i, (100,oy2), (840,180), q, wrap=660, **kwargs) , False, ModalItem)
             def close_modal_then_callback(game, menuItem, player): #close the modal ask box and then run the callback
+                if game.testing:
+                    log.info("Player selects \"%s\""%menuItem.text)
                 remember = (self.name, menuItem.question, menuItem.text)
                 if remember not in game._selected_options and menuItem.callback: game._selected_options.append(remember)
                 elements = [x.name for x in modals] #["msgbox", "txt", "ok", "portrait"]
@@ -4768,48 +4770,7 @@ class Game(object):
             callback(self.game, txt)
             return
         return
-        
-        self.on_says(args[0])
-        def collide_never(x,y): #for asks, most modals can't be clicked, only the txt modelitam options can.
-            return False
-
-        for m in self.game.modals[-4:]: #for the new says elements, allow clicking on voice options
-            if m.name != "ok":
-                m.collide = collide_never
-            if m.name == "msgbox":
-                msgbox = m
-  
-        if self.game.testing:
-            next_step = self.game.tests.pop(0)
-#            for q,fn in args[1:]:
-#                if q in next_step:
-#                    fn(self.game, self, self.game.player)
-#                    self._event_finish()
-#                    return
-#            if logging: log.error("Unable to select %s option in on_ask '%s'"%(next_step, args[0]))
-#            return
-                    
-        for i, qfn in enumerate(args[1:]): #add the response options
-            q, fn = qfn
-            opt = self.game.add(Text("opt%s"%i, (100,-80), (840,180), q, wrap=660) , False, ModalItem)
-            def close_modal_then_callback(game, menuItem, player): #close the modal ask box and then run the callback
-                elements = ["msgbox", "txt", "ok", "portrait"]
-                elements.extend(menuItem.msgbox.options)
-                for i in elements:
-                    if game.items[i] in game.modals: game.modals.remove(game.items[i])
-                menuItem.callback(game, self, player)
-                self._event_finish()
-
-            opt.callback = fn
-            opt.interact = close_modal_then_callback
-            opt._on_mouse_move = opt._on_mouse_move_utility #switch on mouse over change
-            opt._on_mouse_leave = opt._on_mouse_leave_utility #switch on mouse over change
-            opt.collide = opt._collide #switch on mouse over box
-            opt.msgbox = msgbox
-            msgbox.options.append(opt.name)
-            self.game.stuff_event(opt.on_place, (250,90+i*40))
-
-        
+                
     def on_set_menu(self, *args):
         """ add the items in args to the menu """
         args = list(args)
