@@ -2991,17 +2991,28 @@ class Settings(object):
         self.allow_internet_debug = True #send profiling reports home
         
         self.fullscreen = True
+        self.show_portals = False
         self.textspeed = NORMAL
-        
-        self.extras_unlocked = False
-        self.undies_unlocked = True #can player toggle uniform?
-        self.commentary = False #is director's commentary on?
-        self.undies_only = False #will minogue play entire game in undies?
-        self.bfj_highscore = 1000 #pejazzled highscore
-        
+                
         self.invert_mouse = False #for lefties
         self.language = "en"
 
+    def save(self, save_dir):
+        """ save the current game settings """
+        fname = os.path.join(save_dir, "game.settings")
+        with open(fname, "w") as f:
+           pickle.dump(self, f)
+
+    def load(self, save_dir):
+        """ load the current game settings """
+        fname = os.path.join(save_dir, "game.settings")
+        try:
+            with open(fname, "r") as f:
+               data = pickle.load(f)
+            return data
+        except: #if any problems, use default settings
+            log.warning("Unable to load settings from %s, using defaults"%fname)
+            return self 
 
 EDIT_CLICKABLE = "clickable_area"
 EDIT_SOLID = "solid_area"
