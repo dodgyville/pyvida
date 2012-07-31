@@ -231,11 +231,12 @@ class Astar(object):
         self.available_actions = available_actions
         self.nodes = nodes #a list of nodes
         print
-        print nodes
+        print "initial nodes",nodes
         self.nodes.extend(self.convert_solids_to_nodes())
         self.nodes.extend(self.convert_walkarea_to_nodes())
+        self.nodes.extend(self.square_nodes())
         self.nodes = self.clean_nodes(self.nodes)
-        print(self.nodes)
+        print("all nodes", self.nodes)
 
     def convert_solids_to_nodes(self):
         """ inflate the rectangles and add them to a list of nodes """
@@ -249,12 +250,23 @@ class Astar(object):
     def convert_walkarea_to_nodes(self):
         """ deflate the walkarea and add its points to a list of nodes """
         if self.walkarea:
-           print "w"
-           print self.walkarea.vertexarray
-           print self.walkarea.astar_points()
-           print
+           print "walkarea points",self.walkarea.astar_points()
         nodes = self.walkarea.astar_points() if self.walkarea else []
         return nodes
+
+    def square_nodes(self, nodes=None):
+        """ Create nodes at right angles for other nodes """
+        squared_nodes = []
+        nodes = nodes if nodes else self.nodes
+        for node in nodes:
+            for node2 in nodes:
+                if node != node2:
+                    n1 = (node[0], node2[1])
+                    n2 = (node2[0], node[1])
+                    if n1 not in squared_nodes: squared_nodes.append(n1)
+                    if n2 not in squared_nodes: squared_nodes.append(n2)
+        print "square",squared_nodes
+        return squared_nodes
 
     def clean_nodes(self, raw_nodes):
         """ Return a list of nodes that only exist inside the walkarea """
@@ -297,7 +309,7 @@ class Astar(object):
                             break
                         w1 = w2
                     if line_seg_intersect(node, current, w2, w0): append_node = False
-                if append_node == True: nodes.append(node)
+                if append_node == True and node not in nodes: nodes.append(node)
         return nodes
 
     def dist_between(self, current, neighbour):
@@ -373,20 +385,20 @@ class TestAstarBasic(unittest.TestCase):
 
     def test_neighbour_nodes(self):
         nodes = self.astar.neighbour_nodes((0,0))
-        self.assertEqual(nodes, [(50, 0)])
+        self.assertEqual(nodes, [(50, 0), (0, 100), (0, 70), (70, 0), (100, 0)])
 
         nodes = self.astar.neighbour_nodes((50,0))
-        self.assertEqual(nodes, [(0,0), (50, 100)])
+        self.assertEqual(nodes, [(0, 0), (50, 100), (70, 0), (100, 0), (50, 70)])
 
         nodes = self.astar.neighbour_nodes((50,100))
-        self.assertEqual(nodes, [(50, 0), (100,100)])
+        self.assertEqual(nodes, [(50, 0), (100, 100), (0, 100), (50, 70), (70, 100)])
 
         nodes = self.astar.neighbour_nodes((100,100))
-        self.assertEqual(nodes, [(50, 100)])
+        self.assertEqual(nodes, [(50, 100), (0, 100), (100, 0), (70, 100), (100, 70)])
 
     def test_basic(self):
         path = self.astar.astar((0,0), (100, 100))
-        self.assertEquals(path, [(0,0), (50,0),(50,100), (100,100)])
+        self.assertEquals(path, [(0,0), (70,0),(70,100), (100,100)])
 
     def test_basic2(self):
         path = self.astar.astar((0,0), (50, 50))
@@ -402,24 +414,21 @@ class TestAstarWalkarea(unittest.TestCase):
             "up": Action("up", [(0,-4)]),
             "down": Action("down", [(0,2)]),
             }
-        nodes = [
-            (0,0), (50,0), (50,100), (70,70), (100,100),
-        ]
-        walkarea = Polygon([(-10, -10),(140,-10),(140,40),(160,40),(160,-10),(210,-10),(210,110),(160,110),(160,60),(140,60),(140,110),(-10,110)])
-        self.astar = Astar("map1", [], walkarea, actions, nodes=nodes)
+        walkarea = Polygon([(-10, -10),(140,-10),(140,40),(160,45),(160,-10),(210,-10),(210,110),(160,110),(165,62),(140,60),(140,110),(-10,110)])
+        self.astar = Astar("map1", [], walkarea, actions)
 
     def test_neighbour_nodes(self):
         nodes = self.astar.neighbour_nodes((0,0))
-        self.assertEqual(nodes, [(50, 0), (130,0), (0,100)])
+        self.assertEqual(nodes, [(130, 0), (0, 100), (0, 47), (0, 57), (0, 52), (0, 49)])
 
         nodes = self.astar.neighbour_nodes((50,0))
-        self.assertEqual(nodes, [(0,0), (50, 100), (130, 0)])
+        self.assertEqual(nodes, [(0,0), (130, 0)])
 
         nodes = self.astar.neighbour_nodes((50,100))
-        self.assertEqual(nodes, [(50, 0), (100,100), (130,100), (0,100)])
+        self.assertEqual(nodes, [(130,100), (0,100)])
 
         nodes = self.astar.neighbour_nodes((100,100))
-        self.assertEqual(nodes, [(50, 100), (130,100), (0,100)])
+        self.assertEqual(nodes, [(130,100), (0,100)])
 
     def test_basic(self):
         path = self.astar.astar((0,0), (100, 100))
@@ -427,7 +436,11 @@ class TestAstarWalkarea(unittest.TestCase):
 
     def test_basic2(self):
         path = self.astar.astar((0,0), (50, 50))
-        self.assertEquals(path, [(0,0), (50,0),(50,50)])
+        self.assertEquals(path, [(130, 0), (0, 100), (0, 47), (0, 57), (0, 52), (0, 49)])
+
+    def test_choke(self)
+        path = self.astar.astar((0,0), (200, 0))
+        self.assertEquals(path, [(0, 0), (0, 47), (200, 47), (200, 0)])
 
 
 if __name__ == "__main__":
