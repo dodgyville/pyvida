@@ -438,7 +438,7 @@ class TestAstarWalkarea(unittest.TestCase):
         path = self.astar.astar((0,0), (50, 50))
         self.assertEquals(path, [(130, 0), (0, 100), (0, 47), (0, 57), (0, 52), (0, 49)])
 
-    def test_choke(self)
+    def test_choke(self):
         path = self.astar.astar((0,0), (200, 0))
         self.assertEquals(path, [(0, 0), (0, 47), (200, 47), (200, 0)])
 

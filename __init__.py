@@ -38,7 +38,7 @@ from random import choice, randint
 
 import pygame
 from pygame.locals import *#QUIT, K_ESCAPE
-from astar import AStar
+from astar import Astar
 import euclid as eu
 
 VERSION_MAJOR = 1 #major incompatibilities
@@ -1665,7 +1665,9 @@ class Actor(object):
                     nodes.extend(points)
  
 #        nodes.extend(n) #calculate right angle nodes
-        p = AStar((self.x, self.y), (x, y), nodes, solids, walkarea)
+        a = Astar("map1", solids, walkarea, [])
+        p = a.astar((self.x, self.y), (x,y))
+#        p = Astar((self.x, self.y), (x, y), nodes, solids, walkarea)
 #        print(self.name, self.x,self.y,"to",x,y,"points",nodes,"solids",solids,"path",p)
 #        return
         if p == False:
@@ -1778,9 +1780,9 @@ class Actor(object):
             if len(walk_actions) <= 1: #need more than two actions to trigger astar
                 self._goto_direct(x,y, walk_actions)
             else:
-#                self._goto_direct(x,y, walk_actions)
-                walkareas = self.scene.walkareas if self.scene and ignore==False else None
-                self._goto_astar(x,y, walk_actions, walkareas) #XXX disabled astar for the moment
+                self._goto_direct(x,y, walk_actions)
+#                walkareas = self.scene.walkareas if self.scene and ignore==False else None
+ #               self._goto_astar(x,y, walk_actions, walkareas) #XXX disabled astar for the moment
 
     def forget(self, fact):
         """ A pseudo-queuing function. Forget a fact from the list of facts 
