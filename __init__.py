@@ -310,11 +310,16 @@ def look(): pass #stub
 
 def has(): pass #stub
 
-def location(): pass #stub
-
 def select(): pass #stub
 
 def toggle(): pass #stub 
+
+def assertLocation(): pass #stub
+
+def assertVicinty(): pass #stub
+
+def location(): pass #stub #XXX deprecated
+
 
 def add_object_to_scene_analysis(game, obj): #profiling: watching a scene closely
     scene = game.analyse_scene
