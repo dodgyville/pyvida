@@ -351,6 +351,10 @@ def process_step(game, step):
     fail = False #walkthrough runner can force fail if conditions are bad
     function_name = step[0].__name__ 
     actor = step[1]
+    trunk_step = True #is step part of the "official" walkthrough for the game
+    if actor[0] == "*": #a non-trunk step (ie probably for testing, not part of walkthrough)
+        actor = actor[1:]
+        trunk_step = False
     actee = None
     game.mouse_mode = MOUSE_LOOK
     if game.scene and game.errors < 2 and function_name != "location": #increment time spent in current scene
@@ -788,6 +792,7 @@ class Actor(object):
         
         self._alpha = 1.0
         self._alpha_target = 1.0
+        self._parent = None #attach object to a parent
         
         self.font_speech = None #use default font (from game)
         self.font_speech_size = None #use default font size (from game)
@@ -1219,6 +1224,8 @@ class Actor(object):
         if self.game and self.game.editing and self.game.editing_mode == EDITING_DELTA: return
         
         l = len(self._motion_queue)
+        if self._parent:
+            self.x, self.y = self._parent.x, self._parent.y
         
         if l == 0 and self.action and self.action.deltas: #use action delta
             count = len(self.action.deltas)
@@ -1561,6 +1568,15 @@ class Actor(object):
     
     def on_relocate(self, scene, destination=None): #actor.relocate
         self._relocate(scene, destination)
+        #note: self._event_finish handled inside _relocate
+    
+    def on_reparent(self, obj):
+        if not self.game: return
+        parent = self.game.actors.get(obj, self.game.items.get(obj, None)) if type(obj) == str else obj
+        if parent == None:
+            log.error("Unable to reparent %s to %s"%(self.name, obj))
+        self._parent = parent
+        self._event_finish(block=False)
     
     def resize(self, start, end, duration):
         """ animate resizing of character """
@@ -2240,8 +2256,14 @@ class Emitter(Item):
         self._event_finish(block=False)
     
     
-    def on_fastforward(self, frames=0):
+    def on_fastforward(self, frames=0, unhide=False):
         """ run the particle simulation for x frames """
+        if unhide:
+            for p in self.particles:        
+                p.hidden = False
+        for f in xrange(0, frames):
+            for p in self.particles:        
+                self._update_particle(1, p)                
         self._event_finish(block=False)
     
     def _update_particle(self, dt, p):
@@ -2262,12 +2284,9 @@ class Emitter(Item):
     def _update(self, dt): #emitter.update
         Item._update(self, dt)
         for p in self.particles:
-#            print(p.action_index)
             self._update_particle(dt, p)
- #       print("--")
                     
     def draw(self): #emitter.draw
-#        img = self._image()
         if not self.action: 
             if logging: log.error("Emitter %s has no actions"%(self.name))
             return
@@ -2279,9 +2298,6 @@ class Emitter(Item):
             if img and not p.hidden: 
                 self._rect.union_ip(self._draw_image(img, (p.x-p.ax, p.y-p.ay), self._tint, alpha))
     
-#        if self.img:
- #           r = self.img.get_rect().move(self.x, self.y)    
-
 
 #wrapline courtesy http://www.pygame.org/wiki/TextWrapping 
 def truncline(text, font, maxwidth):
@@ -3744,7 +3760,10 @@ class Game(object):
                 def e_load_state(game, inp):
                     state = inp.value
                     if state=="": return
-                    self.load_state(game.scene, state)
+                    try:
+                        self.load_state(game.scene, state)
+                    except:
+                        log.error("Exception in state %s for scene %s"%(state, game.scene.name))
                     game.editing = None
                 game.user_input("What is the name of this %s state to load (no directory or .py)?"%self.scene.name, e_load_state)
 
@@ -3804,6 +3823,8 @@ class Game(object):
                                 f.write('    %s.restand((%i, %i))\n'%(slug, obj._sx, obj._sy))
                                 f.write('    %s.retalk((%i, %i))\n'%(slug, obj._nx, obj._ny))
                                 f.write('    %s.relocate(scene, (%i, %i))\n'%(slug, obj.x, obj.y))
+                                if obj._parent:
+                                    f.write('    %s.reparent(\"%s\")\n'%(slug, obj._parent.name))
                                 if obj.action and obj.action.name != "idle":
                                     f.write('    %s.do("%s")\n'%(slug, obj.action.name))
                                 if isinstance(obj, Portal): #special portal details
@@ -4646,7 +4667,6 @@ class Game(object):
         setattr(self, attr, val)
         self._event_finish()
         
-
     def on_relocate(self, obj, scene, destination):
         if type(obj) == str: obj = self.actors[obj] #XXX should check items, and fail gracefully too
         obj._relocate(scene, destination)
