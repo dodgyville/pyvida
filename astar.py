@@ -23,6 +23,11 @@ class Rect(object):
         h = self.h + dy
         return Rect(x,y,w,h)
 
+    def collidepoint(self, pt):
+        x,y=pt
+        c = True if self.x <= x <= self.x + self.w and self.y <= y <= self.y + self.h else False
+        return c
+
     @property
     def topleft(self):
         return (self.x, self.y)
@@ -93,6 +98,7 @@ def have_same_signs(a, b):
     return ((int(a) ^ int(b)) >= 0)
 
 def line_seg_intersect(line1point1, line1point2, line2point1, line2point2):
+    """ do these two lines intersect """
     x1 = line1point1[0]
     y1 = line1point1[1]
     x2 = line1point2[0]
@@ -218,25 +224,29 @@ def detect_intersect(start, end, r):
     return False if len(set(signs)) == 1 else True #if any signs change, then it is an intersect
 
 class Astar(object):
-    def __init__(self, name, solids, walkarea, available_actions, nodes=[]):
+    def __init__(self, name, solids, walkarea, available_steps, nodes=[]):
         """
         solids: a list of Rects where path planning can not go through
         walkarea: a pyvida Polygon encompassing the entire walk area
-        available_actions: WIP
+        available_steps: the deltas a character can move from a node
         nodes: a raw list of nodes 
+
+        Main usage:
+        Create an Astar object relevent for the scene and character
+        Use Astar.animate to move character to nearest goal, and then repeat
+        until character is at goal. Use action.action.deltas to displace animation frames
+        around the new position.
         """
         self.name = name
         self.solids = solids
         self.walkarea = walkarea 
-        self.available_actions = available_actions
+        self.available_steps = available_steps #eg [(5,0), (-5,0), (0,-4), (1,1)]
         self.nodes = nodes #a list of nodes
-        print
-        print "initial nodes",nodes
         self.nodes.extend(self.convert_solids_to_nodes())
         self.nodes.extend(self.convert_walkarea_to_nodes())
         self.nodes.extend(self.square_nodes())
         self.nodes = self.clean_nodes(self.nodes)
-        print("all nodes", self.nodes)
+        self.TURN_PENALTY = 3
 
     def convert_solids_to_nodes(self):
         """ inflate the rectangles and add them to a list of nodes """
@@ -265,7 +275,6 @@ class Astar(object):
                     n2 = (node2[0], node[1])
                     if n1 not in squared_nodes: squared_nodes.append(n1)
                     if n2 not in squared_nodes: squared_nodes.append(n2)
-        print "square",squared_nodes
         return squared_nodes
 
     def clean_nodes(self, raw_nodes):
@@ -298,7 +307,10 @@ class Astar(object):
         #if the line between source and target intersects with any segment of 
         #the walkarea, then disallow, since we want to stay inside the walkarea
         nodes = []
+        max_nodes = 4
         for node in self.nodes:
+            max_nodes -= 1
+            if max_nodes == 0: continue
             if node != current and (node[0] == current[0] or node[1] == current[1]):
                 append_node = True
                 if self.walkarea:
@@ -312,13 +324,27 @@ class Astar(object):
                 if append_node == True and node not in nodes: nodes.append(node)
         return nodes
 
+    def step_nodes(self, current):
+        """ return nodes based on a character walking """
+        nodes = []
+        for step in self.available_steps:
+            try:
+                node = (current[0] + step[0], current[1] + step[1])
+            except:
+                print(current, step)
+                import pdb; pdb.set_trace()
+            nodes.append(node)
+        return self.clean_nodes(nodes)
+
     def dist_between(self, current, neighbour):
         a = current[0] - neighbour[0]
         b = current[1] - neighbour[1]
         return math.sqrt(a**2 + b**2)
 
-    def astar(self, start, goal):
-        if goal not in self.nodes: self.nodes.append(goal)
+    def astar(self, start, goal, distance_neighbour=True):
+        if goal not in self.nodes:
+            self.nodes.append(goal)
+            self.nodes = self.square_nodes()
         closedset = [] # set of nodes already evaluated
         openset = [start,]  # set of nodes to be evaluated, initially containing the start node
 
@@ -327,27 +353,68 @@ class Astar(object):
     
         # estimated total cost from start to goal through y
         f_score = {start: g_score[start] + self.heuristic_cost_estimate(start, goal)}
+
+        dx,dy=5,3 #how close do we have to hit the goal?
+        goal_rect = Rect(goal[0]-dx, goal[1]-dy, dx*2,dy*2)
+        current = previous = None
     
         while openset:
             f_score_sorted = sorted(f_score.iteritems(), key=operator.itemgetter(1))
+            previous = current
+            previous = None #disable turn based penalty
             current = f_score_sorted[0][0]
-            if current == goal:
-                return self.reconstruct_path(came_from, goal)
+            if goal_rect.collidepoint(current):
+                path = self.reconstruct_path(came_from, current) #return path to current, not goal as current is close enough
+                if current != goal: path.append(goal) #force final step to be the exact goal
+                return path
             #if current not in openset: 
             openset.remove(current)
             del f_score[current]
 
             closedset.append(current)
-            for neighbour in self.neighbour_nodes(current):
+            neighbour_fn = self.neighbour_nodes if distance_neighbour else self.step_nodes
+            for neighbour in neighbour_fn(current):
                 if neighbour in closedset:
                     continue
                 tentative_g_score = g_score[current] + self.dist_between(current, neighbour)
+                if previous: 
+                    x1,y1 = previous
+                    x2,y2 = current
+                    x3,y3 = neighbour
+                    g1 = float(y2-y1)/((x2-x1)|1)
+                    g2 = float(y3-y2)/((x3-x2)|1)
+                    d1 = g1/(abs(g1) or 1)
+                    d2 = g2/(abs(g2) or 1)
+                    if previous and d1 != d2:
+                        f_score[neighbour] += self.TURN_PENALTY
                 if neighbour not in openset or tentative_g_score < g_score[neighbour]:
                      openset.append(neighbour)
                      came_from[neighbour] = current
                      g_score[neighbour] = tentative_g_score
                      f_score[neighbour] = g_score[neighbour] + self.heuristic_cost_estimate(neighbour, goal)
         return False
+
+    def animated(self, start, goal):
+        """ Get some animation steps that help us get to the goal """
+        path = self.astar(start, goal)
+        if not path: return False #unable to find path
+        shortterm_goal = path[1]
+        print
+        print("full path", path)
+        steps = self.astar(start, shortterm_goal, False)
+        turns = 0
+        for i, s in enumerate(steps[1:-1]):
+            previous, current, neighbour = steps[i-1], steps[i], steps[i+1]
+            x1,y1 = previous
+            x2,y2 = current
+            x3,y3 = neighbour
+            g1 = float(y2-y1)/((x2-x1)|1)
+            g2 = float(y3-y2)/((x3-x2)|1)
+            d1 = g1/(abs(g1) or 1)
+            d2 = g2/(abs(g2) or 1)
+            if d1 != d2: turns += 1
+        print("s",self.TURN_PENALTY, turns, len(steps), steps)
+        return steps
 
 class TestAstarBasic(unittest.TestCase):
     def setUp(self):
@@ -404,18 +471,43 @@ class TestAstarBasic(unittest.TestCase):
         path = self.astar.astar((0,0), (50, 50))
         self.assertEquals(path, [(0,0), (50,0),(50,50)])
 
+class TestAstarAnim(unittest.TestCase):
+    def setUp(self):
+        walkarea = Polygon([(-10, -10),(140,-10),(140,110),(-10,110)])
+        steps = [(5,0), (-5,0), (0,-3), (0,3)]
+        self.astar = Astar("map1", [], walkarea, steps)
 
+
+    def test_step_nodes(self):
+        nodes = self.astar.step_nodes((20,20))
+        self.assertEquals(nodes, [(25, 20), (15, 20), (20, 17), (20, 23)])
+
+    def test_basic(self):
+        path = self.astar.animated((0,0), (50, 50))
+        #self.assertEquals(path, [(130, 0), (0, 100), (0, 47), (0, 57), (0, 52), (0, 49)])
+
+    def test_turns(self):
+        self.astar.TURN_PENALTY = 0
+        path = self.astar.animated((0,0), (50, 50))
+        self.astar.TURN_PENALTY = 3
+        path = self.astar.animated((0,0), (50, 50))
+        self.astar.TURN_PENALTY = 6
+        path = self.astar.animated((0,0), (50, 50))
+        self.astar.TURN_PENALTY = 50
+        path = self.astar.animated((0,0), (50, 50))
+        self.astar.TURN_PENALTY = -2
+        path = self.astar.animated((0,0), (50, 50))
+        #self.assertEquals(path, [(130, 0), (0, 100), (0, 47), (0, 57), (0, 52), (0, 49)])
+
+    def test_basic(self):
+        path = self.astar.animated((0,0), (50, 50))
+        #self.assertEquals(path, [(130, 0), (0, 100), (0, 47), (0, 57), (0, 52), (0, 49)])
 
 class TestAstarWalkarea(unittest.TestCase):
     def setUp(self):
-        actions = {
-            "left": Action("left", [(-5, 0), (-4, 0), (-2, 0)]),
-            "right": Action("right", [(5, 0), (4, 0), (2, 0)]),
-            "up": Action("up", [(0,-4)]),
-            "down": Action("down", [(0,2)]),
-            }
+        steps = [(5,0), (-5,0), (0,-3), (0,3)]
         walkarea = Polygon([(-10, -10),(140,-10),(140,40),(160,45),(160,-10),(210,-10),(210,110),(160,110),(165,62),(140,60),(140,110),(-10,110)])
-        self.astar = Astar("map1", [], walkarea, actions)
+        self.astar = Astar("map1", [], walkarea, steps)
 
     def test_neighbour_nodes(self):
         nodes = self.astar.neighbour_nodes((0,0))
@@ -441,6 +533,14 @@ class TestAstarWalkarea(unittest.TestCase):
     def test_choke(self):
         path = self.astar.astar((0,0), (200, 0))
         self.assertEquals(path, [(0, 0), (0, 47), (200, 47), (200, 0)])
+
+    def test_animate(self):
+        path = self.astar.astar((0,0), (200, 0))
+        self.assertEquals(path, [(0, 0), (0, 47), (200, 47), (200, 0)])
+        #so animated target should be (0,47)
+        steps = self.astar.animated((0,0), (200, 0))
+        print(steps)
+        self.assertEquals(steps, [(0, 0), (0, 3), (0, 6), (0, 9), (0, 12), (0, 15), (0, 18), (0, 21), (0, 24), (0, 27), (0, 30), (0, 33), (0, 36), (0, 39), (0, 42), (0, 45), (0, 47)])
 
 
 if __name__ == "__main__":
