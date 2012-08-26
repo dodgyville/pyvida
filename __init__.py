@@ -55,7 +55,7 @@ except ImportError:
 
 DEBUG_ASTAR = False
 
-ENABLE_EDITOR = True
+ENABLE_EDITOR = True #default for editor
 ENABLE_PROFILING = True
 ENABLE_LOGGING = True
 
@@ -373,15 +373,15 @@ def process_step(game, step):
     if function_name == "interact":
         if logging: log.info("TEST SUITE: %s%s. %s with %s"%(game.steps_complete, label, function_name, actor))
         game.mouse_mode = MOUSE_INTERACT
-        if game.output_walkthrough: print("Click on %s."%(actor))
+        if trunk_step and game.output_walkthrough: print("Click on \"%s\""%(actor))
     elif function_name == "look":
         if logging: log.info("TEST SUITE: %s%s. %s at %s"%(game.steps_complete, label, function_name, actor))
         game.mouse_mode = MOUSE_LOOK
-        if game.output_walkthrough: print("Look at %s."%(actor))
+        if trunk_step and game.output_walkthrough: print("Look at %s."%(actor))
     elif function_name == "use": 
         actee = step[2] 
         if logging: log.info("TEST SUITE: %s%s. %s %s on %s"%(game.steps_complete, label, function_name, actor, actee))
-        if game.output_walkthrough: print("Use %s on %s."%(actee, actor))
+        if trunk_step and game.output_walkthrough: print("Use %s on %s."%(actee, actor))
         game.mouse_mode = MOUSE_USE
         if game.player and actee not in game.player.inventory:
             if logging: log.warning("Item %s not in player's inventory"%actee)
@@ -399,10 +399,12 @@ def process_step(game, step):
         scene_path = []
         if game.scene:
             scene = scene_search(game.scene, actor.upper())
-            if game.output_walkthrough and scene: print("Goto %s."%(scene.name))
+#            if game.output_walkthrough and scene: print("Goto %s."%(scene.name))
             if scene != False:
                 scene._add(game.player)
                 if logging: log.info("TEST SUITE: %s. Player goes %s"%(game.steps_complete, [x.name for x in scene_path]))
+                name = scene.display_text if scene.display_text else scene.name
+                if trunk_step and game.output_walkthrough: print("Go to %s."%(name))
                 game.camera.scene(scene)
             else:
                 if logging: log.error("Unable to get player from scene %s to scene %s"%(game.scene.name, actor))
@@ -410,12 +412,12 @@ def process_step(game, step):
             if logging: log.error("Going from no scene to scene %s"%actor)
         return
     elif function_name == "location": #check current location matches scene "actor"
-        if game.output_walkthrough: print("Player should be at %s."%(actor))
+        if trunk_step and game.output_walkthrough: print("Player should be at %s."%(actor))
         if game.scene.name != actor:
             if logging: log.error("Current scene should be %s, but is currently %s"%(actor, game.scene.name))
         return
     elif function_name == "has": #check the player has item in inventory
-        if game.output_walkthrough: print("Player should have %s."%(actor))
+        if trunk_step and game.output_walkthrough: print("Player should have %s."%(actor))
         if not game.player.has(actor):
             if logging: log.error("Player should have %s in inventory, but does not."%(actor))
         return
@@ -2002,7 +2004,7 @@ class Actor(object):
             msgbox = self.game.add(ModalItem("msgbox", pos=(1024,768)).smart(self.game))
             msgbox.actor = self
             modals = [msgbox]
-        if self.game and self.game.output_walkthrough: print("%s asks \"%s\"."%(self.name, args[0]))
+        if self.game and self.game.output_walkthrough: print("%s says \"%s\"."%(self.name, args[0]))
         
         for m in modals: #for the new says elements, allow clicking on voice options
             if m.name != "ok":
@@ -2616,7 +2618,7 @@ class Scene(object):
         self.music_fname = None
         self.ambient_fname = None        
         self.display_text = ""
-        self.description = "There is no description for this scene" #text for blind users
+        self.description = None #text for blind users
         self._on_mouse_move = None #if mouse is moving on this scene, do this call back
 
     def _event_finish(self, success=True, block=True):  #scene.event_finish
@@ -2890,7 +2892,10 @@ class Camera(object):
         if self._ambient_sound: self._ambient_sound.stop()
         if self.game.text:
             print("The view has changed to scene %s"%scene.name)
-            print(scene.description)
+            if scene.description:
+                print(scene.description)
+            else:
+                print("There is no description for this scene")
             print("You can see:")
             for i in scene.objects.values():
                 print(i.display_name)
@@ -3147,6 +3152,7 @@ class Game(object):
         
         #editor--
         self.debug_font = None
+        self.ENABLE_EDITOR = ENABLE_EDITOR
         self.enabled_editor = False
         self.editing_mode = EDITING_ACTOR
 #        self._editing_deltas = False #are we in the action editor
@@ -3631,37 +3637,38 @@ class Game(object):
                 return
         for i in self.menu:
             if key == i.key: i.trigger_interact() #"bound to menu item"
-        if ENABLE_EDITOR and key == K_F1:
+        import pdb; pdb.set_trace()
+        if self.ENABLE_EDITOR and key == K_F1:
             self.toggle_editor()
-        elif ENABLE_EDITOR and key == K_F2: #allow set trace if not fullscreen
+        elif self.ENABLE_EDITOR and key == K_F2: #allow set trace if not fullscreen
             if not self.fullscreen: import pdb; pdb.set_trace()
-        elif ENABLE_EDITOR and key == K_F3: #kill an event if stuck in the event queue
+        elif self.ENABLE_EDITOR and key == K_F3: #kill an event if stuck in the event queue
             self._event_finish()      
-        elif ENABLE_EDITOR and key == K_F4:
+        elif self.ENABLE_EDITOR and key == K_F4:
             self.camera.scene("cdoors")
             self.player.relocate("cdoors", (500,400))
-        elif ENABLE_EDITOR and key == K_F5:
+        elif self.ENABLE_EDITOR and key == K_F5:
             from scripts.chapter11 import interact_Damien
             interact_Damien(self, self.actors["Damien"], self.player)
-        elif ENABLE_EDITOR and key == K_F6:
+        elif self.ENABLE_EDITOR and key == K_F6:
             from scripts.chapter7 import _goodbyeboy_cutscene
             _goodbyeboy_cutscene(self, None, self.player)
-        elif ENABLE_EDITOR and key == K_F7:
+        elif self.ENABLE_EDITOR and key == K_F7:
 #            self.player.gets(choice(self.items.values()))
             from scripts.chapter3 import _cutscene_battle
             _cutscene_battle(self, self.player)
             #self.camera.fade_out()
-        elif ENABLE_EDITOR and key == K_F8:
+        elif self.ENABLE_EDITOR and key == K_F8:
             self.camera.fade_in()
             from scripts.all_chapters import catapult_rat_cutscene
             catapult_rat_cutscene(self, self.actors["Disguised Rat"], self.player)
-        elif ENABLE_EDITOR and key == K_F9:
+        elif self.ENABLE_EDITOR and key == K_F9:
             from scripts.chapter10 import citadel_external
             for o in self.scenes["casteroid"].objects.values(): o.smart(self)
             citadel_external(self, self.player)
             self.camera.scene(self.player.scene)
  #           self.player.relocate("aqcleaners")
-        elif ENABLE_EDITOR and key == K_F10:
+        elif self.ENABLE_EDITOR and key == K_F10:
 #            for o in self.scenes["cguards"].objects.values(): o.smart(self)
             from scripts.chapter11 import blastoff
             self.player.relocate("cground",(150,500))
@@ -4291,6 +4298,7 @@ class Game(object):
         parser.add_option("-d", "--detailed <scene>", dest="analyse_scene", help="Print lots of info about one scene (best used with test runner)")
         parser.add_option("-r", "--random", action="store_true", dest="stresstest", help="Randomly deviate from walkthrough to stress test robustness of scripting")
         parser.add_option("-m", "--memory", action="store_true", dest="memory_save", help="Run game in low memory mode")
+        parser.add_option("-a", "--editor", action="store_true", dest="allow_editor", help="Enable editor via F1 key")
         parser.add_option("-e", "--exceptions", action="store_true", dest="allow_exceptions", help="Switch off exception catching.")
         parser.add_option("-w", "--walkthrough", action="store_true", dest="output_walkthrough", help="Print a human readable walkthrough of this game, based on test suites.")
 
@@ -4315,11 +4323,15 @@ class Game(object):
             self.text = True
         if options.memory_save == True: 
             self.memory_save = True
+        if options.allow_editor == True: 
+            print("Allowing editor mode via F1 key")
+            self.ENABLE_EDITOR = True
         if self.memory_save: print("Using low memory option")
         if options.analyse_characters: 
             print("Using analyse characters")
             self.analyse_characters = True
         if options.output_walkthrough:
+            print("Outputting walkthrough")
             self.output_walkthrough = True
         if options.artreactor: 
             t = date.today()
@@ -4381,7 +4393,7 @@ class Game(object):
         if self.settings:
             if pygame.mixer: pygame.mixer.music.set_volume(self.settings.music_volume)
 
-        if ENABLE_EDITOR: #editor enabled for this game instance
+        if self.ENABLE_EDITOR: #editor enabled for this game instance
             self._load_editor()
         
         if callback: callback(self)
@@ -4389,7 +4401,7 @@ class Game(object):
         while self.quit == False: #game.draw game.update
             self.loop += 1
             if not self.headless: pygame.time.delay(self.fps)
-            if ENABLE_EDITOR and self.loop%10 == 0: #if editor is available, watch code for changes
+            if self.ENABLE_EDITOR and self.loop%10 == 0: #if editor is available, watch code for changes
                 modified_modules = self.check_modules()
                 if modified_modules:
                     self.reload_modules()
