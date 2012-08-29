@@ -502,6 +502,18 @@ def blit_alpha(target, source, location, opacity):
 
 ##### generic helper functions ####
 
+def load_font(fname, size):
+    f = None
+    try:
+        f = Font(fname, 12)
+    except:
+        if logging: log.warning("Can't find local %s font, so defaulting to pyvida one"%fname)
+        this_dir, this_filename = os.path.split(__file__)
+        myf = os.path.join(this_dir, fname)
+        f = Font(myf, 12)
+    return f
+
+
 def slugify(txt):
     """ slugify a piece of text """
     txt = txt.replace(" ", "_")
@@ -605,7 +617,7 @@ class Action(object):
         #deltas
         self.delta_index = 0 #index to deltas
         self.deltas = None
-        self.avg_delta_x, self.avg_delta_y = 0,0 #for calculating astar
+        self.step_x, self.step_y = 0,0 #for calculating astar
         self.actor = actor
         if not instancemethod:
             self.fname = fname
@@ -724,7 +736,7 @@ class Action(object):
                 except ValueError:
                     if logging: log.warning("Unable to import all deltas %s"%line)
             tx, ty = tuple(sum(t) for t in zip(*self.deltas)) #sum of the x,y deltas
-            self.avg_delta_x, self.avg_delta_y = tx/len(self.deltas),ty/len(self.deltas) #for calculating astar        
+            self.step_x, self.step_y = tx/len(self.deltas),ty/len(self.deltas) #for calculating astar        
         else:
             if self.name not in ["idle", "portrait"]: log.debug("%s action %s has no delta, is stationary"%(self.actor.name, self.name))
             
@@ -1120,7 +1132,7 @@ class Actor(object):
             self.game.screen.blit(self.game.scene.background(), self._rect, self._rect)
         if self.game.editing == self:
             r = self._crosshair((255,0,0), (self.ax, self.ay))
-            self.game.screen.blit(self.game.scene.background(), r, r)
+            if self.game.scene.background(): self.game.screen.blit(self.game.scene.background(), r, r)
 #        if self._image:
  #           r = self._image.get_rect().move(self.x, self.y)    
   #          self.game.screen.blit(self._image, r)
@@ -1722,7 +1734,7 @@ class Actor(object):
         x,y = destination
         fuzz = 10
         if self.action:
-            dx,dy = abs(self.action.avg_delta_x/2)*self.scale, abs(self.action.avg_delta_y/2)*self.scale
+            dx,dy = abs(self.action.step_x/2)*self.scale, abs(self.action.step_y/2)*self.scale
         else:
             dx,dy= 0,0
 #        print("test %s, %s is near %s, %s (%s, %s)"%(self.x, self.y, x,y,dx,dy))
@@ -2406,11 +2418,7 @@ class Text(Actor):
         return self.clickable_area.collidepoint(x,y)
 
     def _generate_text(self, text, colour=(255,255,255)):
-        try:
-            self.font = Font(self.fname, self.size)
-        except:
-            self.font = None
-            if logging: log.error("text %s unable to load or initialise font %s"%(self.name, self.fname))
+        self.font = load_font(self.fname, self.size)
             
         if not self.font:
             img = Surface((10,10))
@@ -2466,10 +2474,7 @@ class MenuItem(Actor):
     def __init__(self, name="Untitled Menu Item", interact=None, spos=(None, None), hpos=(None, None), key=None, display_text=""): 
         Actor.__init__(self, name)
         self.interact = interact
-#        if key: 
         self.key = ord(key) if type(key)==str else key #bind menu item to a keyboard key
- #       else:
-  #          self.key = None
         self.x, self.y = spos
         self.in_x, self.in_y = spos #special in point reentry point
         if hpos == (None, None): hpos = (spos[0], -200) #default hide point is off top of screen
@@ -3379,6 +3384,11 @@ class Game(object):
                 if logging: log.warning("game.smart unable to guess link for %s"%pname)
         if type(player) == str: player = self.actors[player]
         if player: self.player = player
+        if not self.scene and len(self.scenes) == 1: 
+            scene = self.scenes.values()[0]
+            self.camera.scene(scene) #one room, assume default
+            if player:
+                player.relocate(scene, (300,600))
         if not running_headless: self.set_headless(False) #restore headless state
         self._event_finish(block=False)
         if draw_progress_bar: print("progress bar will be",self.progress_bar_count)
@@ -3637,7 +3647,6 @@ class Game(object):
                 return
         for i in self.menu:
             if key == i.key: i.trigger_interact() #"bound to menu item"
-        import pdb; pdb.set_trace()
         if self.ENABLE_EDITOR and key == K_F1:
             self.toggle_editor()
         elif self.ENABLE_EDITOR and key == K_F2: #allow set trace if not fullscreen
@@ -3761,12 +3770,8 @@ class Game(object):
             """ Load the ingame edit menu """
             #load debug font
             fname = "data/fonts/vera.ttf"
-            try:
-                self.debug_font = Font(fname, 12)
-            except:
-                self.debug_font = None
-                if logging: log.error("font %s unable to load or initialise for game"%fname)
-        
+            self.debug_font = load_font(fname, 12)
+                    
             #setup editor menu
             def editor_load(game, menuItem, player):
                 def e_load_state(game, inp):
@@ -4180,15 +4185,15 @@ class Game(object):
             #load menu for action editor
             x,y=50,10
             for i, btn in enumerate([
-                        ("e_action_prev", editor_action_prev, "p"),
-                        ("e_action_next", editor_action_next, "n"),
-                        ("e_action_reverse", editor_action_reverse, "r"),
-                        ("e_action_scale", editor_point, "c"),
-                        ("e_action_save", editor_action_save, "s"),
-                        ("e_action_delta", editor_action_delta, "s"),
-                        ("e_actions_close", editor_actions_close, "x")]):
-                txt,fn,k = btn
-                self.add(MenuItem(txt, fn, (x+i*40, y), (x+i*40,-50), k).smart(self))
+                        ("e_action_prev", editor_action_prev, "p", "previous action"),
+                        ("e_action_next", editor_action_next, "n", "next action"),
+                        ("e_action_reverse", editor_action_reverse, "r", "reverse frames"),
+                        ("e_action_scale", editor_point, "c", "scale action"),
+                        ("e_action_save", editor_action_save, "s", "save action"),
+                        ("e_action_delta", editor_action_delta, "d", "edit action deltas"),
+                        ("e_actions_close", editor_actions_close, "x", "close action editor")]):
+                txt,fn,k,display_text = btn
+                self.add(MenuItem(txt, fn, (x+i*40, y), (x+i*40,-50), k, display_text=display_text).smart(self))
 
             #load menu for delta editor
             x,y=50,10
@@ -4207,7 +4212,7 @@ class Game(object):
             self.add(MenuItem("e_prev", editor_prev, (210, 10), (210,-50), "[").smart(self))
             self.add(MenuItem("e_next", editor_next, (250, 10), (250,-50), "]").smart(self))
             self.add(MenuItem("e_walk", editor_walk, (290, 10), (290,-50), "w", display_text="scene walk area").smart(self))
-            self.add(MenuItem("e_portal", editor_portal, (330, 10), (330,-50), "p").smart(self))
+            self.add(MenuItem("e_portal", editor_portal, (330, 10), (330,-50), "p", display_text="add portal").smart(self))
             self.add(MenuItem("e_scene", editor_scene, (430, 10), (430,-50), "i", display_text="change scene").smart(self))
             self.add(MenuItem("e_step", editor_step, (470, 10), (470,-50), "n", display_text="next step").smart(self))
             self.add(MenuItem("e_jump", editor_jump, (510, 10), (510,-50), "j", display_text="jump to step").smart(self))
@@ -4245,7 +4250,7 @@ class Game(object):
             e.do("idle_on")
             e = self.add(MenuItem("e_object_allow_use", editor_toggle_use, (440, 45), (440,-50), v[0]).smart(self))            
             e.do("idle_on")
-            self.add(MenuItem("e_actions", editor_actions, (500, 45), (500,-50), v[0]).smart(self))            
+            self.add(MenuItem("e_actions", editor_actions, (500, 45), (500,-50), v[0], display_text="edit object actions").smart(self))            
             
             self.add(MenuItem("e_add_walkareapoint", editor_add_walkareapoint, (550, 45), (550,-50), v[0]).smart(self))            
 
@@ -4285,21 +4290,21 @@ class Game(object):
         
     def run(self, splash=None, callback=None, icon=None):
         parser = OptionParser()
+        parser.add_option("-a", "--alloweditor", action="store_true", dest="allow_editor", help="Enable editor via F1 key")
         parser.add_option("-c", "--contrast", action="store_true", dest="high_contrast", help="Play game in high contrast mode (for vision impaired players)", default=False)
-        parser.add_option("-t", "--text", action="store_true", dest="text", help="Play game in text mode (for players with disabilities who use text-to-speech output)", default=False)
-        parser.add_option("-f", "--fullscreen", action="store_true", dest="fullscreen", help="Play game in fullscreen mode", default=False)
-        parser.add_option("-p", "--profile", action="store_true", dest="profiling", help="Record player movements for testing", default=False)        
-        parser.add_option("-o", "--objects", action="store_true", dest="analyse_characters", help="Print lots of info about actor and items to calculate art requirements", default=False)        
-
-        parser.add_option("-s", "--step", dest="step", help="Jump to step in walkthrough")
-        parser.add_option("-H", "--headless", action="store_true", dest="headless", help="Run game as headless (no video)")
-        parser.add_option("-a", "--artreactor", action="store_true", dest="artreactor", help="Save images from each scene")
-        parser.add_option("-i", "--inventory", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
         parser.add_option("-d", "--detailed <scene>", dest="analyse_scene", help="Print lots of info about one scene (best used with test runner)")
-        parser.add_option("-r", "--random", action="store_true", dest="stresstest", help="Randomly deviate from walkthrough to stress test robustness of scripting")
-        parser.add_option("-m", "--memory", action="store_true", dest="memory_save", help="Run game in low memory mode")
-        parser.add_option("-a", "--editor", action="store_true", dest="allow_editor", help="Enable editor via F1 key")
         parser.add_option("-e", "--exceptions", action="store_true", dest="allow_exceptions", help="Switch off exception catching.")
+        parser.add_option("-f", "--fullscreen", action="store_true", dest="fullscreen", help="Play game in fullscreen mode", default=False)
+        parser.add_option("-H", "--headless", action="store_true", dest="headless", help="Run game as headless (no video)")
+        parser.add_option("-l", "--lowmemory", action="store_true", dest="memory_save", help="Run game in low memory mode")
+        parser.add_option("-m", "--matrixinventory", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
+        parser.add_option("-o", "--objects", action="store_true", dest="analyse_characters", help="Print lots of info about actor and items to calculate art requirements", default=False)        
+        parser.add_option("-p", "--profile", action="store_true", dest="profiling", help="Record player movements for testing", default=False)        
+
+        parser.add_option("-i", "--imagereactor", action="store_true", dest="artreactor", help="Save images from each scene")
+        parser.add_option("-r", "--random", action="store_true", dest="stresstest", help="Randomly deviate from walkthrough to stress test robustness of scripting")
+        parser.add_option("-s", "--step", dest="step", help="Jump to step in walkthrough")
+        parser.add_option("-t", "--text", action="store_true", dest="text", help="Play game in text mode (for players with disabilities who use text-to-speech output)", default=False)
         parser.add_option("-w", "--walkthrough", action="store_true", dest="output_walkthrough", help="Print a human readable walkthrough of this game, based on test suites.")
 
 
@@ -4371,12 +4376,7 @@ class Game(object):
         global DEFAULT_FONT 
         fname = DEFAULT_FONT
         size = 18
-        try:
-            self.font = Font(fname, size)
-        except IOError:
-            self.font = None
-            if logging: log.error("game unable to load or initialise font %s"%fname)
-        
+        self.font = load_font(fname, size)        
         
         if self.scene and self.screen:
            self.screen.blit(self.scene.background(), (0, 0))

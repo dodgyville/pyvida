@@ -237,6 +237,7 @@ class Astar(object):
         until character is at goal. Use action.action.deltas to displace animation frames
         around the new position.
         """
+        if solids == None: solids = []
         self.name = name
         self.solids = solids
         self.walkarea = walkarea 
@@ -269,6 +270,7 @@ class Astar(object):
         squared_nodes = []
         nodes = nodes if nodes else self.nodes
         for node in nodes:
+            if node not in squared_nodes: squared_nodes.append(node)
             for node2 in nodes:
                 if node != node2:
                     n1 = (node[0], node2[1])
@@ -307,7 +309,7 @@ class Astar(object):
         #if the line between source and target intersects with any segment of 
         #the walkarea, then disallow, since we want to stay inside the walkarea
         nodes = []
-        max_nodes = 4
+        max_nodes = 100 #only look at X nodes maximum
         for node in self.nodes:
             max_nodes -= 1
             if max_nodes == 0: continue
@@ -327,7 +329,8 @@ class Astar(object):
     def step_nodes(self, current):
         """ return nodes based on a character walking """
         nodes = []
-        for step in self.available_steps:
+        for step_data in self.available_steps:
+            action, step = step_data
             try:
                 node = (current[0] + step[0], current[1] + step[1])
             except:
@@ -342,6 +345,8 @@ class Astar(object):
         return math.sqrt(a**2 + b**2)
 
     def astar(self, start, goal, distance_neighbour=True):
+        if start not in self.nodes:
+            self.nodes.append(start)
         if goal not in self.nodes:
             self.nodes.append(goal)
             self.nodes = self.square_nodes()
@@ -357,7 +362,6 @@ class Astar(object):
         dx,dy=5,3 #how close do we have to hit the goal?
         goal_rect = Rect(goal[0]-dx, goal[1]-dy, dx*2,dy*2)
         current = previous = None
-    
         while openset:
             f_score_sorted = sorted(f_score.iteritems(), key=operator.itemgetter(1))
             previous = current
@@ -399,12 +403,18 @@ class Astar(object):
         path = self.astar(start, goal)
         if not path: return False #unable to find path
         shortterm_goal = path[1]
-        print
-        print("full path", path)
         steps = self.astar(start, shortterm_goal, False)
         turns = 0
+        d = {}
+        for step_data in self.available_steps: #convert step data into lookup
+            d[step_data[1]] = step_data[0]
+        print("d",start, goal, d, path[1],steps)
+        actions = []
         for i, s in enumerate(steps[1:-1]):
-            previous, current, neighbour = steps[i-1], steps[i], steps[i+1]
+            previous, current, neighbour = steps[i], steps[i+1], steps[i+2]
+            displacement = current[0]-previous[0], current[1]-previous[1]
+#            print("di",previous, current, displacement, steps[i],i)
+            actions.append(d[displacement])
             x1,y1 = previous
             x2,y2 = current
             x3,y3 = neighbour
@@ -413,22 +423,51 @@ class Astar(object):
             d1 = g1/(abs(g1) or 1)
             d2 = g2/(abs(g2) or 1)
             if d1 != d2: turns += 1
-        print("s",self.TURN_PENALTY, turns, len(steps), steps)
-        return steps
+        displacement = neighbour[0]-current[0], neighbour[1]-current[1]
+        actions.append(d[displacement])
+        print("s",start, goal, self.TURN_PENALTY, turns, len(steps), steps)
+        print("actions",actions)
+        return actions
+
+class TestAstarComponents(unittest.TestCase):
+    def setUp(self):
+        steps = [("right", (5,0)), ("left",(-5,0)), ("up", (0,-3)), ("down", (0,3))]
+        nodes = None
+        walkarea = None
+        solids = None
+        self.astar = Astar("map1", solids, walkarea, steps)
+
+    def test_astar(self):
+        path = self.astar.astar((0,0), (100, 0))
+        self.assertEquals(path, [(0,0), (100, 0)]) 
+
+        path = self.astar.astar((0,0), (100, 100))
+        self.assertEquals(path, [(0,0), (0, 100), (100,100)]) 
+
+        path = self.astar.astar((100,0), (-100, 0))
+        self.assertEquals(path, [(100,0), (-100, 0)]) 
+
+        path = self.astar.astar((0,0), (0, 100))
+        self.assertEquals(path, [(0,0), (0, 100)]) 
+
+    def test_animated(self):
+        path = self.astar.animated((0,0), (20, 0))
+        self.assertEquals(path, ["right", "right", "right", "right"]) 
+
+        path = self.astar.animated((0,0), (100, 30))
+        self.assertEquals(path, ["right", "right", "down", "down"]) 
+
+
 
 class TestAstarBasic(unittest.TestCase):
     def setUp(self):
-        actions = {
-            "left": Action("left", [(-5, 0), (-4, 0), (-2, 0)]),
-            "right": Action("right", [(5, 0), (4, 0), (2, 0)]),
-            "up": Action("up", [(0,-4)]),
-            "down": Action("down", [(0,2)]),
-            }
+        steps = [("left", (5,0)), ("right",(-5,0)), ("up", (0,-3)), ("down", (0,3))]
         nodes = [
             (0,0), (50,0), (50,100), (70,70), (100,100),
         ]
         walkarea = None
-        self.astar = Astar("map1", [], walkarea, actions, nodes=nodes)
+        solids = None
+        self.astar = Astar("map1", solids, walkarea, steps, nodes=nodes)
 
     def test_intersect(self):
         r = Rect(25,25,50,50)
@@ -474,9 +513,8 @@ class TestAstarBasic(unittest.TestCase):
 class TestAstarAnim(unittest.TestCase):
     def setUp(self):
         walkarea = Polygon([(-10, -10),(140,-10),(140,110),(-10,110)])
-        steps = [(5,0), (-5,0), (0,-3), (0,3)]
+        steps = [("left", (5,0)), ("right",(-5,0)), ("up", (0,-3)), ("down", (0,3))]
         self.astar = Astar("map1", [], walkarea, steps)
-
 
     def test_step_nodes(self):
         nodes = self.astar.step_nodes((20,20))
@@ -484,6 +522,7 @@ class TestAstarAnim(unittest.TestCase):
 
     def test_basic(self):
         path = self.astar.animated((0,0), (50, 50))
+        self.assertEquals(path, [(0,0), (0,100), (100,100)])
         #self.assertEquals(path, [(130, 0), (0, 100), (0, 47), (0, 57), (0, 52), (0, 49)])
 
     def test_turns(self):
@@ -505,30 +544,30 @@ class TestAstarAnim(unittest.TestCase):
 
 class TestAstarWalkarea(unittest.TestCase):
     def setUp(self):
-        steps = [(5,0), (-5,0), (0,-3), (0,3)]
+        steps = [("left", (5,0)), ("right",(-5,0)), ("up", (0,-3)), ("down", (0,3))]
         walkarea = Polygon([(-10, -10),(140,-10),(140,40),(160,45),(160,-10),(210,-10),(210,110),(160,110),(165,62),(140,60),(140,110),(-10,110)])
         self.astar = Astar("map1", [], walkarea, steps)
 
     def test_neighbour_nodes(self):
         nodes = self.astar.neighbour_nodes((0,0))
-        self.assertEqual(nodes, [(130, 0), (0, 100), (0, 47), (0, 57), (0, 52), (0, 49)])
+        self.assertEqual(nodes, [(130, 0), (0, 47), (0, 57), (0, 52), (0, 49)])
 
         nodes = self.astar.neighbour_nodes((50,0))
         self.assertEqual(nodes, [(0,0), (130, 0)])
 
         nodes = self.astar.neighbour_nodes((50,100))
-        self.assertEqual(nodes, [(130,100), (0,100)])
+        self.assertEqual(nodes, [(130, 100)])
 
         nodes = self.astar.neighbour_nodes((100,100))
-        self.assertEqual(nodes, [(130,100), (0,100)])
+        self.assertEqual(nodes, [(130,100)])
 
     def test_basic(self):
         path = self.astar.astar((0,0), (100, 100))
-        self.assertEquals(path, [(0,0), (0,100), (100,100)])
+        self.assertEquals(path, [(0, 0), (0, 57), (100, 57), (100, 100)])
 
     def test_basic2(self):
         path = self.astar.astar((0,0), (50, 50))
-        self.assertEquals(path, [(130, 0), (0, 100), (0, 47), (0, 57), (0, 52), (0, 49)])
+        self.assertEquals(path,  [(0, 0), (0, 49), (50, 49), (50, 50)])
 
     def test_choke(self):
         path = self.astar.astar((0,0), (200, 0))
@@ -539,7 +578,7 @@ class TestAstarWalkarea(unittest.TestCase):
         self.assertEquals(path, [(0, 0), (0, 47), (200, 47), (200, 0)])
         #so animated target should be (0,47)
         steps = self.astar.animated((0,0), (200, 0))
-        print(steps)
+        print("steps",steps)
         self.assertEquals(steps, [(0, 0), (0, 3), (0, 6), (0, 9), (0, 12), (0, 15), (0, 18), (0, 21), (0, 24), (0, 27), (0, 30), (0, 33), (0, 36), (0, 39), (0, 42), (0, 45), (0, 47)])
 
 
