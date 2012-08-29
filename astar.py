@@ -6,6 +6,13 @@ import unittest
 
 import euclid as eu
 
+try:
+    import logging
+    import logging.handlers
+    log = logging.getLogger('pyvida4')
+except ImportError:
+    logging = None
+
 class Rect(object):
     def __init__(self, x, y, w, h):
         self.x,self.y,self.w,self.h = x,y,w,h
@@ -245,7 +252,7 @@ class Astar(object):
         self.nodes = nodes #a list of nodes
         self.nodes.extend(self.convert_solids_to_nodes())
         self.nodes.extend(self.convert_walkarea_to_nodes())
-        self.nodes.extend(self.square_nodes())
+#        self.nodes.extend(self.square_nodes())
         self.nodes = self.clean_nodes(self.nodes)
         self.TURN_PENALTY = 3
 
@@ -309,7 +316,8 @@ class Astar(object):
         #if the line between source and target intersects with any segment of 
         #the walkarea, then disallow, since we want to stay inside the walkarea
         nodes = []
-        max_nodes = 100 #only look at X nodes maximum
+        max_nodes = 40 #only look at X nodes maximum
+        return self.nodes
         for node in self.nodes:
             max_nodes -= 1
             if max_nodes == 0: continue
@@ -349,7 +357,7 @@ class Astar(object):
             self.nodes.append(start)
         if goal not in self.nodes:
             self.nodes.append(goal)
-            self.nodes = self.square_nodes()
+#            self.nodes = self.square_nodes()
         closedset = [] # set of nodes already evaluated
         openset = [start,]  # set of nodes to be evaluated, initially containing the start node
 
@@ -358,9 +366,16 @@ class Astar(object):
     
         # estimated total cost from start to goal through y
         f_score = {start: g_score[start] + self.heuristic_cost_estimate(start, goal)}
-
-        dx,dy=5,3 #how close do we have to hit the goal?
+        if distance_neighbour: #hit larger goals quite closely
+            dx,dy=5,3 #how close do we have to hit the goal?
+        else: #or match goal to the size of the available footprints of the actions
+            try:
+                dx,dy = max([abs(x[1][0]) for x in self.available_steps]), max([abs(x[1][1]) for x in self.available_steps])
+            except:
+                import pdb; pdb.set_trace()
         goal_rect = Rect(goal[0]-dx, goal[1]-dy, dx*2,dy*2)
+        r= goal_rect
+        if logging: log.debug("astar: goal_rect is %s %s %s %s"%(r.topleft, r.bottomleft, r.topright, r.bottomright))
         current = previous = None
         while openset:
             f_score_sorted = sorted(f_score.iteritems(), key=operator.itemgetter(1))
@@ -401,19 +416,24 @@ class Astar(object):
     def animated(self, start, goal):
         """ Get some animation steps that help us get to the goal """
         path = self.astar(start, goal)
-        if not path: return False #unable to find path
+        if not path:
+            if logging: log.debug("astar: Unable to find path to end goal")
+            return False #unable to find path
         shortterm_goal = path[1]
+        if logging: log.debug("astar: Shortterm goal is %s"%str(shortterm_goal))
         steps = self.astar(start, shortterm_goal, False)
+        if not steps:
+            if logging: log.debug("astar: Unable to find path to shortterm goal")
+        if logging: log.debug("astar: Shortterm path is %s"%steps)
         turns = 0
         d = {}
         for step_data in self.available_steps: #convert step data into lookup
             d[step_data[1]] = step_data[0]
-        print("d",start, goal, d, path[1],steps)
         actions = []
+        neighbour = None
         for i, s in enumerate(steps[1:-1]):
             previous, current, neighbour = steps[i], steps[i+1], steps[i+2]
-            displacement = current[0]-previous[0], current[1]-previous[1]
-#            print("di",previous, current, displacement, steps[i],i)
+            displacement = int(round(current[0]-previous[0])), int(round(current[1]-previous[1]))
             actions.append(d[displacement])
             x1,y1 = previous
             x2,y2 = current
@@ -423,10 +443,11 @@ class Astar(object):
             d1 = g1/(abs(g1) or 1)
             d2 = g2/(abs(g2) or 1)
             if d1 != d2: turns += 1
-        displacement = neighbour[0]-current[0], neighbour[1]-current[1]
-        actions.append(d[displacement])
-        print("s",start, goal, self.TURN_PENALTY, turns, len(steps), steps)
-        print("actions",actions)
+        #possible final movement
+        if neighbour: #adjustment step
+            displacement = neighbour[0]-current[0], neighbour[1]-current[1]
+            displacement2 = shortterm_goal[0]-current[0], shortterm_goal[1]-current[1]
+            actions.append(displacement2)
         return actions
 
 class TestAstarComponents(unittest.TestCase):
@@ -457,7 +478,17 @@ class TestAstarComponents(unittest.TestCase):
         path = self.astar.animated((0,0), (100, 30))
         self.assertEquals(path, ["right", "right", "down", "down"]) 
 
-
+class TestAstarMinogue(unittest.TestCase):
+    def setUp(self):
+        steps = [('right', (10, 0)), ('down', (0, 7)), ('up', (0, -7)), ('left', (-10, 0))]
+        nodes = []
+        walkarea = None
+        solids = None
+        self.astar = Astar("map1", solids, walkarea, steps, nodes=nodes)        
+        
+    def test_walk(self):
+        path = self.astar.astar((762, 601), (767, 459))
+        print(path)
 
 class TestAstarBasic(unittest.TestCase):
     def setUp(self):
@@ -583,4 +614,4 @@ class TestAstarWalkarea(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    print("To run tests, python -m unittest astar2.TestAstar")
+    print("To run tests, python -m unittest astar.TestAstar")

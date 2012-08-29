@@ -505,12 +505,12 @@ def blit_alpha(target, source, location, opacity):
 def load_font(fname, size):
     f = None
     try:
-        f = Font(fname, 12)
+        f = Font(fname, size)
     except:
         if logging: log.warning("Can't find local %s font, so defaulting to pyvida one"%fname)
         this_dir, this_filename = os.path.split(__file__)
         myf = os.path.join(this_dir, fname)
-        f = Font(myf, 12)
+        f = Font(myf, size)
     return f
 
 
@@ -613,6 +613,7 @@ class Action(object):
         self._raw_width, self._raw_height = 0,0 #dimensions of raw action image
         self.allow_draw = True 
         self.allow_update = True #free deltas, etc
+        self.astar = False #this action can be used in astar search
         
         #deltas
         self.delta_index = 0 #index to deltas
@@ -1000,6 +1001,7 @@ class Actor(object):
             action_name = os.path.splitext(os.path.basename(action_fname))[0]
             action = self.actions[action_name] = Action(self, action_name, action_fname).load()
             if action_name == "idle": self.action = action
+            if action_name in ["left", "right", "up", "down"]: action.astar = True #guess these are walking actions
             if type(self) == Actor and action_name=="idle":
                 self._ax = int(action.image().get_width()/2)
                 self._ay = int(action.image().get_height() * 0.85)            
@@ -1647,26 +1649,35 @@ class Actor(object):
             self.action =self.actions[choice(walk_actions)]
         for i in range(3): self._motion_queue.append((dx+randint(-2,2),dy+randint(-2,2)))
     
-    def _queue_motion(self, paction):
+    def _queue_motion(self, paction, frames=None):
         """ Queue the deltas from an action on this actor's motion_queue """
+        action, adjustment = None, None #are we moving based on action, or forcing an adjustment in the location (astar motion)
         if type(paction) == str: 
             action = self.actions.get(paction, None)
-        else:
+        elif isinstance(paction, Action):
             action = paction
+        else: #assume adjustment (paction = new location)
+            adjustment = paction
+            self._motion_queue.append(paction)
+            return
         deltas = None
         if action:
             if logging: log.debug("queue_motion %s %s"%(action.name, action.deltas))
             deltas = action.deltas
-        else:
+        elif not adjustment: #no action or adjustment
             if logging: log.warning("queue_motion %s missing for actor %s"%(paction, self.name))
         if not deltas:
             if logging: log.error("No deltas for action %s on actor %s, can't move."%(paction, self.name))
             return
+        frames = frames if frames else len(deltas)
         minx = 2 #when moving, what is the minimum move value (to stop scaling stranding an actor)
         miny = 2
 #        scale = (0.5) + (0.5 * self.scale)
         scale = self.scale
-        for dx,dy in deltas:
+        i = 0
+        while i < frames:
+            i += 1
+            dx,dy = action.step_x, action.step_y #deltas[len(deltas)%i]
             dx2 = int(float(dx) * scale) 
             dy2 = int(float(dy) * scale)
             self._motion_queue.append((dx2+randint(-1,1),dy2+randint(-1,1)))
@@ -1700,30 +1711,24 @@ class Actor(object):
                     nodes.extend(points)
  
 #        nodes.extend(n) #calculate right angle nodes
-        a = Astar("map1", solids, walkarea, [])
-        p = a.astar((self.x, self.y), (x,y))
+        available_steps = []
+        for i in self.actions.values():
+            if i.astar: available_steps.append((i.name, (int(round(float(i.step_x)*self.scale)), int(round(float(i.step_y)*self.scale)))))
+        a = Astar("map1", solids, walkarea, available_steps)
+        p = a.animated((self.x, self.y), (x,y))
+#        import pdb; pdb.set_trace()
 #        p = Astar((self.x, self.y), (x, y), nodes, solids, walkarea)
 #        print(self.name, self.x,self.y,"to",x,y,"points",nodes,"solids",solids,"path",p)
 #        return
-        if p == False:
+        if not p:
             if logging: log.warning("%s unable to find path from %s to %s (walkrea: %s)"%(self.name, (self.x, self.y), (x,y), walkarea))
             self._do('idle')
             if self.game: self.game.block = False
             if self.game: self.game._event_finish(success=False) #signal to game event queue this event is done
             return None
-        n = p[1] #short term goal is the next node
-        if logging: log.debug("astar short term goal is from (%s, %s) to %s"%(self.x, self.y, n))
-        dx, dy = n[0] - self.x, n[1] - self.y
-        if dx < 0: #left
-            if abs(dx) < abs(dy): #up/down since y distance is greater
-                self._queue_motion("down") if dy > 0 else self._queue_motion("up")
-            else: 
-                self._queue_motion("left")
-        else: #right
-            if abs(dx) < abs(dy): #up/down
-                self._queue_motion("down") if dy > 0 else self._queue_motion("up")
-            else: 
-                self._queue_motion("right")
+        self._queue_motion(p[0], len(p))
+        if p[-1] != p[0]: #adjustment required
+            self._queue_motion(p[0])
         return p 
     
     def _test_goto_point(self, destination):
@@ -1815,9 +1820,9 @@ class Actor(object):
             if len(walk_actions) <= 1: #need more than two actions to trigger astar
                 self._goto_direct(x,y, walk_actions)
             else:
-                self._goto_direct(x,y, walk_actions)
-#                walkareas = self.scene.walkareas if self.scene and ignore==False else None
- #               self._goto_astar(x,y, walk_actions, walkareas) #XXX disabled astar for the moment
+#                self._goto_direct(x,y, walk_actions)
+                walkareas = self.scene.walkareas if self.scene and ignore==False else None
+                self._goto_astar(x,y, walk_actions, walkareas) #XXX disabled astar for the moment
 
     def forget(self, fact):
         """ A pseudo-queuing function. Forget a fact from the list of facts 
@@ -3820,8 +3825,8 @@ class Game(object):
                             f.write('WalkArea().smart(game, %s),'%(walkarea))
                         f.write(']\n')
                         for name, obj in game.scene.objects.items():
+                            slug = slugify(name).lower()
                             if obj != game.player:
-                                slug = slugify(name).lower()
                                 txt = "items" if isinstance(obj, Item) else "actors"
                                 if isinstance(obj, Emitter):
                                     em = str(obj.summary)
@@ -3851,7 +3856,10 @@ class Game(object):
                                         oy = obj.sy
                                     f.write('    %s.reout((%i, %i))\n'%(slug, ox, oy))
                             else: #the player object
-                                f.write('    #%s.reanchor((%i, %i))\n'%(name, obj._ax, obj._ay))
+                                f.write('    #%s = game.actors["%s"]\n'%(slug, name))                            
+                                f.write('    #%s.reanchor((%i, %i))\n'%(slug, obj._ax, obj._ay))
+                                if name not in self.scene.scales:
+                                    self.scene.scales[name] = obj.scale
                                 for key, val in self.scene.scales.items():
                                     if key in self.actors:
                                         val = self.actors[key]
