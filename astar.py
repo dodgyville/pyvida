@@ -254,7 +254,7 @@ class Astar(object):
         self.nodes.extend(self.convert_walkarea_to_nodes())
 #        self.nodes.extend(self.square_nodes())
         self.nodes = self.clean_nodes(self.nodes)
-        self.TURN_PENALTY = 3
+        self.TURN_PENALTY = 0
 
     def convert_solids_to_nodes(self):
         """ inflate the rectangles and add them to a list of nodes """
@@ -317,11 +317,10 @@ class Astar(object):
         #the walkarea, then disallow, since we want to stay inside the walkarea
         nodes = []
         max_nodes = 40 #only look at X nodes maximum
-        return self.nodes
         for node in self.nodes:
             max_nodes -= 1
             if max_nodes == 0: continue
-            if node != current and (node[0] == current[0] or node[1] == current[1]):
+            if node != current: #and (node[0] == current[0] or node[1] == current[1]):
                 append_node = True
                 if self.walkarea:
                     w0 = w1 = self.walkarea.vertexarray[0]
@@ -345,6 +344,7 @@ class Astar(object):
                 print(current, step)
                 import pdb; pdb.set_trace()
             nodes.append(node)
+        if logging: log.debug("astar: Investigating %s nodes using %s"%(nodes, self.available_steps))
         return self.clean_nodes(nodes)
 
     def dist_between(self, current, neighbour):
@@ -415,13 +415,15 @@ class Astar(object):
 
     def animated(self, start, goal):
         """ Get some animation steps that help us get to the goal """
+        if logging: log.debug("astar.animated: starting goal planning")
         path = self.astar(start, goal)
         if not path:
             if logging: log.debug("astar: Unable to find path to end goal")
             return False #unable to find path
         shortterm_goal = path[1]
-        if logging: log.debug("astar: Shortterm goal is %s"%str(shortterm_goal))
+        if logging: log.debug("animated.astar: Shortterm goal is %s, starting step astar"%str(shortterm_goal))
         steps = self.astar(start, shortterm_goal, False)
+        if logging: log.debug("animated.astar: got steps")
         if not steps:
             if logging: log.debug("astar: Unable to find path to shortterm goal")
         if logging: log.debug("astar: Shortterm path is %s"%steps)

@@ -75,7 +75,8 @@ POSITION_TOP = 1
 POSITION_LOW = 2
 
 #MUSIC MODES
-FADEOUT = 1
+QUICKCUT = 1
+FADEOUT = 2
 
 if logging:
     if ENABLE_LOGGING:
@@ -227,7 +228,7 @@ def getinsetpoint(pt1, pt2, pt3, offset):
     v1.normalize()
     v2 = eu.Vector3(pt3[0] - pt2[0], pt3[1] - pt2[1], 0.0)
     v2.normalize()
-    v3 = copy.copy(v1)
+    v3 = copy.deepcopy(v1)
     v1 = v1.cross(v2)
     v3 += v2
     if v1.z < 0.0:
@@ -286,7 +287,7 @@ class Polygon(object):
         polyinset = []
         OFFSET = -10
         i = 0
-        old_points = copy.copy(self.vertexarray)
+        old_points = copy.deepcopy(self.vertexarray)
         old_points.insert(0,self.vertexarray[-1])
         old_points.append(self.vertexarray[0])        
         lenpolygon = len(old_points)
@@ -1438,7 +1439,15 @@ class Actor(object):
  #       self.game.stuff_event(self.finish_fade, self)
         self._event_finish(block=block)
 
-    def on_set_actions(self, actions, prefix=None, postfix=None):
+    def on_set_astar(self, actions):
+        """ set only these actions to astar """
+        for key in self.actions: #initially set all to False due to set_action copies
+            self.actions[key].astar = False 
+        for key in actions: #now override
+            if key in self.actions: self.actions[key].astar = True 
+        self._event_finish()        
+
+    def on_set_actions(self, actions, prefix=None, postfix=None, astar=None):
         """ Take a list of actions and replace them with prefix_action eg set_actions(["idle", "over"], "off") """
         if logging: log.info("player.set_actions using prefix %s on %s"%(prefix, actions))
         self.editor_clean = False #actor no longer has permissions as set by editor
@@ -1447,7 +1456,10 @@ class Actor(object):
                 key = "%s_%s"%(prefix, i)
             else:
                 key = "%s_%s"%(i, postfix)
-            if key in self.actions: self.actions[i] = self.actions[key]
+            if key in self.actions:
+                self.actions[i] = self.actions[key]
+                if astar:
+                    self.actions[i].astar = astar
         self._event_finish()
     
     def on_backup_actions(self, actions, prefix):
@@ -2920,6 +2932,8 @@ class Camera(object):
         #start music for this scene
         if game.scene.music_fname == FADEOUT:
             self.game.mixer._music_fade_out()
+        elif game.scene.music_fname == QUICKCUT:
+            self.game.mixer._music_stop()
         elif game.scene.music_fname:
             log.info("playing music {}".format(game.scene.music_fname))
             self.game.mixer._music_play(game.scene.music_fname)
@@ -3908,7 +3922,7 @@ class Game(object):
                     step = inp.value
                     if step=="": return
                     game.testing = True
-                    game.tests = copy.copy(self._walkthroughs)
+                    game.tests = copy.deepcopy(self._walkthroughs)
                     game.steps_complete = 0
 #                    game.headless = True
                     game.reset_game(self)
@@ -4355,7 +4369,7 @@ class Game(object):
         if options.analyse_scene: self.analyse_scene = options.analyse_scene
         if options.step: #switch on test runner to step through walkthrough
             self.testing = True
-            self.tests = copy.copy(self._walkthroughs)
+            self.tests = copy.deepcopy(self._walkthroughs)
             if options.step.isdigit():
                 self.jump_to_step = int(options.step) #automatically run to <step> in walkthrough
             else:
