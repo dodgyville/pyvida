@@ -29,7 +29,15 @@ except ImportError:
         def ugettext(self, txt):
             return txt
 
-t = igettext.translation('spaceout', 'data/locale', fallback=True)
+language = None
+with open('pyvida.locale', 'r') as f:
+    language = f.read().strip()
+
+if language:
+    t = igettext.translation('spaceout', 'data/locale', fallback=True, languages=[language])
+else:
+    t = igettext.translation('spaceout', 'data/locale', fallback=True)
+
 gettext = t.ugettext
 
 from itertools import chain
@@ -512,6 +520,14 @@ def blit_alpha(target, source, location, opacity):
 
 def load_font(fname, size):
     f = None
+    if language: #try a locale language replacement first
+        lfname = os.path.join("data/locale/", language, os.path.basename(fname))
+        try:
+            f = Font(lfname, size)
+            print("using %s font"%lfname)
+            return f
+        except:
+            pass
     try:
         f = Font(fname, size)
     except:
