@@ -344,7 +344,7 @@ class Astar(object):
                 print(current, step)
                 import pdb; pdb.set_trace()
             nodes.append(node)
-        if logging: log.debug("astar: Investigating %s nodes using %s"%(nodes, self.available_steps))
+#        if logging: log.debug("astar: Investigating %s nodes using %s"%(nodes, self.available_steps))
         return self.clean_nodes(nodes)
 
     def dist_between(self, current, neighbour):
@@ -426,6 +426,7 @@ class Astar(object):
         if logging: log.debug("animated.astar: got steps")
         if not steps:
             if logging: log.debug("astar: Unable to find path to shortterm goal")
+            return []
         if logging: log.debug("astar: Shortterm path is %s"%steps)
         turns = 0
         d = {}

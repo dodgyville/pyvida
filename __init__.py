@@ -20,10 +20,17 @@ except ImportError:
     traceback = None
 
 try:
-    from gettext import gettext
+#    from gettext import gettext
+    import gettext as igettext
 except ImportError:
-    def gettext(txt):
-        return txt
+    class igettext(object):
+        def translation(self, *args, **kwargs):
+            pass
+        def ugettext(self, txt):
+            return txt
+
+t = igettext.translation('spaceout', 'data/locale', fallback=True)
+gettext = t.ugettext
 
 from itertools import chain
 from itertools import cycle
@@ -1725,7 +1732,9 @@ class Actor(object):
 #        nodes.extend(n) #calculate right angle nodes
         available_steps = []
         for i in self.actions.values():
-            if i.astar: available_steps.append((i.name, (int(round(float(i.step_x)*self.scale)), int(round(float(i.step_y)*self.scale)))))
+            if i.astar:
+                step = (i.name, (int(round(float(i.step_x)*self.scale)), int(round(float(i.step_y)*self.scale)))) 
+                if step not in available_steps: available_steps.append(step)
         a = Astar("map1", solids, walkarea, available_steps)
         p = a.animated((self.x, self.y), (x,y))
 #        import pdb; pdb.set_trace()
@@ -2814,13 +2823,13 @@ class Mixer(object):
     __metaclass__ = use_on_events
     def __init__(self, game=None):
         self.game = game
-        self.music_break = 360000 #fade the music out every x milliseconds
-        self.music_break_length = 60000 #keep it quiet for y seconds
+        self.music_break = 200000 #fade the music out every x milliseconds
+        self.music_break_length = 15000 #keep it quiet for y milliseconds
         self.music_index = 0
         
     def update(self, dt): #mixer.update
         self.music_index += dt
-        if self.music_index > self.music_break:
+        if self.music_index > self.music_break and pygame.mixer.music.get_busy():
             log.info("taking a music break, fading out")
             self._music_fade_out()
         if self.music_index > self.music_break+self.music_break_length:
@@ -2849,7 +2858,8 @@ class Mixer(object):
         if pygame.mixer: pygame.mixer.music.fadeout(200)
 
     def _music_fade_in(self):
-        if pygame.mixer: pygame.mixer.music.fadein(200)
+        if logging: log.warning("pyvida.mixer.music_fade_in fade not implemented yet")
+        if pygame.mixer: pygame.mixer.music.play()
 
     def on_music_fade_out(self):
         self._music_fade_out()
@@ -4430,6 +4440,8 @@ class Game(object):
 #                    "would try and reload now")
             if self.loop >= 10000: self.loop = 0
             
+            if self.mixer: self.mixer.update(dt)
+            
             if android and android.check_pause():
                 android.wait_for_resume()
             
@@ -4676,8 +4688,8 @@ class Game(object):
         self._event_finish()
         
     def on_wait(self, seconds): #game.wait
-        if self.game.testing:
-            if logging: log.debug("testing skips wait event")
+        if self.game.testing or self.game.headless:
+            if logging: log.debug("testing or headless mode skips wait events")
             self._event_finish()
             return
         self._wait = datetime.now() + timedelta(seconds=seconds)
