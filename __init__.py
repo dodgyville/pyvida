@@ -30,8 +30,11 @@ except ImportError:
             return txt
 
 language = None
-with open('pyvida.locale', 'r') as f:
-    language = f.read().strip()
+try: #optional language setting
+    with open('pyvida.locale', 'r') as f:
+        language = f.read().strip()
+except:
+    pass        
 
 if language:
     t = igettext.translation('spaceout', 'data/locale', fallback=True, languages=[language])
@@ -190,7 +193,7 @@ def use_init_variables(original_class):
             if i < len(args): #use the arg values
                 arg = args[i]
                 if value == "interact" and type(args[i]) == str: 
-                    arg = get_function(args[i])
+                    arg = get_function(self.game, args[i])
                 setattr(self, value, arg)
             else: #use default from original __init__ declaration
                 setattr(self, value, defaults[value])
@@ -576,15 +579,24 @@ def relative_position(game, parent, pos):
     if logging: log.warning("relative_position ignores anchor points, scaling and rotation")
     return parent.x-mx, parent.y-my
 
-def get_function(basic):
-    """ Search memory for a function that matches this name """
+def get_function(game, basic):
+    """ 
+        Search memory for a function that matches this name 
+        Also search any modules in game._modules (eg used when cProfile has taken control of __main__ )
+    """
     if hasattr(basic, "__call__"): basic = basic.__name__
     script = None
     module = "main" if android else "__main__" #which module to search for functions
-    if hasattr(sys.modules[module], basic):
-          script = getattr(sys.modules[module], basic)
-    elif hasattr(sys.modules[module], basic.lower()):
-          script = getattr(sys.modules[module], basic.lower())
+    extra_modules = game._modules if __name__ == "pyvida" and game else []
+    modules = [module]
+    modules.extend(extra_modules.keys())
+    for m in modules:
+        if hasattr(sys.modules[m], basic):
+              script = getattr(sys.modules[m], basic)
+              break
+        elif hasattr(sys.modules[m], basic.lower()):
+              script = getattr(sys.modules[m], basic.lower())
+              break
     return script
 
 #### pyvida helper functions ####
@@ -720,7 +732,7 @@ class Action(object):
                 
         pygame.image.save(new_img, self.fname)
         
-    def load(self): 
+    def load(self):  #action.load
         """Load an anim from a montage file"""
         anim = None
         fname = os.path.splitext(self.fname)[0]
@@ -1064,7 +1076,7 @@ class Actor(object):
             self.look(self.game, self, self.game.player)
         else: #else, search several namespaces or use a default
             basic = "look_%s"%slugify(self.name)
-            script = get_function(basic)
+            script = get_function(self.game, basic)
             if script:
                 script(self.game, self, self.game.player)
             else:
@@ -1100,7 +1112,7 @@ class Actor(object):
          if override_name in self.uses: #use a specially defined use method
             basic = self.uses[override_name]
             if logging: log.info("Using custom use script %s for actor %s"%(basic, override_name))
-         script = get_function(basic)
+         script = get_function(self.game, basic)
          if script:
                 script(self.game, self, actor)
          else:
@@ -1117,7 +1129,7 @@ class Actor(object):
         self.game.mouse_mode = MOUSE_INTERACT #reset mouse mode
         if self.interact: #if user has supplied an interact override
             if type(self.interact) == str: 
-                interact = get_function(self.interact)
+                interact = get_function(self.game, self.interact)
                 if interact: 
                     self.interact = interact
                 else:
@@ -1128,7 +1140,7 @@ class Actor(object):
             script = self.interact
         else: #else, search several namespaces or use a default
             basic = "interact_%s"%slugify(self.name)
-            script = get_function(basic)
+            script = get_function(self.game, basic)
             if script:
                 if not self.game.catch_exceptions: #allow exceptions to crash engine
                     script(self.game, self, self.game.player)
@@ -1154,6 +1166,8 @@ class Actor(object):
 
     def clear(self): #actor.clear
 #        self.game.screen.blit(self.game.scene.background(), (self.x, self.y), self._image.get_rect())
+        if self.game and self.game.headless: return #headless mode skips sound and visuals
+
         if self._rect and self.game.scene.background():
             self.game.screen.blit(self.game.scene.background(), self._rect, self._rect)
         if self.game.editing == self:
@@ -1177,6 +1191,9 @@ class Actor(object):
         return img
 
     def _draw_image(self, img, pos, tint = None, alpha=1.0):
+        r = img.get_rect().move(pos)
+        if self.game and self.game.headless: return r #headless mode skips sound and visuals
+        
         if self.scale != 1.0:
             w = int(img.get_width() * self.scale)
             h = int(img.get_height() * self.scale)
@@ -1187,7 +1204,6 @@ class Actor(object):
             #s1.set_alpha(s0.get_alpha())            
             img.fill(tint, special_flags=BLEND_MULT) #BLEND_MIN)
         
-        r = img.get_rect().move(pos)
         
         if alpha != 1.0:
             _rect = blit_alpha(self.game.screen, img, r, alpha*255)
@@ -1613,7 +1629,7 @@ class Actor(object):
                     if type(scene_item) != Portal:
                         actee, actor = slugify(scene_item.name), slugify(inventory_item.name)
                         basic = "%s_use_%s"%(actee, actor)
-                        fn = get_function(basic)
+                        fn = get_function(self.game, basic)
                         if not fn and inventory_item.name in scene_item.uses: fn = scene_item.uses[inventory_item.name]
                         if fn == None: #would use default if player tried this combo
                             if scene_item.allow_use: log.warning("%s default use script missing: def %s(game, %s, %s)"%(scene.name, basic, actee.lower(), actor.lower()))
@@ -2357,7 +2373,10 @@ class Emitter(Item):
             img = self.action.image(p.action_index)
             alpha = self.alpha_start - (abs(float(self.alpha_end - self.alpha_start)/self.frames) * p.index)
             if img and not p.hidden: 
-                self._rect.union_ip(self._draw_image(img, (p.x-p.ax, p.y-p.ay), self._tint, alpha))
+                try:
+                    self._rect.union_ip(self._draw_image(img, (p.x-p.ax, p.y-p.ay), self._tint, alpha))
+                except:
+                    import pdb; pdb.set_trace()
     
 
 #wrapline courtesy http://www.pygame.org/wiki/TextWrapping 
@@ -2436,6 +2455,7 @@ class Text(Actor):
         self.size = size
         self.colour = colour
         if not font: font = DEFAULT_FONT
+        self.font = None #loaded by self._generate_text
         self.fname = font
         self.img = self._img = self._generate_text(text, colour)
         self._mouse_move_img = self._generate_text(text, (255,255,255))
@@ -2460,7 +2480,8 @@ class Text(Actor):
         return self.clickable_area.collidepoint(x,y)
 
     def _generate_text(self, text, colour=(255,255,255)):
-        self.font = load_font(self.fname, self.size)
+        if not self.font:
+            self.font = load_font(self.fname, self.size)
             
         if not self.font:
             img = Surface((10,10))
@@ -2899,6 +2920,11 @@ class Mixer(object):
 
     def _sfx_play(self, fname=None, loops=0):
         sfx = None
+        if self.game and self.game.headless:  #headless mode skips sound and visuals
+            if fname and not os.path.exists(fname):
+                log.warning("Music sfx %s missing."%fname)
+            return sfx 
+        
         if fname: 
             if os.path.exists(fname):
                 log.info("Loading sfx file %s"%fname)
@@ -2937,7 +2963,6 @@ class Camera(object):
             else:
                 if logging: log.error("camera on_scene: unable to find scene %s"%scene)
                 scene = self.game.scene
-        if self._ambient_sound: self._ambient_sound.stop()
         if self.game.text:
             print("The view has changed to scene %s"%scene.name)
             if scene.description:
@@ -2948,8 +2973,10 @@ class Camera(object):
             for i in scene.objects.values():
                 print(i.display_name)
         self.game.scene = scene
-           
         if logging: log.debug("changing scene to %s"%scene.name)
+        if self.game and self.game.headless: return #headless mode skips sound and visuals
+
+        if self._ambient_sound: self._ambient_sound.stop()
         if self.game.scene and self.game.screen:
             if self.game.scene.background():
                 self.game.screen.blit(self.game.scene.background(), (0, 0))
@@ -2967,6 +2994,7 @@ class Camera(object):
             self._ambient_sound = self.game.mixer._sfx_play(game.scene.ambient_fname, loops=-1)
 
     def on_scene(self, scene):
+        """ change the scene """
         if type(scene) == str:
             if scene in self.game.scenes:
                 scene = self.game.scenes[scene]
@@ -2976,14 +3004,14 @@ class Camera(object):
 
         #check for a precamera script to run
         if scene:
-            precamera_fn = get_function("precamera_%s"%slugify(scene.name))
+            precamera_fn = get_function(self.game, "precamera_%s"%slugify(scene.name))
             if precamera_fn: precamera_fn(self.game, scene, self.game.player)
         
         self._scene(scene)
 
         #check for a postcamera script to run
         if scene:
-            postcamera_fn = get_function("postcamera_%s"%slugify(scene.name))
+            postcamera_fn = get_function(self.game, "postcamera_%s"%slugify(scene.name))
             if postcamera_fn: postcamera_fn(self.game, scene, self.game.player)
         self.game._event_finish()
 
@@ -3187,6 +3215,7 @@ class Game(object):
         self.missing_actors = [] #list of actors mentioned in walkthrough that are never loaded
         self.test_inventory = False #heavy duty testing of inventory against scene objects
         self.step = None #current step in the walkthroughs
+        self.exit_step = False #exit game when step is reached
         self._modules = {} #list of game-related python modules and their file modification date
         self.catch_exceptions = True #engine will try and continue after encountering exception
         self.output_walkthrough = False
@@ -3259,7 +3288,7 @@ class Game(object):
         for i in (self.actors.values() + self.items.values()):
             if i.interact: 
                 if type(i.interact) != str:
-                    new_fn = get_function(i.interact.__name__)
+                    new_fn = get_function(self.game, i.interact.__name__)
                     if new_fn: i.interact = new_fn #only replace if function found, else rely on existing fn
         log.info("Editor has done a module reload")
             
@@ -4354,6 +4383,7 @@ class Game(object):
         parser.add_option("-s", "--step", dest="step", help="Jump to step in walkthrough")
         parser.add_option("-t", "--text", action="store_true", dest="text", help="Play game in text mode (for players with disabilities who use text-to-speech output)", default=False)
         parser.add_option("-w", "--walkthrough", action="store_true", dest="output_walkthrough", help="Print a human readable walkthrough of this game, based on test suites.")
+        parser.add_option("-x", "--exit", action="store_true", dest="exit_step", help="Used with --step, exit program after reaching step (good for profiling)")
 
 
 #        parser.add_option("-l", "--list", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
@@ -4400,6 +4430,8 @@ class Game(object):
                 self.jump_to_step = int(options.step) #automatically run to <step> in walkthrough
             else:
                 self.jump_to_step = options.step
+        if options.exit_step:
+            self.exit_step = True                
         if options.headless: 
             print("setting to headless")
             self.headless = True
@@ -4585,7 +4617,7 @@ class Game(object):
                                     self.player.says("Previously in game. An alien fleet is attacking peaceful planets. As a last resort, Captain Elliott has been drafted  to find and defeat his ex-boyfriend (the alien leader). Arriving on New Camelot, Elliott has found a planet blissfully unaware it is about to be invaded ...")
                                 else:
                                     self.player.says("Handing back control to you.")
-
+                                    if self.exit_step: self.quit = True #exit program
                                 self.modals_clear()
                             self.finish_tests()
                             
