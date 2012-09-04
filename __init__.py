@@ -524,7 +524,7 @@ def blit_alpha(target, source, location, opacity):
 def load_font(fname, size):
     f = None
     if language: #try a locale language replacement first
-        lfname = os.path.join("data/locale/", language, os.path.basename(fname))
+        lfname = os.path.join("data/locale/", language, fname)
         try:
             f = Font(lfname, size)
             print("using %s font"%lfname)
@@ -1433,6 +1433,24 @@ class Actor(object):
         self.x, self.y = pt
         if logging: log.debug("actor %s placed at %s"%(self.name, destination))
         self._event_finish(block=False)
+        
+    def on_queue_motion(self, motion):
+        """
+        A queuing function:
+        
+        Add a point or list of points to this actors motion queue
+        
+        examples::
+        
+            lander.queue_motion((0,4)) #will move actor down 4 pixels
+            lander.queue_motion([(0,4), (0,3), (0,2), (0,1)]) #will move actor in four frames of decreasing speed
+        """
+        if type(motion) == list:
+            self._motion_queue.extend(motion)
+        else:
+            self._motion_queue.append(motion)
+        self._event_finish(block=False)
+        
         
     def on_finish_fade(self):
         if logging: log.debug("finish fade %s"%self._alpha)
@@ -2826,6 +2844,10 @@ class Scene(object):
 
     def on_music(self, fname): #set the music for this scene
         self.music_fname = fname
+        self._event_finish()
+
+    def on_ambient(self, fname): #set the ambient sounds for this scene
+        self.ambient_fname = fname
         self._event_finish()
 
     def on_reset_editor_clean(self):
