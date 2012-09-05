@@ -254,7 +254,7 @@ class Astar(object):
         self.nodes.extend(self.convert_walkarea_to_nodes())
 #        self.nodes.extend(self.square_nodes())
         self.nodes = self.clean_nodes(self.nodes)
-        self.TURN_PENALTY = 0
+        self.TURN_PENALTY = 3
 
     def convert_solids_to_nodes(self):
         """ inflate the rectangles and add them to a list of nodes """
@@ -267,8 +267,8 @@ class Astar(object):
 
     def convert_walkarea_to_nodes(self):
         """ deflate the walkarea and add its points to a list of nodes """
-        if self.walkarea:
-           print "walkarea points",self.walkarea.astar_points()
+#        if self.walkarea:
+#           print "walkarea points",self.walkarea.astar_points()
         nodes = self.walkarea.astar_points() if self.walkarea else []
         return nodes
 
@@ -334,7 +334,7 @@ class Astar(object):
         return nodes
 
     def step_nodes(self, current):
-        """ return nodes based on a character walking """
+        """ return nodes based on a character walking, exclude ones inside solids and outside walkarea """
         nodes = []
         for step_data in self.available_steps:
             action, step = step_data
@@ -343,8 +343,13 @@ class Astar(object):
             except:
                 print(current, step)
                 import pdb; pdb.set_trace()
-            nodes.append(node)
-#        if logging: log.debug("astar: Investigating %s nodes using %s"%(nodes, self.available_steps))
+            append_node = True                
+            if self.walkarea and not self.walkarea.collide(*node): 
+                if logging: log.debug("astar: excluding %s because of %s"%(str(node), str(self.walkarea.vertexarray)))
+                
+                append_node = False #don't add if out of walkarea
+            if append_node == True and node not in nodes: nodes.append(node)
+#        if logging: log.debug("astar.step_nodes: Adding %s nodes using %s"%(str(nodes), str(self.available_steps)))
         return self.clean_nodes(nodes)
 
     def dist_between(self, current, neighbour):
@@ -415,14 +420,23 @@ class Astar(object):
 
     def animated(self, start, goal):
         """ Get some animation steps that help us get to the goal """
-        if logging: log.debug("astar.animated: starting goal planning")
+        if logging: log.debug("astar.animated: starting goal planning from %s to %s"%(start, goal))
+        if logging:
+            if self.walkarea:
+                log.debug("astar.animated: walkarea %s"%self.walkarea)
+            else:
+                log.debug("astar.animated: no walkarea")
         path = self.astar(start, goal)
         if not path:
             if logging: log.debug("astar: Unable to find path to end goal")
             return False #unable to find path
         shortterm_goal = path[1]
-        if logging: log.debug("animated.astar: Shortterm goal is %s, starting step astar"%str(shortterm_goal))
+        if logging: 
+            log.debug("animated.astar: Full node path is %s"%path)
+            log.debug("animated.astar: Shortterm goal is %s, starting step astar"%str(shortterm_goal))
         steps = self.astar(start, shortterm_goal, False)
+            
+        steps = self.astar(start, goal, False)
         if logging: log.debug("animated.astar: got steps")
         if not steps:
             if logging: log.debug("astar: Unable to find path to shortterm goal")

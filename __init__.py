@@ -1785,6 +1785,7 @@ class Actor(object):
             if i.astar:
                 step = (i.name, (int(round(float(i.step_x)*self.scale)), int(round(float(i.step_y)*self.scale)))) 
                 if step not in available_steps: available_steps.append(step)
+        if walkarea: walkarea = walkarea.polygon #pass down polygon, not WalkArea class ... a bit messy TBH
         a = Astar("map1", solids, walkarea, available_steps)
         p = a.animated((self.x, self.y), (x,y))
 #        import pdb; pdb.set_trace()
@@ -1797,7 +1798,17 @@ class Actor(object):
             if self.game: self.game.block = False
             if self.game: self.game._event_finish(success=False) #signal to game event queue this event is done
             return None
-        self._queue_motion(p[0], len(p))
+        else:
+            if logging: log.debug("will try and walk %s"%p)
+        current_motion = None
+        current_motion_count = 0
+        for motion in p[0:-1]: #(action name, point)
+            if current_motion != motion: #queue current motion, change direction
+                if current_motion: self._queue_motion(current_motion, current_motion_count)
+                current_motion = motion
+                current_motion_count = 0
+            current_motion_count += 1
+        
         if p[-1] != p[0]: #adjustment required
             self._queue_motion(p[0])
         return p 
@@ -1881,7 +1892,7 @@ class Actor(object):
             self.game._event_finish(success=False) #signal to game event queue this event is done    
             return       
 
-        ignore = True #XXX goto ignores walkareas
+#        ignore = True #XXX goto ignores walkareas
 
         if self._test_goto_point(destination): 
             return
@@ -1893,7 +1904,7 @@ class Actor(object):
             else:
 #                self._goto_direct(x,y, walk_actions)
                 walkareas = self.scene.walkareas if self.scene and ignore==False else None
-                self._goto_astar(x,y, walk_actions, walkareas) #XXX disabled astar for the moment
+                self._goto_astar(x,y, walk_actions, walkareas) 
 
     def forget(self, fact):
         """ A pseudo-queuing function. Forget a fact from the list of facts 
