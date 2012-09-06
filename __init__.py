@@ -1798,8 +1798,6 @@ class Actor(object):
             if self.game: self.game.block = False
             if self.game: self.game._event_finish(success=False) #signal to game event queue this event is done
             return None
-        else:
-            if logging: log.debug("will try and walk %s"%p)
         current_motion = None
         current_motion_count = 0
         for motion in p[0:-1]: #(action name, point)
@@ -2961,7 +2959,9 @@ class Mixer(object):
         if fname: 
             if os.path.exists(fname):
                 log.info("Loading sfx file %s"%fname)
-                if pygame.mixer: sfx = pygame.mixer.Sound(fname)
+                if pygame.mixer: 
+                    sfx = pygame.mixer.Sound(fname)
+                    sfx.set_volume(self.game.settings.sfx_volume)
             else:
                 log.warning("Music sfx %s missing."%fname)
                 return sfx
@@ -3046,14 +3046,14 @@ class Camera(object):
         if scene:
             postcamera_fn = get_function(self.game, "postcamera_%s"%slugify(scene.name))
             if postcamera_fn: postcamera_fn(self.game, scene, self.game.player)
-        self.game._event_finish()
+        self.game._event_finish(block=False)
 
     def on_viewport(self, rect=None):
         self.game.screen.set_clip()
         self.game.screen.fill((0,0,0))
         self._viewport = rect
         self.game.screen.set_clip(rect)
-        self.game._event_finish()
+        self.game._event_finish(block=False)
 
   
     def _effect_fade_out(self, screen):
@@ -3110,6 +3110,14 @@ class Camera(object):
             return
         self._image = pygame.Surface(self.game.resolution)
         self._effect = self._effect_fade_in 
+        
+    def on_set_alpha(self, val):
+        if val != 1.0:
+            self._image = pygame.Surface(self.game.resolution)    
+            self._image.set_alpha(val)
+        else:
+            self._image = None
+        self.game._event_finish(block=False)
 
 #If we use text reveal
 SLOW = 0
@@ -3142,12 +3150,14 @@ class Settings(object):
 
     def save(self, save_dir):
         """ save the current game settings """
+        if logging: log.debug("Saving settings to %s"%save_dir)
         fname = os.path.join(save_dir, "game.settings")
         with open(fname, "w") as f:
            pickle.dump(self, f)
 
     def load(self, save_dir):
         """ load the current game settings """
+        if logging: log.debug("Loading settings from %s"%save_dir)
         fname = os.path.join(save_dir, "game.settings")
         try:
             with open(fname, "r") as f:
@@ -3155,6 +3165,7 @@ class Settings(object):
             return data
         except: #if any problems, use default settings
             log.warning("Unable to load settings from %s, using defaults"%fname)
+            #use loaded settings            
             return self 
 
 EDIT_CLICKABLE = "clickable_area"
@@ -3287,7 +3298,21 @@ class Game(object):
         for i in modules:
             self._modules[i] = 0 
         self.check_modules() #set initial timestamp record
-        
+    
+    def apply_settings(self):
+        """ Apply as many settings in .settings as possible """
+        if not self.settings: return
+        #apply fullscreen
+        if pygame.display.get_surface():
+            is_fullscreen = pygame.display.get_surface().get_flags() & pygame.FULLSCREEN
+            self.fullscreen = self.settings.fullscreen
+            if self.settings.fullscreen:
+                flags |= pygame.FULLSCREEN 
+            self.screen = pygame.display.set_mode(self.resolution, flags)
+        #apply music volume
+        self.mixer.music_volume(self.settings.music_volume)
+        self.show_portals = self.settings.show_portals
+    
     def check_modules(self):
         """ poll system to see if python files have changed """
         modified = False
@@ -3761,8 +3786,7 @@ class Game(object):
         elif self.ENABLE_EDITOR and key == K_F3: #kill an event if stuck in the event queue
             self._event_finish()      
         elif self.ENABLE_EDITOR and key == K_F4:
-            self.camera.scene("cdoors")
-            self.player.relocate("cdoors", (500,400))
+            self.mixer.music_volume(0.0)
         elif self.ENABLE_EDITOR and key == K_F5:
             from scripts.chapter11 import interact_Damien
             interact_Damien(self, self.actors["Damien"], self.player)
@@ -4469,6 +4493,7 @@ class Game(object):
             print("setting to headless")
             self.headless = True
         pygame.init() 
+        
         if icon:
             pygame.display.set_icon(pygame.image.load(icon))
         flags = 0

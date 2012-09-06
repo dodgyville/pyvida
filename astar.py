@@ -13,6 +13,8 @@ try:
 except ImportError:
     logging = None
 
+ENABLE_ASTAR_LOG = False
+
 class Rect(object):
     def __init__(self, x, y, w, h):
         self.x,self.y,self.w,self.h = x,y,w,h
@@ -345,7 +347,7 @@ class Astar(object):
                 import pdb; pdb.set_trace()
             append_node = True                
             if self.walkarea and not self.walkarea.collide(*node): 
-                if logging: log.debug("astar: excluding %s because of %s"%(str(node), str(self.walkarea.vertexarray)))
+                if logging and ENABLE_ASTAR_LOG: log.debug("astar: excluding %s because of %s"%(str(node), str(self.walkarea.vertexarray)))
                 
                 append_node = False #don't add if out of walkarea
             if append_node == True and node not in nodes: nodes.append(node)
@@ -380,7 +382,7 @@ class Astar(object):
                 import pdb; pdb.set_trace()
         goal_rect = Rect(goal[0]-dx, goal[1]-dy, dx*2,dy*2)
         r= goal_rect
-        if logging: log.debug("astar: goal_rect is %s %s %s %s"%(r.topleft, r.bottomleft, r.topright, r.bottomright))
+        if logging and ENABLE_ASTAR_LOG: log.debug("astar: goal_rect is %s %s %s %s"%(r.topleft, r.bottomleft, r.topright, r.bottomright))
         current = previous = None
         while openset:
             f_score_sorted = sorted(f_score.iteritems(), key=operator.itemgetter(1))
@@ -421,7 +423,7 @@ class Astar(object):
     def animated(self, start, goal):
         """ Get some animation steps that help us get to the goal """
         if logging: log.debug("astar.animated: starting goal planning from %s to %s"%(start, goal))
-        if logging:
+        if logging and ENABLE_ASTAR_LOG:
             if self.walkarea:
                 log.debug("astar.animated: walkarea %s"%self.walkarea)
             else:
@@ -431,17 +433,17 @@ class Astar(object):
             if logging: log.debug("astar: Unable to find path to end goal")
             return False #unable to find path
         shortterm_goal = path[1]
-        if logging: 
+        if logging and ENABLE_ASTAR_LOG: 
             log.debug("animated.astar: Full node path is %s"%path)
             log.debug("animated.astar: Shortterm goal is %s, starting step astar"%str(shortterm_goal))
         steps = self.astar(start, shortterm_goal, False)
             
         steps = self.astar(start, goal, False)
-        if logging: log.debug("animated.astar: got steps")
+        if logging and ENABLE_ASTAR_LOG: log.debug("animated.astar: got steps")
         if not steps:
-            if logging: log.debug("astar: Unable to find path to shortterm goal")
+            if logging and ENABLE_ASTAR_LOG: log.debug("astar: Unable to find path to shortterm goal")
             return []
-        if logging: log.debug("astar: Shortterm path is %s"%steps)
+        if logging and ENABLE_ASTAR_LOG: log.debug("astar: Shortterm path is %s"%steps)
         turns = 0
         d = {}
         for step_data in self.available_steps: #convert step data into lookup
