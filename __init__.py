@@ -1502,7 +1502,7 @@ class Actor(object):
             self.actions[key].astar = False 
         for key in actions: #now override
             if key in self.actions: self.actions[key].astar = True 
-        self._event_finish()        
+        self._event_finish(block=False)        
 
     def on_set_actions(self, actions, prefix=None, postfix=None, astar=None):
         """ Take a list of actions and replace them with prefix_action eg set_actions(["idle", "over"], "off") """
@@ -1517,7 +1517,7 @@ class Actor(object):
                 self.actions[i] = self.actions[key]
                 if astar:
                     self.actions[i].astar = astar
-        self._event_finish()
+        self._event_finish(block=False)
     
     def on_backup_actions(self, actions, prefix):
         """ Take a list of actions and make copies with prefix_action """       
@@ -4378,11 +4378,11 @@ class Game(object):
 
             e = self.add(MenuItem("e_object_allow_draw", editor_toggle_draw, (350, 45), (350,-50), v[0]).smart(self))            
             e.do("idle_on")
-            e = self.add(MenuItem("e_object_allow_look", editor_toggle_look, (380, 45), (380,-50), v[0]).smart(self))            
+            e = self.add(MenuItem("e_object_allow_look", editor_toggle_look, (380, 45), (380,-50), v[0], display_text="allow look").smart(self))            
             e.do("idle_on")
-            e = self.add(MenuItem("e_object_allow_interact", editor_toggle_interact, (410, 45), (410,-50), v[0]).smart(self))            
+            e = self.add(MenuItem("e_object_allow_interact", editor_toggle_interact, (410, 45), (410,-50), v[0], display_text="allow interact").smart(self))            
             e.do("idle_on")
-            e = self.add(MenuItem("e_object_allow_use", editor_toggle_use, (440, 45), (440,-50), v[0]).smart(self))            
+            e = self.add(MenuItem("e_object_allow_use", editor_toggle_use, (440, 45), (440,-50), v[0], display_text="allow inventory use").smart(self))            
             e.do("idle_on")
             self.add(MenuItem("e_actions", editor_actions, (500, 45), (500,-50), v[0], display_text="edit object actions").smart(self))            
             

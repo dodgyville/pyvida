@@ -13,7 +13,7 @@ try:
 except ImportError:
     logging = None
 
-ENABLE_ASTAR_LOG = False
+ENABLE_ASTAR_LOG = True
 
 class Rect(object):
     def __init__(self, x, y, w, h):
@@ -377,7 +377,7 @@ class Astar(object):
             dx,dy=5,3 #how close do we have to hit the goal?
         else: #or match goal to the size of the available footprints of the actions
             try:
-                dx,dy = max([abs(x[1][0]) for x in self.available_steps]), max([abs(x[1][1]) for x in self.available_steps])
+                dx,dy = max([abs(x[1][0]) for x in self.available_steps])+1, max([abs(x[1][1]) for x in self.available_steps])+1
             except:
                 import pdb; pdb.set_trace()
         goal_rect = Rect(goal[0]-dx, goal[1]-dy, dx*2,dy*2)
