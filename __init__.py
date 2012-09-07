@@ -59,6 +59,8 @@ from pygame.locals import *#QUIT, K_ESCAPE
 from astar import Astar
 import euclid as eu
 
+HIDE_MOUSE = False
+
 VERSION_MAJOR = 1 #major incompatibilities
 VERSION_MINOR = 0 #minor/bug fixes, can run same scripts
 VERSION_SAVE = 1  #save/load version, only change on incompatible changes
@@ -339,6 +341,8 @@ def assertVicinty(): pass #stub
 
 def location(): pass #stub #XXX deprecated
 
+def description(): pass #used by walkthrough output
+
 
 def add_object_to_scene_analysis(game, obj): #profiling: watching a scene closely
     scene = game.analyse_scene
@@ -379,6 +383,12 @@ def process_step(game, step):
     if actor[0] == "*": #a non-trunk step (ie probably for testing, not part of walkthrough)
         actor = actor[1:]
         trunk_step = False
+    
+    actor_object = None
+    if actor in game.actors: actor_object = game.actors[actor]
+    if actor in game.items: actor_object = game.items[actor]
+    if actor in game.scenes: actor_object = game.scenes[actor]
+    actor_name = actor_object.display_text if actor_object and actor_object.display_text else actor        
     actee = None
     game.mouse_mode = MOUSE_LOOK
     if game.scene and game.errors < 2 and function_name != "location": #increment time spent in current scene
@@ -392,15 +402,24 @@ def process_step(game, step):
     if function_name == "interact":
         if logging: log.info("TEST SUITE: %s%s. %s with %s"%(game.steps_complete, label, function_name, actor))
         game.mouse_mode = MOUSE_INTERACT
-        if trunk_step and game.output_walkthrough: print("Click on \"%s\""%(actor))
+        if trunk_step and game.output_walkthrough: 
+            if actor in game.actors.keys():
+                verbs = ["Talk to", "Interact with"]
+            else: #item or portal
+                verbs = ["Click on the"]
+
+            if isinstance(actor_object, Portal):
+                name = actor_object.link.scene.display_text if actor_object.link.scene.display_text else actor_object.link.scene.name
+                print("Go to <b>%s</b>."%name)
+            else:
+                print("%s <b>%s</b>."%(choice(verbs), actor_name))
     elif function_name == "look":
         if logging: log.info("TEST SUITE: %s%s. %s at %s"%(game.steps_complete, label, function_name, actor))
         game.mouse_mode = MOUSE_LOOK
-        if trunk_step and game.output_walkthrough: print("Look at %s."%(actor))
+        if trunk_step and game.output_walkthrough: print("Look at %s."%(actor_name))
     elif function_name == "use": 
         actee = step[2] 
         if logging: log.info("TEST SUITE: %s%s. %s %s on %s"%(game.steps_complete, label, function_name, actor, actee))
-        if trunk_step and game.output_walkthrough: print("Use %s on %s."%(actee, actor))
         game.mouse_mode = MOUSE_USE
         if game.player and actee not in game.player.inventory:
             if logging: log.warning("Item %s not in player's inventory"%actee)
@@ -412,6 +431,9 @@ def process_step(game, step):
             if logging: log.error("Can't do test suite trigger use, unable to find %s in game objects"%actee)
             if actee not in game.missing_actors: game.missing_actors.append(actee)
             fail = True
+        actee_name = actee.display_text if actee and actee.display_text else step[2]
+        if trunk_step and game.output_walkthrough: print("Use <b>%s</b> on <b>%s</b>."%(actee_name, actor_name))
+
         if not fail: game.mouse_cursor = actee
     elif function_name == "goto": #move player to scene, by calc path
         global scene_path    
@@ -423,7 +445,7 @@ def process_step(game, step):
                 scene._add(game.player)
                 if logging: log.info("TEST SUITE: %s. Player goes %s"%(game.steps_complete, [x.name for x in scene_path]))
                 name = scene.display_text if scene.display_text else scene.name
-                if trunk_step and game.output_walkthrough: print("Go to %s."%(name))
+                if trunk_step and game.output_walkthrough: print("Go to <b>%s</b>."%(name))
                 game.camera.scene(scene)
             else:
                 if logging: log.error("Unable to get player from scene %s to scene %s"%(game.scene.name, actor))
@@ -431,12 +453,12 @@ def process_step(game, step):
             if logging: log.error("Going from no scene to scene %s"%actor)
         return
     elif function_name == "location": #check current location matches scene "actor"
-        if trunk_step and game.output_walkthrough: print("Player should be at %s."%(actor))
+        if trunk_step and game.output_walkthrough: print("Player is in %s."%(actor_name))
         if game.scene.name != actor:
             if logging: log.error("Current scene should be %s, but is currently %s"%(actor, game.scene.name))
         return
     elif function_name == "has": #check the player has item in inventory
-        if trunk_step and game.output_walkthrough: print("Player should have %s."%(actor))
+        if trunk_step and game.output_walkthrough: print("Player should have <b>%s</b>."%(actor_name))
         if not game.player.has(actor):
             if logging: log.error("Player should have %s in inventory, but does not."%(actor))
         return
@@ -444,6 +466,8 @@ def process_step(game, step):
         if hasattr(game, actor): game.__dict__[actor] = not game.__dict__[actor]
         log.info("toggle headless")
         return
+    elif function_name == "description": #check the player has item in inventory
+        if trunk_step and game.output_walkthrough: print(actor)        
     for i in game.modals: #try modals first
         possible_names = [i.name]
         if hasattr(i, "text"): possible_names.append(i.text)
@@ -1749,7 +1773,8 @@ class Actor(object):
             dx,dy = action.step_x, action.step_y #deltas[len(deltas)%i]
             dx2 = int(float(dx) * scale) 
             dy2 = int(float(dy) * scale)
-            self._motion_queue.append((dx2+randint(-1,1),dy2+randint(-1,1)))
+#            self._motion_queue.append((dx2+randint(-1,1),dy2+randint(-1,1)))
+            self._motion_queue.append((dx2,dy2))
         self._do(action) 
     
     def _goto_astar(self, x, y, walk_actions, walkareas=[]):
@@ -1969,7 +1994,9 @@ class Actor(object):
         """ add item to inventory, remove from scene if remove == True """
         item = self._gets(item, remove)
         if item == None: return
-        if self.game and self.game.output_walkthrough: print("%s gets %s."%(self.name, item.name))
+        name = self.display_text if self.display_text else self.name
+        item_name = item.display_text if item.display_text else item.name
+        if self.game and self.game.output_walkthrough: print("%s gets %s."%(name, item_name))
         if self.game.testing: 
             self._event_finish()
             return
@@ -2089,6 +2116,8 @@ class Actor(object):
         """    
 #        game.menu_fade_out()
 #        game.menu_push() #hide and push old menu to storage
+        name = self.display_text if self.display_text else self.name
+        if self.game.output_walkthrough: print("%s says \"%s\"."%(name, args[0]))
         self.on_says(args[0]) #XXX should pass in action
         def collide_never(x,y): #for asks, most modals can't be clicked, only the txt modelitam options can.
             return False
@@ -2101,7 +2130,7 @@ class Actor(object):
             msgbox = self.game.add(ModalItem("msgbox", pos=(1024,768)).smart(self.game))
             msgbox.actor = self
             modals = [msgbox]
-        if self.game and self.game.output_walkthrough: print("%s says \"%s\"."%(self.name, args[0]))
+#        if self.game and self.game.output_walkthrough: print("%s says \"%s\"."%(self.name, args[0]))
         
         for m in modals: #for the new says elements, allow clicking on voice options
             if m.name != "ok":
@@ -3251,6 +3280,7 @@ class Game(object):
         self.mouse_cursors = {} #available mouse images
         self.mouse_cursor = MOUSE_POINTER #which image to use
         self.mouse_down = None #point of last mouse down (used by editor scale)
+        self.hide_cursor = HIDE_MOUSE
         
         #walkthrough and test runner
         self._walkthroughs = []
@@ -3557,6 +3587,7 @@ class Game(object):
     def toggle_editor(self):
             if self.enabled_editor:  #switch off editor
                 if self.editing_mode != EDITING_ACTOR: return
+                self.hide_cursor = HIDE_MOUSE
                 #self.menu_fade_out()
                 self.menu_pop()
                 self.menu_fade_in()
@@ -3564,9 +3595,10 @@ class Game(object):
                 self.enabled_editor = False
                 if hasattr(self, "e_objects"): self.e_objects = None #free add object collection
                 self.set_fps(int(1000.0/DEFAULT_FRAME_RATE))
-            else:
+            else: #switch on editor
                 editor_menu(self)
                 self.enabled_editor = True
+                self.hide_cursor = False #always show mouse
                 if self.scene and self.scene.objects: self.set_editing(self.scene.objects.values()[0])
                 self.fps = int(1000.0/100) #fast debug
 
@@ -3786,7 +3818,8 @@ class Game(object):
         elif self.ENABLE_EDITOR and key == K_F3: #kill an event if stuck in the event queue
             self._event_finish()      
         elif self.ENABLE_EDITOR and key == K_F4:
-            self.mixer.music_volume(0.0)
+            print("relocated debug")
+            self.items["debug"].relocate(self.scene, (0,50))
         elif self.ENABLE_EDITOR and key == K_F5:
             from scripts.chapter11 import interact_Damien
             interact_Damien(self, self.actors["Damien"], self.player)
@@ -4591,9 +4624,12 @@ class Game(object):
             elif self.mouse_cursor != None: #use an object (actor or item) image
                 obj_image = self.mouse_cursor.action.image()
                 mouse_image = self.mouse_cursors[MOUSE_POINTER]
-                cursor_rect = self.screen.blit(obj_image, (m[0], m[1]))
+                if not self.hide_cursor:
+                    cursor_rect = self.screen.blit(obj_image, (m[0], m[1]))
+                else:
+                    if self.loop%20 == 0: print("(mx,my)",m)
                 
-            if mouse_image: 
+            if mouse_image and not self.hide_cursor: 
                 if cursor_rect:
                     cursor_rect.union_ip(self.screen.blit(mouse_image, (m[0]-15, m[1]-15)))
                 else:
@@ -4641,7 +4677,7 @@ class Game(object):
                 self.artreactor_scene = self.scene
             
             #hide mouse
-            if self.scene and self.scene.background(): self.screen.blit(self.scene.background(), cursor_rect, cursor_rect)
+            if self.scene and self.scene.background() and not self.hide_cursor: self.screen.blit(self.scene.background(), cursor_rect, cursor_rect)
             if self.info_image and self.scene.background(): self.screen.blit(self.scene.background(), info_rect, info_rect)
             if debug_rect and self.scene.background(): self.screen.blit(self.scene.background(), debug_rect, debug_rect)
 

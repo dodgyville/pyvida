@@ -457,8 +457,8 @@ class Astar(object):
             x1,y1 = previous
             x2,y2 = current
             x3,y3 = neighbour
-            g1 = float(y2-y1)/((x2-x1)|1)
-            g2 = float(y3-y2)/((x3-x2)|1)
+            g1 = float(y2-y1)/(int(round(x2-x1))|1)
+            g2 = float(y3-y2)/(int(round(x3-x2))|1)
             d1 = g1/(abs(g1) or 1)
             d2 = g2/(abs(g2) or 1)
             if d1 != d2: turns += 1
