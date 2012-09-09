@@ -2125,11 +2125,19 @@ class Actor(object):
         portrait = Item("portrait")
         portrait.actions["idle"] = portrait.action = action
         portrait = self.game.add(portrait, False, ModalItem)
+        px, py = 65, iy+12 #top corner for portrait
+        #center portrait if smaller than 150x230
+        pimg = portrait._image()
+        if pimg and pimg.get_width()<150: #XXX MAGIC VARIABLES AAAAAAIIEEEE
+            px += round((150-pimg.get_width())/2)
+        if pimg and pimg.get_height()<230: #XXX MAGIC VARIABLES AAAAAAIIEEEE
+            py += round((230-pimg.get_height())/2)
+                
         ok = self.game.add(Item("ok").smart(self.game), False, ModalItem)
         ok.interact = close_msgbox
         
         self.game.stuff_event(ok.on_place, (900, iy+210))
-        self.game.stuff_event(portrait.on_place, (65, iy+12))
+        self.game.stuff_event(portrait.on_place, (px, py))
         self.game.stuff_event(txt.on_place, (220, iy+5))
         self.game.stuff_event(msg.on_goto, (54, iy))
     
@@ -3731,7 +3739,7 @@ class Game(object):
             return
         for i in self.menu: #then menu
             if i.collide(x,y) and i.allow_interact:
-                if i.actions.has_key('down'): i.action = i.actions['down']
+                if i.actions.has_key('down'): i._do('down')
                 i.trigger_interact() #always trigger interact on menu items
                 self.menu_mouse_pressed = True
                 return
@@ -3832,7 +3840,9 @@ class Game(object):
         for i in self.menu: #then menu
             if i.collide(x,y): #hovering
                 if i.actions and i.actions.has_key('over') and (i.allow_interact or i.allow_use or i.allow_look):
-                    i.action = i.actions['over']
+                    i._do('over')
+#                    i.action = i.actions['over']
+                    
                 t = i.name if i.display_text == None else i.display_text
                 self.info(t, i.nx, i.ny)
                 if i._on_mouse_move: i._on_mouse_move(x, y, button, modifiers)
@@ -3840,7 +3850,8 @@ class Game(object):
             else: #unhover over menu item
                 if i.action and i.action.name == "over" and (i.allow_interact or i.allow_use or i.allow_look):
                     if i.actions.has_key('idle'): 
-                        i.action = i.actions['idle']
+                        i._do('idle')
+#                        i.action = i.actions['idle']
                 #menu text should go back to non-highlighted
                 if isinstance(i, MenuText) and i._on_mouse_leave: i._on_mouse_leave(x, y, button, modifiers)
                         
