@@ -77,7 +77,7 @@ DEBUG_ASTAR = False
 
 ENABLE_EDITOR = True #default for editor
 ENABLE_PROFILING = True
-ENABLE_LOGGING = True
+ENABLE_LOGGING = False
 
 
 SELECT = 0 #manually select an item
@@ -106,7 +106,7 @@ if logging:
 
     LOG_FILENAME = 'pyvida4.log'
     log = logging.getLogger('pyvida4')
-    if logging: log.setLevel(logging.DEBUG)
+    if logging: log.setLevel(log_level)
 
     handler = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=2000000, backupCount=5)
     handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
@@ -468,6 +468,7 @@ def process_step(game, step):
         return
     elif function_name == "description": #check the player has item in inventory
         if trunk_step and game.output_walkthrough: print(actor)        
+        return
     for i in game.modals: #try modals first
         possible_names = [i.name]
         if hasattr(i, "text"): possible_names.append(i.text)
@@ -657,6 +658,32 @@ def editor_add_walkareapoint(game, menuItem, player):
      if game.editing:
             game.editing.polygon.vertexarray.append((512,316))
 
+"""
+from pyvida import merge_actions
+print("upleft")
+merge_actions(self.player, "dressed_up", "dressed_left", "dressed_upleft")
+print("upright")
+merge_actions(self.player, "dressed_up", "dressed_right", "dressed_upright")
+print("dleft")
+merge_actions(self.player, "dressed_down", "dressed_left", "dressed_downleft")
+print("dright")
+merge_actions(self.player, "dressed_down", "dressed_right", "dressed_downright")
+
+"""
+def merge_actions(actor, vaction, haction, newname):
+    vert = actor.actions[vaction]
+    horiz = actor.actions[haction]
+#    primary, secondary = (action1,action2) if len(action1.deltas) >= len(action2.deltas) else (action2, action1)
+    print("v",vert.deltas)
+    newaction = "%s"%(vert.name+horiz.name)
+    print(newname)
+    sf = 0.5
+    deltas = []
+    for i,v in enumerate(vert.deltas):
+        h = horiz.deltas[i]
+        deltas.append((int(round(h[0]*sf)), int(round(v[1]*sf))))
+    horiz.deltas = deltas    
+    horiz.save("data/actors/Minogue/%s.png"%newname)        
 
 #### pyvida classes ####
 @use_init_variables
@@ -731,16 +758,17 @@ class Action(object):
                 self.index = 0
         self.index += self.step
 
-    def save(self):
+    def save(self, fname=None):
         """ Save the action images, delta and offset """
-        fname = os.path.splitext(self.fname)[0]
+        fname = fname if fname else self.fname
+        fname, imgext = os.path.splitext(fname)
         width, height = self._raw_width, self._raw_height
         new_img = pygame.Surface((width, height), pygame.SRCALPHA, 32)
         for i, img in enumerate(self.images):
             r = img.get_rect().move(i*img.get_width(),0)
             rect = new_img.blit(img, r)
         #backup old files
-        for ext in [".png", ".offset", ".delta"]:
+        for ext in [".png", ".offset", ".delta", ".montage"]:
             dst = "%s%s.prev"%(fname, ext)
             if os.path.isfile(fname+ext):
                 print("moving",fname+ext,dst)
@@ -753,8 +781,10 @@ class Action(object):
             with open(fname+".delta", "w") as f:
                 for dx,dy in self.deltas:
                  f.write("%s %s\n"%(dx, dy))
+        with open(fname+".montage", "w") as f:
+            f.write("%s\n%s\n%s\n"%(self.count, int(round(width/self.count)), height))
                 
-        pygame.image.save(new_img, self.fname)
+        pygame.image.save(new_img, fname+imgext)
         
     def load(self):  #action.load
         """Load an anim from a montage file"""
@@ -869,6 +899,7 @@ class Actor(object):
         self._action_index = 0
         self._tint = None #when tinting an image, use this rgb colour with BLEND_MULT
         self._blit_flag = 0 #BLEND_MULT #mode to use with blits
+        self._cached_image = None #if single frame perhaps store scaled and tinted for optimisation
         
         self._alpha = 1.0
         self._alpha_target = 1.0
@@ -975,6 +1006,7 @@ class Actor(object):
     def set_scale(self, x): 
         """also change scale of all actions for actor, except talk actions probably"""
         self._scale = x
+        self._cached_image = None #clear cached image
         for i in self.actions.values():
             i.scale = x
     scale = property(get_scale, set_scale)  
@@ -1061,7 +1093,7 @@ class Actor(object):
             action_name = os.path.splitext(os.path.basename(action_fname))[0]
             action = self.actions[action_name] = Action(self, action_name, action_fname).load()
             if action_name == "idle": self.action = action
-            if action_name in ["left", "right", "up", "down"]: action.astar = True #guess these are walking actions
+            if action_name in ["left", "right", "up", "down", "upleft", "upright", "downleft", "downright"]: action.astar = True #guess these are walking actions
             if type(self) == Actor and action_name=="idle":
                 self._ax = int(action.image().get_width()/2)
                 self._ay = int(action.image().get_height() * 0.85)            
@@ -1217,17 +1249,21 @@ class Actor(object):
     def _draw_image(self, img, pos, tint = None, alpha=1.0):
         r = img.get_rect().move(pos)
         if self.game and self.game.headless: return r #headless mode skips sound and visuals
-        
-        if self.scale != 1.0:
-            w = int(img.get_width() * self.scale)
-            h = int(img.get_height() * self.scale)
-            img = pygame.transform.smoothscale(img, (w, h))
-        img.set_alpha(alpha)
-        if tint:
-            img = img.copy()
-            #s1.set_alpha(s0.get_alpha())            
-            img.fill(tint, special_flags=BLEND_MULT) #BLEND_MIN)
-        
+
+        if self._cached_image and self.action and self.action.count == 1: #used cached image
+            img = self._cached_image
+        else: #calc new image
+            if self.scale != 1.0:
+                w = int(img.get_width() * self.scale)
+                h = int(img.get_height() * self.scale)
+                img = pygame.transform.smoothscale(img, (w, h))
+            img.set_alpha(alpha)
+            if tint:
+                img = img.copy()
+                #s1.set_alpha(s0.get_alpha())            
+                img.fill(tint, special_flags=BLEND_MULT) #BLEND_MIN)
+            if self.action and self.action.count == 1: #single image, so cache it
+                self._cached_image = img
         
         if alpha != 1.0:
             _rect = blit_alpha(self.game.screen, img, r, alpha*255)
@@ -1402,6 +1438,7 @@ class Actor(object):
         self._event_finish()
 
     def _do(self, action, mode=LOOP, repeats=0):
+        self._cached_image = None
         if type(action) == Action: action = action.name
         if self.game and self.game.analyse_characters: self._count_actions_add(action, 1) #profiling
         self.mode = mode
@@ -1715,6 +1752,7 @@ class Actor(object):
         if logging: log.debug("%s set alpha %s"%(self.name, alpha))
         self._alpha = alpha
         self._alpha_target = alpha
+        self._cached_image = None
         self._event_finish(block=block)
     
     def on_move(self, delta, ignore=False):
@@ -1809,7 +1847,7 @@ class Actor(object):
         for i in self.actions.values():
             if i.astar:
                 step = (i.name, (int(round(float(i.step_x)*self.scale)), int(round(float(i.step_y)*self.scale)))) 
-                if step not in available_steps: available_steps.append(step)
+                if step not in available_steps: available_steps.append(step)        
         if walkarea: walkarea = walkarea.polygon #pass down polygon, not WalkArea class ... a bit messy TBH
         a = Astar("map1", solids, walkarea, available_steps)
         p = a.animated((self.x, self.y), (x,y))
@@ -2124,7 +2162,7 @@ class Actor(object):
 
         msgbox = None
         if not self.game.testing: #disable on_says modals (non-existent when test true)
-            modals = self.game.modals[-4:] #from on_saves
+            modals = self.game.modals[-4:] #from on_says
         else: #fake a model when testing
             #XXX hiding off screen to avoid redraw but this is resolution dependent
             msgbox = self.game.add(ModalItem("msgbox", pos=(1024,768)).smart(self.game))
@@ -2166,7 +2204,9 @@ class Actor(object):
                 elements.extend(menuItem.msgbox.options)
                 self.game.save_game.append([interact, menuItem.text, datetime.now()])
                 for i in elements:
-                    if game.items[i] in game.modals: game.modals.remove(game.items[i])
+                    if game.items[i] in game.modals:game.modals.remove(game.items[i])
+                if len(game.modals)>0 and game.testing:
+                    log.error("Unable to clear on_asks modals, appears to have gone wrong with %s"%[x.text for x in game.modals if hasattr(x,"text")])
                 if menuItem.callback: menuItem.callback(game, self, player)
                 self._event_finish()
 
@@ -2604,7 +2644,7 @@ ALPHABETICAL = 0
 
 class MenuText(Text, MenuItem):
     """ Use text to generate a menu item """
-    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=26, wrap=2000, interact=None, spos=(None, None), hpos=(None, None), key=None, font=DEFAULT_FONT):
+    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(42, 127, 255), size=26, wrap=2000, interact=None, spos=(None, None), hpos=(None, None), key=None, font=DEFAULT_FONT):
         if spos == (None, None): spos = pos
         MenuItem.__init__(self, name, interact, spos, hpos, key, text)
         Text.__init__(self,  name, pos, dimensions, text, colour, size, wrap, font)
@@ -2923,6 +2963,7 @@ class Mixer(object):
         self.music_break = 200000 #fade the music out every x milliseconds
         self.music_break_length = 15000 #keep it quiet for y milliseconds
         self.music_index = 0
+        self._music_fname = None
         
     def update(self, dt): #mixer.update
         self.music_index += dt
@@ -2936,10 +2977,12 @@ class Mixer(object):
             
 
     def _music_play(self, fname=None):
+        print("playing music")
         if fname: 
             if os.path.exists(fname):
                 log.info("Loading music file %s"%fname)
                 if pygame.mixer: pygame.mixer.music.load(fname)
+                self._music_fname = fname
             else:
                 log.warning("Music file %s missing."%fname)
                 if pygame.mixer: pygame.mixer.music.stop()
@@ -2956,7 +2999,10 @@ class Mixer(object):
 
     def _music_fade_in(self):
         if logging: log.warning("pyvida.mixer.music_fade_in fade not implemented yet")
-        if pygame.mixer: pygame.mixer.music.play()
+        try:
+            if pygame.mixer: pygame.mixer.music.play()
+        except:
+            pass
 
     def on_music_fade_out(self):
         self._music_fade_out()
@@ -2975,6 +3021,7 @@ class Mixer(object):
         self.game._event_finish()
 
     def on_music_volume(self, val):
+        print("set music volume %s"%val)
         if pygame.mixer: pygame.mixer.music.set_volume(val)
         self.game._event_finish()
 
@@ -3045,6 +3092,12 @@ class Camera(object):
             else:
                 if logging: log.warning("No background for scene %s"%self.game.scene.name)
         #start music for this scene
+        self._play_scene_music()
+        if game.scene.ambient_fname:
+            self._ambient_sound = self.game.mixer._sfx_play(game.scene.ambient_fname, loops=-1)
+
+    def _play_scene_music(self):
+        game = self.game
         if game.scene.music_fname == FADEOUT:
             self.game.mixer._music_fade_out()
         elif game.scene.music_fname == QUICKCUT:
@@ -3052,8 +3105,6 @@ class Camera(object):
         elif game.scene.music_fname:
             log.info("playing music {}".format(game.scene.music_fname))
             self.game.mixer._music_play(game.scene.music_fname)
-        if game.scene.ambient_fname:
-            self._ambient_sound = self.game.mixer._sfx_play(game.scene.ambient_fname, loops=-1)
 
     def on_scene(self, scene):
         """ change the scene """
@@ -3320,7 +3371,8 @@ class Game(object):
         self._wait = None #what time to hold processing events to
         
         fps = DEFAULT_FRAME_RATE 
-        self.fps = int(1000.0/fps)
+        self.fps = fps
+        self.time_delay = int(1000.0/fps)
         self.fullscreen = fullscreen
         
     def set_modules(self, modules):        
@@ -3331,6 +3383,7 @@ class Game(object):
     
     def apply_settings(self):
         """ Apply as many settings in .settings as possible """
+        print("apply settings")
         if not self.settings: return
         #apply fullscreen
         if pygame.display.get_surface():
@@ -3340,6 +3393,7 @@ class Game(object):
                 flags |= pygame.FULLSCREEN 
             self.screen = pygame.display.set_mode(self.resolution, flags)
         #apply music volume
+        print("applying music")
         self.mixer.music_volume(self.settings.music_volume)
         self.show_portals = self.settings.show_portals
     
@@ -3594,13 +3648,14 @@ class Game(object):
                 self.editing = None
                 self.enabled_editor = False
                 if hasattr(self, "e_objects"): self.e_objects = None #free add object collection
-                self.set_fps(int(1000.0/DEFAULT_FRAME_RATE))
+                self.set_fps(self.fps)
             else: #switch on editor
                 editor_menu(self)
                 self.enabled_editor = True
                 self.hide_cursor = False #always show mouse
                 if self.scene and self.scene.objects: self.set_editing(self.scene.objects.values()[0])
-                self.fps = int(1000.0/100) #fast debug
+                fps = 100
+                self.time_delay = int(1000.0/fps) #fast debug
 
     def _trigger(self, obj):
         t = time.time()
@@ -4463,12 +4518,12 @@ class Game(object):
         parser.add_option("-e", "--exceptions", action="store_true", dest="allow_exceptions", help="Switch off exception catching.")
         parser.add_option("-f", "--fullscreen", action="store_true", dest="fullscreen", help="Play game in fullscreen mode", default=False)
         parser.add_option("-H", "--headless", action="store_true", dest="headless", help="Run game as headless (no video)")
+        parser.add_option("-i", "--imagereactor", action="store_true", dest="artreactor", help="Save images from each scene")
         parser.add_option("-l", "--lowmemory", action="store_true", dest="memory_save", help="Run game in low memory mode")
         parser.add_option("-m", "--matrixinventory", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
         parser.add_option("-o", "--objects", action="store_true", dest="analyse_characters", help="Print lots of info about actor and items to calculate art requirements", default=False)        
         parser.add_option("-p", "--profile", action="store_true", dest="profiling", help="Record player movements for testing", default=False)        
 
-        parser.add_option("-i", "--imagereactor", action="store_true", dest="artreactor", help="Save images from each scene")
         parser.add_option("-r", "--random", action="store_true", dest="stresstest", help="Randomly deviate from walkthrough to stress test robustness of scripting")
         parser.add_option("-s", "--step", dest="step", help="Jump to step in walkthrough")
         parser.add_option("-t", "--text", action="store_true", dest="text", help="Play game in text mode (for players with disabilities who use text-to-speech output)", default=False)
@@ -4569,9 +4624,10 @@ class Game(object):
         
         if callback: callback(self)
         dt = self.fps #time passed (in miliseconds)
+        last_clock_tick = current_clock_tick = float(datetime.now().strftime("%s.%f"))*1000 #in milliseconds
         while self.quit == False: #game.draw game.update
+            last_clock_tick = float(datetime.now().strftime("%s.%f"))*1000 #current_clock_tick
             self.loop += 1
-            if not self.headless: pygame.time.delay(self.fps)
             if self.ENABLE_EDITOR and self.loop%10 == 0: #if editor is available, watch code for changes
                 modified_modules = self.check_modules()
                 if modified_modules:
@@ -4668,6 +4724,12 @@ class Game(object):
                 if t: debug_rect = debug_rect.union(t) if debug_rect else t #apply any camera effects                
             
             if not self.headless:
+                current_clock_tick = float(datetime.now().strftime("%s.%f"))*1000 #in milliseconds
+                #only delay as much as needed
+                used_time = current_clock_tick - last_clock_tick #how much time did computation use of this loop
+                delay = self.time_delay - used_time  #how much pause do we need to limit frame rate?
+                if delay > 0: pygame.time.delay(int(delay))
+            
                 pygame.display.flip() #show updated display to user
 
             #if profiling art, save a screenshot if needed
@@ -4703,8 +4765,9 @@ class Game(object):
                         if return_to_player: #hand control back to player
                             print("hand back!")
                             self.testing = False
-                            self.fps = int(1000.0/DEFAULT_FRAME_RATE) #this is actually miliseconds per frame
+                            self.time_delay = int(1000.0/self.fps) #this is actually miliseconds per frame
                             #self.tests = None
+                            if self.scene: self.camera._play_scene_music() #switch music back on
                             if self.player and self.testing_message:
                                 if self.headless: self.headless = False #force visual if handing over to player
                                 if self.jump_to_step == "lachlan":
@@ -4877,6 +4940,7 @@ class Game(object):
 
     def on_set_fps(self, fps):
         self.fps = fps
+        self.time_delay = int(1000.0/self.fps) #this is actually miliseconds per frame
         self._event_finish()
 
     def on_popup(self, text, image="msgbox", sfx=-1, block=True, modal=True,):

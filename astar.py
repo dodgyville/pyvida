@@ -256,7 +256,7 @@ class Astar(object):
         self.nodes.extend(self.convert_walkarea_to_nodes())
 #        self.nodes.extend(self.square_nodes())
         self.nodes = self.clean_nodes(self.nodes)
-        self.TURN_PENALTY = 3
+        self.TURN_PENALTY = 0
 
     def convert_solids_to_nodes(self):
         """ inflate the rectangles and add them to a list of nodes """
@@ -307,7 +307,7 @@ class Astar(object):
         else:
             return [current_node]
 
-    def neighbour_nodes(self, current):
+    def neighbour_nodes(self, current, goal):
         """ only return nodes:
         1. are not the current node
         2. that nearly vertical of horizontal to current
@@ -335,9 +335,10 @@ class Astar(object):
                 if append_node == True and node not in nodes: nodes.append(node)
         return nodes
 
-    def step_nodes(self, current):
+    def step_nodes(self, current, goal):
         """ return nodes based on a character walking, exclude ones inside solids and outside walkarea """
         nodes = []
+        distance_nodes = []
         for step_data in self.available_steps:
             action, step = step_data
             try:
@@ -350,9 +351,13 @@ class Astar(object):
                 if logging and ENABLE_ASTAR_LOG: log.debug("astar: excluding %s because of %s"%(str(node), str(self.walkarea.vertexarray)))
                 
                 append_node = False #don't add if out of walkarea
-            if append_node == True and node not in nodes: nodes.append(node)
+            if append_node == True and node not in nodes: 
+                nodes.append(node)
+                distance_nodes.append((self.dist_between(goal, node), node))
 #        if logging: log.debug("astar.step_nodes: Adding %s nodes using %s"%(str(nodes), str(self.available_steps)))
-        return self.clean_nodes(nodes)
+        distance_nodes.sort()
+        nodes = [x[1] for x in distance_nodes]
+        return nodes
 
     def dist_between(self, current, neighbour):
         a = current[0] - neighbour[0]
@@ -365,6 +370,7 @@ class Astar(object):
         if goal not in self.nodes:
             self.nodes.append(goal)
 #            self.nodes = self.square_nodes()
+        
         closedset = [] # set of nodes already evaluated
         openset = [start,]  # set of nodes to be evaluated, initially containing the start node
 
@@ -387,7 +393,7 @@ class Astar(object):
         while openset:
             f_score_sorted = sorted(f_score.iteritems(), key=operator.itemgetter(1))
             previous = current
-            previous = None #disable turn based penalty
+#            previous = None #XXX disable turn based penalty
             current = f_score_sorted[0][0]
             if goal_rect.collidepoint(current):
                 path = self.reconstruct_path(came_from, current) #return path to current, not goal as current is close enough
@@ -399,11 +405,11 @@ class Astar(object):
 
             closedset.append(current)
             neighbour_fn = self.neighbour_nodes if distance_neighbour else self.step_nodes
-            for neighbour in neighbour_fn(current):
+            for neighbour in neighbour_fn(current, goal):
                 if neighbour in closedset:
                     continue
-                tentative_g_score = g_score[current] + self.dist_between(current, neighbour)
-                if previous: 
+                turn_penalty = 0
+                if previous: #calc if we have changed direction
                     x1,y1 = previous
                     x2,y2 = current
                     x3,y3 = neighbour
@@ -411,13 +417,14 @@ class Astar(object):
                     g2 = float(y3-y2)/((x3-x2)|1)
                     d1 = g1/(abs(g1) or 1)
                     d2 = g2/(abs(g2) or 1)
-                    if previous and d1 != d2:
-                        f_score[neighbour] += self.TURN_PENALTY
+                    if d1 != d2:
+                        turn_penalty = self.TURN_PENALTY
+                tentative_g_score = g_score[current] + self.dist_between(current, neighbour) + turn_penalty
                 if neighbour not in openset or tentative_g_score < g_score[neighbour]:
                      openset.append(neighbour)
                      came_from[neighbour] = current
                      g_score[neighbour] = tentative_g_score
-                     f_score[neighbour] = g_score[neighbour] + self.heuristic_cost_estimate(neighbour, goal)
+                     f_score[neighbour] = g_score[neighbour] + self.heuristic_cost_estimate(neighbour, goal) 
         return False
 
     def animated(self, start, goal):
@@ -429,6 +436,7 @@ class Astar(object):
             else:
                 log.debug("astar.animated: no walkarea")
         path = self.astar(start, goal)
+        
         if not path:
             if logging: log.debug("astar: Unable to find path to end goal")
             return False #unable to find path
@@ -437,7 +445,8 @@ class Astar(object):
             log.debug("animated.astar: Full node path is %s"%path)
             log.debug("animated.astar: Shortterm goal is %s, starting step astar"%str(shortterm_goal))
         steps = self.astar(start, shortterm_goal, False)
-            
+        
+        #XXX disable higher level planning    
         steps = self.astar(start, goal, False)
         if logging and ENABLE_ASTAR_LOG: log.debug("animated.astar: got steps")
         if not steps:

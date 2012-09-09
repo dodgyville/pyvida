@@ -22,6 +22,12 @@ This is perfect for testing and editing.
 -a = artreactor
 
 
+Profiling
+=========
+python -m cProfile -o spaceout.profile main.py -s rose1 -H -x
+
+
+
 Inventory Testing
 =================
 
