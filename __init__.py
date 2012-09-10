@@ -77,7 +77,7 @@ DEBUG_ASTAR = False
 
 ENABLE_EDITOR = True #default for editor
 ENABLE_PROFILING = True
-ENABLE_LOGGING = False
+ENABLE_LOGGING = True
 
 
 SELECT = 0 #manually select an item
@@ -432,7 +432,7 @@ def process_step(game, step):
             if actee not in game.missing_actors: game.missing_actors.append(actee)
             fail = True
         actee_name = actee.display_text if actee and actee.display_text else step[2]
-        if trunk_step and game.output_walkthrough: print("Use <b>%s</b> on <b>%s</b>."%(actee_name, actor_name))
+        if trunk_step and game.output_walkthrough: print("Go to inventory, select <b>%s</b> and use on <b>%s</b>."%(actee_name, actor_name))
 
         if not fail: game.mouse_cursor = actee
     elif function_name == "goto": #move player to scene, by calc path
@@ -1250,20 +1250,22 @@ class Actor(object):
         r = img.get_rect().move(pos)
         if self.game and self.game.headless: return r #headless mode skips sound and visuals
 
-        if self._cached_image and self.action and self.action.count == 1: #used cached image
-            img = self._cached_image
-        else: #calc new image
-            if self.scale != 1.0:
-                w = int(img.get_width() * self.scale)
-                h = int(img.get_height() * self.scale)
-                img = pygame.transform.smoothscale(img, (w, h))
-            img.set_alpha(alpha)
-            if tint:
-                img = img.copy()
-                #s1.set_alpha(s0.get_alpha())            
-                img.fill(tint, special_flags=BLEND_MULT) #BLEND_MIN)
-            if self.action and self.action.count == 1: #single image, so cache it
-                self._cached_image = img
+        #XXX disable single image cache
+#        if self._cached_image and self.action and self.action.count == 1: #used cached image
+ #           img = self._cached_image
+#        else: #calc new image
+        if self.scale != 1.0:
+            w = int(img.get_width() * self.scale)
+            h = int(img.get_height() * self.scale)
+            img = pygame.transform.smoothscale(img, (w, h))
+        img.set_alpha(alpha)
+        if tint:
+            img = img.copy()
+            #s1.set_alpha(s0.get_alpha())            
+            img.fill(tint, special_flags=BLEND_MULT) #BLEND_MIN)
+         #XXX disable single image cache
+#        if self.action and self.action.count == 1: #single image, so cache it
+ #           self._cached_image = img
         
         if alpha != 1.0:
             _rect = blit_alpha(self.game.screen, img, r, alpha*255)
