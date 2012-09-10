@@ -77,7 +77,7 @@ DEBUG_ASTAR = False
 
 ENABLE_EDITOR = True #default for editor
 ENABLE_PROFILING = True
-ENABLE_LOGGING = True
+ENABLE_LOGGING = False
 
 
 SELECT = 0 #manually select an item
@@ -4637,9 +4637,9 @@ class Game(object):
         
         if callback: callback(self)
         dt = self.fps #time passed (in miliseconds)
-        last_clock_tick = current_clock_tick = float(datetime.now().strftime("%s.%f"))*1000 #in milliseconds
+	last_clock_tick = current_clock_tick = int(round(time.time() * 1000))
         while self.quit == False: #game.draw game.update
-            last_clock_tick = float(datetime.now().strftime("%s.%f"))*1000 #current_clock_tick
+            last_clock_tick = int(round(time.time() * 1000))
             self.loop += 1
             if self.ENABLE_EDITOR and self.loop%10 == 0: #if editor is available, watch code for changes
                 modified_modules = self.check_modules()
@@ -4737,7 +4737,7 @@ class Game(object):
                 if t: debug_rect = debug_rect.union(t) if debug_rect else t #apply any camera effects                
             
             if not self.headless:
-                current_clock_tick = float(datetime.now().strftime("%s.%f"))*1000 #in milliseconds
+                current_clock_tick = int(round(time.time() * 1000))
                 #only delay as much as needed
                 used_time = current_clock_tick - last_clock_tick #how much time did computation use of this loop
                 delay = self.time_delay - used_time  #how much pause do we need to limit frame rate?
