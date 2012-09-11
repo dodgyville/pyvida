@@ -28,6 +28,7 @@ Contents:
    running.rst
    signals.rst
    extras.rst
+   distribution.rst
    technical.rst
    reference.rst
 

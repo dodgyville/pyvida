@@ -77,7 +77,7 @@ DEBUG_ASTAR = False
 
 ENABLE_EDITOR = True #default for editor
 ENABLE_PROFILING = True
-ENABLE_LOGGING = False
+ENABLE_LOGGING = True
 
 
 SELECT = 0 #manually select an item
@@ -125,12 +125,15 @@ else: #redirect log to stdout
             print(txt)
     log = PrintLog()
 
+DEFAULT_FULLSCREEN = False
+
 if logging:
     if logging: log.debug("\n\n======== STARTING RUN ===========")
 
     if 'win32' in sys.platform: # check for win32 support
         # win32 allows building of executables #    import py2exe
         if logging: log.info("[Win32]")
+        DEFAULT_FULLSCREEN = True
     if 'darwin' in sys.platform: # check for OS X support
         if logging: log.info("[MacOS]")
     if 'linux' in sys.platform:
@@ -2974,9 +2977,16 @@ class Mixer(object):
         self.music_break_length = 15000 #keep it quiet for y milliseconds
         self.music_index = 0
         self._music_fname = None
+        self._unfade_music = None # (channel_to_watch, new_music_volme)
         
     def update(self, dt): #mixer.update
         self.music_index += dt
+        if self._unfade_music:
+            channel, volume = self._unfade_music
+            if not channel.get_busy(): #sound has ended, change volume
+                pygame.mixer.music.set_volume(volume)
+                self._unfade_music = None
+
         if self.music_index > self.music_break and pygame.mixer.music.get_busy():
             log.info("taking a music break, fading out")
             self._music_fade_out()
@@ -3018,10 +3028,9 @@ class Mixer(object):
         self._music_fade_out()
         self.game._event_finish()
 
-    def on_music_fade_out(self):
+    def on_music_fade_in(self):
         self._music_fade_in()
         self.game._event_finish()
-
         
     def _music_stop(self):
         if pygame.mixer: pygame.mixer.music.stop()
@@ -3035,7 +3044,7 @@ class Mixer(object):
         if pygame.mixer: pygame.mixer.music.set_volume(val)
         self.game._event_finish()
 
-    def _sfx_play(self, fname=None, loops=0):
+    def _sfx_play(self, fname=None, loops=0, fade_music=False):
         sfx = None
         if self.game and self.game.headless:  #headless mode skips sound and visuals
             if fname and not os.path.exists(fname):
@@ -3051,11 +3060,19 @@ class Mixer(object):
             else:
                 log.warning("Music sfx %s missing."%fname)
                 return sfx
-        if pygame.mixer and sfx and not self.game.testing: sfx.play(loops=loops) #play once
+        if pygame.mixer and sfx and not self.game.testing: 
+            #fade music if needed
+            v = None
+            if fade_music and pygame.mixer.music.get_busy():
+                v = pygame.mixer.music.get_volume()
+                pygame.mixer.music.set_volume(v/2)
+            channel = sfx.play(loops=loops) #play once
+            #restore music if needed
+            if v: self._unfade_music = (channel, v)
         return sfx
 
-    def on_sfx_play(self, fname=None, loops=0):
-        self._sfx_play(fname, loops=loops)
+    def on_sfx_play(self, fname=None, loops=0, fade_music=False):
+        self._sfx_play(fname, loops, fade_music)
         self.game._event_finish()
 
 
@@ -3113,6 +3130,9 @@ class Camera(object):
         elif game.scene.music_fname == QUICKCUT:
             self.game.mixer._music_stop()
         elif game.scene.music_fname:
+            if game.mixer._music_fname == game.scene.music_fname and pygame.mixer.music.get_busy():
+                log.info("Already playing {}".format(game.scene.music_fname))
+                return
             log.info("playing music {}".format(game.scene.music_fname))
             self.game.mixer._music_play(game.scene.music_fname)
 
@@ -3231,9 +3251,10 @@ class Settings(object):
         self.allow_internet = True #check for updates and report stats
         self.allow_internet_debug = True #send profiling reports home
         
-        self.fullscreen = True
+        self.fullscreen = DEFAULT_FULLSCREEN
         self.show_portals = False
         self.textspeed = NORMAL
+        self.fps = DEFAULT_FRAME_RATE
                 
         self.invert_mouse = False #for lefties
         self.language = "en"
@@ -3285,7 +3306,7 @@ class Game(object):
     screen = None
     existing = False #is there a game in progress (either loaded or saved)
    
-    def __init__(self, name="Untitled Game", engine=VERSION_MAJOR, fullscreen=False, resolution=(1024,768)):
+    def __init__(self, name="Untitled Game", engine=VERSION_MAJOR, fullscreen=DEFAULT_FULLSCREEN, resolution=(1024,768), fps=DEFAULT_FRAME_RATE):
         if logging: log.debug("game object created at %s"%datetime.now())
 #        log = log
 #        self.voice_volume = 1.0
@@ -3380,7 +3401,6 @@ class Game(object):
         #variables for special events such as on_wait
         self._wait = None #what time to hold processing events to
         
-        fps = DEFAULT_FRAME_RATE 
         self.fps = fps
         self.time_delay = int(1000.0/fps)
         self.fullscreen = fullscreen
@@ -4954,6 +4974,7 @@ class Game(object):
     def on_set_fps(self, fps):
         self.fps = fps
         self.time_delay = int(1000.0/self.fps) #this is actually miliseconds per frame
+        if self.settings: self.settings.fps = self.fps
         self._event_finish()
 
     def on_popup(self, text, image="msgbox", sfx=-1, block=True, modal=True,):
