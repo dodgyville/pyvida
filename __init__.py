@@ -1855,7 +1855,11 @@ class Actor(object):
                 if step not in available_steps: available_steps.append(step)        
         if walkarea: walkarea = walkarea.polygon #pass down polygon, not WalkArea class ... a bit messy TBH
         a = Astar("map1", solids, walkarea, available_steps)
-        p = a.animated((self.x, self.y), (x,y))
+	try:
+            p = a.animated((self.x, self.y), (x,y))
+	except:
+            if logging: log.error("astar.animated search threw exception")
+	    p = None
 #        import pdb; pdb.set_trace()
 #        p = Astar((self.x, self.y), (x, y), nodes, solids, walkarea)
 #        print(self.name, self.x,self.y,"to",x,y,"points",nodes,"solids",solids,"path",p)
