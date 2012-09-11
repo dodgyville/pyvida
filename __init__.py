@@ -392,6 +392,7 @@ def process_step(game, step):
     if actor in game.items: actor_object = game.items[actor]
     if actor in game.scenes: actor_object = game.scenes[actor]
     actor_name = actor_object.display_text if actor_object and actor_object.display_text else actor        
+    actee_name = None
     actee = None
     game.mouse_mode = MOUSE_LOOK
     if game.scene and game.errors < 2 and function_name != "location": #increment time spent in current scene
@@ -3709,6 +3710,8 @@ class Game(object):
         elif self.mouse_mode == MOUSE_USE:
             self.game.save_game.append([use, obj.name, self.mouse_cursor.name, t])
             if not obj.allow_use: #if use disabled, do a regular interact
+                if self.testing or self.headless:
+                    if logging: log.error("Trying to do 'use' on %s but allow_use is False"%obj.name)
                 if obj.allow_interact: obj.trigger_interact()
             else:
                 obj.trigger_use(self.mouse_cursor)
@@ -4290,8 +4293,15 @@ class Game(object):
                 game.editing_point = None
                 game.camera.scene(scene)
                 if game.player: 
-                    game.player.relocate(scene)
                     game.player.do("idle")
+                    portals = [x for x in scene.objects.values() if isinstance(x, Portal)]
+                    if portals: #move player to near a portal (assuming inside walkarea)
+                        portal = choice(portals)
+                        game.player.relocate(scene, (portal.sx, portal.sy))
+                    else:
+                        game.player.relocate(scene)
+                        
+                    
                 editor_collection_close(game, collection, player)
 
             def editor_collection_newscene(game, btn, player):
@@ -4808,7 +4818,9 @@ class Game(object):
                             #self.tests = None
                             if self.scene: self.camera._play_scene_music() #switch music back on
                             if self.player and self.testing_message:
-                                if self.headless: self.headless = False #force visual if handing over to player
+                                if self.headless: 
+                                    self.headless = False #force visual if handing over to player
+                                    pygame.display.flip() #show updated display to user
                                 if self.jump_to_step == "lachlan":
                                     self.player.says("Previously in game. An alien fleet is attacking peaceful planets. As a last resort, Captain Elliott has been drafted  to find and defeat his ex-boyfriend (the alien leader). Arriving on New Camelot, Elliott has found a planet blissfully unaware it is about to be invaded ...")
                                 else:
