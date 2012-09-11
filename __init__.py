@@ -77,7 +77,7 @@ DEBUG_ASTAR = False
 
 ENABLE_EDITOR = True #default for editor
 ENABLE_PROFILING = True
-ENABLE_LOGGING = False
+ENABLE_LOGGING = True
 
 
 SELECT = 0 #manually select an item
@@ -3410,6 +3410,8 @@ class Game(object):
     def check_modules(self):
         """ poll system to see if python files have changed """
         modified = False
+        if 'win32' in sys.platform: # don't allow on windows
+            return modified
         for i in self._modules.keys(): #for modules we are watching
             fname = sys.modules[i].__file__
             fname, ext = os.path.splitext(fname)
