@@ -411,12 +411,16 @@ def process_step(game, step):
                 verbs = ["Talk to", "Interact with"]
             else: #item or portal
                 verbs = ["Click on the"]
+            if not actor_object: #probably in modals
+                verbs =  ["Select"]
 
             if isinstance(actor_object, Portal):
                 name = actor_object.link.scene.display_text if actor_object.link.scene.display_text else actor_object.link.scene.name
-                print("Go to <b>%s</b>."%name)
-            else:
-                print("%s <b>%s</b>."%(choice(verbs), actor_name))
+                print("Go to %s."%name)
+            elif actor_object:
+                print("%s %s."%(choice(verbs), actor_name))
+            else: #probably modal select text
+                print("Select \"%s\"."%actor_name)
     elif function_name == "look":
         if logging: log.info("TEST SUITE: %s%s. %s at %s"%(game.steps_complete, label, function_name, actor))
         game.mouse_mode = MOUSE_LOOK
@@ -436,7 +440,7 @@ def process_step(game, step):
             if actee not in game.missing_actors: game.missing_actors.append(actee)
             fail = True
         actee_name = actee.display_text if actee and actee.display_text else step[2]
-        if trunk_step and game.output_walkthrough: print("Go to inventory, select <b>%s</b> and use on <b>%s</b>."%(actee_name, actor_name))
+        if trunk_step and game.output_walkthrough: print("Go to inventory, select %s and use on %s."%(actee_name, actor_name))
 
         if not fail: game.mouse_cursor = actee
     elif function_name == "goto": #move player to scene, by calc path
@@ -449,7 +453,7 @@ def process_step(game, step):
                 scene._add(game.player)
                 if logging: log.info("TEST SUITE: %s. Player goes %s"%(game.steps_complete, [x.name for x in scene_path]))
                 name = scene.display_text if scene.display_text else scene.name
-                if trunk_step and game.output_walkthrough: print("Go to <b>%s</b>."%(name))
+                if trunk_step and game.output_walkthrough: print("Go to %s."%(name))
                 game.camera.scene(scene)
             else:
                 if logging: log.error("Unable to get player from scene %s to scene %s"%(game.scene.name, actor))
@@ -462,7 +466,7 @@ def process_step(game, step):
             if logging: log.error("Current scene should be %s, but is currently %s"%(actor, game.scene.name))
         return
     elif function_name == "has": #check the player has item in inventory
-        if trunk_step and game.output_walkthrough: print("Player should have <b>%s</b>."%(actor_name))
+        if trunk_step and game.output_walkthrough: print("Player should have %s."%(actor_name))
         if not game.player.has(actor):
             if logging: log.error("Player should have %s in inventory, but does not."%(actor))
         return
