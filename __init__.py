@@ -4639,7 +4639,7 @@ class Game(object):
         if icon:
             pygame.display.set_icon(pygame.image.load(icon))
         flags = 0
-        if options.fullscreen:
+        if options.fullscreen or self.settings.fullscreen:
             flags |= pygame.FULLSCREEN 
 #            flags |= pygame.HWSURFACE
             self.fullscreen = True
