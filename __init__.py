@@ -1371,22 +1371,21 @@ class Actor(object):
         dy = 0
         if l > 0: #in middle of moving somewhere
             dx, dy = self._motion_queue.pop(0)
-#            dx = int(float(dx) * self.scale) 
- #           dy = int(float(dy) * self.scale)
-            self.x += dx
-            self.y += dy
-            
-            if not self._test_goto_point((self._tx, self._ty)): #test each frame if we're over the point
-                if len(self._motion_queue) <= 1: #if not at point and queue (almost) empty, get some more queue or end the move
-                    self.on_goto((self._tx, self._ty), ignore=self._motion_queue_ignore)
-#        if self.action:
- #           ax,ay=self.ax*self.action.scale, self.ay*self.action.scale
-  #      else:
-   #         ax,ay=self.ax, self.ay
-#        self._clickable_area = Rect(self.ax, self.ay, self._clickable_area[2]*self.scale, self._clickable_area[3]*self.scale)
+            if (dx,dy) == (None, None):  #a manually inserted terminator, avoid calling goto or event_finish
+                pass
+            else:
+                self.x += dx
+                self.y += dy
+                
+                if not self._test_goto_point((self._tx, self._ty)): #test each frame if we're over the point
+                    if len(self._motion_queue) <= 1: #if not at point and queue (almost) empty, get some more queue or end the move
+                        self.on_goto((self._tx, self._ty), ignore=self._motion_queue_ignore)
+                        
+        if (dx,dy) != (None, None):
+            if self.action: self.action.update(dt)
+
         if self._alpha > self._alpha_target: self._alpha -= .05
         if self._alpha < self._alpha_target: self._alpha += .05
-        if self.action: self.action.update(dt)
         if hasattr(self, "update"): #run this actor's personalised update function
             self.update(dt)
         
@@ -1505,11 +1504,12 @@ class Actor(object):
         if logging: log.debug("actor %s placed at %s"%(self.name, destination))
         self._event_finish(block=False)
         
-    def on_queue_motion(self, motion):
+    def on_queue_motion(self, motion, ignore=False):
         """
         A queuing function:
         
         Add a point or list of points to this actors motion queue
+        ignore walkareas
         
         examples::
         
@@ -1520,6 +1520,7 @@ class Actor(object):
             self._motion_queue.extend(motion)
         else:
             self._motion_queue.append(motion)
+        self._motion_queue_ignore = ignore
         self._event_finish(block=False)
         
         
@@ -1957,7 +1958,7 @@ class Actor(object):
             walkarea_fail = True
             for w in self.scene.walkareas:
                 if w.polygon.collide(x,y): walkarea_fail = False
-            if logging and walkarea_fail and ignore==False: log.warning("Destination point (%s, %s) not inside %s walkarea "%(x,y, self.scene.name))                
+            if logging and walkarea_fail and ignore==False: log.warning("Destination point (%s, %s) for %s is not inside %s walkarea "%(x,y, self.name, self.scene.name))                
         if self.game.testing == True or self.game.enabled_editor: 
             if self.game.analyse_characters: #count walk actions as occuring for analysis
                 for w in walk_actions: self._count_actions_add(w, 5)
