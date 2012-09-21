@@ -59,7 +59,10 @@ from pygame.locals import *#QUIT, K_ESCAPE
 from astar import Astar
 import euclid as eu
 
-HIDE_MOUSE = False
+HIDE_MOUSE = False #useful for recording trailers
+DEFAULT_FULLSCREEN = False #switch game to fullscreen or not
+DEFAULT_EXPLORATION = True #show "unknown" on portal links before first visit there
+DEFAULT_PORTAL_TEXT = True #show portal text
 
 VERSION_MAJOR = 1 #major incompatibilities
 VERSION_MINOR = 0 #minor/bug fixes, can run same scripts
@@ -125,7 +128,6 @@ else: #redirect log to stdout
             print(txt)
     log = PrintLog()
 
-DEFAULT_FULLSCREEN = False
 
 if logging:
     if logging: log.debug("\n\n======== STARTING RUN ===========")
@@ -133,7 +135,6 @@ if logging:
     if 'win32' in sys.platform: # check for win32 support
         # win32 allows building of executables #    import py2exe
         if logging: log.info("[Win32]")
-        DEFAULT_FULLSCREEN = True
     if 'darwin' in sys.platform: # check for OS X support
         if logging: log.info("[MacOS]")
     if 'linux' in sys.platform:
@@ -2201,7 +2202,7 @@ class Actor(object):
 
         msgbox.options = []
         oy, oy2, iy = 490, 800, 360 #XXX magic variables for 1024x768
-        
+        remember_question = args[0] if "remember_key" not in kwargs else kwargs["remember_key"]
         for i, qfn in enumerate(args[1:]): #add the response options
             q, fn = qfn
             kwargs = {}
@@ -2241,7 +2242,7 @@ class Actor(object):
             opt.collide = opt._collide #switch on mouse over box
             opt.msgbox = msgbox
             msgbox.options.append(opt.name)
-            self.game.stuff_event(opt.on_place, (250,iy+100+i*40))
+            self.game.stuff_event(opt.on_place, (250,iy+95+i*42))
         
     def on_remove(self): #remove this actor from its scene
         if self.scene:
@@ -2265,7 +2266,7 @@ class Portal(Item):
         Item.__init__(self, *args, **kwargs)
         self.link = None #which Portal does it link to?
         self._ox, self._oy = 0,0 #outpoint, relative to _x, _y
-        self.display_text = "" #no overlay info text by default for a portal
+        self.display_text = self.name #no overlay info text by default for a portal
         self.display_exit = None #Image to use to show door exit
         self.display_exit_inactive = None #Image to use to show door exit
 #        self.interact = self._interact_default
@@ -2277,6 +2278,9 @@ class Portal(Item):
             fname = os.path.join(os.getcwd(), os.path.join(game.interface_dir, "p_exit%s.png"%p))
             if os.path.isfile(fname):
                 setattr(self, "display_exit%s"%p, pygame.image.load(fname).convert_alpha())
+#        if game.settings.show_portal_text:
+ #           self.display_text = self.name
+                
 
     def get_oy(self): return self._oy + self._y
     def set_oy(self, oy): self._oy = oy - self._y
@@ -2288,7 +2292,7 @@ class Portal(Item):
 
     def draw(self): #portal.draw
         Item.draw(self)
-        if self.game.show_portals:
+        if self.game.settings.show_portals:
             i = self.display_exit if self.allow_interact or self.allow_look else self.display_exit_inactive
             t = self._draw_image(i, (self.nx, self.ny))
             if t: self._rect = self._rect.union(t) if self._rect else t #apply any camera effects                
@@ -3007,7 +3011,6 @@ class Mixer(object):
             
 
     def _music_play(self, fname=None):
-        print("playing music")
         if fname: 
             if os.path.exists(fname):
                 log.info("Loading music file %s"%fname)
@@ -3050,7 +3053,6 @@ class Mixer(object):
         self.game._event_finish()
 
     def on_music_volume(self, val):
-        print("set music volume %s"%val)
         if pygame.mixer: pygame.mixer.music.set_volume(val)
         self.game._event_finish()
 
@@ -3075,7 +3077,7 @@ class Mixer(object):
             v = None
             if fade_music and pygame.mixer.music.get_busy():
                 v = pygame.mixer.music.get_volume()
-                pygame.mixer.music.set_volume(v/2)
+                pygame.mixer.music.set_volume(v*0.33)
             channel = sfx.play(loops=loops) #play once
             #restore music if needed
             if v: self._unfade_music = (channel, v)
@@ -3119,6 +3121,7 @@ class Camera(object):
             for i in scene.objects.values():
                 print(i.display_name)
         self.game.scene = scene
+        if scene.name not in self.game.visited: self.game.visited.append(scene.name) #remember scenes visited
         if logging: log.debug("changing scene to %s"%scene.name)
         if self.game and self.game.headless: return #headless mode skips sound and visuals
 
@@ -3263,6 +3266,8 @@ class Settings(object):
         
         self.fullscreen = DEFAULT_FULLSCREEN
         self.show_portals = False
+        self.show_portal_text = DEFAULT_PORTAL_TEXT
+        self.portal_exploration = DEFAULT_EXPLORATION
         self.textspeed = NORMAL
         self.fps = DEFAULT_FRAME_RATE
                 
@@ -3339,6 +3344,7 @@ class Game(object):
         self._last_event_success = True #did the last even succeed or fail
         self.block = False #block click events
         self._selected_options = [] #keep track of convo trees
+        self.visited = [] #list of scene names visited
         
         self.save_game = [] #a list of events caused by this player to get to this point in game
         self.save_title = ""  #title to display for save game
@@ -3358,10 +3364,7 @@ class Game(object):
         self.scenes = {}
         #accesibility options
         self.text = False #output game in plain text to stdout
-        
-        #settings
-        self.show_portals = False
-    
+            
         #always on screen
         self.menu = [] 
         self._menus = [] #a stack of menus 
@@ -3423,7 +3426,6 @@ class Game(object):
     
     def apply_settings(self):
         """ Apply as many settings in .settings as possible """
-        print("apply settings")
         if not self.settings: return
         #apply fullscreen
         if pygame.display.get_surface():
@@ -3433,9 +3435,8 @@ class Game(object):
                 flags |= pygame.FULLSCREEN 
             self.screen = pygame.display.set_mode(self.resolution, flags)
         #apply music volume
-        print("applying music")
         self.mixer.music_volume(self.settings.music_volume)
-        self.show_portals = self.settings.show_portals
+#        self.show_portals = self.settings.show_portals
     
     def check_modules(self):
         """ poll system to see if python files have changed """
@@ -3649,7 +3650,7 @@ class Game(object):
                 player.relocate(scene, (300,600))
         if not running_headless: self.set_headless(False) #restore headless state
         self._event_finish(block=False)
-        if draw_progress_bar: print("progress bar will be",self.progress_bar_count)
+#        if draw_progress_bar: print("progress bar will be",self.progress_bar_count)
         
 #        print("memory after game.smart")
 #        from meliae import scanner
@@ -3819,13 +3820,20 @@ class Game(object):
                 if i is not None and i.collide(x,y) and (i.allow_interact or i.allow_use or i.allow_look):
                     #if (i == self.player and self.mouse_mode == MOUSE_USE) or (i != self.player):
                     if True:
-                        if isinstance(i, Portal) and self.mouse_mode != MOUSE_USE:
+                        t = i.name if i.display_text == None else i.display_text                    
+                        if isinstance(i, Portal) and self.mouse_mode != MOUSE_USE: #hover over portal
                             self.mouse_cursor = MOUSE_LEFT if i._x<512 else MOUSE_RIGHT
                         elif self.mouse_mode == MOUSE_LOOK:
                             self.mouse_cursor = MOUSE_CROSSHAIR #MOUSE_EYES
                         elif self.mouse_mode != MOUSE_USE:
                             self.mouse_cursor = MOUSE_CROSSHAIR
-                        t = i.name if i.display_text == None else i.display_text                    
+                        if isinstance(i, Portal): #possibly show special overlay text for portals
+                            if self.settings.portal_exploration and i.link and i.link.scene:
+                                if i.link.scene.name not in self.visited:
+                                    t = "To the unknown."
+                                else:
+                                    t = "To %s"%(i.link.scene.name) if i.link.scene.display_text == None else "To %s"%(i.link.scene.display_text)
+                            if not self.settings.show_portal_text: t = ""                        
                         self.info(t, i.nx,i.ny)
                         return
     
@@ -4632,7 +4640,6 @@ class Game(object):
         if options.exit_step:
             self.exit_step = True                
         if options.headless: 
-            print("setting to headless")
             self.headless = True
         pygame.init() 
         
@@ -5197,6 +5204,14 @@ class Game(object):
         if self._menus: self.menu = self._menus.pop()
         if logging: log.debug("pop menu %s"%[x.name for x in self.menu])
         self._event_finish()
+
+    def on_cursor_show(self):
+        self.hide_cursor = False
+        self._event_finish(block=False)
+
+    def on_cursor_hide(self):
+        self.hide_cursor = True
+        self._event_finish(block=False)
         
         
 #signal dispatching, based on django.dispatch
