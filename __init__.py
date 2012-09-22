@@ -2132,7 +2132,7 @@ class Actor(object):
             kwargs["size"] = self.game.font_speech_size
 
             
-        txt = self.game.add(Text("txt", (220, oy2 + 20), (840, iy+130), text, **kwargs), False, ModalItem)
+        txt = self.game.add(Text("txt", (220, oy2 + 18), (840, iy+130), text, **kwargs), False, ModalItem)
         
         #get a portrait for this speech
         if type(action) == str: action = self.actions.get(action, None)
@@ -2180,7 +2180,10 @@ class Actor(object):
 #        game.menu_push() #hide and push old menu to storage
         name = self.display_text if self.display_text else self.name
         if self.game.output_walkthrough: print("%s says \"%s\"."%(name, args[0]))
-        self.on_says(args[0]) #XXX should pass in action
+        if "action" in kwargs:
+            self.on_says(args[0], action=kwargs["action"]) 
+        else:
+            self.on_says(args[0]) 
         def collide_never(x,y): #for asks, most modals can't be clicked, only the txt modelitam options can.
             return False
 
@@ -2242,7 +2245,7 @@ class Actor(object):
             opt.collide = opt._collide #switch on mouse over box
             opt.msgbox = msgbox
             msgbox.options.append(opt.name)
-            self.game.stuff_event(opt.on_place, (250,iy+95+i*42))
+            self.game.stuff_event(opt.on_place, (250,iy+95+i*43))
         
     def on_remove(self): #remove this actor from its scene
         if self.scene:
@@ -4836,7 +4839,7 @@ class Game(object):
                                 if self.jump_to_step == "lachlan":
                                     self.player.says("Previously in game. An alien fleet is attacking peaceful planets. As a last resort, Captain Elliott has been drafted  to find and defeat his ex-boyfriend (the alien leader). Arriving on New Camelot, Elliott has found a planet blissfully unaware it is about to be invaded ...")
                                 else:
-                                    self.player.says("Handing back control to you.")
+                                    self.player.says("Let's play.")
                                     if self.exit_step: self.quit = True #exit program
                                 self.modals_clear()
                             self.finish_tests()
