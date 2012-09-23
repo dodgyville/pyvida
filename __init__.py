@@ -2245,7 +2245,7 @@ class Actor(object):
             opt.collide = opt._collide #switch on mouse over box
             opt.msgbox = msgbox
             msgbox.options.append(opt.name)
-            self.game.stuff_event(opt.on_place, (250,iy+95+i*43))
+            self.game.stuff_event(opt.on_place, (250,iy+95+i*44))
         
     def on_remove(self): #remove this actor from its scene
         if self.scene:
