@@ -2679,7 +2679,7 @@ class MenuText(Text, MenuItem):
         MenuItem.__init__(self, name, interact, spos, hpos, key, text)
         Text.__init__(self,  name, pos, dimensions, text, colour, size, wrap, font)
         self.interact = interact
-        self.display_name = ""
+        self.display_name = " "
         self._on_mouse_move = self._on_mouse_move_utility #switch on mouse over change
         self._on_mouse_leave = self._on_mouse_leave_utility #switch on mouse over change
         self.x, self.y = self.out_x, self.out_y #default hiding at first
