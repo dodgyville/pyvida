@@ -26,6 +26,9 @@ Profiling
 =========
 python -m cProfile -o spaceout.profile main.py -s rose1 -H -x
 
+Load profile output into something like RunSnakeRun:
+runsnake spaceout.profile
+
 
 
 Inventory Testing

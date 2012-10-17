@@ -270,11 +270,23 @@ class Polygon(object):
     def __init__(self, vertexarray = []):
         self.vertexarray = vertexarray
         self.center = None
+        self._pointsList = None
+        self._pointsCount = 0
+        self._reset()
         
     def __get__(self):
         return self.vertexarray
     def __set__(self, v):
         self.vertexarray = v
+        self._reset()
+        
+    def _reset(self):
+        """ Call when vertextarray changes """        
+        pointsList = self.vertexarray
+        xp = [float(p[0]) for p in pointsList]
+        yp = [float(p[1]) for p in pointsList]
+        self._pointsList = (xp, yp)
+        self._pointsCount = len(pointsList)
 
     def get_point(self, i):
         """ return a point by index """
@@ -282,21 +294,20 @@ class Polygon(object):
 
     def set_point(self, i, x, y):
         self.vertexarray[i] = (x, y)
+        self._reset()
 
     def count(self):
         """ number of points in vertex """
-        return len(self.vertexarray)    
+        return self._pointsCount
 
     def collide(self, x,y):
         """ Returns True if the point x,y collides with the polygon """
-        pointsList = self.vertexarray
-        xp = [float(p[0]) for p in pointsList]
-        yp = [float(p[1]) for p in pointsList]
         # Initialize loop
         c=False
         i=0
-        npol = len(pointsList)
+        npol = self._pointsCount
         j=npol-1
+        xp,yp = self._pointsList[0], self._pointsList[1]
         while i < npol:
             if ((((yp[i]<=y) and (y<yp[j])) or 
                 ((yp[j]<=y) and(y<yp[i]))) and 
@@ -1862,11 +1873,13 @@ class Actor(object):
                 if step not in available_steps: available_steps.append(step)        
         if walkarea: walkarea = walkarea.polygon #pass down polygon, not WalkArea class ... a bit messy TBH
         a = Astar("map1", solids, walkarea, available_steps)
-	try:
+#        a.screen = self.game.screen 
+        p = a.animated((self.x, self.y), (x,y))
+        try:
             p = a.animated((self.x, self.y), (x,y))
-	except:
+        except:
             if logging: log.error("astar.animated search threw exception")
-	    p = None
+            p = None
 #        import pdb; pdb.set_trace()
 #        p = Astar((self.x, self.y), (x, y), nodes, solids, walkarea)
 #        print(self.name, self.x,self.y,"to",x,y,"points",nodes,"solids",solids,"path",p)
@@ -2995,8 +3008,10 @@ class Mixer(object):
         self.music_index = 0
         self._music_fname = None
         self._unfade_music = None # (channel_to_watch, new_music_volme)
+        self._force_mute = False #override settings
         
     def update(self, dt): #mixer.update
+        if self._force_mute: return
         self.music_index += dt
         if self._unfade_music:
             channel, volume = self._unfade_music
@@ -3014,6 +3029,7 @@ class Mixer(object):
             
 
     def _music_play(self, fname=None):
+        if self._force_mute: return
         if fname: 
             if os.path.exists(fname):
                 log.info("Loading music file %s"%fname)
@@ -3035,6 +3051,7 @@ class Mixer(object):
 
     def _music_fade_in(self):
         if logging: log.warning("pyvida.mixer.music_fade_in fade not implemented yet")
+        if self._force_mute: return
         try:
             if pygame.mixer: pygame.mixer.music.play()
         except:
@@ -3438,7 +3455,8 @@ class Game(object):
                 flags |= pygame.FULLSCREEN 
             self.screen = pygame.display.set_mode(self.resolution, flags)
         #apply music volume
-        self.mixer.music_volume(self.settings.music_volume)
+        music_volume = self.settings.music_volume if self.settings.music_on else 0
+        self.mixer.music_volume(music_volume)
 #        self.show_portals = self.settings.show_portals
     
     def check_modules(self):
@@ -4594,6 +4612,7 @@ class Game(object):
         parser.add_option("-t", "--text", action="store_true", dest="text", help="Play game in text mode (for players with disabilities who use text-to-speech output)", default=False)
         parser.add_option("-w", "--walkthrough", action="store_true", dest="output_walkthrough", help="Print a human readable walkthrough of this game, based on test suites.")
         parser.add_option("-x", "--exit", action="store_true", dest="exit_step", help="Used with --step, exit program after reaching step (good for profiling)")
+        parser.add_option("-z", "--zerosound", action="store_true", dest="mute", help="Mute sounds", default=False)        
 
 
 #        parser.add_option("-l", "--list", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
@@ -4614,6 +4633,8 @@ class Game(object):
         if options.text == True:
             print("Using text mode")
             self.text = True
+        if options.mute == True:
+            self.mixer._force_mute = True
         if options.memory_save == True: 
             self.memory_save = True
         if options.allow_editor == True: 

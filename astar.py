@@ -13,7 +13,7 @@ try:
 except ImportError:
     logging = None
 
-ENABLE_ASTAR_LOG = True
+ENABLE_ASTAR_LOG = False
 
 class Rect(object):
     def __init__(self, x, y, w, h):
@@ -233,7 +233,7 @@ def detect_intersect(start, end, r):
     return False if len(set(signs)) == 1 else True #if any signs change, then it is an intersect
 
 class Astar(object):
-    def __init__(self, name, solids, walkarea, available_steps, nodes=[]):
+    def __init__(self, name, solids, walkarea, available_steps, nodes=[], unavailable_nodes=[]):
         """
         solids: a list of Rects where path planning can not go through
         walkarea: a pyvida Polygon encompassing the entire walk area
@@ -256,7 +256,9 @@ class Astar(object):
         self.nodes.extend(self.convert_walkarea_to_nodes())
 #        self.nodes.extend(self.square_nodes())
         self.nodes = self.clean_nodes(self.nodes)
+        self._unavailable_nodes = unavailable_nodes #nodes we know are outside 
         self.TURN_PENALTY = 0
+        self.screen = None #used to debug pygame
 
     def convert_solids_to_nodes(self):
         """ inflate the rectangles and add them to a list of nodes """
@@ -348,15 +350,23 @@ class Astar(object):
                 import pdb; pdb.set_trace()
             append_node = True                
             if self.walkarea and not self.walkarea.collide(*node): 
-                if logging and ENABLE_ASTAR_LOG: log.debug("astar: excluding %s because of %s"%(str(node), str(self.walkarea.vertexarray)))
+#                if logging and ENABLE_ASTAR_LOG: log.debug("astar.step_nodes: excluding %s because of outside walkarea"%(str(node)))
                 
                 append_node = False #don't add if out of walkarea
             if append_node == True and node not in nodes: 
                 nodes.append(node)
                 distance_nodes.append((self.dist_between(goal, node), node))
-#        if logging: log.debug("astar.step_nodes: Adding %s nodes using %s"%(str(nodes), str(self.available_steps)))
+                if self.screen:
+                    import pygame
+                    from pygame import Rect as PyRect
+                    debug_rect = PyRect(node[0], node[1],1,1)
+                    pygame.draw.rect(self.screen, (0,255,100), debug_rect, 1)
         distance_nodes.sort()
+        if logging and ENABLE_ASTAR_LOG: log.debug("astar.step_nodes: Adding %s nodes using %s"%(str(distance_nodes), str(self.available_steps)))
         nodes = [x[1] for x in distance_nodes]
+        if self.screen:        
+            import pygame
+            pygame.display.update(debug_rect) #show updated display to user
         return nodes
 
     def dist_between(self, current, neighbour):
@@ -424,7 +434,10 @@ class Astar(object):
                      openset.append(neighbour)
                      came_from[neighbour] = current
                      g_score[neighbour] = tentative_g_score
-                     f_score[neighbour] = g_score[neighbour] + self.heuristic_cost_estimate(neighbour, goal) 
+#                     tentative_f_score = g_score[neighbour] + 
+                     tentative_f_score = self.heuristic_cost_estimate(neighbour, goal) 
+                     if neighbour not in f_score or f_score[neighbour] > tentative_f_score:
+                         f_score[neighbour] = tentative_f_score #new lowest score
         return False
 
     def animated(self, start, goal):
@@ -455,6 +468,7 @@ class Astar(object):
         if logging and ENABLE_ASTAR_LOG: log.debug("astar: Shortterm path is %s"%steps)
         turns = 0
         d = {}
+
         for step_data in self.available_steps: #convert step data into lookup
             d[step_data[1]] = step_data[0]
         actions = []
