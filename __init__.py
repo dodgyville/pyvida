@@ -646,11 +646,11 @@ def get_function(game, basic):
 
 #### pyvida helper functions ####
 def editor_menu(game):
-    game.menu_fade_out()
+    game.menu_hide()
     game.menu_push() #hide and push old menu to storage
     game.set_menu("e_load", "e_save", "e_add", "e_delete", "e_prev", "e_next", "e_walk", "e_portal", "e_scene", "e_step", "e_reload", "e_jump")
     game.menu_hide()
-    game.menu_fade_in()
+    game.menu_show()
 
 def editor_point(game, menuItem, player, editing=None):
     #click on an editor button for editing a point
@@ -3699,7 +3699,7 @@ class Game(object):
             mitems = ["e_location", "e_anchor", "e_stand", "e_scale", "e_talk", "e_clickable", "e_solid", "e_out", "e_object_allow_draw", "e_object_allow_look", "e_object_allow_interact", "e_object_allow_use", "e_add_walkareapoint", "e_actions"]
             self.set_menu(*mitems)
             self.menu_hide(mitems)
-            self.menu_fade_in()
+            self.menu_show()
         self._event_finish(block=False)
             
     def toggle_editor(self):
@@ -3708,18 +3708,18 @@ class Game(object):
                 self.hide_cursor = HIDE_MOUSE
                 #self.menu_fade_out()
                 self.menu_pop()
-                self.menu_fade_in()
+                self.menu_show()
                 self.editing = None
                 self.enabled_editor = False
                 if hasattr(self, "e_objects"): self.e_objects = None #free add object collection
-                self.set_fps(self.fps)
+#                self.set_fps(self.fps)
             else: #switch on editor
                 editor_menu(self)
                 self.enabled_editor = True
                 self.hide_cursor = False #always show mouse
                 if self.scene and self.scene.objects: self.set_editing(self.scene.objects.values()[0])
-                fps = 100
-                self.time_delay = int(1000.0/fps) #fast debug
+#                fps = 100
+#                self.time_delay = int(1000.0/fps) #fast debug
 
     def _trigger(self, obj):
         t = time.time()
