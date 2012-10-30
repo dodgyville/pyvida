@@ -1672,6 +1672,9 @@ class Actor(object):
         if update != None: self.action.allow_update = update
         self._event_finish(block=False)
 
+    def _rescale(self, scale):
+        self.scale = scale    
+
     def on_rescale(self, scale):
         """ A queuing function: scale the actor to a different size
         
@@ -1679,7 +1682,7 @@ class Actor(object):
             
                 player.scale(0.38) 
         """
-        self.scale = scale
+        self._rescale(scale)
         self._event_finish(block=False)
         
     def on_reclickable(self, area):
@@ -1744,7 +1747,8 @@ class Actor(object):
         self.editor_clean = False #actor no longer in position placed by editor
         self._event_finish(block=False)
     
-    def on_relocate(self, scene, destination=None): #actor.relocate
+    def on_relocate(self, scene, destination=None, scale=None): #actor.relocate
+        if scale: self._rescale(scale)
         self._relocate(scene, destination)
         #note: self._event_finish handled inside _relocate
     
@@ -5215,8 +5219,12 @@ class Game(object):
         if not menu_items:
             menu_items = self.menu
         if type(menu_items) not in [tuple, list]: menu_items = [menu_items]
-        for i in reversed(menu_items): self.stuff_event(i.on_goto, (i.out_x,i.out_y))
-        if logging: log.debug("fadeOut menu using goto %s"%[x.name for x in menu_items])
+        names = []
+        for i in reversed(menu_items): 
+            if type(i) == str: i = self.items[i]
+            names.append(i.name)
+            self.stuff_event(i.on_goto, (i.out_x,i.out_y))
+        if logging: log.debug("fadeOut menu using goto %s"%names)
         self._event_finish()
         
     def on_menu_hide(self, menu_items = None):
