@@ -148,6 +148,7 @@ if logging:
     log.warning("smart load should load non-idle action as default if there is only one action")
     log.warning("actor.asks not fully implemented")
     log.warning("pre_interact signal not implemented")
+    log.warning("pre_use signal not implemented")
 
 
 from pygame import Surface        
@@ -492,7 +493,7 @@ def process_step(game, step):
     for i in game.modals: #try modals first
         possible_names = [i.name]
         if hasattr(i, "text"): possible_names.append(i.text)
-        if hasattr(i, "display_name"): possible_names.append(i.display_name)
+        if hasattr(i, "display_text"): possible_names.append(i.display_text)
         if actor in possible_names:
             i.trigger_interact()
             return
@@ -1195,6 +1196,9 @@ class Actor(object):
                  #warn if using default vida look
                 if self.allow_use: log.warning("no use script for using %s with %s (write a def %s(game, %s, %s): function)"%(actor.name, self.name, basic, slug_actee.lower(), slug_actor.lower()))
                 self._use_default(self.game, self, actor)
+         for receiver, sender in post_use.receivers: #do the signals for post_use
+            if isinstance(self, sender): 
+                receiver(self.game, self, self.game.player)
 
         
     def trigger_interact(self):
@@ -1958,7 +1962,10 @@ class Actor(object):
         if self.game: self.game.block = True
         self._motion_queue_ignore = ignore
         if type(destination) == str:
-            destination = (self.game.actors[destination].sx, self.game.actors[destination].sy)
+            if destination in self.game.items:
+                destination = (self.game.items[destination].sx, self.game.items[destination].sy)
+            else:
+                destination = (self.game.actors[destination].sx, self.game.actors[destination].sy)
         elif type(destination) == int: #if an int, assume it's using the existing y
             destination = (destination, self.y)
         elif type(destination) != tuple:
@@ -2030,6 +2037,7 @@ class Actor(object):
         """
         return True if fact in self.facts else False       
     
+        
     def has(self, item):
         """ Does this actor have this item in their inventory?"""
         if type(item) != str: item = item.name
@@ -2264,6 +2272,12 @@ class Actor(object):
         if self.scene:
             self.scene._remove(self)
         self._event_finish(block=False)
+    
+    
+    def on_location(self):
+        """ Return the current scene queuing function """
+        self._event_finish(block=False)
+        return self.scene
         
     def on_wait(self, data): #actor.wait
         """ helper function for when we pass control of the event loop to a modal and need user 
@@ -2582,10 +2596,10 @@ def text_to_image(text, font, colour, maxwidth,offset=None):
     return img
 
 
-class Text(Actor):
+class Text(Item):
     """ Display text on the screen """
     def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=26, wrap=2000, font=None):
-        Actor.__init__(self, name)
+        Item.__init__(self, name)
         self.x, self.y = pos
         self.w, self.h = dimensions
 #        fname = "data/fonts/domesticManners.ttf"
@@ -2692,7 +2706,7 @@ class MenuText(Text, MenuItem):
         MenuItem.__init__(self, name, interact, spos, hpos, key, text)
         Text.__init__(self,  name, pos, dimensions, text, colour, size, wrap, font)
         self.interact = interact
-        self.display_name = " "
+        self.display_text = " "
         self._on_mouse_move = self._on_mouse_move_utility #switch on mouse over change
         self._on_mouse_leave = self._on_mouse_leave_utility #switch on mouse over change
         self.x, self.y = self.out_x, self.out_y #default hiding at first
@@ -3139,7 +3153,7 @@ class Camera(object):
                 print("There is no description for this scene")
             print("You can see:")
             for i in scene.objects.values():
-                print(i.display_name)
+                print(i.display_text)
         self.game.scene = scene
         if scene.name not in self.game.visited: self.game.visited.append(scene.name) #remember scenes visited
         if logging: log.debug("changing scene to %s"%scene.name)
@@ -3253,13 +3267,25 @@ class Camera(object):
             return
         self._image = pygame.Surface(self.game.resolution)
         self._effect = self._effect_fade_in 
-        
-    def on_set_alpha(self, val):
+
+    def _set_alpha(self, val):
         if val != 1.0:
             self._image = pygame.Surface(self.game.resolution)    
             self._image.set_alpha(val)
         else:
             self._image = None
+        
+    def on_on(self):
+        """ Switch camera on """
+        self._set_alpha(1.0)
+        self.game._event_finish(block=False)
+        
+    def on_off(self):
+        """ switch camera to black """                
+        self._set_alpha(0.0)    
+        self.game._event_finish(block=False)
+        
+    def on_set_alpha(self, val):
         self.game._event_finish(block=False)
 
 #If we use text reveal
@@ -3477,6 +3503,11 @@ class Game(object):
         
     def reload_modules(self):
         print("RELOAD MODULES")
+        #clear signals so they reload
+        for i in [post_interact, pre_interact, post_use, pre_use, pre_leave, post_arrive]:
+            i.receivers = []
+        
+        #reload modules
         module = "main" if android else "__main__" #which module to search for functions
         for i in self._modules:
             try:
@@ -3577,7 +3608,6 @@ class Game(object):
                     self.analyse_scene = obj
                     obj._total_actors = [] #store all actors referenced in this scene
                     obj._total_items = []
-                    
             elif isinstance(obj, MenuItem) or isinstance(obj, Collection): #menu items are stored in items
                 obj.x, obj.y = obj.out_x, obj.out_y #menu starts hidden by default
                 self.items[obj.name] = obj
@@ -3745,7 +3775,7 @@ class Game(object):
             self.mouse_cursor = MOUSE_POINTER
             self.mouse_mode = MOUSE_INTERACT
 
-    def on_trigger(self, obj):
+    def on_trigger(self, obj):    
         self.block = False
         self._trigger(obj)
         self._event_finish()
@@ -5252,6 +5282,10 @@ class Signal(object):
 
 post_interact = Signal(providing_args=["game", "instance", "player"])
 pre_interact = Signal(providing_args=["game", "instance", "player"])
+
+post_use = Signal(providing_args=["game", "instance", "player"])
+pre_use = Signal(providing_args=["game", "instance", "player"])
+
 pre_leave = Signal(providing_args=["game", "instance", "player"])
 post_arrive = Signal(providing_args=["game", "instance", "player"])
 
