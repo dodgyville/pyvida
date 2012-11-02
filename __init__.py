@@ -2849,12 +2849,8 @@ class Scene(object):
     def _event_finish(self, success=True, block=True):  #scene.event_finish
         return self.game._event_finish(success, block)
 
-    def smart(self, game): #scene.smart
-        """ smart scene load """
-        sdir = os.path.join(os.getcwd(),os.path.join(game.scene_dir, self.name))
-        bname = os.path.join(sdir, "background.png")
-        if os.path.isfile(bname):
-            self.background(bname)
+    def _load_foreground(self, game):
+        sdir = os.path.join(os.getcwd(),os.path.join(game.scene_dir, self.name))    
         for element in glob.glob(os.path.join(sdir,"*.png")): #add foreground elments
             x,y = 0,0
             fname = os.path.splitext(os.path.basename(element))[0]
@@ -2866,6 +2862,15 @@ class Scene(object):
                 f = self.game.add(Item("%s_%s"%(self.name, fname)).smart(game, element))
                 f.x, f.y = x,y
                 self.foreground.append(f) #add foreground items as items
+    
+
+    def smart(self, game): #scene.smart
+        """ smart scene load """
+        sdir = os.path.join(os.getcwd(),os.path.join(game.scene_dir, self.name))
+        bname = os.path.join(sdir, "background.png")
+        if os.path.isfile(bname):
+            self.background(bname)
+        self._load_foreground(game)
         scale_name = os.path.join(sdir, "scene.scale")
         if os.path.isfile(scale_name):
             f = open(scale_name, "r")
@@ -3094,8 +3099,9 @@ class Mixer(object):
         if pygame.mixer: pygame.mixer.music.set_volume(val)
         self.game._event_finish()
 
-    def _sfx_play(self, fname=None, loops=0, fade_music=False):
+    def _sfx_play(self, fname=None, loops=0, fade_music=False, store=None):
         sfx = None
+        if store: setattr(self, store, sfx)
         if self.game and self.game.headless:  #headless mode skips sound and visuals
             if fname and not os.path.exists(fname):
                 log.warning("Music sfx %s missing."%fname)
@@ -3119,10 +3125,15 @@ class Mixer(object):
             channel = sfx.play(loops=loops) #play once
             #restore music if needed
             if v: self._unfade_music = (channel, v)
+        if store: setattr(self, store, sfx)
         return sfx
 
-    def on_sfx_play(self, fname=None, loops=0, fade_music=False):
-        self._sfx_play(fname, loops, fade_music)
+    def on_sfx_play(self, fname=None, loops=0, fade_music=False, store=None):
+        self._sfx_play(fname, loops, fade_music, store)
+        self.game._event_finish()
+
+    def on_sfx_stop(self, sfx=None):
+        if sfx: sfx.stop()
         self.game._event_finish()
 
 
