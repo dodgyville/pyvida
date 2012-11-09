@@ -76,7 +76,8 @@ try:
 except ImportError:
     android = None
 
-DEBUG_ASTAR = False
+DEBUG_ASTAR = True
+#DEBUG_ASTAR = False
 
 ENABLE_EDITOR = True #default for editor
 ENABLE_PROFILING = True
@@ -925,6 +926,7 @@ class Actor(object):
         self._alpha = 1.0
         self._alpha_target = 1.0
         self._parent = None #attach object to a parent
+        self._children = [] #children objects (reversable with _parent)
         
         self.font_speech = None #use default font (from game)
         self.font_speech_size = None #use default font size (from game)
@@ -1752,12 +1754,13 @@ class Actor(object):
         self._relocate(scene, destination)
         #note: self._event_finish handled inside _relocate
     
-    def on_reparent(self, obj):
+    def on_reparent(self, obj): #actor.reparent
         if not self.game: return
         parent = self.game.actors.get(obj, self.game.items.get(obj, None)) if type(obj) == str else obj
         if parent == None:
             log.error("Unable to reparent %s to %s"%(self.name, obj))
         self._parent = parent
+        if parent and obj not in parent._children: parent._children.append(self)
         self._event_finish(block=False)
     
     def resize(self, start, end, duration):
@@ -2453,6 +2456,15 @@ class Emitter(Item):
         self._reset()        
         return self
 
+    def on_reanchor(self, pt):
+        """ queue event for changing the anchor points """
+        self._ax, self._ay = pt[0], pt[1]
+        print("Emitter reanchor to ", pt)
+        for p in self.particles:
+            p._ax, p._ay = self._ax, self._ay
+        self._event_finish(block=False)
+
+
     def _add_particles(self, num=1):
         for x in xrange(0,num):
             d = randint(self.direction-float(self.fov/2), self.direction+float(self.fov/2))
@@ -2524,6 +2536,7 @@ class Emitter(Item):
         if not self.action: 
             if logging: log.error("Emitter %s has no actions"%(self.name))
             return
+        if not self.allow_draw: return
             
         self._rect = pygame.Rect(self.x, self.y, 0, 0)            
         for p in self.particles:
@@ -2952,7 +2965,7 @@ class Scene(object):
             self._remove(obj)
         self._event_finish()
 
-    def on_do(self, background): #scene.do
+    def on_do(self, background, ambient=None): #scene.do
         """ replace the background with the image in the scene's directory """        
         sdir = os.path.join(os.getcwd(),os.path.join(self.game.scene_dir, self.name))
         bname = os.path.join(sdir, "%s.png"%background)
@@ -2960,6 +2973,8 @@ class Scene(object):
             self.background(bname)
         else:
             if logging: log.error("scene %s has no image %s available"%(self.name, background))
+        if ambient: #set ambient sound
+            self._ambient(ambient)
         self._event_finish()
         
     def on_clean(self, objs=[]): #remove items not in this list from the scene
@@ -2990,8 +3005,23 @@ class Scene(object):
         self.music_fname = fname
         self._event_finish()
 
-    def on_ambient(self, fname): #set the ambient sounds for this scene
+    def _ambient(self, fname):
+        if not os.path.exists(fname): #try scene directory
+            sdir = os.path.join(os.getcwd(),os.path.join(self.game.scene_dir, self.name))
+            fname = os.path.join(sdir, fname+".ogg")
+        if not os.path.exists(fname):
+            if logging: log.error("ambient: Can't find %s"%fname)
         self.ambient_fname = fname
+        
+        #affects the currently playing sound
+        if self.game and self.game.scene and self.game.scene == self:
+            if self.game.camera._ambient_sound: self.game.camera._ambient_sound.stop()
+            if self.ambient_fname:
+                self.game.camera._ambient_sound = self.game.mixer._sfx_play(self.ambient_fname, loops=-1)
+    
+
+    def on_ambient(self, fname): #set the ambient sounds for this scene
+        self._ambient(fname)
         self._event_finish()
 
     def on_reset_editor_clean(self):
@@ -3005,6 +3035,13 @@ class Scene(object):
             obj.scene._remove(obj)
         self.objects[obj.name] = obj
         obj.scene = self
+
+        #if there are any child objects, move them too
+        for child in obj._children:
+            if child.scene: child.scene._remove(child)
+            self.objects[child.name] = child
+            child.scene = self
+        
         if self.game.analyse_scene == self: #if we are watching this scene closely, store more info
             add_object_to_analysis(self.game, obj)
         if obj.name == "control":
@@ -3121,7 +3158,7 @@ class Mixer(object):
             v = None
             if fade_music and pygame.mixer.music.get_busy():
                 v = pygame.mixer.music.get_volume()
-                pygame.mixer.music.set_volume(v*0.33)
+                pygame.mixer.music.set_volume(fade_music)
             channel = sfx.play(loops=loops) #play once
             #restore music if needed
             if v: self._unfade_music = (channel, v)
@@ -4173,8 +4210,8 @@ class Game(object):
                                 f.write('    %s.reclickable(Rect(%s, %s, %s, %s))\n'%(slug, r.left, r.top, r.w, r.h))
                                 r = obj._solid_area
                                 f.write('    %s.resolid(Rect(%s, %s, %s, %s))\n'%(slug, r.left, r.top, r.w, r.h))
-                                if not (obj.allow_draw and obj.allow_update and obj.allow_interact and obj.allow_use and obj.allow_look):
-                                    f.write('    %s.usage(%s, %s, %s, %s, %s)\n'%(slug, obj.allow_draw, obj.allow_update, obj.allow_look, obj.allow_interact, obj.allow_use))
+                                #if not (obj.allow_draw and obj.allow_update and obj.allow_interact and obj.allow_use and obj.allow_look):
+                                f.write('    %s.usage(%s, %s, %s, %s, %s)\n'%(slug, obj.allow_draw, obj.allow_update, obj.allow_look, obj.allow_interact, obj.allow_use))
                                 f.write('    %s.rescale(%0.2f)\n'%(slug, obj.scale))
                                 f.write('    %s.reanchor((%i, %i))\n'%(slug, obj._ax, obj._ay))
                                 f.write('    %s.restand((%i, %i))\n'%(slug, obj._sx, obj._sy))
