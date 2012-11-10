@@ -76,8 +76,8 @@ try:
 except ImportError:
     android = None
 
-DEBUG_ASTAR = True
-#DEBUG_ASTAR = False
+#DEBUG_ASTAR = True
+DEBUG_ASTAR = False
 
 ENABLE_EDITOR = True #default for editor
 ENABLE_PROFILING = True
@@ -1388,7 +1388,11 @@ class Actor(object):
         dx = 0
         dy = 0
         if l > 0: #in middle of moving somewhere
-            dx, dy = self._motion_queue.pop(0)
+            try:
+                dx, dy = self._motion_queue.pop(0)
+            except ValueError:
+                if logging: log.error("Error popping motion_queue for %s %s"%(self.name, self._motion_queue))
+                
             if (dx,dy) == (None, None):  #a manually inserted terminator, avoid calling goto or event_finish
                 pass
             else:
@@ -2461,7 +2465,7 @@ class Emitter(Item):
         self._ax, self._ay = pt[0], pt[1]
         print("Emitter reanchor to ", pt)
         for p in self.particles:
-            p._ax, p._ay = self._ax, self._ay
+            p.ax, p.ay = self._ax, self._ay
         self._event_finish(block=False)
 
 
