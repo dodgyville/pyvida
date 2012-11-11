@@ -2463,7 +2463,6 @@ class Emitter(Item):
     def on_reanchor(self, pt):
         """ queue event for changing the anchor points """
         self._ax, self._ay = pt[0], pt[1]
-        print("Emitter reanchor to ", pt)
         for p in self.particles:
             p.ax, p.ay = self._ax, self._ay
         self._event_finish(block=False)
@@ -4508,13 +4507,12 @@ class Game(object):
                     
             def editor_actions(game, btn, player):
                 """ switch to action editor """
-                game.menu_fade_out()
+                game.menu_hide()
                 game.menu_push() #hide and push old menu to storage
                 game.set_menu("e_action_prev", "e_action_next", "e_action_reverse", "e_action_delta", "e_action_scale", "e_action_save", "e_actions_close")
                 game.setattr("editing_mode", EDITING_ACTION)
                 self.set_fps(int(1000.0/DEFAULT_FRAME_RATE)) #slow action for debugging
-                game.menu_hide()
-                game.menu_fade_in()
+                game.menu_show()
 
             def _editor_action_cycle(game, actor, i=1):
                 action_names = sorted([x.name for x in set(actor.actions.values())])
@@ -4557,20 +4555,19 @@ class Game(object):
             def editor_delta_close(game, btn, player):
                 game.setattr("editing_mode", EDITING_ACTION)
                 self.menu_pop()
-                self.menu_fade_in()
+                self.menu_show()
 
             def editor_action_delta(game, btn, player):
-                game.menu_fade_out()
+                game.menu_hide()
                 game.menu_push() #hide and push old menu to storage
                 game.set_menu("e_frame_next", "e_frame_prev", "e_delta_close")
                 game.setattr("editing_mode", EDITING_DELTA)
-                game.menu_hide()
-                game.menu_fade_in()
+                game.menu_show()
                 
             def editor_actions_close(game, btn, player):
                 game.setattr("editing_mode", EDITING_ACTOR)
                 self.menu_pop()
-                self.menu_fade_in()
+                self.menu_show()
                 self.set_fps(int(1000.0/100)) #fast debug
 
             #load menu for action editor
