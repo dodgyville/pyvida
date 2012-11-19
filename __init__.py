@@ -5274,7 +5274,7 @@ class Game(object):
             if not hasattr(menu_items, '__iter__'): menu_items = [menu_items]
             for i in menu_items:
                 if type(i) == str: i = self.items[i]        
-                self.menu.remove(i)
+                if i in self.menu: self.menu.remove(i)
         self._event_finish()       
        
 
