@@ -1757,14 +1757,21 @@ class Actor(object):
         if scale: self._rescale(scale)
         self._relocate(scene, destination)
         #note: self._event_finish handled inside _relocate
-    
-    def on_reparent(self, obj): #actor.reparent
+
+    def _reparent(self, obj):
         if not self.game: return
         parent = self.game.actors.get(obj, self.game.items.get(obj, None)) if type(obj) == str else obj
-        if parent == None:
-            log.error("Unable to reparent %s to %s"%(self.name, obj))
+        if parent == None: #try and remove this actor from its parent's children list
+            if obj != None: log.error("Unable to reparent %s to %s"%(self.name, obj))
+            if self._parent and self in self._parent._children:
+                log.info("Unparenting child %s from parent %s"%(self.name, self._parent.name))
+                self._parent._children.remove(self)
+        else: #add to children       
+            if parent and obj not in parent._children: parent._children.append(self)    
         self._parent = parent
-        if parent and obj not in parent._children: parent._children.append(self)
+    
+    def on_reparent(self, obj): #actor.reparent
+        self._reparent(obj)
         self._event_finish(block=False)
     
     def resize(self, start, end, duration):
@@ -2279,14 +2286,16 @@ class Actor(object):
             msgbox.options.append(opt.name)
             self.game.stuff_event(opt.on_place, (250,iy+95+i*44))
         
-    def on_remove(self): #remove this actor from its scene
+    def on_remove(self, unparent=False): #remove this actor from its scene #actor.remove
+        """ unparent True|False - if this object has a parent, unparent"""
         if self.scene:
             self.scene._remove(self)
+        if unparent: self._reparent(None)
         self._event_finish(block=False)
     
     
     def on_location(self):
-        """ Return the current scene queuing function """
+        """ Return the current scene, a queuing function """
         self._event_finish(block=False)
         return self.scene
         
@@ -2343,6 +2352,8 @@ class Portal(Item):
         return self.trigger_interact()        
         
     def _interact_default(self, game, tmat, player):
+        if player and player.scene and player.scene != self.scene: #only travel if on same scene as portal
+            return
         return self.travel()
 
 #    def _look(self, game, tmat, player):
@@ -2376,6 +2387,7 @@ class Portal(Item):
         actor.goto((self.ox, self.oy), ignore=True) 
 
     def exit_link(self, actor=None):
+        """ Exit this portal's link (don't change camera) """
         if actor == None: actor = self.game.player
         actor.goto((self.link.sx, self.link.sy), ignore=True) #walk into scene        
         self._post_arrive(self.link, actor)
@@ -2517,10 +2529,12 @@ class Emitter(Item):
     
     def _update_particle(self, dt, p):
         r = math.radians(p.direction)
-        a = self.speed * cos(r)
-        o = self.speed * sin(r)
+        a = p.speed * cos(r)
+        o = p.speed * sin(r)
         p.y -= a
         p.x += o
+        p.x -= self.acceleration[0]
+        p.y -= self.acceleration[1]
         p.index +=  1
         p.action_index += 1
         if p.index >= self.frames: #reset
@@ -3647,7 +3661,8 @@ class Game(object):
         if replace == False:
            if obj.name in self.items or obj.name in self.actors:
                 existing_obj = self.items[obj.name] if obj.name in self.items else self.actors[obj.name]
-                if logging: log.warning("Adding %s (%s), but already in item or actor dictionary as %s"%(obj.name, obj.__class__, existing_obj.__class__))
+                if logging and obj.name not in ["msgbox", "opt0", "opt1", "opt2"]:
+                    log.warning("Adding %s (%s), but already in item or actor dictionary as %s"%(obj.name, obj.__class__, existing_obj.__class__))
         if force_cls:
             if force_cls == ModalItem:
                 self.modals.append(obj)
