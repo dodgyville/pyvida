@@ -396,10 +396,10 @@ def process_step(game, step):
     fail = False #walkthrough runner can force fail if conditions are bad
     function_name = step[0].__name__ 
     actor = step[1]
-    trunk_step = True #is step part of the "official" walkthrough for the game
+    game.trunk_step = True #is step part of the "official" walkthrough for the game
     if actor[0] == "*": #a non-trunk step (ie probably for testing, not part of walkthrough)
         actor = actor[1:]
-        trunk_step = False
+        game.trunk_step = False
     
     actor_object = None
     if actor in game.actors: actor_object = game.actors[actor]
@@ -420,7 +420,7 @@ def process_step(game, step):
     if function_name == "interact":
         if logging: log.info("TEST SUITE: %s%s. %s with %s"%(game.steps_complete, label, function_name, actor))
         game.mouse_mode = MOUSE_INTERACT
-        if trunk_step and game.output_walkthrough: 
+        if game.trunk_step and game.output_walkthrough: 
             if actor in game.actors.keys():
                 verbs = ["Talk to", "Interact with"]
             else: #item or portal
@@ -429,8 +429,11 @@ def process_step(game, step):
                 verbs =  ["Select"]
 
             if isinstance(actor_object, Portal):
-                name = actor_object.link.scene.display_text if actor_object.link.scene.display_text else actor_object.link.scene.name
-                print("Go to %s."%name)
+                if not actor_object.link.scene:
+                    print("Portal %s's link %s doesn't seem to go anywhere."%(actor_object.name, actor_object.link.name))
+                else:
+                    name = actor_object.link.scene.display_text if actor_object.link.scene.display_text else actor_object.link.scene.name
+                    print("Go to %s."%name)
             elif actor_object:
                 print("%s %s."%(choice(verbs), actor_name))
             else: #probably modal select text
@@ -438,7 +441,7 @@ def process_step(game, step):
     elif function_name == "look":
         if logging: log.info("TEST SUITE: %s%s. %s at %s"%(game.steps_complete, label, function_name, actor))
         game.mouse_mode = MOUSE_LOOK
-        if trunk_step and game.output_walkthrough: print("Look at %s."%(actor_name))
+        if game.trunk_step and game.output_walkthrough: print("Look at %s."%(actor_name))
     elif function_name == "use": 
         actee = step[2] 
         if logging: log.info("TEST SUITE: %s%s. %s %s on %s"%(game.steps_complete, label, function_name, actor, actee))
@@ -454,7 +457,7 @@ def process_step(game, step):
             if actee not in game.missing_actors: game.missing_actors.append(actee)
             fail = True
         actee_name = actee.display_text if actee and actee.display_text else step[2]
-        if trunk_step and game.output_walkthrough: print("Go to inventory, select %s and use on %s."%(actee_name, actor_name))
+        if game.trunk_step and game.output_walkthrough: print("Go to inventory, select %s and use on %s."%(actee_name, actor_name))
 
         if not fail: game.mouse_cursor = actee
     elif function_name == "goto": #move player to scene, by calc path
@@ -467,7 +470,7 @@ def process_step(game, step):
                 scene._add(game.player)
                 if logging: log.info("TEST SUITE: %s. Player goes %s"%(game.steps_complete, [x.name for x in scene_path]))
                 name = scene.display_text if scene.display_text else scene.name
-                if trunk_step and game.output_walkthrough: print("Go to %s."%(name))
+                if game.trunk_step and game.output_walkthrough: print("Go to %s."%(name))
                 game.camera.scene(scene)
             else:
                 if logging: log.error("Unable to get player from scene %s to scene %s"%(game.scene.name, actor))
@@ -475,12 +478,12 @@ def process_step(game, step):
             if logging: log.error("Going from no scene to scene %s"%actor)
         return
     elif function_name == "location": #check current location matches scene "actor"
-        if trunk_step and game.output_walkthrough: print("Player is in %s."%(actor_name))
+        if game.trunk_step and game.output_walkthrough: print("Player is in %s."%(actor_name))
         if game.scene.name != actor:
             if logging: log.error("Current scene should be %s, but is currently %s"%(actor, game.scene.name))
         return
     elif function_name == "has": #check the player has item in inventory
-        if trunk_step and game.output_walkthrough: print("Player should have %s."%(actor_name))
+        if game.trunk_step and game.output_walkthrough: print("Player should have %s."%(actor_name))
         if not game.player.has(actor):
             if logging: log.error("Player should have %s in inventory, but does not."%(actor))
         return
@@ -489,7 +492,7 @@ def process_step(game, step):
         log.info("toggle headless")
         return
     elif function_name == "description": #check the player has item in inventory
-        if trunk_step and game.output_walkthrough: print(actor)        
+        if game.trunk_step and game.output_walkthrough: print(actor)        
         return
     for i in game.modals: #try modals first
         possible_names = [i.name]
@@ -2089,7 +2092,7 @@ class Actor(object):
         if item == None: return
         name = self.display_text if self.display_text else self.name
         item_name = item.display_text if item.display_text else item.name
-        if self.game and self.game.output_walkthrough: print("%s gets %s."%(name, item_name))
+        if self.game and self.game.output_walkthrough and self.game.trunk_step: print("%s gets %s."%(name, item_name))
         if self.game.testing: 
             self._event_finish()
             return
@@ -2118,7 +2121,7 @@ class Actor(object):
             action = None #which action to display
         """
         if logging: log.info("Actor %s says: %s"%(self.name, text))
-        if self.game.text:
+        if self.game.text and game.trunk_step:
             print("%s says \"%s\""%(self.name, text))
         if self.game.testing: 
             self._event_finish()
@@ -3154,6 +3157,10 @@ class Mixer(object):
         self.game._event_finish()
 
     def _sfx_play(self, fname=None, loops=0, fade_music=False, store=None):
+        """
+        store = True | False -> store the sfx as a variable on the Game object
+        fade_music = False | 0..1.0 -> fade the music to <fade_music> level while playing this sfx
+        """
         sfx = None
         if store: setattr(self, store, sfx)
         if self.game and self.game.headless:  #headless mode skips sound and visuals
@@ -3479,6 +3486,7 @@ class Game(object):
         self.scenes = {}
         #accesibility options
         self.text = False #output game in plain text to stdout
+        self.trunk_step = True #is the game currently doing a "trunk" (ie essential) step (player induced steps are always trunk)
             
         #always on screen
         self.menu = [] 
