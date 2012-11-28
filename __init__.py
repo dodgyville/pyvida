@@ -3098,14 +3098,14 @@ class Mixer(object):
             if not channel.get_busy(): #sound has ended, change volume
                 pygame.mixer.music.set_volume(volume)
                 self._unfade_music = None
-
-        if self.music_index > self.music_break and pygame.mixer.music.get_busy():
-            log.info("taking a music break, fading out")
-            self._music_fade_out()
-        if self.music_index > self.music_break+self.music_break_length:
-            log.info("finished taking a music break, fading in")
-            self._music_fade_in()
-            self.music_index = 0
+        #XXX disable music breaks, not really adding anything.
+        #if self.music_index > self.music_break and pygame.mixer.music.get_busy():
+        #    log.info("taking a music break, fading out")
+        #    self._music_fade_out()
+        #if self.music_index > self.music_break+self.music_break_length:
+        #    log.info("finished taking a music break, fading in")
+        #    self._music_fade_in()
+        #    self.music_index = 0
             
 
     def _music_play(self, fname=None):
@@ -4534,7 +4534,7 @@ class Game(object):
                 game.menu_push() #hide and push old menu to storage
                 game.set_menu("e_action_prev", "e_action_next", "e_action_reverse", "e_action_delta", "e_action_scale", "e_action_save", "e_actions_close")
                 game.setattr("editing_mode", EDITING_ACTION)
-                self.set_fps(int(1000.0/DEFAULT_FRAME_RATE)) #slow action for debugging
+#                self.set_fps(int(1000.0/DEFAULT_FRAME_RATE)) #slow action for debugging
                 game.menu_show()
 
             def _editor_action_cycle(game, actor, i=1):
