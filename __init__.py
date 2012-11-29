@@ -2761,8 +2761,9 @@ class Collection(MenuItem):
         self._sorted_objects = None
         self.index = 0 #where in the index to start showing
         self.sort_by = ALPHABETICAL
-        self.cdx, self.cdy = 50,50 #width
+        self.cdx, self.cdy = 50,50 #tile width
         self._on_mouse_move = self._on_mouse_move_collection
+        self.reverse_sort = False
   
     def add(self, *args):
         for a in args:
@@ -2789,7 +2790,7 @@ class Collection(MenuItem):
     def _get_sorted(self):
         if self._sorted_objects == None:
             show = self.objects.values()
-            self._sorted_objects = sorted(show, key=lambda x: x.name.lower(), reverse=False)
+            self._sorted_objects = sorted(show, key=lambda x: x.name.lower(), reverse=self.reverse_sort)
         return self._sorted_objects      
 
     def get_object(self, pos):
