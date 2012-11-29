@@ -3182,7 +3182,8 @@ class Mixer(object):
             v = None
             if fade_music and pygame.mixer.music.get_busy():
                 v = pygame.mixer.music.get_volume()
-                pygame.mixer.music.set_volume(fade_music)
+                fmusic = fade_music if fade_music<v else 0.1
+                pygame.mixer.music.set_volume(fmusic)
             channel = sfx.play(loops=loops) #play once
             #restore music if needed
             if v: self._unfade_music = (channel, v)
