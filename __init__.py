@@ -541,7 +541,16 @@ def prepare_tests(game, suites, log_file=None, user_control=None):#, setup_fn, e
     game.fps = int(1000.0/100) #fast debug
 
         
-#### pygame util functions ####        
+#### pygame util functions ####       
+def get_available_languages():
+    """ Return a list of available locale names """
+    languages = glob.glob("data/locale/*")
+    languages = [os.path.basename(x) for x in languages]
+    languages.sort()
+    if language not in languages:
+        languages.append(language) #the default
+    return languages
+  
 def load_image(fname):
     im = None
     try:
@@ -577,7 +586,6 @@ def load_font(fname, size):
         lfname = os.path.join("data/locale/", language, fname)
         try:
             f = Font(lfname, size)
-            print("using %s font"%lfname)
             return f
         except:
             pass
@@ -2748,7 +2756,59 @@ class MenuText(Text, MenuItem):
         self._on_mouse_leave = self._on_mouse_leave_utility #switch on mouse over change
         self.x, self.y = self.out_x, self.out_y #default hiding at first
         
+class SubmenuSelect(object):
+    """ A higher level menu class for providing a submenu where only one item can be selected (eg language) """
+    def __init__(self, spos, hpos, font=DEFAULT_FONT):
+        """ spos = display position
+            hpos = hidden position
+        """
+        self.spos = spos
+        self.hpos = hpos
+        self.menu_items = []
+        self.selected = None
+        self.exit_item = None
+        self.font = font
     
+    def _select(self, item):
+        if self.selected:
+            txt = self.selected.text[2:] #remove asterix from item
+            self.selected.update_text(txt)
+        self.selected = item
+        item.update_text("* %s"%item.text)
+    
+    
+    def smart(self, game, menu_items=[], exit_item = None, exit_item_cb=None, selected=None):
+        """ Fast generate a menu """
+        sx, sy = self.spos
+        hx, hy = self.hpos
+        MENU_Y_DISPLACEMENT = 40
+        def select_item(game, item, player):
+            self._select(item)
+            
+        for i in menu_items:
+            if type(i) == str:
+#                item = game.add(MenuItem(i, select_item, (sx, sy), (hx, hy)).smart(game))
+                item = game.add(MenuText("submenu_%s"%i, (280,80), (840,170), i, wrap=800, interact=select_item, spos=(sx, sy), hpos=(hx, hy), font=self.font), False, MenuItem)                
+                sy += MENU_Y_DISPLACEMENT
+                if selected == i: self._select(item)
+                self.menu_items.append(item)
+                
+        if exit_item:
+            def submenu_return(game, item, player):
+                """ exit menu item actually returns the select item rather than the return item """
+                if self.selected: #remove asterix from selected
+                    txt = self.selected.text[2:]
+                    self.selected.update_text(txt)                    
+                exit_item_cb(game, self.selected, player)
+                
+ #           item  = game.add(MenuItem(exit_item, submenu_return, (sx, sy), (hx, hy), "x").smart(game))
+            item = game.add(MenuText("submenu_%s"%exit_item, (280,80), (840,170), exit_item, wrap=800, interact=submenu_return, spos=(sx, sy), hpos=(hx, hy), font=self.font), False, MenuItem)
+
+            self.menu_items.append(item)
+        return self
+            
+    def get_menu(self):
+        return self.menu_items            
     
 class Collection(MenuItem):
     """ 
