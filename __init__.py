@@ -4920,6 +4920,8 @@ class Game(object):
             if self.scene and self.screen: #update objects
                 for group in [self.scene.objects.values(), self.menu, self.modals]:
                     for obj in group: obj._update(dt)
+                if self.mouse_cursor and type(self.mouse_cursor) != int:
+                    self.mouse_cursor._update(dt)
                                 
             #draw mouse
             m = pygame.mouse.get_pos()
