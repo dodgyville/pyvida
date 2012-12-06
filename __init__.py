@@ -3101,7 +3101,7 @@ class Scene(object):
                 self.game.camera._ambient_sound = self.game.mixer._sfx_play(self.ambient_fname, loops=-1)
     
 
-    def on_ambient(self, fname): #set the ambient sounds for this scene
+    def on_ambient(self, fname=""): #set the ambient sounds for this scene
         self._ambient(fname)
         self._event_finish()
 
@@ -3445,8 +3445,8 @@ class Settings(object):
         self.resolution_x = 1024
         self.resolution_y = 768
         
-        self.allow_internet = True #check for updates and report stats
-        self.allow_internet_debug = True #send profiling reports home
+        self.allow_internet = False #check for updates and report stats
+        self.allow_internet_debug = ENABLE_LOGGING #send profiling reports home
         
         self.fullscreen = DEFAULT_FULLSCREEN
         self.show_portals = False
