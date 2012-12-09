@@ -29,9 +29,16 @@ except ImportError:
         def ugettext(self, txt):
             return txt
 
+
+SAVE_DIR = "saves"
+if "LOCALAPPDATA" in os.environ: #win 7
+    SAVE_DIR = os.environ["LOCALAPPDATA"] + '/saves/'
+elif "APPDATA" in os.environ: #win XP
+    SAVE_DIR = os.environ["APPDATA"] + '/saves/'
+
 language = None
 try: #optional language setting
-    with open('pyvida.locale', 'r') as f:
+    with open(os.path.join(SAVE_DIR, 'pyvida.locale'), 'r') as f:
         language = f.read().strip()
 except:
     pass        
@@ -3499,7 +3506,7 @@ class Game(object):
     interface_dir = os.path.join("data", "interface")
     portal_dir = os.path.join("data", "portals")
     music_dir = os.path.join("data", "music")
-    save_dir = "saves"
+    save_dir = SAVE_DIR
 
     quit = False
     screen = None
