@@ -32,9 +32,11 @@ except ImportError:
 
 SAVE_DIR = "saves"
 if "LOCALAPPDATA" in os.environ: #win 7
-    SAVE_DIR = os.path.join(os.environ["LOCALAPPDATA"], 'saves')
+    SAVE_DIR = os.path.join(os.environ["LOCALAPPDATA"], "spaceout", 'saves')
 elif "APPDATA" in os.environ: #win XP
-    SAVE_DIR = os.path.join(os.environ["APPDATA"], 'saves')
+    SAVE_DIR = os.path.join(os.environ["APPDATA"], "spaceout", 'saves')
+if not os.path.exists(SAVE_DIR):
+    os.makedirs(SAVE_DIR)
 
 language = None
 try: #optional language setting
