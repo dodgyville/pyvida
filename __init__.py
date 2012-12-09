@@ -44,9 +44,9 @@ except:
     pass        
 
 if language:
-    t = igettext.translation('spaceout', os.path.join('data', 'locale'), fallback=True, languages=[language])
+    t = igettext.translation('spaceout', os.path.join('data', os.sep, 'locale'), fallback=True, languages=[language])
 else:
-    t = igettext.translation('spaceout', os.path.join('data', 'locale'), fallback=True)
+    t = igettext.translation('spaceout', os.path.join('data', os.sep, 'locale'), fallback=True)
 
 gettext = t.ugettext
 
@@ -3442,14 +3442,14 @@ class Settings(object):
     def save(self, save_dir):
         """ save the current game settings """
         if logging: log.debug("Saving settings to %s"%save_dir)
-        fname = os.path.join(save_dir, "game.settings")
+        fname = os.path.join(save_dir, os.sep, "game.settings")
         with open(fname, "w") as f:
            pickle.dump(self, f)
 
     def load(self, save_dir):
         """ load the current game settings """
         if logging: log.debug("Loading settings from %s"%save_dir)
-        fname = os.path.join(save_dir, "game.settings")
+        fname = os.path.join(save_dir, os.sep, "game.settings")
         try:
             with open(fname, "r") as f:
                data = pickle.load(f)
