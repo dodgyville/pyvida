@@ -32,9 +32,9 @@ except ImportError:
 
 SAVE_DIR = "saves"
 if "LOCALAPPDATA" in os.environ: #win 7
-    SAVE_DIR = os.environ["LOCALAPPDATA"] + '/saves/'
+    SAVE_DIR = os.path.join(os.environ["LOCALAPPDATA"], '/saves/')
 elif "APPDATA" in os.environ: #win XP
-    SAVE_DIR = os.environ["APPDATA"] + '/saves/'
+    SAVE_DIR = os.path.join(os.environ["APPDATA"], '/saves/')
 
 language = None
 try: #optional language setting
@@ -44,9 +44,9 @@ except:
     pass        
 
 if language:
-    t = igettext.translation('spaceout', 'data/locale', fallback=True, languages=[language])
+    t = igettext.translation('spaceout', os.path.join('data', 'locale'), fallback=True, languages=[language])
 else:
-    t = igettext.translation('spaceout', 'data/locale', fallback=True)
+    t = igettext.translation('spaceout', os.path.join('data', 'locale'), fallback=True)
 
 gettext = t.ugettext
 
@@ -115,7 +115,7 @@ if logging:
     else:
         log_level = logging.ERROR
 
-    LOG_FILENAME = 'pyvida4.log'
+    LOG_FILENAME = os.path.join(SAVE_DIR, 'pyvida4.log')
     log = logging.getLogger('pyvida4')
     if logging: log.setLevel(log_level)
 
@@ -193,7 +193,7 @@ REPEAT = 5 #loop action, but reset position each cycle
 
 DEFAULT_FRAME_RATE = 20 #100
 
-DEFAULT_FONT = "data/fonts/vera.ttf"
+DEFAULT_FONT = os.path.join("data/fonts/", "vera.ttf")
 
 def use_init_variables(original_class):
     """ Take the value of the args to the init function and assign them to the objects' attributes """
@@ -698,32 +698,6 @@ def editor_add_walkareapoint(game, menuItem, player):
      if game.editing:
             game.editing.polygon.vertexarray.append((512,316))
 
-"""
-from pyvida import merge_actions
-print("upleft")
-merge_actions(self.player, "dressed_up", "dressed_left", "dressed_upleft")
-print("upright")
-merge_actions(self.player, "dressed_up", "dressed_right", "dressed_upright")
-print("dleft")
-merge_actions(self.player, "dressed_down", "dressed_left", "dressed_downleft")
-print("dright")
-merge_actions(self.player, "dressed_down", "dressed_right", "dressed_downright")
-
-"""
-def merge_actions(actor, vaction, haction, newname):
-    vert = actor.actions[vaction]
-    horiz = actor.actions[haction]
-#    primary, secondary = (action1,action2) if len(action1.deltas) >= len(action2.deltas) else (action2, action1)
-    print("v",vert.deltas)
-    newaction = "%s"%(vert.name+horiz.name)
-    print(newname)
-    sf = 0.5
-    deltas = []
-    for i,v in enumerate(vert.deltas):
-        h = horiz.deltas[i]
-        deltas.append((int(round(h[0]*sf)), int(round(v[1]*sf))))
-    horiz.deltas = deltas    
-    horiz.save("data/actors/Minogue/%s.png"%newname)        
 
 #### pyvida classes ####
 @use_init_variables
