@@ -79,9 +79,9 @@ except ImportError:
 #DEBUG_ASTAR = True
 DEBUG_ASTAR = False
 
-ENABLE_EDITOR = True #default for editor
-ENABLE_PROFILING = True
-ENABLE_LOGGING = True
+ENABLE_EDITOR = False #default for editor
+ENABLE_PROFILING = False
+ENABLE_LOGGING = False
 
 
 SELECT = 0 #manually select an item
@@ -1422,7 +1422,7 @@ class Actor(object):
         if hasattr(self, "update"): #run this actor's personalised update function
             self.update(dt)
         
-    def collide(self, x,y, image=False):
+    def collide(self, x,y, image=False): #Actor.collide
         """ collide with actor's clickable 
             if image is true, ignore clickable and collide with image.
         """
@@ -3087,10 +3087,10 @@ class Scene(object):
         self._event_finish()
 
     def _ambient(self, fname):
-        if not os.path.exists(fname): #try scene directory
+        if fname and not os.path.exists(fname): #try scene directory
             sdir = os.path.join(os.getcwd(),os.path.join(self.game.scene_dir, self.name))
             fname = os.path.join(sdir, fname+".ogg")
-        if not os.path.exists(fname):
+        if fname and not os.path.exists(fname):
             if logging: log.error("ambient: Can't find %s"%fname)
         self.ambient_fname = fname
         
@@ -3445,7 +3445,7 @@ class Settings(object):
         self.resolution_x = 1024
         self.resolution_y = 768
         
-        self.allow_internet = False #check for updates and report stats
+        self.allow_internet = None #True|False|None check for updates and report stats - None == False and user hasn't been asked
         self.allow_internet_debug = ENABLE_LOGGING #send profiling reports home
         
         self.fullscreen = DEFAULT_FULLSCREEN
