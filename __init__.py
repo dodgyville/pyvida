@@ -3590,7 +3590,8 @@ class Game(object):
         """ when editor reloads modules, which modules are game related? """
         for i in modules:
             self._modules[i] = 0 
-        self.check_modules() #set initial timestamp record
+        if self.ENABLE_EDITOR: #if editor is available, watch code for changes
+            self.check_modules() #set initial timestamp record
     
     def apply_settings(self):
         """ Apply as many settings in .settings as possible """
