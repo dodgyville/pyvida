@@ -4823,7 +4823,6 @@ class Game(object):
         flags = 0
         if options.fullscreen or self.settings.fullscreen:
             flags |= pygame.FULLSCREEN 
-#            flags |= pygame.HWSURFACE
             self.fullscreen = True
         self.screen = screen = pygame.display.set_mode(self.resolution, flags)
 
