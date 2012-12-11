@@ -35,8 +35,12 @@ if "LOCALAPPDATA" in os.environ: #win 7
     SAVE_DIR = os.path.join(os.environ["LOCALAPPDATA"], "spaceout", 'saves')
 elif "APPDATA" in os.environ: #win XP
     SAVE_DIR = os.path.join(os.environ["APPDATA"], "spaceout", 'saves')
+READONLY = False
 if not os.path.exists(SAVE_DIR):
-    os.makedirs(SAVE_DIR)
+    try:
+        os.makedirs(SAVE_DIR)
+    except:
+        READONLY = True
 
 language = None
 try: #optional language setting
