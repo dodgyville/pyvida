@@ -94,7 +94,7 @@ DEBUG_ASTAR = False
 
 ENABLE_EDITOR = False #default for editor
 ENABLE_PROFILING = False
-ENABLE_LOGGING = False
+ENABLE_LOGGING = True
 
 
 SELECT = 0 #manually select an item
@@ -3542,6 +3542,7 @@ class Game(object):
         #always on screen
         self.menu = [] 
         self._menus = [] #a stack of menus 
+        self._menu_modal = False #is this menu blocking game events
         self.modals = []
         self.menu_mouse_pressed = False #stop editor from using menu clicks as edit flags
 
@@ -3910,8 +3911,7 @@ class Game(object):
         self._trigger(obj)
         self._event_finish()
 
-    def _on_mouse_down(self, x, y, button, modifiers): #single button interface
-#        if self.menu_mouse_pressed == True: return
+    def _on_mouse_down(self, x, y, button, modifiers): #single button interface for editor
         self.mouse_down = (x,y)
         for i in self.menu: 
             if i.collide(x,y): return #let mouse_up have a go at menu
@@ -3951,17 +3951,20 @@ class Game(object):
             self.mouse_mode = MOUSE_LOOK #subaltern btn pressed 
         if not self.enabled_editor and len(self.modals) > 0: #modals first, but ignore them if in edit mode
             for i in self.modals:
+                if self.game and self.game.block == True: break #don't allow modals clicks when event queue is blocked
                 if i.collide(x,y): #always trigger interact on modals
                     i.trigger_interact()
                     return
             return
-        for i in self.menu: #then menu
+        for i in self.menu: #then menu 
+            if self.game and self.game.block == True: break #don't allow menu clicks when event queue is blocked
             if i.collide(x,y) and i.allow_interact:
                 if i.actions.has_key('down'): i._do('down')
                 i.trigger_interact() #always trigger interact on menu items
                 self.menu_mouse_pressed = True
                 return
-                
+        if self._menu_modal: return #don't allow non-menu events to be added
+
         if self.block: return #don't allow interacts if event lock is activated
         
         if self.enabled_editor and self.scene: #finish edit point or rect or walkarea point
@@ -3989,6 +3992,7 @@ class Game(object):
 
     def _on_mouse_move_scene(self, x, y, button, modifiers):
         """ possibly draw overlay text """
+        if self._menu_modal: return
         if self.scene:
             if self.scene._on_mouse_move:
                 self.scene._on_mouse_move(x,y,button,modifiers)
@@ -5048,7 +5052,7 @@ class Game(object):
                 try:
                     e[0](*e[1], **e[2]) #call the function with the args and kwargs
                 except:
-                    log.error("Exception in handle_events")
+                    log.error("Exception in handle_events running fn %s (%s, %s)\n"%e)
                     print("\nError running fn %s (%s, %s)\n"%e)
                     if traceback: traceback.print_exc(file=sys.stdout)
                     print("\n\n")
@@ -5309,13 +5313,17 @@ class Game(object):
                 if logging: log.error("Menu item %s not found in MenuItem collection"%i)
         if logging: log.debug("set menu to %s"%[x.name for x in self.menu])
         self._event_finish()        
+
+    def on_menu_modal(self, modal=True):
+        """ Set if the menu is currently in modal mode (ie non-menu events are blocked """
+        self._menu_modal = modal
+        self._event_finish()        
         
         
     def on_modals_clear(self):
         if logging: log.debug("clear modals %s"%[x.name for x in self.modals])
         self.modals = []
         self._event_finish()        
-        
             
     def on_menus_clear(self):
         """ clear all menus """
