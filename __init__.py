@@ -200,6 +200,7 @@ REPEAT = 5 #loop action, but reset position each cycle
 DEFAULT_FRAME_RATE = 20 #100
 
 DEFAULT_FONT = os.path.join("data/fonts/", "vera.ttf")
+MENU_COLOUR = (42, 127, 255)
 
 def use_init_variables(original_class):
     """ Take the value of the args to the init function and assign them to the objects' attributes """
@@ -558,7 +559,7 @@ def prepare_tests(game, suites, log_file=None, user_control=None):#, setup_fn, e
 def get_available_languages():
     """ Return a list of available locale names """
     languages = glob.glob("data/locale/*")
-    languages = [os.path.basename(x) for x in languages]
+    languages = [os.path.basename(x) for x in languages if os.path.isdir(x)]
     languages.sort()
     if language not in languages:
         languages.append(language) #the default
@@ -2630,7 +2631,7 @@ def text_to_image(text, font, colour, maxwidth,offset=None):
 
 class Text(Item):
     """ Display text on the screen """
-    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=26, wrap=2000, font=None):
+    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=26, wrap=2000, font=None, offset=None):
         Item.__init__(self, name)
         self.x, self.y = pos
         self.w, self.h = dimensions
@@ -2639,21 +2640,22 @@ class Text(Item):
         self.wrap = wrap
         self.size = size
         self.colour = colour
+        self.offset = offset
         if not font: font = DEFAULT_FONT
         self.font = None #loaded by self._generate_text
         self.fname = font
-        self.img = self._img = self._generate_text(text, colour)
-        self._mouse_move_img = self._generate_text(text, (255,255,255))
+        self.img = self._img = self._generate_text(text, colour, offset)
+        self._mouse_move_img = self._generate_text(text, (255,255,255), offset)
         self.mouse_move_enabled = False
-        self.key = None #if forced to MenuItem or ModalItem
+        self.key = None #if forced to MenuItem or ModalItem or MenuText
         #TODO img has shadow?
         self._on_mouse_move = self._on_mouse_leave = None
         self._clickable_area = self.img.get_rect()
 
     def update_text(self, txt=""): #rebuild the text image
         if txt: self.text = txt
-        self.img = self._img = self._generate_text(self.text, self.colour)
-        self._mouse_move_img = self._generate_text(self.text, (255,255,255))        
+        self.img = self._img = self._generate_text(self.text, self.colour, offset=self.offset)
+        self._mouse_move_img = self._generate_text(self.text, (255,255,255), offset=self.offset)        
 
     def _on_mouse_move_utility(self, x, y, button, modifiers): #text.mouse_move single button interface
         self.img = self._mouse_move_img
@@ -2664,7 +2666,7 @@ class Text(Item):
     def _collide(self, x,y):
         return self.clickable_area.collidepoint(x,y)
 
-    def _generate_text(self, text, colour=(255,255,255)):
+    def _generate_text(self, text, colour=(255,255,255), offset=None):
         if not self.font:
             self.font = load_font(self.fname, self.size)
             
@@ -2672,7 +2674,7 @@ class Text(Item):
             img = Surface((10,10))
             return img
         
-        img = text_to_image(text, self.font, colour, self.wrap)
+        img = text_to_image(text, self.font, colour, self.wrap, offset=offset)
         return img
 
     def draw(self):
@@ -2733,10 +2735,10 @@ ALPHABETICAL = 0
 
 class MenuText(Text, MenuItem):
     """ Use text to generate a menu item """
-    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(42, 127, 255), size=26, wrap=2000, interact=None, spos=(None, None), hpos=(None, None), key=None, font=DEFAULT_FONT):
+    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=MENU_COLOUR, size=26, wrap=2000, interact=None, spos=(None, None), hpos=(None, None), key=None, font=DEFAULT_FONT, offset=2):
         if spos == (None, None): spos = pos
         MenuItem.__init__(self, name, interact, spos, hpos, key, text)
-        Text.__init__(self,  name, pos, dimensions, text, colour, size, wrap, font)
+        Text.__init__(self,  name, pos, dimensions, text, colour, size, wrap, font, offset)
         self.interact = interact
         self.display_text = " "
         self._on_mouse_move = self._on_mouse_move_utility #switch on mouse over change
