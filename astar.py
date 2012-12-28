@@ -394,8 +394,9 @@ class Astar(object):
         else: #or match goal to the size of the available footprints of the actions
             try:
                 dx,dy = max([abs(x[1][0]) for x in self.available_steps])+1, max([abs(x[1][1]) for x in self.available_steps])+1
-            except:
-                import pdb; pdb.set_trace()
+            except ValueError:
+                log.error("Value error for finding dx, dy using available_steps: %s"%self.available_steps)
+                dx,dy=5,3
         goal_rect = Rect(goal[0]-dx, goal[1]-dy, dx*2,dy*2)
         r= goal_rect
         if logging and ENABLE_ASTAR_LOG: log.debug("astar: goal_rect is %s %s %s %s"%(r.topleft, r.bottomleft, r.topright, r.bottomright))

@@ -79,10 +79,15 @@ DEFAULT_PORTAL_TEXT = True #show portal text
 
 VERSION_MAJOR = 1 #major incompatibilities
 VERSION_MINOR = 0 #minor/bug fixes, can run same scripts
-VERSION_SAVE = 1  #save/load version, only change on incompatible changes
+VERSION_SAVE = 2  #save/load version, only change on incompatible changes
 
 GOTO_LOOK = True  #should player walk to object when looking at it
 GOTO_LOOK = False
+
+#DISPLAY_TEXT alignment
+ALIGN_LEFT = 0
+ALIGN_RIGHT = 1
+ALIGN_CENTRE = 2
 
 try:
     import android
@@ -92,7 +97,7 @@ except ImportError:
 #DEBUG_ASTAR = True
 DEBUG_ASTAR = False
 
-ENABLE_EDITOR = False #default for editor
+ENABLE_EDITOR = True #default for editor
 ENABLE_PROFILING = False
 ENABLE_LOGGING = True
 
@@ -936,6 +941,7 @@ class Actor(object):
         self._nx, self._ny = 0,0    # displacement point for name
         self._tx, self._ty = 0,0    # target for when this actor is mid-movement
         self.display_text = None #can override name for game.info display text
+        self.display_text_align = ALIGN_LEFT
         
         self.speed = 10 #speed at which actor moves per frame
         self.inventory = {}
@@ -2343,7 +2349,7 @@ class Portal(Item):
         Item.draw(self)
         if self.game.settings.show_portals:
             i = self.display_exit if self.allow_interact or self.allow_look else self.display_exit_inactive
-            t = self._draw_image(i, (self.nx, self.ny))
+            t = self._draw_image(i, (self.nx, self.ny-15))
             if t: self._rect = self._rect.union(t) if self._rect else t #apply any camera effects                
         return
 
@@ -3492,7 +3498,6 @@ class Game(object):
 
     quit = False
     screen = None
-    existing = False #is there a game in progress (either loaded or saved)
    
     def __init__(self, name="Untitled Game", engine=VERSION_MAJOR, fullscreen=DEFAULT_FULLSCREEN, resolution=(1024,768), fps=DEFAULT_FRAME_RATE):
         if logging: log.debug("game object created at %s"%datetime.now())
@@ -3504,6 +3509,7 @@ class Game(object):
         self.font_speech = None
         self.font_speech_size = None
         self.settings = None #settings to save between sessions
+        self.existing = False #is there a game in progress (either loaded or saved)
 
 
         self.allow_save = False #are we in the middle of a game, if so, allow save
@@ -3604,11 +3610,14 @@ class Game(object):
         """ Apply as many settings in .settings as possible """
         if not self.settings: return
         #apply fullscreen
-        if pygame.display.get_surface():
+        if pygame.display.get_surface(): #already existing screen
             is_fullscreen = pygame.display.get_surface().get_flags() & pygame.FULLSCREEN
             self.fullscreen = self.settings.fullscreen
+            flags = 0
             if self.settings.fullscreen:
                 flags |= pygame.FULLSCREEN 
+            else:
+                flags |= pygame.RESIZABLE
             self.screen = pygame.display.set_mode(self.resolution, flags)
         #apply music volume
         music_volume = self.settings.music_volume if self.settings.music_on else 0
@@ -3668,32 +3677,56 @@ class Game(object):
     def save_game_info(self):   
         return {"version": VERSION_SAVE, "reset": self.reset_game, "title":self.save_title, "datetime":datetime.now() }
         
-    def save(self, fname): #save the game current game object
+    def save(self, fname): #save the game current game object #game.save
         """ save the game current game object """
+#        import pdb; pdb.set_trace()
         with open(fname, "w") as f:
-           pickle.dump(self.save_game_info, f)
-           pickle.dump(self.save_game, f)
+            pickle.dump(self.save_game_info, f) #dump some metadata (eg date, title, etc)
+#            pickle.dump([x.name for x in self.menu], f) #dump the current menu
+ #           pickle.dump([[x.name for x in menu] for menu in self._menus], f)  #dump the menus in the queue
+            pickle.dump(self.save_game, f) #dump the player's actions
             
     def _load(self, fname, meta_only=False): 
         data = None
         with open(fname, "r") as f:
            meta = pickle.load(f)
            if not meta_only:
-               data = pickle.load(f)
+  #              menu = [pickle.load(f)
+                data = pickle.load(f)
         return meta, data
-        
-    def load(self, fname): #game.load - load a game state
-        meta, data = self._load(fname)        
+
+    def _test_load(self, fname):
+        """ Load the savefile and do some basic checking """
+        meta, data = self._load(fname)
+        if meta["version"] < VERSION_SAVE: #incompatible save file version
+            txt = gettext("This v%(older)s save file is not compatible with this v%(newer)s save file loader.")%{"older":meta["version"], "newer":VERSION_SAVE}
+            return (meta, data, False, txt)
         if self.reset_game == None:
             if logging: log.error("Unable to load save game, reset_game value not set on game object")
-        else:
+            return (meta, data, False, gettext("Corrupt or missing save game."))
+        return (meta, data, True, meta["title"])
+
+    def test_load(self, fname):
+        """ Check if the savegame is safe to load """
+        meta, data, result, txt = self._test_load(fname)
+        return result, txt
+
+    def load(self, fname): #game.load - load a game state
+        """ Queues a reload and returns (True|False, Title|Error) depending on result """
+        meta, data, result, txt = self._test_load(fname)
+        if not result: #return error
+            return (result, txt)
+        else: #load
+#            import pdb; pdb.set_trace()
             self.headless = True #switch off pygame rendering
-            data.append([toggle, "headless", datetime.now()])
-            self.reset_game(self)
+            data.append([toggle, "headless", datetime.now()]) #switch headless back on
+            reset_fn = meta["reset"] if meta.get("reset", None) else self.reset_game
+            if logging: log.info("Calling reset fn %s"%reset_fn)
+            reset_fn(self)
             self.testing = True
             self.tests = [d[:-1] for d in data] #strip time info off save game
             self.jump_to_step = len(data)
-
+        return (result, txt)
         
     def __getattr__(self, a):
         #only called as a last resort, so possibly set up a queue function
@@ -3757,31 +3790,29 @@ class Game(object):
         return obj
 
         
-    def info(self, text, x, y): #game.info
+    def info(self, text, x, y, align=ALIGN_LEFT): #game.info
         """ On screen at one time can be an info text (eg an object name or menu hover) 
             Set that here.
         """
-#        base = font.render(message, 0, fontcolor)
-#        img = Surface(size, 16)
-#        base.set_palette_at(1, shadowcolor)
-#        img.blit(base, (offset, offset))
-#        base.set_palette_at(1, fontcolor)
-#        img.blit(base, (0, 0))
-#        return img        
         colour = (250,250,40)
         self.info_image = None
+        w = 0
         if text and len(text) == 0: return
         if self.font:
             self.info_image = text_to_image(text, self.font, colour, 150, offset=1)
+            w = self.info_image.get_width()
+        if align == ALIGN_RIGHT: x -= w
+        if align == ALIGN_CENTRE: x -= int(float(w)/2)
         self.info_position = (x,y)
 
-    def on_smart(self, player=None, player_class=Actor, draw_progress_bar=None): #game.smart
+    def on_smart(self, player=None, player_class=Actor, draw_progress_bar=None, refresh=False): #game.smart
         """ cycle through the actors, items and scenes and load the available objects 
             it is very common to have custom methods on the player, so allow smart
             to use a custom class
             player is the the first actor the user controls.
             player_class can be used to override the player class with a custom one.
             draw_progress_bar is the fn that handles the drawing of a progress bar on this screen
+            refresh = reload the defaults for this actor (but not images)
         """
         portals = []
         running_headless = self.headless
@@ -3798,16 +3829,20 @@ class Game(object):
                     self.progress_bar_count += 1
                 if logging: log.debug("game.smart loading %s %s"%(obj_cls.__name__.lower(), name))
                 #if there is already a non-custom Actor or Item with that name, warn!
-                if obj_cls == Actor and name in self.actors and self.actors[name].__class__ == Actor:
+                if obj_cls == Actor and name in self.actors and self.actors[name].__class__ == Actor and not refresh:
                     if logging: log.warning("game.smart skipping %s, already an actor with this name!"%(name))
-                elif obj_cls == Item and name in self.items  and self.actors[name].__class__ == Item:
+                elif obj_cls == Item and name in self.items  and self.items[name].__class__ == Item and not refresh:
                     if logging: log.warning("game.smart skipping %s, already an item with this name!"%(name))
                 else:
-                    if type(player)==str and player == name:
-                        a = player_class(name)
-                    else:
-                        a = obj_cls(name)
-                    self.add(a)
+                    if not refresh: #create a new object
+                        if type(player)==str and player == name:
+                            a = player_class(name)
+                        else:
+                            a = obj_cls(name)
+                        self.add(a)
+                    else: #if just refreshing, then use the existing object
+                        a = self.actors.get(name, self.items.get(name, self.scenes.get(name, None)))
+                        if not a: import pdb; pdb.set_trace()
                     a.smart(self)
                     if a.__class__ == Portal: portals.append(a.name)
                     
@@ -4019,7 +4054,7 @@ class Game(object):
                                 else:
                                     t = "To %s"%(i.link.scene.name) if i.link.scene.display_text == None else "To %s"%(i.link.scene.display_text)
                             if not self.settings.show_portal_text: t = ""                        
-                        self.info(t, i.nx,i.ny)
+                        self.info(t, i.nx, i.ny, i.display_text_align)
                         return
     
 
@@ -4073,7 +4108,7 @@ class Game(object):
 #                    i.action = i.actions['over']
                     
                 t = i.name if i.display_text == None else i.display_text
-                self.info(t, i.nx, i.ny)
+                self.info(t, i.nx, i.ny, i.display_text_align)
                 if i._on_mouse_move: i._on_mouse_move(x, y, button, modifiers)
                 menu_capture = True
             else: #unhover over menu item
@@ -5011,20 +5046,15 @@ class Game(object):
                                 print("end run at step %s"%self.steps_complete)
                                 if self.jump_to_step == "set_trace": import pdb; pdb.set_trace()
                         if return_to_player: #hand control back to player
-                            print("hand back!")
                             self.testing = False
                             self.time_delay = int(1000.0/self.fps) #this is actually miliseconds per frame
                             #self.tests = None
                             if self.scene: self.camera._play_scene_music() #switch music back on
                             if self.player and self.testing_message:
-                                if self.headless: 
-                                    self.headless = False #force visual if handing over to player
-                                    pygame.display.flip() #show updated display to user
-                                if self.jump_to_step == "lachlan":
-                                    self.player.says("Previously in game. An alien fleet is attacking peaceful planets. As a last resort, Captain Elliott has been drafted  to find and defeat his ex-boyfriend (the alien leader). Arriving on New Camelot, Elliott has found a planet blissfully unaware it is about to be invaded ...")
-                                else:
-                                    self.player.says("Let's play.")
-                                    if self.exit_step: self.quit = True #exit program
+                                if self.headless: self.headless = False #force visual if handing over to player
+                                self.screen.blit(self.scene.background(), (0, 0)) #redraw whole screen
+                                self.player.says("Let's play.")
+                                if self.exit_step: self.quit = True #exit program
                                 self.modals_clear()
                             self.finish_tests()
                             
