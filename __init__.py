@@ -971,6 +971,22 @@ class Actor(object):
         self.analytics_count = 0 #used by test runner to measure how "popular" an actor is.
         self._count_actions = {} #dict containing action name and number of times used
     
+    @property
+    def flatten(self):
+        """ Return a dict of strings representing non-default scripts """
+        m = {"scripts":{}, "facts":self.facts}
+        for script in ["interact", "look", "_on_mouse_move", "_on_mouse_leave"]:
+            fn = getattr(self, script)
+            if fn:
+                fn2 = get_function(self.game, fn)
+                m["scripts"][script] =  fn2.__name__ if fn2 else script
+        if len(self.uses) > 0:
+            m["scripts"]["uses"] = {}
+            for (item, script) in self.uses.items():
+                fn = get_function(self.game, script) 
+                m["scripts"]["uses"] = (item, fn.__name__ if fn else script)
+        return m
+
     def _event_finish(self, success=True, block=True):  #actor.event_finish
         return self.game._event_finish(success, block)
 
@@ -1222,7 +1238,7 @@ class Actor(object):
                 else:
                     if logging: log.error("Unable to find interact fn %s"%self.interact)
             n = self.interact.__name__ if self.interact else "self.interact is None"
-            if logging: log.debug("Player interact (%s) with %s"%(n, self.name))
+            if logging: log.debug("Player interact (%s (%s)) with %s"%(n, self.interact if self.interact else "none", self.name))
             self.interact(self.game, self, self.game.player)
             script = self.interact
         else: #else, search several namespaces or use a default
@@ -2326,6 +2342,11 @@ class Portal(Item):
         self.display_exit_inactive = None #Image to use to show door exit
 #        self.interact = self._interact_default
 #        self.look = self._look
+
+    def on_auto_align(self): #auto align display_text
+        if logging: log.warning("auto_align only works properly on 1024x768")
+        if self.nx > 880: self.display_text_align = ALIGN_RIGHT #auto align text
+        self._event_finish(block=False)
 
     def smart(self, game, *args, **kwargs): #portal.smart
         Item.smart(self, game, *args, **kwargs)
@@ -3479,7 +3500,6 @@ EDIT_SOLID = "solid_area"
 @use_init_variables
 class Game(object):
     __metaclass__ = use_on_events
-   
     
     editing = None #which actor or walkarea are we editing
     editing_point = None #which point or rect are we editing
@@ -3526,6 +3546,8 @@ class Game(object):
         self.visited = [] #list of scene names visited
         
         self.save_game = [] #a list of events caused by this player to get to this point in game
+        self.save_game_objects = {} #object info from start of self.save_game run, set by weigh points
+
         self.save_title = ""  #title to display for save game
         self.reset_game = None #which function can we call to reset the game state to a safe point (eg start of chapter)
         self.testing = False
@@ -3598,7 +3620,7 @@ class Game(object):
         self.fps = fps
         self.time_delay = int(1000.0/fps)
         self.fullscreen = fullscreen
-        
+
     def set_modules(self, modules):        
         """ when editor reloads modules, which modules are game related? """
         for i in modules:
@@ -3682,42 +3704,54 @@ class Game(object):
 #        import pdb; pdb.set_trace()
         with open(fname, "w") as f:
             pickle.dump(self.save_game_info, f) #dump some metadata (eg date, title, etc)
-#            pickle.dump([x.name for x in self.menu], f) #dump the current menu
- #           pickle.dump([[x.name for x in menu] for menu in self._menus], f)  #dump the menus in the queue
+            pickle.dump(self.save_game_objects, f) #dump script data about game (interacts, facts, etc)
             pickle.dump(self.save_game, f) #dump the player's actions
             
     def _load(self, fname, meta_only=False): 
         data = None
+        scripts = None
         with open(fname, "r") as f:
            meta = pickle.load(f)
            if not meta_only:
-  #              menu = [pickle.load(f)
+                scripts = pickle.load(f)
                 data = pickle.load(f)
-        return meta, data
+        return meta, scripts, data
 
     def _test_load(self, fname):
         """ Load the savefile and do some basic checking """
-        meta, data = self._load(fname)
+        meta, scripts, data = self._load(fname)
         if meta["version"] < VERSION_SAVE: #incompatible save file version
             txt = gettext("This v%(older)s save file is not compatible with this v%(newer)s save file loader.")%{"older":meta["version"], "newer":VERSION_SAVE}
-            return (meta, data, False, txt)
+            return (meta, scripts, data, False, txt)
         if self.reset_game == None:
             if logging: log.error("Unable to load save game, reset_game value not set on game object")
-            return (meta, data, False, gettext("Corrupt or missing save game."))
-        return (meta, data, True, meta["title"])
+            return (meta, scripts, data, False, gettext("Corrupt or missing save game."))
+        return (meta, scripts, data, True, meta["title"])
 
     def test_load(self, fname):
         """ Check if the savegame is safe to load """
-        meta, data, result, txt = self._test_load(fname)
+        meta, scripts, data, result, txt = self._test_load(fname)
         return result, txt
 
     def load(self, fname): #game.load - load a game state
         """ Queues a reload and returns (True|False, Title|Error) depending on result """
-        meta, data, result, txt = self._test_load(fname)
+        meta, scripts, data, result, txt = self._test_load(fname)
         if not result: #return error
             return (result, txt)
         else: #load
-#            import pdb; pdb.set_trace()
+            #set up the scripts and facts based on the last weigh point
+            for group_key, group in scripts.items(): #actors, items, etc
+                objects = getattr(self, group_key)
+                for object_key, object_data in group.items(): #catapult, bucket, etc
+                    obj = objects.get(object_key, None)
+                    if not obj:
+                        if logging: log.warning("object %s not in %s in savegame %s"%(object_key, group_key, fname))
+                        continue
+                    setattr(obj, "facts", object_data["facts"])
+                    for script, fn_name in object_data["scripts"].items():
+                        if script == "uses": fn_name = dict((fn_name,)) #special "uses" script dict
+                        setattr(obj, script, fn_name)
+            #set up the runner to take the game to the current save point
             self.headless = True #switch off pygame rendering
             data.append([toggle, "headless", datetime.now()]) #switch headless back on
             reset_fn = meta["reset"] if meta.get("reset", None) else self.reset_game
@@ -3794,7 +3828,9 @@ class Game(object):
         """ On screen at one time can be an info text (eg an object name or menu hover) 
             Set that here.
         """
-        colour = (250,250,40)
+#        colour = (250,250,40) #yellow
+#        colour = (170, 222, 135) #pale green
+        colour = (255, 220, 0) #off yellow
         self.info_image = None
         w = 0
         if text and len(text) == 0: return
@@ -3804,6 +3840,11 @@ class Game(object):
         if align == ALIGN_RIGHT: x -= w
         if align == ALIGN_CENTRE: x -= int(float(w)/2)
         self.info_position = (x,y)
+
+    def on_set_value(self, key, value):
+        """ Store data on the game object """
+        setattr(self, key, value)
+        self._event_finish(block=False)
 
     def on_smart(self, player=None, player_class=Actor, draw_progress_bar=None, refresh=False): #game.smart
         """ cycle through the actors, items and scenes and load the available objects 
@@ -3858,6 +3899,7 @@ class Game(object):
                 self.items[pname].link = self.items[guess_link]
             else:
                 if logging: log.warning("game.smart unable to guess link for %s"%pname)
+            self.items[pname].auto_align() #auto align portal text
         if type(player) == str: player = self.actors[player]
         if player: self.player = player
         if not self.scene and len(self.scenes) == 1: 
