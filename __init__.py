@@ -962,7 +962,7 @@ class Actor(object):
         self.allow_interact = True
         self.allow_look = True
 
-        self.track_interact = True #save interacts with this actor to the save_game list
+        self.track_interact = True #save interacts with this actor to the save_game list XXX disabled actually
 
         self.interact = None #special queuing function for interacts
         self.look = None #override queuing function for look
@@ -4052,7 +4052,7 @@ class Game(object):
                 if i.actions.has_key('down'): i._do('down')
                 i.trigger_interact() #always trigger interact on menu items
                 self.menu_mouse_pressed = True
-                if i.track_interact == True and self.game: self.game.save_game.append([interact, i.name, datetime.now()])
+#                if i.track_interact == True and self.game: self.game.save_game.append([interact, i.name, datetime.now()])
 
                 return
         if self._menu_modal: return #don't allow non-menu events to be added
@@ -4404,6 +4404,9 @@ class Game(object):
                             else: #the player object
                                 f.write('    #%s = game.actors["%s"]\n'%(slug, name))                            
                                 f.write('    #%s.reanchor((%i, %i))\n'%(slug, obj._ax, obj._ay))
+                                r = obj._clickable_area
+                                f.write('    #%s.reclickable(Rect(%s, %s, %s, %s))\n'%(slug, r.left, r.top, r.w, r.h))
+
                                 if name not in self.scene.scales:
                                     self.scene.scales[name] = obj.scale
                                 for key, val in self.scene.scales.items():
@@ -5469,9 +5472,12 @@ class Game(object):
         if not menu_items:
             menu_items = self.menu
         if type(menu_items) not in [tuple, list]: menu_items = [menu_items]
-        if logging: log.debug("fadeIn menu, telling items to goto %s"%[x.name for x in menu_items])
-        for i in reversed(menu_items): self.stuff_event(i.on_goto, (i.in_x,i.in_y))
+        if logging: log.debug("fadeIn menu, telling items to goto %s"%[x if type(x) == str else x.name for x in menu_items])
+        for i in reversed(menu_items):
+            i = self.items.get(i, self.actors.get(i, i)) if type(i) == str else i
+            self.stuff_event(i.on_goto, (i.in_x,i.in_y))
         self._event_finish()
+
         
     def on_menu_push(self):
         """ push this menu to the list of menus and clear the current menu """
