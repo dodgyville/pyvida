@@ -405,7 +405,10 @@ class Astar(object):
             f_score_sorted = sorted(f_score.iteritems(), key=operator.itemgetter(1))
             previous = current
 #            previous = None #XXX disable turn based penalty
-            current = f_score_sorted[0][0]
+            try:
+                current = f_score_sorted[0][0]
+            except:
+                import pdb; pdb.set_trace()
             if goal_rect.collidepoint(current):
                 path = self.reconstruct_path(came_from, current) #return path to current, not goal as current is close enough
                 if current != goal: path.append(goal) #force final step to be the exact goal

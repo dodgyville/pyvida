@@ -962,6 +962,8 @@ class Actor(object):
         self.allow_interact = True
         self.allow_look = True
 
+        self.track_interact = True #save interacts with this actor to the save_game list
+
         self.interact = None #special queuing function for interacts
         self.look = None #override queuing function for look
         self.uses = {} #override use functions (actor is key name)
@@ -2750,6 +2752,7 @@ class ModalItem(Actor):
 class MenuItem(Actor):
     def __init__(self, name="Untitled Menu Item", interact=None, spos=(None, None), hpos=(None, None), key=None, display_text=""): 
         Actor.__init__(self, name)
+        self.track_interact = False #by default don't track menu items in the save game file
         self.interact = interact
         self.key = ord(key) if type(key)==str else key #bind menu item to a keyboard key
         self.x, self.y = spos
@@ -2766,6 +2769,7 @@ class MenuText(Text, MenuItem):
         if spos == (None, None): spos = pos
         MenuItem.__init__(self, name, interact, spos, hpos, key, text)
         Text.__init__(self,  name, pos, dimensions, text, colour, size, wrap, font, offset)
+        self.track_interact = False #by default don't track menu items in the save game file
         self.interact = interact
         self.display_text = " "
         self._on_mouse_move = self._on_mouse_move_utility #switch on mouse over change
@@ -3225,6 +3229,7 @@ class Mixer(object):
     def _music_stop(self):
         if pygame.mixer: pygame.mixer.music.stop()
 
+
     def on_music_stop(self):
         self._music_stop()
         self.game._event_finish()
@@ -3519,7 +3524,7 @@ class Game(object):
     quit = False
     screen = None
    
-    def __init__(self, name="Untitled Game", engine=VERSION_MAJOR, fullscreen=DEFAULT_FULLSCREEN, resolution=(1024,768), fps=DEFAULT_FRAME_RATE):
+    def __init__(self, name="Untitled Game", version="v1.0", engine=VERSION_MAJOR, fullscreen=DEFAULT_FULLSCREEN, resolution=(1024,768), fps=DEFAULT_FRAME_RATE):
         if logging: log.debug("game object created at %s"%datetime.now())
 #        log = log
 #        self.voice_volume = 1.0
@@ -3530,6 +3535,7 @@ class Game(object):
         self.font_speech_size = None
         self.settings = None #settings to save between sessions
         self.existing = False #is there a game in progress (either loaded or saved)
+        self.version = version
 
 
         self.allow_save = False #are we in the middle of a game, if so, allow save
@@ -3697,49 +3703,53 @@ class Game(object):
         
     @property
     def save_game_info(self):   
-        return {"version": VERSION_SAVE, "reset": self.reset_game, "title":self.save_title, "datetime":datetime.now() }
+        return {"version": VERSION_SAVE, "game_version": self.version, "reset": self.reset_game, "title":self.save_title, "datetime":datetime.now() }
         
     def save(self, fname): #save the game current game object #game.save
         """ save the game current game object """
 #        import pdb; pdb.set_trace()
         with open(fname, "w") as f:
             pickle.dump(self.save_game_info, f) #dump some metadata (eg date, title, etc)
+            pickle.dump(self.visited, f) #dump script data about game (interacts, facts, etc)
             pickle.dump(self.save_game_objects, f) #dump script data about game (interacts, facts, etc)
             pickle.dump(self.save_game, f) #dump the player's actions
             
     def _load(self, fname, meta_only=False): 
-        data = None
+        visited = None
         scripts = None
+        data = None
         with open(fname, "r") as f:
            meta = pickle.load(f)
            if not meta_only:
+                visited = pickle.load(f)
                 scripts = pickle.load(f)
                 data = pickle.load(f)
-        return meta, scripts, data
+        return meta, visited, scripts, data
 
     def _test_load(self, fname):
         """ Load the savefile and do some basic checking """
-        meta, scripts, data = self._load(fname)
+        meta, visited, scripts, data = self._load(fname)
         if meta["version"] < VERSION_SAVE: #incompatible save file version
             txt = gettext("This v%(older)s save file is not compatible with this v%(newer)s save file loader.")%{"older":meta["version"], "newer":VERSION_SAVE}
-            return (meta, scripts, data, False, txt)
+            return (meta, visited, scripts, data, False, txt)
         if self.reset_game == None:
             if logging: log.error("Unable to load save game, reset_game value not set on game object")
-            return (meta, scripts, data, False, gettext("Corrupt or missing save game."))
-        return (meta, scripts, data, True, meta["title"])
+            return (meta, visited, scripts, data, False, gettext("Corrupt or missing save game."))
+        return (meta, visited, scripts, data, True, meta["title"])
 
     def test_load(self, fname):
         """ Check if the savegame is safe to load """
-        meta, scripts, data, result, txt = self._test_load(fname)
+        meta, visited, scripts, data, result, txt = self._test_load(fname)
         return result, txt
 
     def load(self, fname): #game.load - load a game state
         """ Queues a reload and returns (True|False, Title|Error) depending on result """
-        meta, scripts, data, result, txt = self._test_load(fname)
+        meta, visited, scripts, data, result, txt = self._test_load(fname)
         if not result: #return error
             return (result, txt)
         else: #load
             #set up the scripts and facts based on the last weigh point
+            self.visited = visited
             for group_key, group in scripts.items(): #actors, items, etc
                 objects = getattr(self, group_key)
                 for object_key, object_data in group.items(): #catapult, bucket, etc
@@ -3747,7 +3757,9 @@ class Game(object):
                     if not obj:
                         if logging: log.warning("object %s not in %s in savegame %s"%(object_key, group_key, fname))
                         continue
+                    #set the facts for this object
                     setattr(obj, "facts", object_data["facts"])
+                    #set the look, interact and use scripts for this object
                     for script, fn_name in object_data["scripts"].items():
                         if script == "uses": fn_name = dict((fn_name,)) #special "uses" script dict
                         setattr(obj, script, fn_name)
@@ -4033,12 +4045,15 @@ class Game(object):
                     i.trigger_interact()
                     return
             return
+        if len(self.events) > 0: return #only allow modal events when events in queue
         for i in self.menu: #then menu 
             if self.game and self.game.block == True: break #don't allow menu clicks when event queue is blocked
             if i.collide(x,y) and i.allow_interact:
                 if i.actions.has_key('down'): i._do('down')
                 i.trigger_interact() #always trigger interact on menu items
                 self.menu_mouse_pressed = True
+                if i.track_interact == True and self.game: self.game.save_game.append([interact, i.name, datetime.now()])
+
                 return
         if self._menu_modal: return #don't allow non-menu events to be added
 
@@ -5151,7 +5166,7 @@ class Game(object):
                 self.events.remove(e)
         return obj
 
-    def _event_finish(self, success=True, block=True): #Game.on_event_finish
+    def _event_finish(self, success=True, block=True): #Game._event_finish
         """ start the next event in the game scripter """
 #        if logging: log.debug("finished event %s, remaining:"%(self._event, self.events)
         self._event = None
