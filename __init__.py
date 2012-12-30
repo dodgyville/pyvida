@@ -97,9 +97,9 @@ except ImportError:
 #DEBUG_ASTAR = True
 DEBUG_ASTAR = False
 
-ENABLE_EDITOR = True #default for editor
+ENABLE_EDITOR = False #default for editor
 ENABLE_PROFILING = False
-ENABLE_LOGGING = True
+ENABLE_LOGGING = False
 
 
 SELECT = 0 #manually select an item
