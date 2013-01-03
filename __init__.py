@@ -2314,6 +2314,8 @@ class Actor(object):
         if self.scene:
             self.scene._remove(self)
         if unparent: self._reparent(None)
+        for child in self._children: #remove any children too
+            if child.scene: child.scene._remove(child)
         self._event_finish(block=False)
     
     
@@ -3491,7 +3493,7 @@ class Settings(object):
         if logging: log.debug("Loading settings from %s"%save_dir)
         fname = os.path.join(save_dir, "game.settings")
         try:
-            with open(fname, "r") as f:
+            with open(fname, "rU") as f:
                data = pickle.load(f)
             return data
         except: #if any problems, use default settings
@@ -3718,7 +3720,7 @@ class Game(object):
         visited = None
         scripts = None
         data = None
-        with open(fname, "r") as f:
+        with open(fname, "rU") as f:
            meta = pickle.load(f)
            if not meta_only:
                 visited = pickle.load(f)
@@ -3790,6 +3792,7 @@ class Game(object):
         else:
             self._add(obj, replace, force_cls)
         if scene != None: obj.relocate(scene)
+
         return obj
 
     def _add(self, obj, replace=False, force_cls=None): #game.add
