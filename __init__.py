@@ -101,6 +101,7 @@ ENABLE_EDITOR = False #default for editor
 ENABLE_PROFILING = False
 ENABLE_LOGGING = False
 
+ENGINE_VERSION = 2 #v1 = used for spaceout
 
 SELECT = 0 #manually select an item
 EDIT = 1  #can click on item to change focus
@@ -3790,6 +3791,7 @@ class Game(object):
         else:
             self._add(obj, replace, force_cls)
         if scene != None: obj.relocate(scene)
+
         return obj
 
     def _add(self, obj, replace=False, force_cls=None): #game.add
@@ -4927,7 +4929,7 @@ class Game(object):
         if icon:
             pygame.display.set_icon(pygame.image.load(icon))
         flags = 0
-        if options.fullscreen or self.settings.fullscreen:
+        if options.fullscreen or (self.settings and self.settings.fullscreen):
             flags |= pygame.FULLSCREEN 
             self.fullscreen = True
         self.screen = screen = pygame.display.set_mode(self.resolution, flags)
@@ -5082,9 +5084,10 @@ class Game(object):
                 self.artreactor_scene = self.scene
             
             #hide mouse
-            if self.scene and self.scene.background() and not self.hide_cursor: self.screen.blit(self.scene.background(), cursor_rect, cursor_rect)
-            if self.info_image and self.scene.background(): self.screen.blit(self.scene.background(), info_rect, info_rect)
-            if debug_rect and self.scene.background(): self.screen.blit(self.scene.background(), debug_rect, debug_rect)
+            if self.scene and self.scene.background():
+                if not self.hide_cursor: self.screen.blit(self.scene.background(), cursor_rect, cursor_rect)
+                if self.info_image: self.screen.blit(self.scene.background(), info_rect, info_rect)
+                if debug_rect: self.screen.blit(self.scene.background(), debug_rect, debug_rect)
 
             #if testing, instead of user input, pull an event off the test suite
             if self.testing and len(self.events) == 0 and not self._event: 
@@ -5538,4 +5541,13 @@ def receiver(signal, **kwargs):
         return func
     return _decorator
 
+
+def main():
+    """ When run as a standalone, show the game editor for a new game """
+    GAME_VERSION = 0.1
+    game = Game("Untitled Project", GAME_VERSION, ENGINE_VERSION, fps=16)
+    game.run()
+
+if __name__ == "__main__":
+    main()
 
