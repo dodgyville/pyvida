@@ -29,11 +29,6 @@ except ImportError:
         def ugettext(self, txt):
             return txt
 
-#pyinstaller
-if getattr(sys, 'frozen', None):
-     basedir = sys._MEIPASS
-else:
-     basedir = os.path.dirname(__file__)
 
 SAVE_DIR = "saves"
 if "LOCALAPPDATA" in os.environ: #win 7
