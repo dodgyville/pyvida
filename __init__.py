@@ -29,6 +29,11 @@ except ImportError:
         def ugettext(self, txt):
             return txt
 
+#pyinstaller
+if getattr(sys, 'frozen', None):
+     basedir = sys._MEIPASS
+else:
+     basedir = os.path.dirname(__file__)
 
 SAVE_DIR = "saves"
 if "LOCALAPPDATA" in os.environ: #win 7
@@ -895,7 +900,7 @@ class WalkArea(object):
         if self._rect and self.game.screen:
             self.game.screen.blit(self.game.scene.background(), self._rect, self._rect)
 
-    def draw(self): #walkarea.draw
+    def draw(self, screen=None): #walkarea.draw
         if self.game and self.game.editing and self.game.editing == self:
             self._rect = pygame.draw.polygon(self.game.screen, (255,255,255), self.polygon.vertexarray, 1)
             if self.game.player:
@@ -1295,10 +1300,11 @@ class Actor(object):
             img = self.action.image()
         return img
 
-    def _draw_image(self, img, pos, tint = None, alpha=1.0):
+    def _draw_image(self, img, pos, tint = None, alpha=1.0, screen=None):
         r = img.get_rect().move(pos)
         if self.game and self.game.headless: return r #headless mode skips sound and visuals
-
+        screen = self.game.screen if self.game and not screen else screen
+        
         #XXX disable single image cache
 #        if self._cached_image and self.action and self.action.count == 1: #used cached image
  #           img = self._cached_image
@@ -1317,15 +1323,17 @@ class Actor(object):
  #           self._cached_image = img
         
         if alpha != 1.0:
-            _rect = blit_alpha(self.game.screen, img, r, alpha*255)
+            _rect = blit_alpha(screen, img, r, alpha*255)
         else:
-            _rect = self.game.screen.blit(img, r, special_flags=self._blit_flag)
+            _rect = screen.blit(img, r, special_flags=self._blit_flag)
         if self.game.editing == self: #draw bounding box
             r2 = r.inflate(-2,-2)
-            pygame.draw.rect(self.game.screen, (0,255,0), r2, 1)
+            pygame.draw.rect(screen, (0,255,0), r2, 1)
         return _rect
 
-    def draw(self): #actor.draw
+    def draw(self, screen=None): #actor.draw
+        screen = self.game.screen if self.game and not screen else screen
+
         if self.game and self.game.editing == self and self.game.editing.action and self.game.editing_mode == EDITING_DELTA: #onion skin for delta edit
             self._rect = pygame.Rect(self.x, self.y, 0, 0)
             ax,ay = self.ax, self.ay
@@ -1340,54 +1348,54 @@ class Actor(object):
                     dx,dy = self.action.deltas[dindex]
                     ax += dx
                     ay += dy 
-                self._rect.union_ip(self._draw_image(img, (ax, ay), tint, alpha))
+                self._rect.union_ip(self._draw_image(img, (ax, ay), tint, alpha, screen=screen))
             return 
             
         if not self.allow_draw: return
         img = self._image()
         if img: 
-            self._rect = self._draw_image(img, (self.ax, self.ay), self._tint, self._alpha)
+            self._rect = self._draw_image(img, (self.ax, self.ay), self._tint, self._alpha, screen=screen)
         else:
             self._rect = pygame.Rect(self.x, self.y,0,0)
         
         #draw the edit overlay    
         if self.game and self.game.editing and self.game.editing == self:
             #clickable area
-            self._rect.union_ip(pygame.draw.rect(self.game.screen, (230,210,250), self.clickable_area, 2))
+            self._rect.union_ip(pygame.draw.rect(screen, (230,210,250), self.clickable_area, 2))
  #           self._rect.union_ip(pygame.draw.rect(self.game.screen, (100,150,180), self.clickable_area, 2))
 
             #solid area
-            self._rect.union_ip(pygame.draw.rect(self.game.screen, (255,80,60), self.solid_area, 4))
+            self._rect.union_ip(pygame.draw.rect(screen, (255,80,60), self.solid_area, 4))
 #            self._rect.union_ip(pygame.draw.rect(self.game.screen, (255,150,180), Rect(0,0,100,100), 20))
 #            self._rect.union_ip(pygame.draw.rect(self.game.screen, (100,150,180), self.solid_area, 2))
 
                 
             #draw location point
-            self._rect.union_ip(crosshair(self.game.screen, (self.x, self.y), (0,0,255)))
+            self._rect.union_ip(crosshair(screen, (self.x, self.y), (0,0,255)))
             stats = self.game.debug_font.render("loc %0.2f, %0.2f"%(self.x, self.y+12), True, (255,155,0))
-            edit_rect = self.game.screen.blit(stats, stats.get_rect().move(self.x, self.y))
+            edit_rect = screen.blit(stats, stats.get_rect().move(self.x, self.y))
             self._rect.union_ip(edit_rect)
             
             #draw anchor point
-            self._rect.union_ip(crosshair(self.game.screen, (self.ax, self.ay), (255,0,0)))
+            self._rect.union_ip(crosshair(screen, (self.ax, self.ay), (255,0,0)))
             stats = self.game.debug_font.render("anchor %0.2f, %0.2f"%(self._ax, self._ay), True, (255,155,0))
-            self._rect.union_ip(self.game.screen.blit(stats, stats.get_rect().move(self.ax, self.ay)))
+            self._rect.union_ip(screen.blit(stats, stats.get_rect().move(self.ax, self.ay)))
 
             #draw stand point
-            self._rect.union_ip(crosshair(self.game.screen, (self.sx, self.sy), (255,200,0)))
+            self._rect.union_ip(crosshair(screen, (self.sx, self.sy), (255,200,0)))
             stats = self.game.debug_font.render("stand %0.2f, %0.2f"%(self._sx, self._sy), True, (225,255,50))
-            self._rect.union_ip(self.game.screen.blit(stats, stats.get_rect().move(self.sx, self.sy)))
+            self._rect.union_ip(screen.blit(stats, stats.get_rect().move(self.sx, self.sy)))
 
             #draw name/text point
-            self._rect.union_ip(crosshair(self.game.screen, (self.nx, self.ny), (255,0,255)))
+            self._rect.union_ip(crosshair(screen, (self.nx, self.ny), (255,0,255)))
             stats = self.game.debug_font.render("text %0.2f, %0.2f"%(self._nx, self._ny), True, (255,50,255))
-            self._rect.union_ip(self.game.screen.blit(stats, stats.get_rect().move(self.nx, self.ny)))
+            self._rect.union_ip(screen.blit(stats, stats.get_rect().move(self.nx, self.ny)))
 
             #draw out point if portal
             if hasattr(self, "set_ox"):
-                self._rect.union_ip(crosshair(self.game.screen, (self.ox, self.oy), (0,255,0)))
+                self._rect.union_ip(crosshair(screen, (self.ox, self.oy), (0,255,0)))
                 stats = self.game.debug_font.render("out %0.2f, %0.2f"%(self._ox, self._oy), True, (105,255,100))
-                self._rect.union_ip(self.game.screen.blit(stats, stats.get_rect().move(self.ox, self.oy)))
+                self._rect.union_ip(screen.blit(stats, stats.get_rect().move(self.ox, self.oy)))
 
 
     def _update(self, dt): #actor.update
@@ -2370,8 +2378,8 @@ class Portal(Item):
     def set_ox(self, ox): self._ox = ox - self._x
     ox = property(get_ox, set_ox)   
 
-    def draw(self): #portal.draw
-        Item.draw(self)
+    def draw(self, screen=None): #portal.draw
+        Item.draw(self, screen=screen)
         if self.game.settings.show_portals:
             i = self.display_exit if self.allow_interact or self.allow_look else self.display_exit_inactive
             t = self._draw_image(i, (self.nx, self.ny-15))
@@ -2579,7 +2587,7 @@ class Emitter(Item):
         for p in self.particles:
             self._update_particle(dt, p)
                     
-    def draw(self): #emitter.draw
+    def draw(self, screen=None): #emitter.draw
         if not self.action: 
             if logging: log.error("Emitter %s has no actions"%(self.name))
             return
@@ -2591,7 +2599,7 @@ class Emitter(Item):
             alpha = self.alpha_start - (abs(float(self.alpha_end - self.alpha_start)/self.frames) * p.index)
             if img and not p.hidden: 
                 try:
-                    self._rect.union_ip(self._draw_image(img, (p.x-p.ax, p.y-p.ay), self._tint, alpha))
+                    self._rect.union_ip(self._draw_image(img, (p.x-p.ax, p.y-p.ay), self._tint, alpha, screen=screen))
                 except:
                     import pdb; pdb.set_trace()
     
@@ -2708,11 +2716,11 @@ class Text(Item):
         img = text_to_image(text, self.font, colour, self.wrap, offset=offset)
         return img
 
-    def draw(self):
+    def draw(self, screen=None): #text.draw
 #        print(self.action.name) if self.action else print("no action for Text %s"%self.text)
         if self.game.testing: return
         if self.img:
-            self._rect = self._draw_image(self.img, (self.x, self.y), self._tint, self._alpha)
+            self._rect = self._draw_image(self.img, (self.x, self.y), self._tint, self._alpha, screen=screen)
 
 
 class Input(Text):
@@ -2897,8 +2905,8 @@ class Collection(MenuItem):
             name = obj.display_text if obj.display_text else obj.name
             self.game.info(name, x-10, y-10)
 
-    def draw(self):
-        Actor.draw(self)
+    def draw(self, screen=None):
+        Actor.draw(self, screen=screen)
         #XXX padding not implemented, ratios not implemented
         sx,sy=20,20 #padding
         x,y = sx,sy
@@ -4852,6 +4860,16 @@ class Game(object):
         t = self.steps_complete * 30 #30 seconds per step
         if logging: log.info("Finished %s steps, estimated at %s.%s minutes"%(self.steps_complete, t/60, t%60))
     
+    
+    def _screenshot(self):
+        """ create a screenshot of this scene """
+        image = pygame.Surface(self.resolution)
+        image.blit(self.scene.background(), (0, 0))        
+        objects = sorted(self.scene.objects.values(), key=lambda x: x.y, reverse=False)
+        for group in [objects, self.scene.foreground, self.modals]:
+            for obj in group: obj.draw(screen=image)
+        return image
+        
         
     def run(self, splash=None, callback=None, icon=None):
         parser = OptionParser()
