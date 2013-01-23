@@ -1935,6 +1935,7 @@ class Actor(object):
         if not p:
             if logging: log.warning("%s unable to find path from %s to %s (walkrea: %s)"%(self.name, (self.x, self.y), (x,y), walkarea))
             self._do('idle')
+
             if self.game: self.game.block = False
             if self.game: self.game._event_finish(success=False) #signal to game event queue this event is done
             return None
@@ -4039,10 +4040,10 @@ class Game(object):
     def _on_mouse_up(self, x, y, button, modifiers): #single button interface
         if self.game and self.game.settings and self.game.settings.invert_mouse: #inverted mouse
             if button==1:
-                print("SUB BUTTON PRESSED (inverted)")
+#                print("SUB BUTTON PRESSED (inverted)")
                 self.mouse_mode = MOUSE_LOOK #subaltern btn pressed 
         elif button<>1: 
-            print("SUB BUTTON PRESSED")
+#            print("SUB BUTTON PRESSED")
             self.mouse_mode = MOUSE_LOOK #subaltern btn pressed 
         if not self.enabled_editor and len(self.modals) > 0: #modals first, but ignore them if in edit mode
             for i in self.modals:
