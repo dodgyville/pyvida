@@ -3,6 +3,8 @@ import __builtin__
 
 from datetime import datetime, timedelta, date
 import gc, glob, copy, inspect, math, os, operator, pickle, types, sys, time, re
+import json
+
 try:
     import logging
     import logging.handlers
@@ -29,6 +31,7 @@ except ImportError:
         def ugettext(self, txt):
             return txt
 
+DEFAULT_RESOLUTION = (1920,1080)
 
 SAVE_DIR = "saves"
 if "LOCALAPPDATA" in os.environ: #win 7
@@ -72,7 +75,7 @@ from pygame.locals import *#QUIT, K_ESCAPE
 from astar import Astar
 import euclid as eu
 
-HIDE_MOUSE = False #useful for recording trailers
+HIDE_MOUSE = True #start with mouse hidden, first splash will turn it back on
 DEFAULT_FULLSCREEN = False #switch game to fullscreen or not
 DEFAULT_EXPLORATION = True #show "unknown" on portal links before first visit there
 DEFAULT_PORTAL_TEXT = True #show portal text
@@ -116,10 +119,167 @@ EDITING_DELTA = 2
 POSITION_BOTTOM = 0
 POSITION_TOP = 1
 POSITION_LOW = 2
+POSITION_TEXT = 3 #play at text point of actor
 
 #MUSIC MODES
 QUICKCUT = 1
 FADEOUT = 2
+
+#LAYOUTS FOR MENUS and MENU FACTORIES
+HORIZONTAL = 0
+VERTICAL = 1    
+
+
+COLOURS = {
+   "aliceblue": (240, 248, 255),
+   "antiquewhite": (250, 235, 215),
+   "aqua": (0, 255, 255),
+   "aquamarine": (127, 255, 212),
+   "azure": (240, 255, 255),
+   "beige": (245, 245, 220),
+   "bisque": (255, 228, 196),
+   "black": (0, 0, 0),
+   "blanchedalmond": (255, 235, 205),
+   "blue": (0, 0, 255),
+   "blueviolet": (138, 43, 226),
+   "brown": (165, 42, 42),
+   "burlywood": (222, 184, 135),
+   "cadetblue": (95, 158, 160),
+   "chartreuse": (127, 255, 0),
+   "chocolate": (210, 105, 30),
+   "coral": (255, 127, 80),
+   "cornflowerblue": (100, 149, 237),
+   "cornsilk": (255, 248, 220),
+   "crimson": (220, 20, 60),
+   "cyan": (0, 255, 255),
+   "darkblue": (0, 0, 139),
+   "darkcyan": (0, 139, 139),
+   "darkgoldenrod": (184, 134, 11),
+   "darkgray": (169, 169, 169),
+   "darkgreen": (0, 100, 0),
+   "darkgrey": (169, 169, 169),
+   "darkkhaki": (189, 183, 107),
+   "darkmagenta": (139, 0, 139),
+   "darkolivegreen": (85, 107, 47),
+   "darkorange": (255, 140, 0),
+   "darkorchid": (153, 50, 204),
+   "darkred": (139, 0, 0),
+   "darksalmon": (233, 150, 122),
+   "darkseagreen": (143, 188, 143),
+   "darkslateblue": (72, 61, 139),
+   "darkslategray": (47, 79, 79),
+   "darkslategrey": (47, 79, 79),
+   "darkturquoise": (0, 206, 209),
+   "darkviolet": (148, 0, 211),
+   "deeppink": (255, 20, 147),
+   "deepskyblue": (0, 191, 255),
+   "dimgray": (105, 105, 105),
+   "dimgrey": (105, 105, 105),
+   "dodgerblue": (30, 144, 255),
+   "firebrick": (178, 34, 34),
+   "floralwhite": (255, 250, 240),
+   "forestgreen": (34, 139, 34),
+   "fuchsia": (255, 0, 255),
+   "gainsboro": (220, 220, 220),
+   "ghostwhite": (248, 248, 255),
+   "gold": (255, 215, 0),
+   "goldenrod": (218, 165, 32),
+   "gray": (128, 128, 128),
+   "green": (0, 128, 0),
+   "greenyellow": (173, 255, 47),
+   "grey": (128, 128, 128),
+   "honeydew": (240, 255, 240),
+   "hotpink": (255, 105, 180),
+   "indianred": (205, 92, 92),
+   "indigo": (75, 0, 130),
+   "ivory": (255, 255, 240),
+   "khaki": (240, 230, 140),
+   "lavender": (230, 230, 250),
+   "lavenderblush": (255, 240, 245),
+   "lawngreen": (124, 252, 0),
+   "lemonchiffon": (255, 250, 205),
+   "lightblue": (173, 216, 230),
+   "lightcoral": (240, 128, 128),
+   "lightcyan": (224, 255, 255),
+   "lightgoldenrodyellow": (250, 250, 210),
+   "lightgray": (211, 211, 211),
+   "lightgreen": (144, 238, 144),
+   "lightgrey": (211, 211, 211),
+   "lightpink": (255, 182, 193),
+   "lightsalmon": (255, 160, 122),
+   "lightseagreen": (32, 178, 170),
+   "lightskyblue": (135, 206, 250),
+   "lightslategray": (119, 136, 153),
+   "lightslategrey": (119, 136, 153),
+   "lightsteelblue": (176, 196, 222),
+   "lightyellow": (255, 255, 224),
+   "lime": (0, 255, 0),
+   "limegreen": (50, 205, 50),
+   "linen": (250, 240, 230),
+   "magenta": (255, 0, 255),
+   "maroon": (128, 0, 0),
+   "mediumaquamarine": (102, 205, 170),
+   "mediumblue": (0, 0, 205),
+   "mediumorchid": (186, 85, 211),
+   "mediumpurple": (147, 112, 216),
+   "mediumseagreen": (60, 179, 113),
+   "mediumslateblue": (123, 104, 238),
+   "mediumspringgreen": (0, 250, 154),
+   "mediumturquoise": (72, 209, 204),
+   "mediumvioletred": (199, 21, 133),
+   "midnightblue": (25, 25, 112),
+   "mintcream": (245, 255, 250),
+   "mistyrose": (255, 228, 225),
+   "moccasin": (255, 228, 181),
+   "navajowhite": (255, 222, 173),
+   "navy": (0, 0, 128),
+   "oldlace": (253, 245, 230),
+   "olive": (128, 128, 0),
+   "olivedrab": (107, 142, 35),
+   "orange": (255, 165, 0),
+   "orangered": (255, 69, 0),
+   "orchid": (218, 112, 214),
+   "palegoldenrod": (238, 232, 170),
+   "palegreen": (152, 251, 152),
+   "paleturquoise": (175, 238, 238),
+   "palevioletred": (216, 112, 147),
+   "papayawhip": (255, 239, 213),
+   "peachpuff": (255, 218, 185),
+   "peru": (205, 133, 63),
+   "pink": (255, 192, 203),
+   "plum": (221, 160, 221),
+   "powderblue": (176, 224, 230),
+   "purple": (128, 0, 128),
+   "red": (255, 0, 0),
+   "rosybrown": (188, 143, 143),
+   "royalblue": (65, 105, 225),
+   "saddlebrown": (139, 69, 19),
+   "salmon": (250, 128, 114),
+   "sandybrown": (244, 164, 96),
+   "seagreen": (46, 139, 87),
+   "seashell": (255, 245, 238),
+   "sienna": (160, 82, 45),
+   "silver": (192, 192, 192),
+   "skyblue": (135, 206, 235),
+   "slateblue": (106, 90, 205),
+   "slategray": (112, 128, 144),
+   "slategrey": (112, 128, 144),
+   "snow": (255, 250, 250),
+   "springgreen": (0, 255, 127),
+   "steelblue": (70, 130, 180),
+   "tan": (210, 180, 140),
+   "teal": (0, 128, 128),
+   "thistle": (216, 191, 216),
+   "tomato": (255, 99, 71),
+   "turquoise": (64, 224, 208),
+   "violet": (238, 130, 238),
+   "wheat": (245, 222, 179),
+   "white": (255, 255, 255),
+   "whitesmoke": (245, 245, 245),
+   "yellow": (255, 255, 0),
+   "yellowgreen": (154, 205, 50),
+}
+
 
 if logging:
     if ENABLE_LOGGING:
@@ -615,9 +775,13 @@ def load_font(fname, size):
         if logging: log.warning("Can't find local %s font, so defaulting to pyvida one"%fname)
         this_dir, this_filename = os.path.split(__file__)
         myf = os.path.join(this_dir, fname)
+        print(myf, size)
         f = Font(myf, size)
     return f
 
+def deslugify(txt):
+    """ replace underscores with spaces, basically """
+    return txt.replace("_", " ")
 
 def slugify(txt):
     """ slugify a piece of text """
@@ -940,6 +1104,7 @@ class Actor(object):
         self._sx, self._sy = 0,0    # stand point
         self._ax, self._ay = 0, 0   # displacement anchor point
         self._nx, self._ny = 0,0    # displacement point for name
+        self._cx, self._cy = 0,0    # displacement point for text when using POSITION_TEXT
         self._tx, self._ty = 0,0    # target for when this actor is mid-movement
         self.display_text = None #can override name for game.info display text
         self.display_text_align = ALIGN_LEFT
@@ -1045,9 +1210,14 @@ class Actor(object):
     def set_ny(self, ny): self._ny = ny - self._y
     ny = property(get_ny, set_ny)
 
-#    def get_alpha(self): return self._alpha
-        
-#    alpha = property(get_alpha, set_alpha)
+    def get_cx(self): return self._cx + self._x #continues text display pt
+    def set_cx(self, cx): self._cx = cx - self._x
+    cx = property(get_cx, set_cx)
+
+    def get_cy(self): return self._cy + self._y
+    def set_cy(self, cy): self._cy = cy - self._y
+    cy = property(get_cy, set_cy)
+
     
     def get_scale(self): return self._scale
     def set_scale(self, x): 
@@ -1088,7 +1258,11 @@ class Actor(object):
     
     @property
     def clickable_area(self):
-        return self._clickable_area.move(self.ax, self.ay)
+        r = self._clickable_area.move(self.ax, self.ay)
+        if self.scale != 1.0:
+            r.width *= self.scale
+            r.height *= self.scale
+        return r
 
     @property
     def solid_area(self):
@@ -1158,6 +1332,14 @@ class Actor(object):
             self._clickable_area = DEFAULT_CLICKABLE
 #        except:
 #            if logging: log.warning("unable to load idle.png for %s"%self.name)
+        details_name = os.path.join(myd, "details.txt")
+        if os.path.isfile(details_name):
+            txt = open(details_name).read()
+            data = json.loads(txt)
+            for key, value in data.items():
+                if key == "font_colour" and value in COLOURS: value = COLOURS[value]
+                setattr(self, key, value)
+
         if logging: log.debug("smart load %s %s clickable %s and actions %s"%(type(self), self.name, self._clickable_area, self.actions.keys()))
         if self.game and self.game.memory_save:
             self._unload()
@@ -1384,6 +1566,12 @@ class Actor(object):
             stats = self.game.debug_font.render("text %0.2f, %0.2f"%(self._nx, self._ny), True, (255,50,255))
             self._rect.union_ip(self.game.screen.blit(stats, stats.get_rect().move(self.nx, self.ny)))
 
+            #draw speech point
+            self._rect.union_ip(crosshair(self.game.screen, (self.cx, self.cy), (255,0,255)))
+            stats = self.game.debug_font.render("text %0.2f, %0.2f"%(self._cx, self._cy), True, (255,50,255))
+            self._rect.union_ip(self.game.screen.blit(stats, stats.get_rect().move(self.cx, self.cy)))
+
+
             #draw out point if portal
             if hasattr(self, "set_ox"):
                 self._rect.union_ip(crosshair(self.game.screen, (self.ox, self.oy), (0,255,0)))
@@ -1430,8 +1618,13 @@ class Actor(object):
         if (dx,dy) != (None, None):
             if self.action: self.action.update(dt)
 
-        if self._alpha > self._alpha_target: self._alpha -= .05
-        if self._alpha < self._alpha_target: self._alpha += .05
+        if self._alpha > self._alpha_target: 
+            self._alpha -= .05
+            if self._alpha < self._alpha_target: self._alpha = self._alpha_target
+        if self._alpha < self._alpha_target: 
+            self._alpha += .05
+            if self._alpha > self._alpha_target:
+                self._alpha = self._alpha_target
         if hasattr(self, "update"): #run this actor's personalised update function
             self.update(dt)
         
@@ -1570,12 +1763,12 @@ class Actor(object):
         self._event_finish(block=False)
         
         
-    def on_finish_fade(self):
+    def test_finish_fade(self):
         if logging: log.debug("finish fade %s"%self._alpha)
         if self._alpha == self._alpha_target:
             self._event_finish()
              
-    def on_fade_in(self, block=True):
+    def on_fade_in(self, action=None, block=True):
         """
         A queuing function: Fade this actor in.
         
@@ -1583,11 +1776,13 @@ class Actor(object):
         
         player.fade_in()
         """
+        if action: self._do(action)
         self._alpha = 0
         self._alpha_target = 1.0
 #        self.game.stuff_event(self.finish_fade, self)
-        self._event_finish(block=block)
-
+        self.game._event_test = (self.test_finish_fade, [], {})
+#        self._event_finish(block=block)
+        
     def on_tint(self, colour=None):
         if colour:
 #            temp = pygame.Surface(100,100).convert()
@@ -1738,6 +1933,11 @@ class Actor(object):
     def on_retalk(self, pt):
         """ queue event for changing the talk anchor points """
         self._nx, self._ny = pt[0], pt[1]
+        self._event_finish(block=False)
+
+    def on_respeech(self, pt):
+        """ queue event for changing the speech anchor points """
+        self._cx, self._cy = pt[0], pt[1]
         self._event_finish(block=False)
 
     def on_restand(self, pt):
@@ -2127,6 +2327,44 @@ class Actor(object):
 
         item.on_says(text, action="portrait")
         return
+        
+        
+
+    def _get_text_details(self, font=None, size=None):
+        """ get a dict of details about the speech of this object """
+        kwargs = {'wrap':self.game.SAYS_WIDTH,}
+        if self.font_colour != None: kwargs["colour"] = self.font_colour
+        if font:
+            kwargs["font"] = font 
+        elif self.font_speech:
+            kwargs["font"] = self.font_speech
+        elif self.game and self.game.font_speech:
+            kwargs["font"] = self.game.font_speech
+        if size:
+            kwargs["size"] = size
+        elif self.font_speech_size:
+            kwargs["size"] = self.font_speech_size
+        elif self.game and self.game.font_speech_size:
+            kwargs["size"] = self.game.font_speech_size
+        return kwargs
+
+    def test_finish_continues(self, text_item):
+        if text_item.show != None and text_item.show < len(text_item.text):
+            text_item.show += 3 #advance the text display by one
+            text_item.update_text() #rerender
+#            time.sleep(0.2)
+        else: #finished text, advance to next event (probably a wait-for-player)
+            self._event_finish()            
+
+        
+    def on_continues(self, text, action="portrait", position=POSITION_TEXT):
+        """ Like on_says, but animate the display of text, allowing a skip """
+        kwargs =  self._get_text_details()        
+        kwargs["show"] = 0
+        txt = self.game.add(Text("txt", (self.cx, self.cy), (self.cx, self.cy), text, **kwargs), False, ModalItem)        
+        self.game._event_test = (self.test_finish_continues, [txt], {})
+        self.game.stuff_event(self.game.on_clear_modals) #clear the text from the screen
+        self.game.stuff_event(self.on_wait, None) #push an on_wait as the final event in this script        
 
     def on_says(self, text, action="portrait", sfx=-1, block=True, modal=True, font=None, background="msgbox", size=None, position=POSITION_BOTTOM):
         """ A queuing function. Display a speech bubble with text and wait for player to close it.
@@ -2170,31 +2408,16 @@ class Actor(object):
         if position == POSITION_TOP: #place text boxes on top of screen
             oy, oy2, iy = 90, -400, 40
         elif position == POSITION_LOW: #lowest setting
-            oy, oy2, iy = 550, 800, 490
+            oy, oy2, iy = 550, self.game.resolution[1]+40, self.game.resolution[1]- 260
         elif position == POSITION_BOTTOM:
-#            oy, iy = 1200, 360
             if self.game.resolution == (800,480):
                 oy, oy2, iy = 190, -400, 160
             else:
-                oy, oy2, iy = 420, 800, 360
+                oy, oy2, iy = 420, self.game.resolution[1]+40, 360
         msg = self.game.add(ModalItem(background, close_msgbox,(54, oy)).smart(self.game))
         msg.actor = self
-        kwargs = {'wrap':self.game.SAYS_WIDTH,}
-        if self.font_colour != None: kwargs["colour"] = self.font_colour
-        if font:
-            kwargs["font"] = font 
-        elif self.font_speech:
-            kwargs["font"] = self.font_speech
-        elif self.game and self.game.font_speech:
-            kwargs["font"] = self.game.font_speech
-        if size:
-            kwargs["size"] = size
-        elif self.font_speech_size:
-            kwargs["size"] = self.font_speech_size
-        elif self.game and self.game.font_speech_size:
-            kwargs["size"] = self.game.font_speech_size
 
-            
+        kwargs =  self._get_text_details(font=font, size=size)
         txt = self.game.add(Text("txt", (220, oy2 + 18), (840, iy+130), text, **kwargs), False, ModalItem)
         
         #get a portrait for this speech
@@ -2661,7 +2884,7 @@ def text_to_image(text, font, colour, maxwidth,offset=None):
 
 class Text(Item):
     """ Display text on the screen """
-    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=26, wrap=2000, font=None, offset=None):
+    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=26, wrap=2000, font=None, offset=None, show=None):
         Item.__init__(self, name)
         self.x, self.y = pos
         self.w, self.h = dimensions
@@ -2669,6 +2892,7 @@ class Text(Item):
         self.text = text
         self.wrap = wrap
         self.size = size
+        self.show = show #how many letters of text to show (None == all)
         self.colour = colour
         self.offset = offset
         if not font: font = DEFAULT_FONT
@@ -2697,6 +2921,7 @@ class Text(Item):
         return self.clickable_area.collidepoint(x,y)
 
     def _generate_text(self, text, colour=(255,255,255), offset=None):
+        if self.show != None: text = text[:self.show]
         if not self.font:
             self.font = load_font(self.fname, self.size)
             
@@ -2761,6 +2986,17 @@ class MenuItem(Actor):
         if hpos == (None, None): hpos = (spos[0], -200) #default hide point is off top of screen
         self.out_x, self.out_y = hpos #special hide point for menu items
         self.display_text = display_text #by default no overlay on menu items
+
+class MenuFactory(object):
+    """ define some defaults for a menu so that it is faster to add new items """
+    def __init__(self, name, pos=(0,0), size=26, font=DEFAULT_FONT, colour=MENU_COLOUR, layout=VERTICAL):
+        self.name = name
+        self.position = pos
+        self.size = size
+        self.font = font
+        self.colour = colour
+        self.layout = layout
+    
 
 ALPHABETICAL = 0
 
@@ -3016,7 +3252,7 @@ class Scene(object):
     draw = Actor.draw #scene.draw
        
     def clear(self): #scene.clear
-        if self._rect:
+        if self._rect and self.game and self.game.scene:
             self.game.screen.blit(self.game.scene.background(), self._rect, self._rect)
             self._rect = None
 
@@ -3028,7 +3264,6 @@ class Scene(object):
         if fname: log.debug("Set background for scene %s to %s"%(self.name, fname))
         if fname == None and self._background == None and self._background_fname: #load image
             fname = self._background_fname
-            
         if fname:
             self._background = load_image(fname)
             self._background_fname = fname
@@ -3525,7 +3760,7 @@ class Game(object):
     quit = False
     screen = None
    
-    def __init__(self, name="Untitled Game", version="v1.0", engine=VERSION_MAJOR, fullscreen=DEFAULT_FULLSCREEN, resolution=(1024,768), fps=DEFAULT_FRAME_RATE):
+    def __init__(self, name="Untitled Game", version="v1.0", engine=VERSION_MAJOR, fullscreen=DEFAULT_FULLSCREEN, resolution=DEFAULT_RESOLUTION, fps=DEFAULT_FRAME_RATE, projectsettings=None):
         if logging: log.debug("game object created at %s"%datetime.now())
 #        log = log
 #        self.voice_volume = 1.0
@@ -3535,6 +3770,9 @@ class Game(object):
         self.font_speech = None
         self.font_speech_size = None
         self.settings = None #settings to save between sessions
+        self.projectsettings = ProjectSettings()
+        if projectsettings: self.projectsettings.load(projectsettings)
+        
         self.existing = False #is there a game in progress (either loaded or saved)
         self.version = version
 
@@ -3547,6 +3785,7 @@ class Game(object):
 
         self.events = []
         self._event = None
+        self._event_test = None #optional test
         self._last_event_success = True #did the last even succeed or fail
         self.block = False #block click events
         self._selected_options = [] #keep track of convo trees
@@ -3570,6 +3809,8 @@ class Game(object):
         self.actors = {}
         self.items = {}
         self.scenes = {}
+        self.emitters = {}
+        self.menu_factories = {}
         #accesibility options
         self.text = False #output game in plain text to stdout
         self.trunk_step = True #is the game currently doing a "trunk" (ie essential) step (player induced steps are always trunk)
@@ -3627,6 +3868,15 @@ class Game(object):
         self.fps = fps
         self.time_delay = int(1000.0/fps)
         self.fullscreen = fullscreen
+        
+    def reset(self):
+        """ reset all game state information, perfect for loading new games """
+        self.scene = None
+        self.player = None
+        self.actors = {}
+        self.items = {}
+        self.scenes = {}
+        self.emitters = {}                
 
     def set_modules(self, modules):        
         """ when editor reloads modules, which modules are game related? """
@@ -3775,13 +4025,19 @@ class Game(object):
             self.jump_to_step = len(data)
         return (result, txt)
         
-    def __getattr__(self, a):
+    def __getattr__(self, a): #game.__getattr__
         #only called as a last resort, so possibly set up a queue function
         q = getattr(self, "on_%s"%a, None) if a[:3] != "on_" else None
         if q:
             f = create_event(q)
             setattr(self, a, f)
             return f
+        else: #search through actors and items
+            s = deslugify(a)
+            if s in self.actors:
+                return self.actors[s]
+            elif s in self.items:
+                return self.items[s]
         raise AttributeError
 #        return self.__getattribute__(self, a)
 
@@ -3832,6 +4088,8 @@ class Game(object):
                 self.items[obj.name] = obj
             elif isinstance(obj, Actor):
                 self.actors[obj.name] = obj
+            elif isinstance(obj, MenuFactory):
+                self.menu_factories[obj.name] = obj
             else:
                 if logging: log.error("%s is an unknown %s type, so failed to add to game"%(obj.name, type(obj)))
         obj.game = self
@@ -3859,8 +4117,8 @@ class Game(object):
         """ Store data on the game object """
         setattr(self, key, value)
         self._event_finish(block=False)
-
-    def on_smart(self, player=None, player_class=Actor, draw_progress_bar=None, refresh=False): #game.smart
+        
+    def on_smart(self, player=None, player_class=Actor, draw_progress_bar=None, refresh=False, only=None): #game.smart
         """ cycle through the actors, items and scenes and load the available objects 
             it is very common to have custom methods on the player, so allow smart
             to use a custom class
@@ -3882,6 +4140,7 @@ class Game(object):
             for name in os.listdir(getattr(self, dname)):
                 if draw_progress_bar: 
                     self.progress_bar_count += 1
+                if only and name not in only: continue #only load specific objects 
                 if logging: log.debug("game.smart loading %s %s"%(obj_cls.__name__.lower(), name))
                 #if there is already a non-custom Actor or Item with that name, warn!
                 if obj_cls == Actor and name in self.actors and self.actors[name].__class__ == Actor and not refresh:
@@ -4355,7 +4614,10 @@ class Game(object):
                     has_emitter = False
                     for name, obj in game.scene.objects.items():
                         if isinstance(obj, Emitter): has_emitter=True
-                            
+                    
+                    if not os.path.isdir(os.path.dirname(sfname)):
+                        game.player.says("Warning! %s does not exist"%sfname)
+                        return
                     with open(sfname, 'w') as f:
                         f.write("# generated by ingame editor v0.1\n\n")
                         f.write("def load_state(game, scene):\n")
@@ -4392,6 +4654,7 @@ class Game(object):
                                 f.write('    %s.reanchor((%i, %i))\n'%(slug, obj._ax, obj._ay))
                                 f.write('    %s.restand((%i, %i))\n'%(slug, obj._sx, obj._sy))
                                 f.write('    %s.retalk((%i, %i))\n'%(slug, obj._nx, obj._ny))
+                                f.write('    %s.respeech((%i, %i))\n'%(slug, obj._cx, obj._cy))
                                 f.write('    %s.relocate(scene, (%i, %i))\n'%(slug, obj.x, obj.y))
                                 if obj._parent:
                                     f.write('    %s.reparent(\"%s\")\n'%(slug, obj._parent.name))
@@ -4926,7 +5189,7 @@ class Game(object):
             self.headless = True
         pygame.init() 
         
-        if icon:
+        if icon and os.path.exists(icon):
             pygame.display.set_icon(pygame.image.load(icon))
         flags = 0
         if options.fullscreen or (self.settings and self.settings.fullscreen):
@@ -4967,7 +5230,8 @@ class Game(object):
         
         if callback: callback(self)
         dt = self.fps #time passed (in miliseconds)
-	last_clock_tick = current_clock_tick = int(round(time.time() * 1000))
+        last_clock_tick = current_clock_tick = int(round(time.time() * 1000))
+    	self.cursor_show() #switch on after splash
         while self.quit == False: #game.draw game.update
             last_clock_tick = int(round(time.time() * 1000))
             self.loop += 1
@@ -5137,7 +5401,7 @@ class Game(object):
                 if self.progress_bar_index >= self.progress_bar_count: #switch off progress bar
                     self.progress_bar_count, self.progress_bar_index, self.progress_bar_renderer = 0,0,None
             e = self.events.pop(0) #stored as [(function, args))]
-            if e[0].__name__ not in ["on_add", "on_relocate", "on_rescale","on_reclickable", "on_reanchor", "on_restand", "on_retalk", "on_resolid"]:
+            if e[0].__name__ not in ["on_add", "on_relocate", "on_rescale","on_reclickable", "on_reanchor", "on_restand", "on_retalk", "on_respeech", "on_resolid"]:
                 if logging: log.debug("Doing event %s"%e[0].__name__)
 
             self._event = e
@@ -5153,6 +5417,10 @@ class Game(object):
 
             else:
                 e[0](*e[1], **e[2]) #call the function with the args and kwargs
+        elif self._event_test: #there is an event and a test for this event, so run the test
+            e = self._event_test #stored as [(function, args)]
+            e[0](*e[1], **e[2]) #call the function with the args and kwargs
+                
     
     def queue_event(self, event, *args, **kwargs):
         self.events.append((event, args, kwargs))
@@ -5176,6 +5444,7 @@ class Game(object):
         """ start the next event in the game scripter """
 #        if logging: log.debug("finished event %s, remaining:"%(self._event, self.events)
         self._event = None
+        self._event_test = None
         self._last_event_success = success
         pygame.event.clear() #clear pygame event queue
         if block==False: self.handle_events() #run next event immediately
@@ -5233,6 +5502,10 @@ class Game(object):
     def on_click(self, obj):
         """ helper function to chain mouse clicks """
         obj.trigger_interact()
+        self._event_finish()
+
+    def on_clear_modals(self): #clear all modals
+        self.modals = []
         self._event_finish()
         
     def on_wait(self, seconds): #game.wait
@@ -5363,7 +5636,7 @@ class Game(object):
         if callback: callback(self)
         
 
-    def user_input(self, text, callback, position=(50,170), background="msgbox"):
+    def user_input(self, text, callback, position=(50,170), background="msgbox", size=20, colour=(0, 220, 234)):
         """ A pseudo-queuing function. Display a text input, and wait for player to type something and hit enter
         Examples::
         
@@ -5384,7 +5657,7 @@ class Game(object):
         def interact_msgbox(game, msgbox, player): pass #block modals and menu but let Input object handle user input
         msgbox = self.game.add(ModalItem(background, None, position).smart(self.game))
         msgbox.interact = interact_msgbox
-        txt = self.game.add(Input("input", (position[0]+30, position[1]+30), (840,170), text, wrap=660, callback=callback), False, ModalItem)
+        txt = self.game.add(Input("input", (position[0]+30, position[1]+30), (840,170), text, wrap=660, callback=callback, size=size, colour=colour), False, ModalItem)
         txt.remove = [txt, msgbox]
         if self.game.testing: 
             #XXX user input not implemented for android pyvida
@@ -5496,6 +5769,19 @@ class Game(object):
         if logging: log.debug("pop menu %s"%[x.name for x in self.menu])
         self._event_finish()
 
+    def on_menu_from_factory(self, menu, items):
+        """ Create a menu from a factory """
+        factory = self.menu_factories[menu]
+        x,y = factory.position
+        dy = 48
+        ody = 900
+        menu = []
+        for item in items:
+            txt = self.add(MenuText(item[0], (x,y), (840,170), item[0], wrap=800, interact=item[1], spos=(x, y), hpos=(x, y+ ody), key="f", font=factory.font, size=factory.size), False, MenuItem)
+            y += dy
+            menu.append(txt)
+        self._event_finish()
+
     def on_cursor_show(self):
         self.hide_cursor = False
         self._event_finish(block=False)
@@ -5541,12 +5827,196 @@ def receiver(signal, **kwargs):
         return func
     return _decorator
 
+#======
+# Functions and utilities for using pyvida as a standalone game creator
+#======
+
+DEFAULT_PROJSETTINGS = "saves/pyvida.projectsettings"    
+    
+class ProjectSettings(object):
+    def __init__(self):
+        self.resolution = DEFAULT_RESOLUTION
+        self.title = "Untitled Project"
+        self.author = "Unknown Author"
+        self.startup_screen = None
+        self.first_splash_screen = None
+        self.icon = None
+        self._game = None
+        
+    def __getattr__(self, name):
+        """ potentially get a function for editing a variable """        
+#        try:
+ #           return super(ProjectSettings, self).__getattr__(name)
+  #      except ValueError:
+        MENU_EDIT = "menu_edit_"
+        if name.startswith(MENU_EDIT):
+            key = name[len(MENU_EDIT):]
+
+        def edit_variable(game, item, player):
+            def set_variable(game, item):
+                if item.value == "": return
+                self.__dict__[key] = item.value
+                self.save()
+            position = (10,20)
+            text = "New value for %s (%s)> "%(key, self.__dict__[key])
+            callback = set_variable
+            self._game.user_input(text, callback, size=20, colour=(255,255,255), position=position)
+#            txt = self._game.add(Input("input", (position[0]+30, position[1]+30), (840,170), text, wrap=660, size=20, colour=(255,255,255),callback=callback), False, ModalItem)
+        
+        if name.startswith(MENU_EDIT):
+            return edit_variable
+    
+    def save(self, fname=DEFAULT_PROJSETTINGS):
+        """ save the settings and update the methods maintained by pyvida """
+        json.dumps(self.dict())
+        
+    
+    def load(self, fname=DEFAULT_PROJSETTINGS):
+        if os.path.exists(fname):
+            txt = open(fname).read()
+            print(txt)
+            self.dict = json.loads(txt)
+        else:
+            print("No project settings")
+
+class Asset(object):
+    """ A raw asset (sound, image, etc) on the HDD to distribute with the project """
+    def __init__(self):
+        AVAILABLE_TYPES = [Actor, Item, Scene, Action, "Image", "Sound", "Script", "None"]
+        self.available_types = [x.__name__ if type(x) != str else x for x in AVAILABLE_TYPES]
+        self.type = None
+        self.fname = None
+        self.name = "Untitled Asset"
+
+def create_tiled_background(resolution, colour1, colour2):
+    import pygame.gfxdraw
+    s = pygame.Surface(resolution)
+    d = 40 #delta
+    i, j = 0, 0
+    for x in range(0,resolution[0], d):
+        i = j
+        j += 1
+        for y in range(0, resolution[1],d):
+            i += 1
+            r = pygame.Rect(x,y,d,d)
+            c = [colour1, colour2][i%2]
+            pygame.gfxdraw.box(s, r, c)
+    return s
+    
+TOP_MENU = ("menu_pyvida", "menu_project", "menu_scene", "e_scene", "e_add")
+#    game.set_menu("e_load", "e_save", "e_add", "e_delete", "e_prev", "e_next", "e_walk", "e_portal", "e_scene", "e_step", "e_reload", "e_jump")
+    
+def utility_menu_create(game, menu, x=-5, y=50, size=20, first=None, layout=HORIZONTAL, prefix=""):
+    """ utility function for creating text based menus 
+        menus is a list of nested tuples ("title", fn or new submenu)
+        first is the first item in this menu tree
+    """
+    newmenu = []
+    def clicked_menuitem(game, item, player):
+        """ close the menu and do the callback """
+        game.menu_clear()
+        game.set_menu(*item.first.top)
+        item.callback(game, item, player)
+        
+        
+    def interact_submenu(game, item, player):
+        """ show the submenu, called by clicked_menuitem """
+        game.set_menu(*item.submenu)
+        
+    for m in menu:
+        name, callback = m
+        item = game.add(MenuText("menu_%s%s"%(prefix, name), (x, y), (x, y), name, wrap=800, interact=clicked_menuitem, spos=(x, y), hpos=(x, y), size=size), False, MenuItem)
+        if not first: 
+            first = item
+            first.top = []
+        if type(callback) in [list, tuple]: # a submenu so recurse
+            interact = interact_submenu #open a submenu
+            submenu = utility_menu_create(game, callback, x + 5, y+size*1.2, size=size, first=first, layout=VERTICAL, prefix="%s_"%name)
+        else: #a real callback
+            interact = callback #call the item's actual function
+            submenu = None
+        if prefix == "": first.top.append(item)
+        newmenu.append(item)
+        item.submenu = submenu
+        item.callback = interact
+        item.first = first
+        if layout == HORIZONTAL:
+            x += item.img.get_rect().width
+        else:
+            y += item.img.get_rect().height
+    return newmenu
+    
+def create_standalone_menu(game):
+    def pyvida_menu_pyvida(game, item, player):
+        pass
+    def pyvida_menu_project_new(game, item, player):
+        print("new project")
+    def pyvida_menu_project_load(game, item, player):
+        pass
+    def pyvida_menu_project_save(game, item, player):
+        pass
+    def pyvida_menu_project_resolution(game, item, player):
+        print("project resolution", game.resolution)
+    def pyvida_menu_scene_new(game, item, player):
+        print("new scene")
+
+    project_menu = [
+                ("new", pyvida_menu_project_new),
+                ("load", pyvida_menu_project_load),
+                ("load", pyvida_menu_project_load),
+
+                ]
+    for i in game.projectsettings.__dict__.keys():
+        if not i.startswith("_"):
+            project_menu.append((i.replace("_", " "), getattr(game.projectsettings, "menu_edit_%s"%i)))
+
+    utility_menu_create(game,(
+        ("pyvida", pyvida_menu_pyvida),
+        ("project", project_menu), 
+        ("scene", (
+                ("new", pyvida_menu_scene_new),
+                ),
+            ),
+        )
+    )
+    game.set_menu(*TOP_MENU)
+    
+        
 
 def main():
     """ When run as a standalone, show the game editor for a new game """
+    # Load the editor defaults
+    pyvida_defaults = "saves"
+    if not os.path.exists(os.path.join(pyvida_defaults, "pyvida.defaults")): #fallback to pyvida defaults
+        this_dir, this_filename = os.path.split(__file__)
+        pyvida_defaults = os.path.join(this_dir, pyvida_defaults)
+    editor_defaults = json.loads(open(os.path.join(pyvida_defaults, "pyvida.defaults")).read())
+    default_res = [x for x in editor_defaults["resolutions"] if x[0][0] == "*"]
+    default_res = tuple(map(int, default_res[0][0].strip("*").split("x"))) if default_res else DEFAULT_RESOLUTION
+    projectsettings = ProjectSettings()
+    projectsettings.resolution = default_res
+    projectsettings.load()
+    print(editor_defaults, default_res)
     GAME_VERSION = 0.1
-    game = Game("Untitled Project", GAME_VERSION, ENGINE_VERSION, fps=16)
-    game.run()
+    
+    #Create a default scene
+    s = Scene("empty scene")
+    if editor_defaults["background image"] == None: #created a tile surface
+        s._background = create_tiled_background(default_res, editor_defaults["background colour #1"], editor_defaults["background colour #2"])
+    else: #load the image specified
+        pass
+    game = Game("Untitled Project", GAME_VERSION, ENGINE_VERSION, fps=16, resolution=default_res)
+    game.projectsettings = projectsettings
+    game.projectsettings._game = game
+    game.add(s)
+    game.scene = s
+    game.ENABLE_EDITOR = True
+    game.smart()
+    def load_standalone(game):
+        """ setup project editor menus """
+        create_standalone_menu(game)
+
+    game.run(callback=load_standalone)
 
 if __name__ == "__main__":
     main()
