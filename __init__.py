@@ -1268,7 +1268,7 @@ class Actor(object):
     def solid_area(self):
         return self._solid_area.move(self.x, self.y)  
         
-    def smart(self, game, img=None, using=None): #actor.smart
+    def smart(self, game, img=None, using=None, idle="idle", action_prefix = ""): #actor.smart
         """ 
         Intelligently load as many animations and details about this actor/item.
         
@@ -1279,7 +1279,12 @@ class Actor(object):
         If there is an <img>, create an idle action for that.
         
         If <using>, use that directory to smart load into a new object with <name>
+
+        If <idle>, use that action for defaults rather than "idle"
+
+        If <action_prefix>, prefix value to defaults (eg astar, idle), useful for swapping clothes on actor, etc 
         """
+        
         if using:
             if logging: log.info("actor.smart - using %s for smart load instead of real name %s"%(using, self.name))
             name = using
@@ -1310,15 +1315,31 @@ class Actor(object):
                 if logging: log.info("creating placeholder file in empty %s dir"%name)
                 f = open(os.path.join(d, "%s/placeholder.txt"%name),"a")
                 f.close()
+            
+        # load some basic defaults         
+        details_name = os.path.join(myd, "details.txt")
+        if os.path.isfile(details_name):
+            txt = open(details_name).read()
+            data = json.loads(txt)
+            for key, value in data.items():
+                if key == "action_prefix": 
+                    action_prefix = value
+                    idle = "%s%s"%(action_prefix, idle)
+                    continue
+                if key == "font_colour" and value in COLOURS: value = COLOURS[value]
+                setattr(self, key, value)
+
         for action_fname in images: #load actions for this actor
             action_name = os.path.splitext(os.path.basename(action_fname))[0]
             action = self.actions[action_name] = Action(self, action_name, action_fname).load()
-            if action_name == "idle": self.action = action
-            if action_name in ["left", "right", "up", "down", "upleft", "upright", "downleft", "downright"]: action.astar = True #guess these are walking actions
-            if type(self) == Actor and action_name=="idle":
+            if action_name == idle: self.action = action
+            if action_name in ["%sleft"%action_prefix, "%sright"%action_prefix, "%sup"%action_prefix,
+                "%sdown"%action_prefix, "%supleft"%action_prefix, "%supright"%action_prefix,
+                "%sdownleft"%action_prefix, "%sdownright"%action_prefix]: action.astar = True #guess these are walking actions
+            if isinstance(self, Actor) and action_name==idle:
                 self._ax = int(action.image().get_width()/2)
                 self._ay = int(action.image().get_height() * 0.85)            
-        if self.action == None and len(self.actions)>0 and self.actions.keys() != ["portrait"]: 
+        if self.action == None and len(self.actions)>0 and self.actions.keys() != ["%sportrait"%action_prefix]: 
             self.action = self.actions.values()[0] #or default to first loaded
 #        try:
 #            self._image = pygame.image.load(os.path.join(d, "%s/idle.png"%self.name)).convert_alpha()
@@ -1332,13 +1353,6 @@ class Actor(object):
             self._clickable_area = DEFAULT_CLICKABLE
 #        except:
 #            if logging: log.warning("unable to load idle.png for %s"%self.name)
-        details_name = os.path.join(myd, "details.txt")
-        if os.path.isfile(details_name):
-            txt = open(details_name).read()
-            data = json.loads(txt)
-            for key, value in data.items():
-                if key == "font_colour" and value in COLOURS: value = COLOURS[value]
-                setattr(self, key, value)
 
         if logging: log.debug("smart load %s %s clickable %s and actions %s"%(type(self), self.name, self._clickable_area, self.actions.keys()))
         if self.game and self.game.memory_save:
@@ -2884,7 +2898,7 @@ def text_to_image(text, font, colour, maxwidth,offset=None):
 
 class Text(Item):
     """ Display text on the screen """
-    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=26, wrap=2000, font=None, offset=None, show=None):
+    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=26, wrap=2000, font=None, offset=2, show=None):
         Item.__init__(self, name)
         self.x, self.y = pos
         self.w, self.h = dimensions
@@ -2940,8 +2954,8 @@ class Text(Item):
 
 
 class Input(Text):
-    def __init__(self,name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=26, wrap=2000, maxlength=32, callback=None):
-        Text.__init__(self, name=name, pos=pos, dimensions=dimensions, text=text, colour=colour, size=size, wrap=wrap)
+    def __init__(self,name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=26, wrap=2000, maxlength=32, callback=None, offset=2):
+        Text.__init__(self, name=name, pos=pos, dimensions=dimensions, text=text, colour=colour, size=size, wrap=wrap,offset=offset)
         self.value = ""
         self._text = text
         self.maxlength = maxlength #number of characters
@@ -2960,7 +2974,7 @@ class Input(Text):
 
     def update_text(self): #rebuild the text image
         self.text = "%s%s"%(self._text, self.value)
-        self.img = self._img = self._generate_text(self.text, self.colour)
+        self.img = self._img = self._generate_text(self.text, self.colour, offset=self.offset)
        
 
 class ModalItem(Actor):
@@ -3874,9 +3888,11 @@ class Game(object):
         self.scene = None
         self.player = None
         self.actors = {}
-        self.items = {}
+        self.items = dict([(key,value) for key,value in self.items.items() if isinstance(value, MenuItem)])
         self.scenes = {}
         self.emitters = {}                
+        if self.ENABLE_EDITOR: #editor enabled for this game instance
+            self._load_editor()
 
     def set_modules(self, modules):        
         """ when editor reloads modules, which modules are game related? """
@@ -5538,10 +5554,16 @@ class Game(object):
         """ helper function for setting attributes on the Game object """
         setattr(self, attr, val)
         self._event_finish()
+
+    def on_do(self, obj, action): #set the action for an item or actor
+        if type(obj) == str: obj = self.actors[obj]
+        obj._do(action)
+        self._event_finish()
         
     def on_relocate(self, obj, scene, destination):
         if type(obj) == str: obj = self.actors[obj] #XXX should check items, and fail gracefully too
         obj._relocate(scene, destination)
+        self._event_finish()
 
     def on_set_headless(self, headless=False):
         """ switch game engine between headless and non-headless mode, restrict events to per clock tick, etc """
