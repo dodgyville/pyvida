@@ -100,9 +100,9 @@ except ImportError:
 #DEBUG_ASTAR = True
 DEBUG_ASTAR = False
 
-ENABLE_EDITOR = False #default for editor
+ENABLE_EDITOR = True #default for editor
 ENABLE_PROFILING = False
-ENABLE_LOGGING = False
+ENABLE_LOGGING = True
 
 ENGINE_VERSION = 2 #v1 = used for spaceout
 
@@ -499,20 +499,26 @@ class Polygon(object):
             i += 1
         return c
 
-    def astar_points(self):
+
+    def _scale(self, offset):
         #polygon offset courtesy http://pyright.blogspot.com/2011/07/pyeuclid-vector-math-and-polygon-offset.html
         polyinset = []
-        OFFSET = -10
         i = 0
         old_points = copy.deepcopy(self.vertexarray)
         old_points.insert(0,self.vertexarray[-1])
         old_points.append(self.vertexarray[0])        
         lenpolygon = len(old_points)
         while i < lenpolygon - 2:
-            new_pt = getinsetpoint(old_points[i], old_points[i + 1], old_points[i + 2], OFFSET)
+            new_pt = getinsetpoint(old_points[i], old_points[i + 1], old_points[i + 2], offset)
             polyinset.append((int(new_pt.x), int(new_pt.y)))
             i += 1
         return polyinset
+
+
+    def astar_points(self):
+        OFFSET = -10
+        return self._scale(OFFSET)
+
 
 #### pygame testing functions ####
 
@@ -1202,19 +1208,32 @@ class Actor(object):
         self._ay = (self.y - ay)*scale
     ay = property(get_ay, set_ay)
 
-    def get_nx(self): return self._nx + self._x #name display pt
+    def get_nx(self): 
+        scale = self.action.scale if self.action else 1 
+        nx = self._nx
+        return self.x + nx * self._scale#name display pt
+
     def set_nx(self, nx): self._nx = nx - self._x
     nx = property(get_nx, set_nx)
 
-    def get_ny(self): return self._ny + self._y
+    def get_ny(self):
+        ny = self._ny
+        return self.y - ny * self._scale
+
     def set_ny(self, ny): self._ny = ny - self._y
     ny = property(get_ny, set_ny)
 
-    def get_cx(self): return self._cx + self._x #continues text display pt
+    def get_cx(self): #continues text display pt
+        x = self._cx
+        return self.x - x * self._scale
+
     def set_cx(self, cx): self._cx = cx - self._x
     cx = property(get_cx, set_cx)
 
-    def get_cy(self): return self._cy + self._y
+    def get_cy(self): 
+        y = self._cy
+        return self.y - y * self._scale
+
     def set_cy(self, cy): self._cy = cy - self._y
     cy = property(get_cy, set_cy)
 
@@ -1338,7 +1357,12 @@ class Actor(object):
                 "%sdownleft"%action_prefix, "%sdownright"%action_prefix]: action.astar = True #guess these are walking actions
             if isinstance(self, Actor) and action_name==idle:
                 self._ax = int(action.image().get_width()/2)
-                self._ay = int(action.image().get_height() * 0.85)            
+                self._ay = int(action.image().get_height() * 0.85)
+                self._sx, self._sy = self._ax - 50, 0  # stand point
+                self._nx, self._ny = self._ax * 0.5, self._ay #name point
+                self._cx, self._cy = int(action.image().get_width())+ 10, int(action.image().get_height())  # text when using POSITION_TEXT
+#                self._tx, self._ty = 0,0    # target for when this actor is mid-movement
+
         if self.action == None and len(self.actions)>0 and self.actions.keys() != ["%sportrait"%action_prefix]: 
             self.action = self.actions.values()[0] #or default to first loaded
 #        try:
@@ -3399,8 +3423,9 @@ class Scene(object):
             obj.scale = scene.scales["actors"]
         if obj.name in self.scales.keys():
             obj.scale = self.scales[obj.name]
-#        elif "actors" in self.scales.keys() and not isinstance(obj, Item): #actor
-#            obj.scale = self.scales["actors"]
+        elif "actors" in self.scales.keys() and not isinstance(obj, Item): #use auto scaling for actor if available
+            print("using scene-wide scale")
+            obj.scale = self.scales["actors"]
         if logging: log.debug("Add %s to scene %s"%(obj.name, self.name))
 
     def on_add(self, obj, block=False): #scene.add
@@ -3801,6 +3826,8 @@ class Game(object):
         self._event = None
         self._event_test = None #optional test
         self._last_event_success = True #did the last even succeed or fail
+        self._stuff_events = False #if True, add new events to start of queue
+
         self.block = False #block click events
         self._selected_options = [] #keep track of convo trees
         self.visited = [] #list of scene names visited
@@ -4145,7 +4172,7 @@ class Game(object):
         """
         portals = []
         running_headless = self.headless
-        if not running_headless: self.set_headless(True) #ignore clock ticks while loading
+        if not running_headless: self.stuff_event(self.on_set_headless, True) #ignore clock ticks while loading
         if draw_progress_bar:
             self.progress_bar_renderer = draw_progress_bar
             self.progress_bar_index = 0
@@ -4174,6 +4201,7 @@ class Game(object):
                         a = self.actors.get(name, self.items.get(name, self.scenes.get(name, None)))
                         if not a: import pdb; pdb.set_trace()
                     a.smart(self)
+#                    self.stuff_event(self.add, a)
                     if a.__class__ == Portal: portals.append(a.name)
                     
                             
@@ -4642,6 +4670,7 @@ class Game(object):
                         if has_emitter: 
                             f.write('    import copy\n')
                             f.write('    from pyvida import Emitter\n')
+#                        f.write('    game.stuff_events(True)\n')
                         f.write('    scene.clean(["%s"])\n'%objects) #remove old actors and items
                         if game.scene.music_fname:
                             f.write('    scene.music("%s")\n'%game.scene.music_fname)
@@ -4695,6 +4724,8 @@ class Game(object):
                                         val = self.actors[key]
                                         f.write('    scene.scales["%s"] = %0.2f\n'%(val.name, val.scale))
                                 f.write('    scene.scales["actors"] = %0.2f\n'%(obj.scale))
+#                                f.write('    game.stuff_events(False)\n')
+
 #                                f.write('    scene.scales["%s"] = %0.2f\n'%(name, obj.scale))
                 game.user_input("What is the name of this %s state to save (no directory or .py)?"%self.scene.name, e_save_state)
 
@@ -5436,12 +5467,27 @@ class Game(object):
         elif self._event_test: #there is an event and a test for this event, so run the test
             e = self._event_test #stored as [(function, args)]
             e[0](*e[1], **e[2]) #call the function with the args and kwargs
-                
+             
+    def _wait_for_queue(self):
+        """ process all events in the queue XXX DANGEROUS ONLY USE IF ONLY NON-INTERACTIVE EVENTS ARE OR WILL BE QUEUED
+            USEFUL FOR FORCING game.smart to finish before proceeding to next line in program.
+         """
+        while (self.events):
+            self.handle_events()
+
     
     def queue_event(self, event, *args, **kwargs):
-        self.events.append((event, args, kwargs))
+        if not self._stuff_events:
+            self.events.append((event, args, kwargs))
+        else:
+            self.stuff_event(event, *args, **kwargs)
 #        if logging: log.debug("events %s"%self.events)
         return args[0]
+
+    def on_stuff_events(self, value=False):
+        if logging: log.debug("Setting stuff events to %s"%value)        
+        self._stuff_events = value
+        self._event_finish()    
 
     def stuff_event(self, event, *args, **kwargs):
         """ stuff an event near the head of the queue """
@@ -5560,7 +5606,7 @@ class Game(object):
         obj._do(action)
         self._event_finish()
         
-    def on_relocate(self, obj, scene, destination):
+    def on_relocate(self, obj, scene, destination): #game.relocate
         if type(obj) == str: obj = self.actors[obj] #XXX should check items, and fail gracefully too
         obj._relocate(scene, destination)
         self._event_finish()
