@@ -2271,6 +2271,8 @@ class Actor(object):
 
         msgbox.options = []
         oy, oy2, iy = 490, 800, 360 #XXX magic variables for 1024x768
+        if "extra_option" in kwargs: #place options one slot higher as there is an extra one
+            iy -= 44 #XXX horrible horrible magic numbers
         remember_question = args[0] if "remember_key" not in kwargs else kwargs["remember_key"]
         for i, qfn in enumerate(args[1:]): #add the response options
             q, fn = qfn
@@ -2311,7 +2313,7 @@ class Actor(object):
             opt.collide = opt._collide #switch on mouse over box
             opt.msgbox = msgbox
             msgbox.options.append(opt.name)
-            self.game.stuff_event(opt.on_place, (250,iy+95+i*44))
+            self.game.stuff_event(opt.on_place, (250,iy+95+i*44))  #XXX horrible horrible magic numbers
         
     def on_remove(self, unparent=False): #remove this actor from its scene #actor.remove
         """ unparent True|False - if this object has a parent, unparent"""
