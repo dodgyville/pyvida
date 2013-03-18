@@ -368,6 +368,31 @@ DEFAULT_FRAME_RATE = 20 #100
 DEFAULT_FONT = os.path.join("data/fonts/", "vera.ttf")
 MENU_COLOUR = (42, 127, 255)
 
+class Surface(Surface):
+    def __deepcopy__(self, memo):
+        """ Share surfaces between deep copied objects (only one graphical display) """
+        print("pyvida surface deep copy")
+        result = self.__class__()
+        memo[id(self)] = result
+        result.__init__(deepcopy(tuple(self), memo))
+        return result 
+        #return None
+
+
+class Font(Font):
+    def __deepcopy__(self, memo):
+        print("pyvida font deep copy")
+#        out = type(self)()
+ #       for key, v in self.__dict__.items():
+  #          print(key)
+  #      self.__dict__ = copy.deepcopy(self.__dict__, memo) 
+        import pdb; pdb.set_trace()
+        result = self.__class__()
+        memo[id(self)] = result
+        result.__init__(deepcopy(tuple(self), memo))
+        return result 
+        
+
 def use_init_variables(original_class):
     """ Take the value of the args to the init function and assign them to the objects' attributes """
     def __init__(self, *args, **kws):
@@ -757,7 +782,7 @@ def blit_alpha(target, source, location, opacity):
     #courtesy from http://www.nerdparadise.com/tech/python/pygame/blitopacity/
     x = location[0]
     y = location[1]
-    temp = pygame.Surface((source.get_width(), source.get_height())).convert()
+    temp = Surface((source.get_width(), source.get_height())).convert()
     temp.blit(target, (-x, -y))
     temp.blit(source, (0, 0))
     temp.set_alpha(opacity)        
@@ -851,7 +876,7 @@ def get_function(game, basic):
 def editor_menu(game):
     game.menu_hide()
     game.menu_push() #hide and push old menu to storage
-    game.set_menu("e_load", "e_save", "e_add", "e_delete", "e_prev", "e_next", "e_walk", "e_portal", "e_scene", "e_step", "e_reload", "e_jump")
+    game.set_menu("e_load", "e_save", "e_add", "e_delete", "e_prev", "e_next", "e_walk", "e_portal", "e_scene", "e_step", "e_reload", "e_jump", "e_state_save", "e_state_load")
     game.menu_hide()
     game.menu_show()
 
@@ -929,7 +954,7 @@ class Action(object):
         
 #    def _reverse_images(self):
  #       """ reverse the images in this action """   
-#        new_img = pygame.Surface((width, height), flags=0, Surface)     
+#        new_img = Surface((width, height), flags=0, Surface)     
         
         
     def update(self, dt): #action.update
@@ -960,7 +985,7 @@ class Action(object):
         fname = fname if fname else self.fname
         fname, imgext = os.path.splitext(fname)
         width, height = self._raw_width, self._raw_height
-        new_img = pygame.Surface((width, height), pygame.SRCALPHA, 32)
+        new_img = Surface((width, height), pygame.SRCALPHA, 32)
         for i, img in enumerate(self.images):
             r = img.get_rect().move(i*img.get_width(),0)
             rect = new_img.blit(img, r)
@@ -1143,7 +1168,7 @@ class Actor(object):
         
         #profiling and testing
         self.analytics_count = 0 #used by test runner to measure how "popular" an actor is.
-        self._count_actions = {} #dict containing action name and number of times used
+        self._count_actions = {} #dict containing action name and number of times used        
     
     @property
     def flatten(self):
@@ -1320,15 +1345,16 @@ class Actor(object):
             d = game.item_dir
         elif isinstance(self, Actor):
             d = game.actor_dir
+            
+        myd = os.path.join(d, name)        
+        if not os.path.isdir(myd): #fallback to pyvida defaults
+            this_dir, this_filename = os.path.split(__file__)
+            log.debug("Unable to find %s, falling back to %s"%(myd, this_dir))
+            myd = os.path.join(this_dir, d, name)
+
         if img:
             images = [img]
         else:
-            myd = os.path.join(d, name)
-            
-            if not os.path.isdir(myd): #fallback to pyvida defaults
-                this_dir, this_filename = os.path.split(__file__)
-                log.debug("Unable to find %s, falling back to %s"%(myd, this_dir))
-                myd = os.path.join(this_dir, d, name)
             images = glob.glob(os.path.join(myd, "*.png"))
             if os.path.isdir(myd) and len(glob.glob("%s/*"%myd)) == 0:
                 if logging: log.info("creating placeholder file in empty %s dir"%name)
@@ -1355,7 +1381,7 @@ class Actor(object):
             if action_name in ["%sleft"%action_prefix, "%sright"%action_prefix, "%sup"%action_prefix,
                 "%sdown"%action_prefix, "%supleft"%action_prefix, "%supright"%action_prefix,
                 "%sdownleft"%action_prefix, "%sdownright"%action_prefix]: action.astar = True #guess these are walking actions
-            if isinstance(self, Actor) and action_name==idle:
+            if isinstance(self, Actor) and not isinstance(self, MenuItem) and action_name==idle:
                 self._ax = int(action.image().get_width()/2)
                 self._ay = int(action.image().get_height() * 0.85)
                 self._sx, self._sy = self._ax - 50, 0  # stand point
@@ -1823,7 +1849,7 @@ class Actor(object):
         
     def on_tint(self, colour=None):
         if colour:
-#            temp = pygame.Surface(100,100).convert()
+#            temp = Surface(100,100).convert()
 #            temp.fill
 #            temp.blit(target, (-x, -y))
 #            temp.blit(source, (0, 0))
@@ -3211,6 +3237,13 @@ class Collection(MenuItem):
 #class Modal(Actor):
 #    def __init__(self, name="Untitled Modal"): pass
 
+def pydeepcopy(d, memo):
+    """ don't copy surfaces or fonts """
+    d = dict((k, v) for k, v in d.iteritems()
+            if type(v) not in [Font, Surface])
+    print(d.keys())    
+    return copy.deepcopy(d, memo)
+    
 
 class Scene(object):
     __metaclass__ = use_on_events
@@ -3234,6 +3267,19 @@ class Scene(object):
         self.display_text = ""
         self.description = None #text for blind users
         self._on_mouse_move = None #if mouse is moving on this scene, do this call back
+
+    def __deepcopy__(self, memo):
+        """ Share surfaces between deep copied objects (only one graphical display) """
+        print("pyvida Scene deep copy")
+        result = type(self)()
+        memo[id(self)] = result
+        d = dict((k, v) for k, v in self.__dict__.iteritems()
+                if type(v) not in [Font, Surface])
+        print(d)
+#        import pdb; pdb.set_trace()
+        result.__init__(pydeepcopy(self.__dict__, memo))
+        return result 
+
 
     def _event_finish(self, success=True, block=True):  #scene.event_finish
         return self.game._event_finish(success, block)
@@ -3424,7 +3470,6 @@ class Scene(object):
         if obj.name in self.scales.keys():
             obj.scale = self.scales[obj.name]
         elif "actors" in self.scales.keys() and not isinstance(obj, Item): #use auto scaling for actor if available
-            print("using scene-wide scale")
             obj.scale = self.scales["actors"]
         if logging: log.debug("Add %s to scene %s"%(obj.name, self.name))
 
@@ -3690,7 +3735,7 @@ class Camera(object):
         if self.game and self.game.headless: 
             self.game._event_finish(block=False)
             return
-        self._image = pygame.Surface(self.game.resolution)
+        self._image = Surface(self.game.resolution)
         self._effect = self._effect_fade_out
         
     def on_fade_in(self, block=True):
@@ -3699,12 +3744,12 @@ class Camera(object):
         if self.game and self.game.headless: 
             self.game._event_finish(block=False)
             return
-        self._image = pygame.Surface(self.game.resolution)
+        self._image = Surface(self.game.resolution)
         self._effect = self._effect_fade_in 
 
     def _set_alpha(self, val):
         if val != 1.0:
-            self._image = pygame.Surface(self.game.resolution)    
+            self._image = Surface(self.game.resolution)    
             self._image.set_alpha(val)
         else:
             self._image = None
@@ -3920,6 +3965,35 @@ class Game(object):
         self.emitters = {}                
         if self.ENABLE_EDITOR: #editor enabled for this game instance
             self._load_editor()
+
+    def create_state_snapshot(self):
+        """ Store all the current game state information (actor locations, functions, scenes, etc) 
+            Can't/don't want to use deepcopy due to pygame surfaces.
+        """
+        for i in ["scene", "player", "actors", "items", "scenes", "emitters"]:
+            keyname = "_snapshot_%s"%i
+            attribute = getattr(self, i)
+            if attribute:
+                print(i, attribute)
+                setattr(self, keyname, copy.deepcopy(attribute))
+#            if type(getattr(self, keyname)) == dict:
+#                d = getattr(self, keyname)
+#                for name, obj in d.items():
+#                    d[name] = copy.copy(obj)
+#                setattr(self, keyname, d)
+        #replace the objects in the scene snapshot with their snapshotted replacements
+#        for key, obj in self._snapshot_scene.objects.items():
+#            self._snapshot_scene.objects[key] = self._snapshot_actors[key] if key in self._snapshot_actors else self._snapshot_items[key]
+        self.editing = None
+
+    def restore_state_snapshot(self):
+        """ Restore all the current game state information (actor locations, functions, scenes, etc) from the snapshot """
+        for i in ["scene", "player", "actors", "items", "scenes", "emitters"]:
+            keyname = "_snapshot_%s"%i
+            setattr(self, i, getattr(self, keyname))
+
+
+
 
     def set_modules(self, modules):        
         """ when editor reloads modules, which modules are game related? """
@@ -4752,7 +4826,8 @@ class Game(object):
 
             def editor_walk(game, menu_item, player):
                 """ start editing the scene's walkarea """
-                game.set_editing(game.scene.walkareas[0])
+                if len(game.scene.walkareas)>0:
+                    game.set_editing(game.scene.walkareas[0])
 
             def editor_step(game, menu_item, player):
                 """ step through the walkthrough """
@@ -5056,6 +5131,13 @@ class Game(object):
                 self.menu_show()
                 self.set_fps(int(1000.0/100)) #fast debug
 
+
+            def editor_state_save(game, btn, player):
+                game.create_state_snapshot()
+
+            def editor_state_load(game, btn, player):
+                game.restore_state_snapshot()                
+
             #load menu for action editor
             x,y=50,10
             for i, btn in enumerate([
@@ -5091,7 +5173,9 @@ class Game(object):
             self.add(MenuItem("e_step", editor_step, (470, 10), (470,-50), "n", display_text="next step").smart(self))
             self.add(MenuItem("e_jump", editor_jump, (510, 10), (510,-50), "j", display_text="jump to step").smart(self))
             self.add(MenuItem("e_reload", editor_reload, (550, 10), (550,-50), "r", display_text="reload scripts").smart(self))
-
+            self.add(MenuItem("e_state_save", editor_state_save, (610, 10), (610,-50), "z", display_text="snapshot game state").smart(self))
+            self.add(MenuItem("e_state_load", editor_state_load, (650, 10), (650,-50), "x", display_text="restore game state snapshot").smart(self))
+            
             #a collection widget for adding objects to a scene
             c = self.add(Collection("e_objects", editor_select_object, (300, 100), (300,-600), K_ESCAPE).smart(self))
             n = self.add(MenuItem("e_objects_next", editor_collection_next, (700, 610), (700,-100), K_ESCAPE).smart(self))            
@@ -5176,7 +5260,8 @@ class Game(object):
         parser.add_option("-o", "--objects", action="store_true", dest="analyse_characters", help="Print lots of info about actor and items to calculate art requirements", default=False)        
         parser.add_option("-p", "--profile", action="store_true", dest="profiling", help="Record player movements for testing", default=False)        
 
-        parser.add_option("-r", "--random", action="store_true", dest="stresstest", help="Randomly deviate from walkthrough to stress test robustness of scripting")
+        parser.add_option("-R", "--random", action="store_true", dest="stresstest", help="Randomly deviate from walkthrough to stress test robustness of scripting")
+        parser.add_option("-r", "--resolution", dest="resolution", help="Force engine to use resolution WxH or (w,h) (recommended (1600,900))")
         parser.add_option("-s", "--step", dest="step", help="Jump to step in walkthrough")
         parser.add_option("-t", "--text", action="store_true", dest="text", help="Play game in text mode (for players with disabilities who use text-to-speech output)", default=False)
         parser.add_option("-w", "--walkthrough", action="store_true", dest="output_walkthrough", help="Print a human readable walkthrough of this game, based on test suites.")
@@ -5221,7 +5306,12 @@ class Game(object):
             dname = "artreactor_%s_%s_%s"%(t.year, t.month, t.day)
             self.artreactor = dname
             if not os.path.exists(dname): os.makedirs(dname)
-
+        if options.resolution: #override resolution
+            r = options.resolution
+            if type(r) == str:
+                r = r.split(",") if "," in r else r.split("x")
+                r = (int(r[0]), int(r[1])) #spot the line where I didn't have an internet connection while writing it
+            self.resolution = r
         if options.analyse_scene: self.analyse_scene = options.analyse_scene
         if options.step: #switch on test runner to step through walkthrough
             self.testing = True
@@ -5958,7 +6048,7 @@ class Asset(object):
 
 def create_tiled_background(resolution, colour1, colour2):
     import pygame.gfxdraw
-    s = pygame.Surface(resolution)
+    s = Surface(resolution)
     d = 40 #delta
     i, j = 0, 0
     for x in range(0,resolution[0], d):
