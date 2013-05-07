@@ -3360,9 +3360,20 @@ class Scene(object):
             self.game.screen.blit(self.game.scene.background(), self._rect, self._rect)
             self._rect = None
 
+    def _screenshot(self, modals=False):
+        image = pygame.Surface(self.game.resolution)
+        image.blit(self.background(), (0, 0))        
+        objects = sorted(self.objects.values(), key=lambda x: x.y, reverse=False)
+        items = [objects, self.foreground,]
+        if modals: items.append(self.game.modals)
+        for group in items:
+            for obj in group: 
+                obj.draw(screen=image)
+        return image
+
     def _image(self):
         """ return an image for this object """
-        return self.background()
+        return self._screenshot() #self.background()
 
     def background(self, fname=None): #get or set the background image
         if fname: log.debug("Set background for scene %s to %s"%(self.name, fname))
@@ -5280,11 +5291,7 @@ class Game(object):
     
     def _screenshot(self):
         """ create a screenshot of this scene """
-        image = pygame.Surface(self.resolution)
-        image.blit(self.scene.background(), (0, 0))        
-        objects = sorted(self.scene.objects.values(), key=lambda x: x.y, reverse=False)
-        for group in [objects, self.scene.foreground, self.modals]:
-            for obj in group: obj.draw(screen=image)
+        image = self.scene._screenshot(modals=True)
         return image
         
         
