@@ -367,10 +367,10 @@ DEFAULT_FRAME_RATE = 20 #100
 
 DEFAULT_FONT = os.path.join("data/fonts/", "vera.ttf")
 MENU_COLOUR = (42, 127, 255)
-
+"""
 class Surface(Surface):
     def __deepcopy__(self, memo):
-        """ Share surfaces between deep copied objects (only one graphical display) """
+        # Share surfaces between deep copied objects (only one graphical display) 
         print("pyvida surface deep copy")
         result = self.__class__()
         memo[id(self)] = result
@@ -382,16 +382,12 @@ class Surface(Surface):
 class Font(Font):
     def __deepcopy__(self, memo):
         print("pyvida font deep copy")
-#        out = type(self)()
- #       for key, v in self.__dict__.items():
-  #          print(key)
-  #      self.__dict__ = copy.deepcopy(self.__dict__, memo) 
         import pdb; pdb.set_trace()
         result = self.__class__()
         memo[id(self)] = result
         result.__init__(deepcopy(tuple(self), memo))
         return result 
-        
+"""        
 
 def use_init_variables(original_class):
     """ Take the value of the args to the init function and assign them to the objects' attributes """
@@ -907,6 +903,14 @@ def editor_add_walkareapoint(game, menuItem, player):
             game.editing.polygon.vertexarray.append((512,316))
 
 
+def snapshot(obj):
+    """ Make a copy of an object that is safe for pygame """
+    data = copy.copy(obj.__dict__)
+    for key, value in data.items():
+        if type(value) in [Font, Surface]: data[key] = None
+    return data
+
+
 #### pyvida classes ####
 @use_init_variables
 class Action(object):
@@ -1152,6 +1156,7 @@ class Actor(object):
         
         self.editable = True #affected by editor?
         self.editor_clean = False #current actor state set by editor
+        self.editor_save = True #when saving the state, include this actor
 
         self.allow_draw = True
         self.allow_update = True
@@ -1185,6 +1190,10 @@ class Actor(object):
                 fn = get_function(self.game, script) 
                 m["scripts"]["uses"] = (item, fn.__name__ if fn else script)
         return m
+
+    def snapshot(self):
+        """ Return a copy of this object with the Font and Surface as none """
+        return snapshot(self)
 
     def _event_finish(self, success=True, block=True):  #actor.event_finish
         return self.game._event_finish(success, block)
@@ -3280,6 +3289,8 @@ class Scene(object):
         result.__init__(pydeepcopy(self.__dict__, memo))
         return result 
 
+    def snapshot(self):
+        return snapshot(self)
 
     def _event_finish(self, success=True, block=True):  #scene.event_finish
         return self.game._event_finish(success, block)
@@ -3970,20 +3981,27 @@ class Game(object):
         """ Store all the current game state information (actor locations, functions, scenes, etc) 
             Can't/don't want to use deepcopy due to pygame surfaces.
         """
-        for i in ["scene", "player", "actors", "items", "scenes", "emitters"]:
+        for i in ["actors", "items", "scenes", "emitters"]: #"scene", "player"
             keyname = "_snapshot_%s"%i
             attribute = getattr(self, i)
             if attribute:
                 print(i, attribute)
-                setattr(self, keyname, copy.deepcopy(attribute))
-#            if type(getattr(self, keyname)) == dict:
-#                d = getattr(self, keyname)
-#                for name, obj in d.items():
-#                    d[name] = copy.copy(obj)
-#                setattr(self, keyname, d)
-        #replace the objects in the scene snapshot with their snapshotted replacements
-#        for key, obj in self._snapshot_scene.objects.items():
-#            self._snapshot_scene.objects[key] = self._snapshot_actors[key] if key in self._snapshot_actors else self._snapshot_items[key]
+                if type(attribute) == dict:
+                    newattr = {}
+                    for key, obj in attribute.items():
+                        print("Backing dup {0}".format(obj.name))
+                        newobj = obj.snapshot()
+                        newattr[key] = newobj
+                    setattr(self, keyname, newattr)
+                elif type(attribute) in [list, tuple]:
+                    newattr = [] 
+                    for obj in attribute:
+                        print("Backing lup {0}".format(obj.name))
+                        newobj = obj.snapshot()
+                        newattr.append(newobj)
+                    setattr(self, keyname, newattr)
+                else:
+                    setattr(self, keyname, attribute.snapshot())
         self.editing = None
 
     def restore_state_snapshot(self):
@@ -4211,7 +4229,7 @@ class Game(object):
                 if logging: log.error("%s is an unknown %s type, so failed to add to game"%(obj.name, type(obj)))
         obj.game = self
         return obj
-
+        
         
     def info(self, text, x, y, align=ALIGN_LEFT): #game.info
         """ On screen at one time can be an info text (eg an object name or menu hover) 
@@ -4755,7 +4773,7 @@ class Game(object):
                         f.write(']\n')
                         for name, obj in game.scene.objects.items():
                             slug = slugify(name).lower()
-                            if obj != game.player:
+                            if obj != game.player and obj.editor_save == True:
                                 txt = "items" if isinstance(obj, Item) else "actors"
                                 if isinstance(obj, Emitter):
                                     em = str(obj.summary)
@@ -5324,6 +5342,7 @@ class Game(object):
             self.exit_step = True                
         if options.headless: 
             self.headless = True
+        os.environ['SDL_VIDEO_CENTERED'] = '1'            
         pygame.init() 
         
         if icon and os.path.exists(icon):
@@ -5500,7 +5519,7 @@ class Game(object):
             
             #hide mouse
             if self.scene and self.scene.background():
-                if not self.hide_cursor: self.screen.blit(self.scene.background(), cursor_rect, cursor_rect)
+                if not self.hide_cursor and cursor_rect: self.screen.blit(self.scene.background(), cursor_rect, cursor_rect)
                 if self.info_image: self.screen.blit(self.scene.background(), info_rect, info_rect)
                 if debug_rect: self.screen.blit(self.scene.background(), debug_rect, debug_rect)
 
