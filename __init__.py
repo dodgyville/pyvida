@@ -5332,7 +5332,21 @@ class Game(object):
         if options.fullscreen or (self.settings and self.settings.fullscreen):
             flags |= pygame.FULLSCREEN 
             self.fullscreen = True
-        self.screen = screen = pygame.display.set_mode(self.resolution, flags)
+        try:
+            self.screen = screen = pygame.display.set_mode(self.resolution, flags)
+        except Exception as e:
+            if "No video mode large enough" in e.message: #try and set camera scale
+                print(e.message)
+                modes = pygame.display.list_modes()
+                x,y = self.resolution
+                print("Available modes instead of {0}, {1}, {2}:".format(x,y,float(x)/y))
+                print([(x,y,float(x)/y) for x,y in modes])
+                print("Auto setting camera to {0}".format(modes[0]))
+                self.resolution = modes[0]
+                self.screen = screen = pygame.display.set_mode(self.resolution, flags)
+            else:
+                print(e.message)
+                return
 
         if android: android.init() #initialise android framework ASAP
         
