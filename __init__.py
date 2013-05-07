@@ -885,7 +885,8 @@ def editor_point(game, menuItem, player, editing=None):
     points = {"e_location": (editing.set_x, editing.set_y),
               "e_anchor": (editing.set_ax, editing.set_ay),
               "e_stand": (editing.set_sx, editing.set_sy),
-              "e_talk": (editing.set_nx, editing.set_ny),
+              "e_name": (editing.set_nx, editing.set_ny),
+              "e_talk": (editing.set_cx, editing.set_cy),
               "e_scale": (editing.adjust_scale_x, editing.adjust_scale_y),
               "e_action_scale": (editing.adjust_scale_x, editing.adjust_scale_y),
                     }
@@ -1244,15 +1245,15 @@ class Actor(object):
 
     def get_nx(self): 
         scale = self.action.scale if self.action else 1 
-        nx = self._nx
-        return self.x + nx * self._scale#name display pt
+        x = self._nx
+        return self.x + x * self._scale#name display pt
 
     def set_nx(self, nx): self._nx = nx - self._x
     nx = property(get_nx, set_nx)
 
     def get_ny(self):
-        ny = self._ny
-        return self.y - ny * self._scale
+        y = self._y
+        return self.y - y * self._scale
 
     def set_ny(self, ny): self._ny = ny - self._y
     ny = property(get_ny, set_ny)
@@ -4343,7 +4344,7 @@ class Game(object):
         self.items['e_out'].do("idle")
 
         if self.items["e_location"] not in self.menu:
-            mitems = ["e_location", "e_anchor", "e_stand", "e_scale", "e_talk", "e_clickable", "e_solid", "e_out", "e_object_allow_draw", "e_object_allow_look", "e_object_allow_interact", "e_object_allow_use", "e_add_walkareapoint", "e_actions"]
+            mitems = ["e_location", "e_anchor", "e_stand", "e_scale", "e_name", "e_talk", "e_clickable", "e_solid", "e_out", "e_object_allow_draw", "e_object_allow_look", "e_object_allow_interact", "e_object_allow_use", "e_add_walkareapoint", "e_actions"]
             self.set_menu(*mitems)
             self.menu_hide(mitems)
             self.menu_show()
@@ -5211,24 +5212,29 @@ class Game(object):
             #close button for all editor collections
             self.add(MenuItem("e_close", editor_collection_close, (800, 610), (800,-100), K_ESCAPE).smart(self))
             #add menu items for actor editor
-            for i, v in enumerate(["location", "anchor", "stand", "out", "scale", "clickable", "solid", "talk",]):
-                self.add(MenuItem("e_%s"%v, editor_point, (100+i*30, 45), (100+i*30,-50), v[0], display_text=v).smart(self))
+            x = 100
+            dx = 30
+            for i, v in enumerate(["location", "anchor", "stand", "out", "scale", "clickable", "solid", "name", "talk",]):
+                x += dx
+                self.add(MenuItem("e_%s"%v, editor_point, (x, 45), (x,-50), v[0], display_text=v).smart(self))
             self.items['e_clickable'].interact = editor_edit_rect
             self.items['e_solid'].interact = editor_edit_rect
             self.items['e_out'].set_actions(["idle"], postfix="off")
             self.items['e_out'].do("idle")
 
-            e = self.add(MenuItem("e_object_allow_draw", editor_toggle_draw, (350, 45), (350,-50), v[0]).smart(self))            
+            x += 100
+            e = self.add(MenuItem("e_object_allow_draw", editor_toggle_draw, (x, 45), (x,-50), v[0]).smart(self))            
             e.do("idle_on")
-            e = self.add(MenuItem("e_object_allow_look", editor_toggle_look, (380, 45), (380,-50), v[0], display_text="allow look").smart(self))            
+            e = self.add(MenuItem("e_object_allow_look", editor_toggle_look, (x+dx, 45), (x+dx,-50), v[0], display_text="allow look").smart(self))            
             e.do("idle_on")
-            e = self.add(MenuItem("e_object_allow_interact", editor_toggle_interact, (410, 45), (410,-50), v[0], display_text="allow interact").smart(self))            
+            e = self.add(MenuItem("e_object_allow_interact", editor_toggle_interact, (x+dx*2, 45), (x+dx*2,-50), v[0], display_text="allow interact").smart(self))            
             e.do("idle_on")
-            e = self.add(MenuItem("e_object_allow_use", editor_toggle_use, (440, 45), (440,-50), v[0], display_text="allow inventory use").smart(self))            
+            e = self.add(MenuItem("e_object_allow_use", editor_toggle_use, (x+dx*3, 45), (x+dx*3,-50), v[0], display_text="allow inventory use").smart(self))            
             e.do("idle_on")
-            self.add(MenuItem("e_actions", editor_actions, (500, 45), (500,-50), v[0], display_text="edit object actions").smart(self))            
+            x += dx*3 + 100
+            self.add(MenuItem("e_actions", editor_actions, (x, 45), (x,-50), v[0], display_text="edit object actions").smart(self))            
             
-            self.add(MenuItem("e_add_walkareapoint", editor_add_walkareapoint, (550, 45), (550,-50), v[0]).smart(self))            
+            self.add(MenuItem("e_add_walkareapoint", editor_add_walkareapoint, (x+dx, 45), (x+dx,-50), v[0]).smart(self))            
 
     def finish_tests(self):
         """ called when test runner is ending or handing back control """
