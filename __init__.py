@@ -129,6 +129,11 @@ FADEOUT = 2
 HORIZONTAL = 0
 VERTICAL = 1    
 
+#ANCHORS FOR MENUS and MENU FACTORIES
+LEFT = 0
+RIGHT = 1
+CENTER = 2
+
 
 COLOURS = {
    "aliceblue": (240, 248, 255),
@@ -1243,33 +1248,40 @@ class Actor(object):
         self._ay = (self.y - ay)*scale
     ay = property(get_ay, set_ay)
 
-    def get_nx(self): 
+    def get_nx(self): #name points
         scale = self.action.scale if self.action else 1 
         x = self._nx
-        return self.x + x * self._scale#name display pt
-
-    def set_nx(self, nx): self._nx = nx - self._x
+        return self.x - x * scale
+    def set_nx(self, x): 
+        scale = (1.0/self.action.scale) if self.action else 1     
+        self._nx = (self.x - x)*scale
     nx = property(get_nx, set_nx)
 
-    def get_ny(self):
-        y = self._y
-        return self.y - y * self._scale
-
-    def set_ny(self, ny): self._ny = ny - self._y
+    def get_ny(self): 
+        scale = self.action.scale if self.action else 1 
+        y = self._ny
+        return self.y - y * scale
+    def set_ny(self, y): 
+        scale = (1.0/self.action.scale) if self.action else 1     
+        self._ny = (self.y - y)*scale
     ny = property(get_ny, set_ny)
 
-    def get_cx(self): #continues text display pt
+    def get_cx(self): #speech point
+        scale = self.action.scale if self.action else 1 
         x = self._cx
-        return self.x - x * self._scale
-
-    def set_cx(self, cx): self._cx = cx - self._x
+        return self.x - x * scale
+    def set_cx(self, x): 
+        scale = (1.0/self.action.scale) if self.action else 1     
+        self._cx = (self.x - x)*scale
     cx = property(get_cx, set_cx)
 
     def get_cy(self): 
+        scale = self.action.scale if self.action else 1 
         y = self._cy
-        return self.y - y * self._scale
-
-    def set_cy(self, cy): self._cy = cy - self._y
+        return self.y - y * scale
+    def set_cy(self, y): 
+        scale = (1.0/self.action.scale) if self.action else 1     
+        self._cy = (self.y - y)*scale
     cy = property(get_cy, set_cy)
 
     
@@ -1640,12 +1652,12 @@ class Actor(object):
 
             #draw name/text point
             self._rect.union_ip(crosshair(screen, (self.nx, self.ny), (255,0,255)))
-            stats = self.game.debug_font.render("text %0.2f, %0.2f"%(self._nx, self._ny), True, (255,50,255))
+            stats = self.game.debug_font.render("name %0.2f, %0.2f"%(self._nx, self._ny), True, (255,50,255))
             self._rect.union_ip(screen.blit(stats, stats.get_rect().move(self.nx, self.ny)))
 
             #draw speech point
             self._rect.union_ip(crosshair(self.game.screen, (self.cx, self.cy), (255,0,255)))
-            stats = self.game.debug_font.render("text %0.2f, %0.2f"%(self._cx, self._cy), True, (255,50,255))
+            stats = self.game.debug_font.render("speech %0.2f, %0.2f"%(self._cx, self._cy), True, (255,50,255))
             self._rect.union_ip(self.game.screen.blit(stats, stats.get_rect().move(self.cx, self.cy)))
 
 
@@ -3071,13 +3083,15 @@ class MenuItem(Actor):
 
 class MenuFactory(object):
     """ define some defaults for a menu so that it is faster to add new items """
-    def __init__(self, name, pos=(0,0), size=26, font=DEFAULT_FONT, colour=MENU_COLOUR, layout=VERTICAL):
+    def __init__(self, name, pos=(0,0), size=26, font=DEFAULT_FONT, colour=MENU_COLOUR, layout=VERTICAL, anchor = LEFT, padding = 0):
         self.name = name
         self.position = pos
         self.size = size
         self.font = font
         self.colour = colour
         self.layout = layout
+        self.padding = padding
+        self.anchor = anchor
     
 
 ALPHABETICAL = 0
@@ -3483,6 +3497,7 @@ class Scene(object):
 
     def _add(self, obj):
         """ removes obj from current scene it's in, adds to this scene """
+        obj = self.game.actors.get(obj, self.game.items.get(obj, None)) if type(obj) == str else obj        
         if obj.scene:
             obj.scene._remove(obj)
         self.objects[obj.name] = obj
@@ -4618,6 +4633,7 @@ class Game(object):
         if self.ENABLE_EDITOR and key == K_F1:
             self.toggle_editor()
         elif self.ENABLE_EDITOR and key == K_F2: #allow set trace if not fullscreen
+            game = self #handy alias for game object
             if not self.fullscreen: import pdb; pdb.set_trace()
         elif self.ENABLE_EDITOR and key == K_F3: #kill an event if stuck in the event queue
             self._event_finish()      
@@ -5580,7 +5596,7 @@ class Game(object):
                             if self.scene: self.camera._play_scene_music() #switch music back on
                             if self.player and self.testing_message:
                                 if self.headless: self.headless = False #force visual if handing over to player
-                                self.screen.blit(self.scene.background(), (0, 0)) #redraw whole screen
+                                if self.scene: self.screen.blit(self.scene.background(), (0, 0)) #redraw whole screen
                                 self.player.says("Let's play.")
                                 if self.exit_step: self.quit = True #exit program
                                 self.modals_clear()
@@ -5994,13 +6010,43 @@ class Game(object):
     def on_menu_from_factory(self, menu, items):
         """ Create a menu from a factory """
         factory = self.menu_factories[menu]
-        x,y = factory.position
-        dy = 48
+
+        #guesstimate width of whole menu so we can do some fancy layout stuff
+        font = load_font(factory.font, factory.size)
+        total_x, total_y = 0, 0
+        first = True
+        for item in items:
+            info_image = font.render(item[0], True, (0,0,0))
+            if first:
+                first = False
+            else:
+                if factory.layout == VERTICAL:
+                    total_y += factory.padding
+                else:
+                    total_x += factory.padding
+            total_x += info_image.get_width()
+            total_y += info_image.get_height()
+
+        if factory.anchor == LEFT:
+            x,y = factory.position
+        elif factory.anchor == RIGHT:
+            x,y = factory.position[0]-total_x, factory.position[1]
+        elif factory.anchor == CENTER:
+            x,y = factory.position[0]-(total_x/2), factory.position[1]
+
+        #XXX urgh magical variables
+        if factory.layout == VERTICAL:
+            dx = 0
+            dy = total_y/len(items)
+        else:
+            dy = 0
+            dx = total_x/len(items)
         ody = 900
         menu = []
         for item in items:
-            txt = self.add(MenuText(item[0], (x,y), (840,170), item[0], wrap=800, interact=item[1], spos=(x, y), hpos=(x, y+ ody), key="f", font=factory.font, size=factory.size), False, MenuItem)
+            txt = self.add(MenuText(item[0], (x,y), (840,170), item[0], wrap=800, interact=item[1], spos=(x, y), hpos=(x, y + ody), key="f", font=factory.font, size=factory.size), False, MenuItem)
             y += dy
+            x += dx
             menu.append(txt)
         self._event_finish()
 
