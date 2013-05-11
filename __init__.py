@@ -134,7 +134,6 @@ LEFT = 0
 RIGHT = 1
 CENTER = 2
 
-
 COLOURS = {
    "aliceblue": (240, 248, 255),
    "antiquewhite": (250, 235, 215),
@@ -393,6 +392,31 @@ class Font(Font):
         result.__init__(deepcopy(tuple(self), memo))
         return result 
 """        
+
+class Surface(Surface):
+    def __deepcopy__(self, memo):
+        """ Share surfaces between deep copied objects (only one graphical display) """
+        print("pyvida surface deep copy")
+        result = self.__class__()
+        memo[id(self)] = result
+        result.__init__(deepcopy(tuple(self), memo))
+        return result 
+        #return None
+
+
+class Font(Font):
+    def __deepcopy__(self, memo):
+        print("pyvida font deep copy")
+#        out = type(self)()
+ #       for key, v in self.__dict__.items():
+  #          print(key)
+  #      self.__dict__ = copy.deepcopy(self.__dict__, memo) 
+        import pdb; pdb.set_trace()
+        result = self.__class__()
+        memo[id(self)] = result
+        result.__init__(deepcopy(tuple(self), memo))
+        return result 
+        
 
 def use_init_variables(original_class):
     """ Take the value of the args to the init function and assign them to the objects' attributes """
@@ -1282,6 +1306,36 @@ class Actor(object):
     def set_cy(self, y): 
         scale = (1.0/self.action.scale) if self.action else 1     
         self._cy = (self.y - y)*scale
+
+    """
+    def get_nx(self): 
+        scale = self.action.scale if self.action else 1 
+        nx = self._nx
+        return self.x + nx * self._scale#name display pt
+
+    def set_nx(self, nx): self._nx = nx - self._x
+    nx = property(get_nx, set_nx)
+
+    def get_ny(self):
+        ny = self._ny
+        return self.y - ny * self._scale
+
+    def set_ny(self, ny): self._ny = ny - self._y
+    ny = property(get_ny, set_ny)
+
+    def get_cx(self): #continues text display pt
+        x = self._cx
+        return self.x - x * self._scale
+
+    def set_cx(self, cx): self._cx = cx - self._x
+    cx = property(get_cx, set_cx)
+
+    def get_cy(self): 
+        y = self._cy
+        return self.y - y * self._scale
+
+    def set_cy(self, cy): self._cy = cy - self._y
+    """
     cy = property(get_cy, set_cy)
 
     
@@ -1658,6 +1712,12 @@ class Actor(object):
             #draw speech point
             self._rect.union_ip(crosshair(self.game.screen, (self.cx, self.cy), (255,0,255)))
             stats = self.game.debug_font.render("speech %0.2f, %0.2f"%(self._cx, self._cy), True, (255,50,255))
+            self._rect.union_ip(self.game.screen.blit(stats, stats.get_rect().move(self.cx, self.cy)))
+
+
+            #draw speech point
+            self._rect.union_ip(crosshair(self.game.screen, (self.cx, self.cy), (255,0,255)))
+            stats = self.game.debug_font.render("text %0.2f, %0.2f"%(self._cx, self._cy), True, (255,50,255))
             self._rect.union_ip(self.game.screen.blit(stats, stats.get_rect().move(self.cx, self.cy)))
 
 
@@ -6010,7 +6070,6 @@ class Game(object):
     def on_menu_from_factory(self, menu, items):
         """ Create a menu from a factory """
         factory = self.menu_factories[menu]
-
         #guesstimate width of whole menu so we can do some fancy layout stuff
         font = load_font(factory.font, factory.size)
         total_x, total_y = 0, 0
