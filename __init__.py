@@ -436,7 +436,7 @@ def process_step(game, step):
     else:
         label = ""
     
-    if function_name == "interact":
+    if function_name == "interact":        
         if logging: log.info("TEST SUITE: %s%s. %s with %s"%(game.steps_complete, label, function_name, actor))
         game.mouse_mode = MOUSE_INTERACT
         if game.trunk_step and game.output_walkthrough: 
@@ -2150,6 +2150,7 @@ class Actor(object):
         if self.game.testing: 
             self._event_finish()
             return
+
         self.game.block = True #stop other events until says finished
         self._event_finish(block=True) #remove the on_says
 
@@ -2180,7 +2181,15 @@ class Actor(object):
                 oy, oy2, iy = 190, -400, 160
             else:
                 oy, oy2, iy = 420, 800, 360
-        msg = self.game.add(ModalItem(background, close_msgbox,(54, oy)).smart(self.game))
+                
+        #test for a high contrast version                
+        high_contrast = "%s_high_contrast"%background                
+        myd = os.path.join(self.game.item_dir, high_contrast)
+        if self.game and self.game.settings and self.game.settings.high_contrast and os.path.isdir(myd):
+            msg = self.game.add(ModalItem(background, close_msgbox,(54, oy)).smart(self.game, using=high_contrast))
+        else:
+            msg = self.game.add(ModalItem(background, close_msgbox,(54, oy)).smart(self.game))
+        
         msg.actor = self
         kwargs = {'wrap':self.game.SAYS_WIDTH,}
         if self.font_colour != None: kwargs["colour"] = self.font_colour
@@ -3483,6 +3492,8 @@ class Settings(object):
         self.portal_exploration = DEFAULT_EXPLORATION
         self.textspeed = NORMAL
         self.fps = DEFAULT_FRAME_RATE
+        
+        self.high_contrast = False
                 
         self.invert_mouse = False #for lefties
         self.language = "en"
@@ -3645,6 +3656,9 @@ class Game(object):
     def apply_settings(self):
         """ Apply as many settings in .settings as possible """
         if not self.settings: return
+        #apply high contrast
+        if not hasattr(self.settings, "high_contrast"): self.settings.high_contrast = False
+        self.high_contrast = self.settings.high_contrast
         #apply fullscreen
         if pygame.display.get_surface(): #already existing screen
             is_fullscreen = pygame.display.get_surface().get_flags() & pygame.FULLSCREEN
@@ -4217,11 +4231,23 @@ class Game(object):
             print("relocated debug")
             self.items["debug"].relocate(self.scene, (0,50))
         elif self.ENABLE_EDITOR and key == K_F5:
-            from scripts.chapter11 import interact_Damien
-            interact_Damien(self, self.actors["Damien"], self.player)
+ #           from scripts.chapter11 import interact_Damien
+#            interact_Damien(self, self.actors["Damien"], self.player)
+            self.contrast_index = 0
         elif self.ENABLE_EDITOR and key == K_F6:
-            from scripts.chapter7 import _goodbyeboy_cutscene
-            _goodbyeboy_cutscene(self, None, self.player)
+            from pygame import BLEND_ADD, BLEND_SUB, BLEND_MULT, BLEND_MIN, BLEND_MAX, BLEND_RGBA_ADD, BLEND_RGBA_SUB
+            from pygame import BLEND_RGBA_MULT, BLEND_RGBA_MIN, BLEND_RGBA_MAX, BLEND_RGB_ADD, BLEND_RGB_SUB, BLEND_RGB_MULT, BLEND_RGB_MIN, BLEND_RGB_MAX
+            
+            modes = [BLEND_ADD, BLEND_SUB, BLEND_MULT, BLEND_MIN, BLEND_MAX, BLEND_RGBA_ADD, BLEND_RGBA_SUB, BLEND_RGBA_MULT, BLEND_RGBA_MIN, BLEND_RGBA_MAX, BLEND_RGB_ADD, BLEND_RGB_SUB, BLEND_RGB_MULT, BLEND_RGB_MIN, BLEND_RGB_MAX]
+            
+            bk = self.scene._background.copy()
+            bk.fill((0,0,0,100), special_flags= modes[self.contrast_index])
+            self.screen.blit(bk, (0, 0))
+            pygame.display.flip()
+            self.contrast_index += 1
+
+#            from scripts.chapter7 import _goodbyeboy_cutscene
+#            _goodbyeboy_cutscene(self, None, self.player)
         elif self.ENABLE_EDITOR and key == K_F7:
 #            self.player.gets(choice(self.items.values()))
             from scripts.chapter3 import _cutscene_battle
@@ -4949,6 +4975,10 @@ class Game(object):
         if options.fullscreen or self.settings.fullscreen:
             flags |= pygame.FULLSCREEN 
             self.fullscreen = True
+        if options.high_contrast or getattr(self.settings, "high_contrast", False):
+            print("Using high contrast")
+            self.high_contrast = True
+
         self.screen = screen = pygame.display.set_mode(self.resolution, flags)
 
         if android: android.init() #initialise android framework ASAP
@@ -4974,6 +5004,7 @@ class Game(object):
             pygame.display.flip() #show updated display to user
 
         pygame.display.set_caption(self.name)
+        old_surface = None #some FX apply a filter to the screen we need to revert sometimes
         
         #set up music
         if self.settings:
@@ -5016,6 +5047,17 @@ class Game(object):
             else: #wait until time passes
                 if datetime.now() > self._wait: self.finished_wait()
                 
+            if self.scene and self.screen and self.settings and self.settings.high_contrast:
+                contrast_filter = pygame.Surface(self.resolution)
+                contrast_filter.fill((0,0,0))
+                contrast_filter.set_alpha(200)
+                old_surface = pygame.display.get_surface().copy()
+                pygame.display.get_surface().blit(contrast_filter, (0,0))
+                #only draw low contrast on areas that AREN'T hotspots
+                for group in [self.scene.objects.values()]: #, self.scene.foreground, self.menu, self.modals]:
+                    for obj in group:
+                        pygame.display.get_surface().blit(old_surface, obj.clickable_area, obj.clickable_area)
+
                 
             if self.scene and self.screen: #draw objects
                 objects = sorted(self.scene.objects.values(), key=lambda x: x.y, reverse=False)
@@ -5023,6 +5065,7 @@ class Game(object):
                 for group in [objects, self.scene.foreground, self.menu, self.modals]:
                     for obj in group: obj.draw()
                 for w in self.scene.walkareas: w.draw() #draw walkarea if editing
+
 
             if self.scene and self.screen: #update objects
                 for group in [self.scene.objects.values(), self.menu, self.modals]:
@@ -5093,6 +5136,9 @@ class Game(object):
                 if delay > 0: pygame.time.delay(int(delay))
             
                 pygame.display.flip() #show updated display to user
+                if old_surface: #restore the unfiltered surface
+                    pygame.display.get_surface().blit(old_surface, (0, 0))
+
 
             #if profiling art, save a screenshot if needed
             if self.scene and self.artreactor and self.artreactor_scene != self.scene:
