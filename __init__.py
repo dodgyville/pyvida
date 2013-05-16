@@ -2701,7 +2701,7 @@ class Text(Item):
     def update_text(self, txt=""): #rebuild the text image
         if txt: self.text = txt
         self.img = self._img = self._generate_text(self.text, self.colour, offset=self.offset)
-        self._mouse_move_img = self._generate_text(self.text, (255,255,255), offset=self.offset)        
+        self._mouse_move_img = self._generate_text(self.text, (255,255,255), offset=self.offset) #overlay
 
     def _on_mouse_move_utility(self, x, y, button, modifiers): #text.mouse_move single button interface
         self.img = self._mouse_move_img
@@ -3255,10 +3255,11 @@ class Mixer(object):
         if pygame.mixer: pygame.mixer.music.set_volume(val)
         self.game._event_finish()
 
-    def _sfx_play(self, fname=None, loops=0, fade_music=False, store=None):
+    def _sfx_play(self, fname=None, description=None, loops=0, fade_music=False, store=None):
         """
         store = True | False -> store the sfx as a variable on the Game object
         fade_music = False | 0..1.0 -> fade the music to <fade_music> level while playing this sfx
+        description = <string> -> human readable description of sfx
         """
         sfx = None
         if store: setattr(self, store, sfx)
@@ -3268,6 +3269,10 @@ class Mixer(object):
             return sfx 
         
         if fname: 
+            if self.game.settings and self.game.settings.sfx_subtitles and description: #subtitle sfx
+                d = "<sound effect: %s>"%description
+                self.game.message(d)
+
             if os.path.exists(fname):
                 log.info("Loading sfx file %s"%fname)
                 if pygame.mixer: 
@@ -3289,8 +3294,8 @@ class Mixer(object):
         if store: setattr(self, store, sfx)
         return sfx
 
-    def on_sfx_play(self, fname=None, loops=0, fade_music=False, store=None):
-        self._sfx_play(fname, loops, fade_music, store)
+    def on_sfx_play(self, fname=None, description=None, loops=0, fade_music=False, store=None):
+        self._sfx_play(fname, description, loops, fade_music, store)            
         self.game._event_finish()
 
     def on_sfx_stop(self, sfx=None):
@@ -3478,7 +3483,9 @@ class Settings(object):
 #        self.music_volume = 0.6
         self.music_volume = 0.6 #XXX music disabled by default
         self.sfx_volume = 0.8
+        self.sfx_subtitles = False
         self.voices_volume = 0.8
+        self.voices_subtitles = True
         
         self.resolution_x = 1024
         self.resolution_y = 768
@@ -3598,6 +3605,12 @@ class Game(object):
         self._menu_modal = False #is this menu blocking game events
         self.modals = []
         self.menu_mouse_pressed = False #stop editor from using menu clicks as edit flags
+        
+        self.messages = [] #non-interactive system messages to display to user (eg sfx subtitles (message, time))
+        self.message_item = Text
+        self.message_duration = 5 #how many seconds to display each message
+        self.message_position = (10, 600) #position of message queue
+        self._message_object = None #special object for onscreen messages
 
         self.mouse_mode = MOUSE_INTERACT #what activity does a mouse click trigger?
         self.mouse_cursors = {} #available mouse images
@@ -3659,6 +3672,8 @@ class Game(object):
         #apply high contrast
         if not hasattr(self.settings, "high_contrast"): self.settings.high_contrast = False
         self.high_contrast = self.settings.high_contrast
+
+        if not hasattr(self.settings, "sfx_subtitles"): self.settings.sfx_subtitles = False
         #apply fullscreen
         if pygame.display.get_surface(): #already existing screen
             is_fullscreen = pygame.display.get_surface().get_flags() & pygame.FULLSCREEN
@@ -3858,6 +3873,8 @@ class Game(object):
         obj.game = self
         return obj
 
+    def message(self, text): #system message to display on screen (eg sfx subtitles)
+        self.messages.append((text, datetime.now()))
         
     def info(self, text, x, y, align=ALIGN_LEFT): #game.info
         """ On screen at one time can be an info text (eg an object name or menu hover) 
@@ -3942,6 +3959,12 @@ class Game(object):
             self.camera.scene(scene) #one room, assume default
             if player:
                 player.relocate(scene, (300,600))
+                
+        #set up the message object for on-screen system messages (eg sfx subtitles)
+#                        self.game.messages.append((d, datetime.now()))
+        self._message_object = Text("_message object", pos=self.message_position, text="", offset=2)
+        self._message_object.game = self
+        
         if not running_headless: self.set_headless(False) #restore headless state
         self._event_finish(block=False)
 #        if draw_progress_bar: print("progress bar will be",self.progress_bar_count)
@@ -4233,19 +4256,9 @@ class Game(object):
         elif self.ENABLE_EDITOR and key == K_F5:
  #           from scripts.chapter11 import interact_Damien
 #            interact_Damien(self, self.actors["Damien"], self.player)
-            self.contrast_index = 0
+            self.message("%s"%datetime.now())
         elif self.ENABLE_EDITOR and key == K_F6:
-            from pygame import BLEND_ADD, BLEND_SUB, BLEND_MULT, BLEND_MIN, BLEND_MAX, BLEND_RGBA_ADD, BLEND_RGBA_SUB
-            from pygame import BLEND_RGBA_MULT, BLEND_RGBA_MIN, BLEND_RGBA_MAX, BLEND_RGB_ADD, BLEND_RGB_SUB, BLEND_RGB_MULT, BLEND_RGB_MIN, BLEND_RGB_MAX
-            
-            modes = [BLEND_ADD, BLEND_SUB, BLEND_MULT, BLEND_MIN, BLEND_MAX, BLEND_RGBA_ADD, BLEND_RGBA_SUB, BLEND_RGBA_MULT, BLEND_RGBA_MIN, BLEND_RGBA_MAX, BLEND_RGB_ADD, BLEND_RGB_SUB, BLEND_RGB_MULT, BLEND_RGB_MIN, BLEND_RGB_MAX]
-            
-            bk = self.scene._background.copy()
-            bk.fill((0,0,0,100), special_flags= modes[self.contrast_index])
-            self.screen.blit(bk, (0, 0))
-            pygame.display.flip()
-            self.contrast_index += 1
-
+            pass
 #            from scripts.chapter7 import _goodbyeboy_cutscene
 #            _goodbyeboy_cutscene(self, None, self.player)
         elif self.ENABLE_EDITOR and key == K_F7:
@@ -5040,6 +5053,7 @@ class Game(object):
                 for group in blank:
                     for obj in group: obj.clear()
                 for w in self.scene.walkareas: w.clear() #clear walkarea if editing
+                if self._message_object: self._message_object.clear()
 
             if not self._wait: #process events normally
                 self.handle_pygame_events()
@@ -5056,7 +5070,10 @@ class Game(object):
                 #only draw low contrast on areas that AREN'T hotspots
                 for group in [self.scene.objects.values()]: #, self.scene.foreground, self.menu, self.modals]:
                     for obj in group:
-                        pygame.display.get_surface().blit(old_surface, obj.clickable_area, obj.clickable_area)
+                        #contrast the clickable area if a portal or has no image
+                        if not obj._image() or type(obj) in [Portal]:
+                            r = obj.clickable_area.inflate(10,10)
+                            pygame.display.get_surface().blit(old_surface, r, r)
 
                 
             if self.scene and self.screen: #draw objects
@@ -5065,13 +5082,23 @@ class Game(object):
                 for group in [objects, self.scene.foreground, self.menu, self.modals]:
                     for obj in group: obj.draw()
                 for w in self.scene.walkareas: w.draw() #draw walkarea if editing
-
-
+                if self._message_object: self._message_object.draw()
+                
             if self.scene and self.screen: #update objects
                 for group in [self.scene.objects.values(), self.menu, self.modals]:
                     for obj in group: obj._update(dt)
                 if self.mouse_cursor and type(self.mouse_cursor) != int:
                     self.mouse_cursor._update(dt)
+                if self._message_object: #update message_object. TODO move to own _update method?
+                    self._message_object.x, self._message_object.y = self.message_position
+                    for message in self.messages:
+                        m, t = message
+                        if t < datetime.now() - timedelta(seconds=self.message_duration):
+                            self.messages.remove(message) #remove out-of-date messages
+                    txt = "\n".join([n[0] for n in self.messages]) if len(self.messages) > 0 else " "
+                    self._message_object.update_text(txt)
+                    self._message_object.y -= self._message_object.img.get_height()
+                    #self._message_object._update(dt)
                                 
             #draw mouse
             m = pygame.mouse.get_pos()
