@@ -3436,7 +3436,7 @@ class Scene(object):
 
     def _screenshot(self, modals=False):
         image = pygame.Surface(self.game.resolution)
-        image.blit(self.background(), (0, 0))        
+        if self.background(): image.blit(self.background(), (0, 0))        
         objects = sorted(self.objects.values(), key=lambda x: x.y, reverse=False)
         items = [objects, self.foreground,]
         if modals: items.append(self.game.modals)
