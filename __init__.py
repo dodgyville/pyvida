@@ -3123,7 +3123,7 @@ class Scene(object):
         self.music_fname = fname
         self._event_finish()
 
-    def _ambient(self, fname):
+    def _ambient(self, fname, description=None):
         if fname and not os.path.exists(fname): #try scene directory
             sdir = os.path.join(os.getcwd(),os.path.join(self.game.scene_dir, self.name))
             fname = os.path.join(sdir, fname+".ogg")
@@ -3135,10 +3135,10 @@ class Scene(object):
         if self.game and self.game.scene and self.game.scene == self:
             if self.game.camera._ambient_sound: self.game.camera._ambient_sound.stop()
             if self.ambient_fname:
-                self.game.camera._ambient_sound = self.game.mixer._sfx_play(self.ambient_fname, loops=-1)
+                self.game.camera._ambient_sound = self.game.mixer._sfx_play(self.ambient_fname, description, loops=-1)
     
 
-    def on_ambient(self, fname=""): #set the ambient sounds for this scene
+    def on_ambient(self, fname="", description=None): #set the ambient sounds for this scene
         self._ambient(fname)
         self._event_finish()
 
