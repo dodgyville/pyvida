@@ -727,6 +727,11 @@ def process_step(game, step):
         return
     elif function_name == "toggle": #toggle a setting in the game
         if hasattr(game, actor): game.__dict__[actor] = not game.__dict__[actor]
+
+
+
+
+
         log.info("toggle headless")
         return
     elif function_name == "description": #check the player has item in inventory
@@ -891,11 +896,13 @@ def open_editor(game, filepath, track=True):
 
     
     if track:
-        #add file directory to path so that import can find it
-        if os.path.dirname(filepath) not in sys.path: sys.path.append(os.path.dirname(filepath))
 
         #add to the list of modules we are tracking
-        game._modules[os.path.splitext(os.path.basename(filepath))[0]] = 0
+        module_name = os.path.splitext(os.path.basename(filepath))[0]
+        if module_name not in game._modules and module_name != "__init__": 
+            game._modules[module_name] = 0
+            #add file directory to path so that import can find it
+            if os.path.dirname(filepath) not in sys.path: sys.path.append(os.path.dirname(filepath))
     
     if sys.platform.startswith('darwin'):
         subprocess.call(('open', filepath))
@@ -1142,6 +1149,16 @@ DEFAULT_CLICKABLE = Rect(0,0,80,150)
 DEFAULT_SOLID = Rect(0,0,80,50)
 
 
+def toggle_edit_scripts(game):
+    btn = game.edit_scripts_button if game.edit_scripts_button else None
+    game.edit_scripts = not game.edit_scripts
+    if game.edit_scripts and btn:
+        btn.do("activated")
+    else:
+        btn.do("idle")
+
+
+
 def edit_script(game, obj, basic, script, mode="use"):
     if logging: log.warning("Editing %s script"%mode)
     if script: #edit the module file
@@ -1152,15 +1169,15 @@ def edit_script(game, obj, basic, script, mode="use"):
     else: #create a basic script for this action (potentially create a module file for this actor)
         fname = os.path.join(obj._directory, "%s.py"%slugify(obj.name).lower())
         if not os.path.isfile(fname): #create a new module for this actor
-            with open(fname, "w") as f:
-                f.write("%s\n    pass"%function_name)
-        else:
             with open(fname, "a") as f:
-                f.write("\n\n%s\n    pass"%function_name)
+                f.write("from pyvida import gettext as _\n\n")
 
-        if fname not in game._modules: game._modules[fname] = 0
+        #add the function            
+        with open(fname, "a") as f:
+            f.write("\ndef %s(game, obj, player)\n    pass\n"%basic)
         print("EDIT DEFAULT %s SCRIPT %s"%(mode, fname) )
         open_editor(game, fname)
+    toggle_edit_scripts(game)
     return
 
 
@@ -1651,7 +1668,6 @@ class Actor(object):
             script = self.interact
 
             if self.game.edit_scripts: 
-                import pdb; pdb.set_trace()
                 edit_script(self.game, self, None, script, mode="interact")
                 return
             else:
@@ -1661,7 +1677,6 @@ class Actor(object):
             script = get_function(self.game, basic)
             if script:
                 if self.game.edit_scripts: 
-                    import pdb; pdb.set_trace()
                     edit_script(self.game, self, basic, script, mode="interact")
                     return
     
@@ -1681,7 +1696,7 @@ class Actor(object):
                 #warn if using default vida interact
                 if not isinstance(self, Portal):
                     if logging: log.warning("No interact script for %s (write a def %s(game, %s, player): function)"%(self.name, basic, slugify(self.name)))
-                script = self._interact_default
+                script = None #self._interact_default
                 if self.game.edit_scripts: 
                     edit_script(self.game, self, basic, script, mode="interact")
                     return
@@ -2394,6 +2409,7 @@ class Actor(object):
                 if current_motion: self._queue_motion(current_motion, current_motion_count)
                 current_motion = motion
                 current_motion_count = 0
+
             current_motion_count += 1
         
         if p[-1] != p[0]: #adjustment required
@@ -3110,6 +3126,7 @@ def wrapline(text, font, maxwidth):
 def text_to_image(text, font, colour, maxwidth,offset=None):
     """ Convert block of text to wrapped image """
     text = wrapline(text, font, maxwidth)
+
     _offset = offset if offset else 0
     dx, dy = 10,10
     if len(text) == 1: #single line
@@ -4154,6 +4171,7 @@ class Game(object):
         self.enabled_editor = False
         self.editing_mode = EDITING_ACTOR
         self.edit_scripts = False #engine clicks trigger script edit instead of game events.
+        self.edit_scripts_button = None
 #        self._editing_deltas = False #are we in the action editor
 
         #set up text overlay image
@@ -5398,11 +5416,7 @@ class Game(object):
                 game.restore_state_snapshot()                
 
             def editor_toggle_edit(game, btn, player):
-                game.edit_scripts = not game.edit_scripts
-                if game.edit_scripts: 
-                    btn.do("activated")
-                else:
-                    btn.do("idle")
+                toggle_edit_scripts(game)
 
             #load menu for action editor
             x,y=50,10
@@ -5484,7 +5498,9 @@ class Game(object):
             self.add(MenuItem("e_add_walkareapoint", editor_add_walkareapoint, (x+dx, 45), (x+dx,-50), v[0]).smart(self))            
 
             x = self.resolution[0]-100
-            self.add(MenuItem("e_edit", editor_toggle_edit, (x, 45), (x,-50), v[0], display_text="toggle script editor").smart(self))            
+            btn = MenuItem("e_edit", editor_toggle_edit, (x, 45), (x,-50), v[0], display_text="toggle script editor").smart(self)
+            self.add(btn)            
+            self.edit_scripts_button = btn
 
 
     def finish_tests(self):
@@ -5530,6 +5546,7 @@ class Game(object):
     def run(self, splash=None, callback=None, icon=None):
         parser = OptionParser()
         parser.add_option("-a", "--alloweditor", action="store_true", dest="allow_editor", help="Enable editor via F1 key")
+#        parser.add_option("-b", "--blank", action="store_true", dest="force_editor", help="smart load the game but enter the editor")
         parser.add_option("-c", "--contrast", action="store_true", dest="high_contrast", help="Play game in high contrast mode (for vision impaired players)", default=False)
         parser.add_option("-d", "--detailed <scene>", dest="analyse_scene", help="Print lots of info about one scene (best used with test runner)")
         parser.add_option("-e", "--exceptions", action="store_true", dest="allow_exceptions", help="Switch off exception catching.")
@@ -6467,7 +6484,7 @@ def create_standalone_menu(game):
     
         
 
-def main():
+def main(smart=False):
     """ When run as a standalone, show the game editor for a new game """
     # Load the editor defaults
     pyvida_defaults = "saves"
@@ -6494,6 +6511,7 @@ def main():
     game.projectsettings._game = game
     game.add(s)
     game.scene = s
+
     game.ENABLE_EDITOR = True
     game.smart()
     def load_standalone(game):
