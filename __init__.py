@@ -32,13 +32,15 @@ except ImportError:
             return txt
 
 DEFAULT_RESOLUTION = (1920,1080)
+APP_DIR = "spaceout"
 
 SAVE_DIR = "saves"
 if "LOCALAPPDATA" in os.environ: #win 7
-    SAVE_DIR = os.path.join(os.environ["LOCALAPPDATA"], "spaceout", 'saves')
+    SAVE_DIR = os.path.join(os.environ["LOCALAPPDATA"], APP_DIR, 'saves')
 elif "APPDATA" in os.environ: #win XP
-    SAVE_DIR = os.path.join(os.environ["APPDATA"], "spaceout", 'saves')
+    SAVE_DIR = os.path.join(os.environ["APPDATA"], APP_DIR, 'saves')
 READONLY = False
+
 if not os.path.exists(SAVE_DIR):
     try:
         os.makedirs(SAVE_DIR)
@@ -53,9 +55,9 @@ except:
     pass        
 
 if language:
-    t = igettext.translation('spaceout', os.path.join('data', 'locale'), fallback=True, languages=[language])
+    t = igettext.translation(APP_DIR, os.path.join('data', 'locale'), fallback=True, languages=[language])
 else:
-    t = igettext.translation('spaceout', os.path.join('data', 'locale'), fallback=True)
+    t = igettext.translation(APP_DIR, os.path.join('data', 'locale'), fallback=True)
 
 gettext = t.ugettext
 
@@ -694,7 +696,7 @@ def process_step(game, step):
             if logging: log.error("Can't do test suite trigger use, unable to find %s in game objects"%actee)
             if actee not in game.missing_actors: game.missing_actors.append(actee)
             fail = True
-        actee_name = actee.display_text if actee and actee.display_text else step[2]
+        actee_name = actee.display_text if actee and hasattr(actee, "display_text") and actee.display_text else step[2]
         if game.trunk_step and game.output_walkthrough: print("Go to inventory, select %s and use on %s."%(actee_name, actor_name))
 
         if not fail: game.mouse_cursor = actee
@@ -727,11 +729,6 @@ def process_step(game, step):
         return
     elif function_name == "toggle": #toggle a setting in the game
         if hasattr(game, actor): game.__dict__[actor] = not game.__dict__[actor]
-
-
-
-
-
         log.info("toggle headless")
         return
     elif function_name == "description": #check the player has item in inventory
@@ -1174,7 +1171,7 @@ def edit_script(game, obj, basic, script, mode="use"):
 
         #add the function            
         with open(fname, "a") as f:
-            f.write("\ndef %s(game, obj, player)\n    pass\n"%basic)
+            f.write("\ndef %s(game, obj, player):\n    pass\n"%basic)
         print("EDIT DEFAULT %s SCRIPT %s"%(mode, fname) )
         open_editor(game, fname)
     toggle_edit_scripts(game)
@@ -3363,7 +3360,7 @@ class Collection(MenuItem):
             else: obj = a
             self.objects[obj.name] = obj
             self._sorted_objects = None
-            if "collection" in obj.actions.keys(): obj.do("collection")
+            if hasattr(obj, "actions") and "collection" in obj.actions.keys(): obj.do("collection")
 
     def empty(self):
         self.objects = {}
@@ -4265,6 +4262,9 @@ class Game(object):
 #        if 'win32' in sys.platform: # don't allow on windows XXX why?
 #            return modified
         for i in self._modules.keys(): #for modules we are watching
+            if not i in sys.modules:
+                log.error("Unable to reload module %s (not in sys.modules)"%i)
+                continue
             fname = sys.modules[i].__file__
             fname, ext = os.path.splitext(fname)
             if ext == ".pyc": ext = ".py"
@@ -4588,7 +4588,7 @@ class Game(object):
     def toggle_editor(self):
             if self.enabled_editor:  #switch off editor
                 if self.editing_mode != EDITING_ACTOR: return
-                self.hide_cursor = HIDE_MOUSE
+#                self.hide_cursor = HIDE_MOUSE
                 #self.menu_fade_out()
                 self.menu_pop()
                 self.menu_show()
@@ -5268,8 +5268,12 @@ class Game(object):
                     d = os.path.join(game.scene_dir, name)
                     if not os.path.exists(d): os.makedirs(d)
                     obj = Scene(name).smart(game)
+                    if not obj.background():
+                        obj._background = create_tiled_background(game.resolution, (200,200,200), (150,150,150))
+                        pygame.image.save(obj._background, os.path.join(d, "background.png"))
                     game.add(obj)
-                    btn.collection.e_scenes = None
+#                    btn.collection.e_scenes = None
+                    btn.collection.add(obj) #add scene to collection
                     editor_collection_close(game, btn.collection, player)
                 game.user_input("What is the name of this scene to create? (blank to abort)", e_newscene_cb)
 
@@ -5758,7 +5762,8 @@ class Game(object):
             debug_rect = None            
             if self.enabled_editor == True and self.debug_font:
                 dcol = (255,255,120)
-                debug_rect = self.screen.blit(self.debug_font.render("%i, %i"%(m[0], m[1]), True, dcol), (950,10))
+                #print the mouse location on the screen
+                debug_rect = self.screen.blit(self.debug_font.render("%i, %i"%(m[0], m[1]), True, dcol), (self.resolution[0]-80,5))
                 if isinstance(self.editing, Actor):
                     action, size = "none", ""
                     if self.editing.action:
@@ -5766,7 +5771,7 @@ class Game(object):
                         action = self.editing.action.name
                         size = " %ix%i"%(actor_img.get_width(), actor_img.get_height())
                     img_obj_details = self.debug_font.render("%s (%s%s)"%(self.editing.name, action, size), True, dcol)
-                    rect_obj_details = self.screen.blit(img_obj_details, (1000-img_obj_details.get_width(), 40))
+                    rect_obj_details = self.screen.blit(img_obj_details, (self.resolution[0]-10-img_obj_details.get_width(), 30))
                     debug_rect.union_ip(rect_obj_details)
                 
             #pt = m
