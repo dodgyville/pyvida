@@ -375,6 +375,7 @@ DEFAULT_ACTION_FRAME_RATE = 20
 
 DEFAULT_FONT = os.path.join("data/fonts/", "vera.ttf")
 MENU_COLOUR = (42, 127, 255)
+
 """
 class Surface(Surface):
     def __deepcopy__(self, memo):
@@ -995,7 +996,8 @@ class Action(object):
         self.allow_update = True #free deltas, etc
         self.astar = False #this action can be used in astar search
         self.fps = fps #speed at which this action plays
-        
+        self._last_clock_tick = int(round(time.time() * 1000))
+
         #deltas
         self.delta_index = 0 #index to deltas
         self.deltas = None
@@ -1032,6 +1034,15 @@ class Action(object):
     def update(self, dt): #action.update
         if self.allow_update == False:
             return
+
+        time_delay = int(1000.0/self.fps)
+        current_clock_tick = int(round(time.time() * 1000))
+        if self.name == "title": print("%s %s %s %s"%(self.name, time_delay, self._last_clock_tick, current_clock_tick))
+        if current_clock_tick >= self._last_clock_tick + time_delay: #advance frame
+            self._last_clock_tick = current_clock_tick
+        else:
+            return
+
         if self.mode == PINGPONG and self.index == -1: 
             self.step = 1
             self.index = 0
@@ -3474,6 +3485,9 @@ class Scene(object):
         self.display_text = ""
         self.description = None #text for blind users
         self._on_mouse_move = None #if mouse is moving on this scene, do this call back
+        self.fps = 0.5 #how often to regenerate _image, None means no cacheing
+        self._last_clock_tick = int(round(time.time() * 1000)+randint(0,1000)) #when was the last update with a bit of noise at the start
+        self.__image = None #image cache
 
     def __deepcopy__(self, memo):
         """ Share surfaces between deep copied objects (only one graphical display) """
@@ -3541,6 +3555,16 @@ class Scene(object):
         """ update this scene within the game (normally empty) """
         if hasattr(self, "update"): #run this scene's personalised update function
             self.update(dt)
+        time_delay = int(1000.0/self.fps)
+        current_clock_tick = int(round(time.time() * 1000))
+        if self.name == "title": print("%s %s %s %s"%(self.name, time_delay, self._last_clock_tick, current_clock_tick))
+        if current_clock_tick >= self._last_clock_tick + time_delay: #draw another frame
+            self.__image = None
+            self._last_clock_tick = current_clock_tick
+            if self.name == "title": print("reset cache")
+        else:
+            if self.name == "title": print("leave cache")
+            
 
     draw = Actor.draw #scene.draw
        
@@ -3549,7 +3573,11 @@ class Scene(object):
             self.game.screen.blit(self.game.scene.background(), self._rect, self._rect)
             self._rect = None
 
-    def _screenshot(self, modals=False):
+    def _screenshot(self, modals=False): #scene.screenshot
+        if self.__image:
+            if self.name == "title": print("using cache for %s"%self.name)
+            return self.__image
+        if self.name == "title": print("fresh cache")
         image = pygame.Surface(self.game.resolution)
         if self.background(): image.blit(self.background(), (0, 0))        
         objects = sorted(self.objects.values(), key=lambda x: x.y, reverse=False)
@@ -3558,6 +3586,7 @@ class Scene(object):
         for group in items:
             for obj in group: 
                 obj.draw(screen=image)
+        self.__image = image
         return image
 
     def _image(self):
@@ -4065,7 +4094,7 @@ class Game(object):
     quit = False
     screen = None
    
-    def __init__(self, name="Untitled Game", version="v1.0", engine=VERSION_MAJOR, fullscreen=DEFAULT_FULLSCREEN, resolution=DEFAULT_RESOLUTION, fps=DEFAULT_FRAME_RATE, apfs=DEFAULT_FRAME_RATE, projectsettings=None):
+    def __init__(self, name="Untitled Game", version="v1.0", engine=VERSION_MAJOR, fullscreen=DEFAULT_FULLSCREEN, resolution=DEFAULT_RESOLUTION, fps=DEFAULT_FRAME_RATE, afps=DEFAULT_FRAME_RATE, projectsettings=None):
         """Create a game object.
 
         Keyword arguments:
@@ -4181,6 +4210,7 @@ class Game(object):
         self._wait = None #what time to hold processing events to
         
         self.fps = fps
+        self.afps = afps
         self.time_delay = int(1000.0/fps)
         self.fullscreen = fullscreen
         
@@ -4567,6 +4597,8 @@ class Game(object):
         
                 
     def on_set_editing(self, obj, objects=None):
+        self.editing_point = None
+        self.editing_index = None
         self.editing = obj
         for i in ["allow_draw", "allow_look", "allow_interact", "allow_use"]:
             btn = self.items["e_object_%s"%i]
@@ -6281,7 +6313,7 @@ class Game(object):
         ody = 900
         menu = []
         for item in items:
-            txt = self.add(MenuText(item[0], (x,y), (840,170), item[0], wrap=800, interact=item[1], spos=(x, y), hpos=(x, y + ody), key="f", font=factory.font, size=factory.size), False, MenuItem)
+            txt = self.add(MenuText(item[0], (x,y), (840,170), item[0], wrap=800, interact=item[1], spos=(x, y), hpos=(x, y + ody), key="f", font=factory.font, size=factory.size, colour=factory.colour), False, MenuItem)
             y += dy
             x += dx
             menu.append(txt)
