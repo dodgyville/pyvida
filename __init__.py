@@ -5779,10 +5779,11 @@ class Game(object):
             else:
                 blank = [self.menu, self.modals]
 
-            if self.scene and self.screen:
+            if self.screen:
                 for group in blank:
                     for obj in group: obj.clear()
-                for w in self.scene.walkareas: w.clear() #clear walkarea if editing
+                if self.scene:
+                    for w in self.scene.walkareas: w.clear() #clear walkarea if editing
                 if self._message_object: self._message_object.clear()
 
             if not self._wait: #process events normally
@@ -5909,6 +5910,9 @@ class Game(object):
                 if not self.hide_cursor and cursor_rect: self.screen.blit(self.scene.background(), cursor_rect, cursor_rect)
                 if self.info_image: self.screen.blit(self.scene.background(), info_rect, info_rect)
                 if debug_rect: self.screen.blit(self.scene.background(), debug_rect, debug_rect)
+            else:
+                if not self.hide_cursor and cursor_rect:
+                    pygame.draw.rect(self.screen, (0, 0, 0), cursor_rect)
 
             #if testing, instead of user input, pull an event off the test suite
             if self.testing and len(self.events) == 0 and not self._event: 
