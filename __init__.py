@@ -32,13 +32,15 @@ except ImportError:
             return txt
 
 DEFAULT_RESOLUTION = (1920,1080)
+APP_DIR = "spaceout"
 
 SAVE_DIR = "saves"
 if "LOCALAPPDATA" in os.environ: #win 7
-    SAVE_DIR = os.path.join(os.environ["LOCALAPPDATA"], "spaceout", 'saves')
+    SAVE_DIR = os.path.join(os.environ["LOCALAPPDATA"], APP_DIR, 'saves')
 elif "APPDATA" in os.environ: #win XP
-    SAVE_DIR = os.path.join(os.environ["APPDATA"], "spaceout", 'saves')
+    SAVE_DIR = os.path.join(os.environ["APPDATA"], APP_DIR, 'saves')
 READONLY = False
+
 if not os.path.exists(SAVE_DIR):
     try:
         os.makedirs(SAVE_DIR)
@@ -53,9 +55,9 @@ except:
     pass        
 
 if language:
-    t = igettext.translation('spaceout', os.path.join('data', 'locale'), fallback=True, languages=[language])
+    t = igettext.translation(APP_DIR, os.path.join('data', 'locale'), fallback=True, languages=[language])
 else:
-    t = igettext.translation('spaceout', os.path.join('data', 'locale'), fallback=True)
+    t = igettext.translation(APP_DIR, os.path.join('data', 'locale'), fallback=True)
 
 gettext = t.ugettext
 
@@ -102,7 +104,8 @@ DEBUG_ASTAR = False
 
 ENABLE_EDITOR = False #default for editor
 ENABLE_PROFILING = False
-ENABLE_LOGGING =  False
+ENABLE_LOGGING = True
+DEFAULT_TEXT_EDITOR = "gedit"
 
 ENGINE_VERSION = 2 #v1 = used for spaceout
 
@@ -367,10 +370,12 @@ ONCE = 3
 ONCE_BLOCK_DELTA = 4 #play action once, based on action deltas
 REPEAT = 5 #loop action, but reset position each cycle
 
-DEFAULT_FRAME_RATE = 20 #100
+DEFAULT_FRAME_RATE = 60
+DEFAULT_ACTION_FRAME_RATE = 20
 
 DEFAULT_FONT = os.path.join("data/fonts/", "vera.ttf")
 MENU_COLOUR = (42, 127, 255)
+
 """
 class Surface(Surface):
     def __deepcopy__(self, memo):
@@ -692,7 +697,7 @@ def process_step(game, step):
             if logging: log.error("Can't do test suite trigger use, unable to find %s in game objects"%actee)
             if actee not in game.missing_actors: game.missing_actors.append(actee)
             fail = True
-        actee_name = actee.display_text if actee and actee.display_text else step[2]
+        actee_name = actee.display_text if actee and hasattr(actee, "display_text") and actee.display_text else step[2]
         if game.trunk_step and game.output_walkthrough: print("Go to inventory, select %s and use on %s."%(actee_name, actor_name))
 
         if not fail: game.mouse_cursor = actee
@@ -877,6 +882,39 @@ def relative_position(game, parent, pos):
     if logging: log.warning("relative_position ignores anchor points, scaling and rotation")
     return parent.x-mx, parent.y-my
 
+
+def open_editor(game, filepath, track=True):
+    """
+        Open a text editor to edit fname, used by the editor when editing scripts
+
+        track -- add to game._modules for tracking and reloading
+    """
+    import subprocess, os
+    editor = os.getenv('EDITOR', DEFAULT_TEXT_EDITOR)
+
+    
+    if track:
+
+        #add to the list of modules we are tracking
+        module_name = os.path.splitext(os.path.basename(filepath))[0]
+        if module_name not in game._modules and module_name != "__init__": 
+            game._modules[module_name] = 0
+            #add file directory to path so that import can find it
+            if os.path.dirname(filepath) not in sys.path: sys.path.append(os.path.dirname(filepath))
+    
+    if sys.platform.startswith('darwin'):
+        subprocess.call(('open', filepath))
+    elif os.name == 'nt':
+        os.startfile(filepath)
+    elif os.name == 'posix':
+        subprocess.call(('xdg-open', filepath))
+#    import webbrowser
+#    webbrowser.open("file.txt")
+#    x = os.spawnlp(os.P_WAIT,editor,editor,filehandle.name)
+#    if x != 0:
+#        print("ERROR")
+#    return filehandle.read()
+
 def get_function(game, basic):
     """ 
         Search memory for a function that matches this name 
@@ -944,7 +982,7 @@ def snapshot(obj):
 #### pyvida classes ####
 @use_init_variables
 class Action(object):
-    def __init__(self, actor=None, name="unknown action", fname=""): 
+    def __init__(self, actor=None, name="unknown action", fname="", fps=DEFAULT_ACTION_FRAME_RATE): 
         self.images = []
         self.index = 0
         self.count = 0
@@ -957,7 +995,9 @@ class Action(object):
         self.allow_draw = True 
         self.allow_update = True #free deltas, etc
         self.astar = False #this action can be used in astar search
-        
+        self.fps = fps #speed at which this action plays
+        self._last_clock_tick = int(round(time.time() * 1000))
+
         #deltas
         self.delta_index = 0 #index to deltas
         self.deltas = None
@@ -994,6 +1034,15 @@ class Action(object):
     def update(self, dt): #action.update
         if self.allow_update == False:
             return
+
+        time_delay = int(1000.0/self.fps)
+        current_clock_tick = int(round(time.time() * 1000))
+        if self.name == "title": print("%s %s %s %s"%(self.name, time_delay, self._last_clock_tick, current_clock_tick))
+        if current_clock_tick >= self._last_clock_tick + time_delay: #advance frame
+            self._last_clock_tick = current_clock_tick
+        else:
+            return
+
         if self.mode == PINGPONG and self.index == -1: 
             self.step = 1
             self.index = 0
@@ -1107,6 +1156,40 @@ DEFAULT_WALKAREA = [(100,600),(900,560),(920,700),(80,720)]
 DEFAULT_CLICKABLE = Rect(0,0,80,150)
 DEFAULT_SOLID = Rect(0,0,80,50)
 
+
+def toggle_edit_scripts(game):
+    btn = game.edit_scripts_button if game.edit_scripts_button else None
+    game.edit_scripts = not game.edit_scripts
+    if game.edit_scripts and btn:
+        btn.do("activated")
+    else:
+        btn.do("idle")
+
+
+
+def edit_script(game, obj, basic, script, mode="use"):
+    if logging: log.warning("Editing %s script"%mode)
+    if script: #edit the module file
+        module_file = sys.modules[script.__module__].__file__
+        module_file = module_file[:-1] if module_file[-3:] == "pyc" else module_file
+        print("EDIT %s SCRIPT %s"%(mode, module_file))
+        open_editor(game, module_file)
+    else: #create a basic script for this action (potentially create a module file for this actor)
+        fname = os.path.join(obj._directory, "%s.py"%slugify(obj.name).lower())
+        if not os.path.isfile(fname): #create a new module for this actor
+            with open(fname, "a") as f:
+                f.write("from pyvida import gettext as _\n\n")
+
+        #add the function            
+        with open(fname, "a") as f:
+            f.write("\ndef %s(game, obj, player):\n    pass\n"%basic)
+        print("EDIT DEFAULT %s SCRIPT %s"%(mode, fname) )
+        open_editor(game, fname)
+    toggle_edit_scripts(game)
+    return
+
+
+
 class WalkArea(object):
     """ Used by scenes to define where the player can walk """
     def __init__(self, points=[]):
@@ -1156,6 +1239,7 @@ class Actor(object):
         self._tint = None #when tinting an image, use this rgb colour with BLEND_MULT
         self._blit_flag = 0 #BLEND_MULT #mode to use with blits
         self._cached_image = None #if single frame perhaps store scaled and tinted for optimisation
+        self._directory = None #directory this actor is located in
         
         self._alpha = 1.0
         self._alpha_target = 1.0
@@ -1304,6 +1388,7 @@ class Actor(object):
         y = self._cy
         return self.y - y * scale
     def set_cy(self, y): 
+
         scale = (1.0/self.action.scale) if self.action else 1     
         self._cy = (self.y - y)*scale
 
@@ -1428,6 +1513,8 @@ class Actor(object):
             log.debug("Unable to find %s, falling back to %s"%(myd, this_dir))
             myd = os.path.join(this_dir, d, name)
 
+        self._directory = myd
+
         if img:
             images = [img]
         else:
@@ -1483,6 +1570,18 @@ class Actor(object):
         if logging: log.debug("smart load %s %s clickable %s and actions %s"%(type(self), self.name, self._clickable_area, self.actions.keys()))
         if self.game and self.game.memory_save:
             self._unload()
+
+        #potentially load some interact/use/look scripts for this actor
+        filepath = os.path.join(myd, "%s.py"%slugify(self.name).lower())
+        if os.path.isfile(filepath):
+            print("USING %s"%filepath)
+            #add file directory to path so that import can find it
+            if os.path.dirname(filepath) not in sys.path: sys.path.append(os.path.dirname(filepath))
+            #add to the list of modules we are tracking
+            module_name = os.path.splitext(os.path.basename(filepath))[0]
+            game._modules[module_name] = 0
+            __import__(module_name) #load now
+            game.reload_modules(modules=[module_name]) #reload now to refresh existing references
         return self
 
     def _count_actions_add(self, action, c):
@@ -1502,11 +1601,16 @@ class Actor(object):
         else: #else, search several namespaces or use a default
             basic = "look_%s"%slugify(self.name)
             script = get_function(self.game, basic)
+            function_name =  "def %s(game, %s, player):"%(basic, slugify(self.name).lower())
+            if self.game.edit_scripts: 
+                edit_script(self.game, self, basic, script, mode="look")
+                return
+
             if script:
                 script(self.game, self, self.game.player)
             else:
                  #warn if using default vida look
-                if logging: log.warning("no look script for %s (write a def %s(game, %s, player): function)"%(self.name, basic, slugify(self.name).lower()))
+                if logging: log.warning("no look script for %s (write a %s function)"%(self.name, function_name))
                 
                 self._look_default(self.game, self, self.game.player)
 
@@ -1538,6 +1642,11 @@ class Actor(object):
             basic = self.uses[override_name]
             if logging: log.info("Using custom use script %s for actor %s"%(basic, override_name))
          script = get_function(self.game, basic)
+
+         if self.game.edit_scripts: 
+            edit_script(self.game, self, basic, script, mode="use")
+            return
+
          if script:
                 script(self.game, self, actor)
          else:
@@ -1564,12 +1673,21 @@ class Actor(object):
                     if logging: log.error("Unable to find interact fn %s"%self.interact)
             n = self.interact.__name__ if self.interact else "self.interact is None"
             if logging: log.debug("Player interact (%s (%s)) with %s"%(n, self.interact if self.interact else "none", self.name))
-            self.interact(self.game, self, self.game.player)
             script = self.interact
+
+            if self.game.edit_scripts: 
+                edit_script(self.game, self, None, script, mode="interact")
+                return
+            else:
+                script(self.game, self, self.game.player)
         else: #else, search several namespaces or use a default
             basic = "interact_%s"%slugify(self.name)
             script = get_function(self.game, basic)
             if script:
+                if self.game.edit_scripts: 
+                    edit_script(self.game, self, basic, script, mode="interact")
+                    return
+    
                 if not self.game.catch_exceptions: #allow exceptions to crash engine
                     script(self.game, self, self.game.player)
                 else:
@@ -1586,8 +1704,14 @@ class Actor(object):
                 #warn if using default vida interact
                 if not isinstance(self, Portal):
                     if logging: log.warning("No interact script for %s (write a def %s(game, %s, player): function)"%(self.name, basic, slugify(self.name)))
+                script = None #self._interact_default
+                if self.game.edit_scripts: 
+                    edit_script(self.game, self, basic, script, mode="interact")
+                    return
+
                 self._interact_default(self.game, self, self.game.player)
-                script = self._interact_default
+
+
         for receiver, sender in post_interact.receivers: #do the signals for post_interact
             if isinstance(self, sender): 
                 receiver(self.game, self, self.game.player)
@@ -2293,6 +2417,7 @@ class Actor(object):
                 if current_motion: self._queue_motion(current_motion, current_motion_count)
                 current_motion = motion
                 current_motion_count = 0
+
             current_motion_count += 1
         
         if p[-1] != p[0]: #adjustment required
@@ -3016,6 +3141,7 @@ def wrapline(text, font, maxwidth):
 def text_to_image(text, font, colour, maxwidth,offset=None):
     """ Convert block of text to wrapped image """
     text = wrapline(text, font, maxwidth)
+
     _offset = offset if offset else 0
     dx, dy = 10,10
     if len(text) == 1: #single line
@@ -3252,7 +3378,7 @@ class Collection(MenuItem):
             else: obj = a
             self.objects[obj.name] = obj
             self._sorted_objects = None
-            if "collection" in obj.actions.keys(): obj.do("collection")
+            if hasattr(obj, "actions") and "collection" in obj.actions.keys(): obj.do("collection")
 
     def empty(self):
         self.objects = {}
@@ -3366,6 +3492,9 @@ class Scene(object):
         self.display_text = ""
         self.description = None #text for blind users
         self._on_mouse_move = None #if mouse is moving on this scene, do this call back
+        self.fps = 0.5 #how often to regenerate _image, None means no cacheing
+        self._last_clock_tick = int(round(time.time() * 1000)+randint(0,1000)) #when was the last update with a bit of noise at the start
+        self.__image = None #image cache
 
     def __deepcopy__(self, memo):
         """ Share surfaces between deep copied objects (only one graphical display) """
@@ -3433,6 +3562,16 @@ class Scene(object):
         """ update this scene within the game (normally empty) """
         if hasattr(self, "update"): #run this scene's personalised update function
             self.update(dt)
+        time_delay = int(1000.0/self.fps)
+        current_clock_tick = int(round(time.time() * 1000))
+        if self.name == "title": print("%s %s %s %s"%(self.name, time_delay, self._last_clock_tick, current_clock_tick))
+        if current_clock_tick >= self._last_clock_tick + time_delay: #draw another frame
+            self.__image = None
+            self._last_clock_tick = current_clock_tick
+            if self.name == "title": print("reset cache")
+        else:
+            if self.name == "title": print("leave cache")
+            
 
     draw = Actor.draw #scene.draw
        
@@ -3441,7 +3580,11 @@ class Scene(object):
             self.game.screen.blit(self.game.scene.background(), self._rect, self._rect)
             self._rect = None
 
-    def _screenshot(self, modals=False):
+    def _screenshot(self, modals=False): #scene.screenshot
+        if self.__image:
+            if self.name == "title": print("using cache for %s"%self.name)
+            return self.__image
+        if self.name == "title": print("fresh cache")
         image = pygame.Surface(self.game.resolution)
         if self.background(): image.blit(self.background(), (0, 0))        
         objects = sorted(self.objects.values(), key=lambda x: x.y, reverse=False)
@@ -3450,6 +3593,7 @@ class Scene(object):
         for group in items:
             for obj in group: 
                 obj.draw(screen=image)
+        self.__image = image
         return image
 
     def _image(self):
@@ -3966,7 +4110,13 @@ class Game(object):
     quit = False
     screen = None
    
-    def __init__(self, name="Untitled Game", version="v1.0", engine=VERSION_MAJOR, fullscreen=DEFAULT_FULLSCREEN, resolution=DEFAULT_RESOLUTION, fps=DEFAULT_FRAME_RATE, projectsettings=None):
+    def __init__(self, name="Untitled Game", version="v1.0", engine=VERSION_MAJOR, fullscreen=DEFAULT_FULLSCREEN, resolution=DEFAULT_RESOLUTION, fps=DEFAULT_FRAME_RATE, afps=DEFAULT_FRAME_RATE, projectsettings=None):
+        """Create a game object.
+
+        Keyword arguments:
+        fps -- framerate the game engine runs at
+        afps -- the default framerate for actions (eg an Actor's animation might play at 16fps while the engine is running at 30fps)
+        """
         if logging: log.debug("game object created at %s"%datetime.now())
 #        log = log
 #        self.voice_volume = 1.0
@@ -4068,6 +4218,8 @@ class Game(object):
         self.ENABLE_EDITOR = ENABLE_EDITOR
         self.enabled_editor = False
         self.editing_mode = EDITING_ACTOR
+        self.edit_scripts = False #engine clicks trigger script edit instead of game events.
+        self.edit_scripts_button = None
 #        self._editing_deltas = False #are we in the action editor
 
         #set up text overlay image
@@ -4080,6 +4232,7 @@ class Game(object):
         self._wait = None #what time to hold processing events to
         
         self.fps = fps
+        self.afps = afps
         self.time_delay = int(1000.0/fps)
         self.fullscreen = fullscreen
         
@@ -4163,9 +4316,12 @@ class Game(object):
     def check_modules(self):
         """ poll system to see if python files have changed """
         modified = False
-        if 'win32' in sys.platform: # don't allow on windows
-            return modified
+#        if 'win32' in sys.platform: # don't allow on windows XXX why?
+#            return modified
         for i in self._modules.keys(): #for modules we are watching
+            if not i in sys.modules:
+                log.error("Unable to reload module %s (not in sys.modules)"%i)
+                continue
             fname = sys.modules[i].__file__
             fname, ext = os.path.splitext(fname)
             if ext == ".pyc": ext = ".py"
@@ -4176,7 +4332,13 @@ class Game(object):
                 modified = True
         return modified
         
-    def reload_modules(self):
+    def reload_modules(self, modules=None):
+        """
+        Reload all the interact/use/look functions from the tracked modules (game._modules)
+
+        modules -- use the listed modules instead of game._modules
+        """
+
         print("RELOAD MODULES")
         #clear signals so they reload
         for i in [post_interact, pre_interact, post_use, pre_use, pre_leave, post_arrive]:
@@ -4184,7 +4346,9 @@ class Game(object):
         
         #reload modules
         module = "main" if android else "__main__" #which module to search for functions
-        for i in self._modules:
+        modules = modules if modules else self._modules.keys()
+        if type(modules) != list: modules = [modules]
+        for i in self._modules.keys():
             try:
                 reload(sys.modules[i])
             except:
@@ -4196,12 +4360,19 @@ class Game(object):
             for fn in dir(sys.modules[i]): #update main namespace with new functions
                 new_fn = getattr(sys.modules[i], fn)
                 if hasattr(new_fn, "__call__"): setattr(sys.modules[module], new_fn.__name__, new_fn)
-        #XXX update actor.look and .uses values too.
+
+        #XXX update .uses{} values too.
         for i in (self.actors.values() + self.items.values()):
             if i.interact: 
                 if type(i.interact) != str:
                     new_fn = get_function(self.game, i.interact.__name__)
                     if new_fn: i.interact = new_fn #only replace if function found, else rely on existing fn
+            if i.name == "Brutus Ship": import pdb; pdb.set_trace()
+            if i.look: 
+                if type(i.look) != str:
+                    new_fn = get_function(self.game, i.look.__name__)
+                    if new_fn: i.look = new_fn #only replace if function found, else rely on existing fn
+
         log.info("Editor has done a module reload")
             
         
@@ -4461,6 +4632,8 @@ class Game(object):
         
                 
     def on_set_editing(self, obj, objects=None):
+        self.editing_point = None
+        self.editing_index = None
         self.editing = obj
         for i in ["allow_draw", "allow_look", "allow_interact", "allow_use"]:
             btn = self.items["e_object_%s"%i]
@@ -4473,7 +4646,7 @@ class Game(object):
         self.items['e_out'].do("idle")
 
         if self.items["e_location"] not in self.menu:
-            mitems = ["e_location", "e_anchor", "e_stand", "e_scale", "e_name", "e_talk", "e_clickable", "e_solid", "e_out", "e_object_allow_draw", "e_object_allow_look", "e_object_allow_interact", "e_object_allow_use", "e_add_walkareapoint", "e_actions"]
+            mitems = ["e_location", "e_anchor", "e_stand", "e_scale", "e_name", "e_talk", "e_clickable", "e_solid", "e_out", "e_object_allow_draw", "e_object_allow_look", "e_object_allow_interact", "e_object_allow_use", "e_add_walkareapoint", "e_actions", "e_edit"]
             self.set_menu(*mitems)
             self.menu_hide(mitems)
             self.menu_show()
@@ -4482,7 +4655,7 @@ class Game(object):
     def toggle_editor(self):
             if self.enabled_editor:  #switch off editor
                 if self.editing_mode != EDITING_ACTOR: return
-                self.hide_cursor = HIDE_MOUSE
+#                self.hide_cursor = HIDE_MOUSE
                 #self.menu_fade_out()
                 self.menu_pop()
                 self.menu_show()
@@ -4565,6 +4738,28 @@ class Game(object):
         elif button<>1: 
 #            print("SUB BUTTON PRESSED")
             self.mouse_mode = MOUSE_LOOK #subaltern btn pressed 
+
+        if self.edit_scripts: #potentially edit the script for the requested interaction
+            for i in self.modals: #first try modals
+                if i.collide(x,y): #always trigger interact on modals
+                    i.trigger_interact()
+                    return
+
+            for i in self.menu: #then menu 
+                if i.collide(x,y) and i.allow_interact:
+                    if i.actions.has_key('down'): i._do('down')
+                    i.trigger_interact() #always trigger interact on menu items
+                    return
+
+            for i in self.scene.objects.values(): #then objects in the scene
+                if i.collide(x,y) and (i.allow_use or i.allow_interact or i.allow_look):
+                    if self.mouse_mode == MOUSE_USE or i is not self.player: #only click on player in USE mode
+ #                       if self.player and self.scene and self.player in self.scene.objects.values() and i != self.player: 
+#                            if self.mouse_mode != MOUSE_LOOK or GOTO_LOOK: self.player.goto(i)                
+                        self.trigger(i) #trigger look, use or interact
+                        return
+            return
+
         if not self.enabled_editor and len(self.modals) > 0: #modals first, but ignore them if in edit mode
             for i in self.modals:
                 if self.game and self.game.block == True: break #don't allow modals clicks when event queue is blocked
@@ -5142,8 +5337,12 @@ class Game(object):
                     d = os.path.join(game.scene_dir, name)
                     if not os.path.exists(d): os.makedirs(d)
                     obj = Scene(name).smart(game)
+                    if not obj.background():
+                        obj._background = create_tiled_background(game.resolution, (200,200,200), (150,150,150))
+                        pygame.image.save(obj._background, os.path.join(d, "background.png"))
                     game.add(obj)
-                    btn.collection.e_scenes = None
+#                    btn.collection.e_scenes = None
+                    btn.collection.add(obj) #add scene to collection
                     editor_collection_close(game, btn.collection, player)
                 game.user_input("What is the name of this scene to create? (blank to abort)", e_newscene_cb)
 
@@ -5289,6 +5488,9 @@ class Game(object):
             def editor_state_load(game, btn, player):
                 game.restore_state_snapshot()                
 
+            def editor_toggle_edit(game, btn, player):
+                toggle_edit_scripts(game)
+
             #load menu for action editor
             x,y=50,10
             for i, btn in enumerate([
@@ -5368,6 +5570,12 @@ class Game(object):
             
             self.add(MenuItem("e_add_walkareapoint", editor_add_walkareapoint, (x+dx, 45), (x+dx,-50), v[0]).smart(self))            
 
+            x = self.resolution[0]-100
+            btn = MenuItem("e_edit", editor_toggle_edit, (x, 45), (x,-50), v[0], display_text="toggle script editor").smart(self)
+            self.add(btn)            
+            self.edit_scripts_button = btn
+
+
     def finish_tests(self):
         """ called when test runner is ending or handing back control """
         if logging: log.error("Tests completed with %s errors"%(self.errors))
@@ -5411,6 +5619,7 @@ class Game(object):
     def run(self, splash=None, callback=None, icon=None):
         parser = OptionParser()
         parser.add_option("-a", "--alloweditor", action="store_true", dest="allow_editor", help="Enable editor via F1 key")
+#        parser.add_option("-b", "--blank", action="store_true", dest="force_editor", help="smart load the game but enter the editor")
         parser.add_option("-c", "--contrast", action="store_true", dest="high_contrast", help="Play game in high contrast mode (for vision impaired players)", default=False)
         parser.add_option("-d", "--detailed <scene>", dest="analyse_scene", help="Print lots of info about one scene (best used with test runner)")
         parser.add_option("-e", "--exceptions", action="store_true", dest="allow_exceptions", help="Switch off exception catching.")
@@ -5652,7 +5861,8 @@ class Game(object):
             debug_rect = None            
             if self.enabled_editor == True and self.debug_font:
                 dcol = (255,255,120)
-                debug_rect = self.screen.blit(self.debug_font.render("%i, %i"%(m[0], m[1]), True, dcol), (950,10))
+                #print the mouse location on the screen
+                debug_rect = self.screen.blit(self.debug_font.render("%i, %i"%(m[0], m[1]), True, dcol), (self.resolution[0]-80,5))
                 if isinstance(self.editing, Actor):
                     action, size = "none", ""
                     if self.editing.action:
@@ -5660,7 +5870,7 @@ class Game(object):
                         action = self.editing.action.name
                         size = " %ix%i"%(actor_img.get_width(), actor_img.get_height())
                     img_obj_details = self.debug_font.render("%s (%s%s)"%(self.editing.name, action, size), True, dcol)
-                    rect_obj_details = self.screen.blit(img_obj_details, (1000-img_obj_details.get_width(), 40))
+                    rect_obj_details = self.screen.blit(img_obj_details, (self.resolution[0]-10-img_obj_details.get_width(), 30))
                     debug_rect.union_ip(rect_obj_details)
                 
             #pt = m
@@ -6173,7 +6383,7 @@ class Game(object):
         ody = 900
         menu = []
         for item in items:
-            txt = self.add(MenuText(item[0], (x,y), (840,170), item[0], wrap=800, interact=item[1], spos=(x, y), hpos=(x, y + ody), key="f", font=factory.font, size=factory.size), False, MenuItem)
+            txt = self.add(MenuText(item[0], (x,y), (840,170), item[0], wrap=800, interact=item[1], spos=(x, y), hpos=(x, y + ody), key="f", font=factory.font, size=factory.size, colour=factory.colour), False, MenuItem)
             y += dy
             x += dx
             menu.append(txt)
@@ -6297,7 +6507,8 @@ def create_tiled_background(resolution, colour1, colour2):
             i += 1
             r = pygame.Rect(x,y,d,d)
             c = [colour1, colour2][i%2]
-            pygame.gfxdraw.box(s, r, c)
+#            pygame.gfxdraw.box(s, r, c)
+            pygame.draw.rect(s, c, r) 
     return s
     
 TOP_MENU = ("menu_pyvida", "menu_project", "menu_scene", "e_scene", "e_add")
@@ -6380,7 +6591,7 @@ def create_standalone_menu(game):
     
         
 
-def main():
+def main(smart=False):
     """ When run as a standalone, show the game editor for a new game """
     # Load the editor defaults
     pyvida_defaults = "saves"
@@ -6407,6 +6618,7 @@ def main():
     game.projectsettings._game = game
     game.add(s)
     game.scene = s
+
     game.ENABLE_EDITOR = True
     game.smart()
     def load_standalone(game):
