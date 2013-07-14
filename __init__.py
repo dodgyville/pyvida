@@ -104,7 +104,7 @@ DEBUG_ASTAR = False
 
 ENABLE_EDITOR = False #default for editor
 ENABLE_PROFILING = False
-ENABLE_LOGGING = True
+ENABLE_LOGGING = False
 DEFAULT_TEXT_EDITOR = "gedit"
 
 ENGINE_VERSION = 2 #v1 = used for spaceout
@@ -292,7 +292,7 @@ if logging:
     if ENABLE_LOGGING:
         log_level = logging.DEBUG #what level of debugging
     else:
-        log_level = logging.ERROR
+        log_level = logging.WARNING
 
     LOG_FILENAME = os.path.join(SAVE_DIR, 'pyvida4.log')
     log = logging.getLogger('pyvida4')
@@ -370,8 +370,8 @@ ONCE = 3
 ONCE_BLOCK_DELTA = 4 #play action once, based on action deltas
 REPEAT = 5 #loop action, but reset position each cycle
 
-DEFAULT_FRAME_RATE = 60
-DEFAULT_ACTION_FRAME_RATE = 20
+DEFAULT_FRAME_RATE = 30
+DEFAULT_ACTION_FRAME_RATE = 30
 
 DEFAULT_FONT = os.path.join("data/fonts/", "vera.ttf")
 MENU_COLOUR = (42, 127, 255)
@@ -836,7 +836,6 @@ def load_font(fname, size):
         if logging: log.warning("Can't find local %s font, so defaulting to pyvida one"%fname)
         this_dir, this_filename = os.path.split(__file__)
         myf = os.path.join(this_dir, fname)
-        print(myf, size)
         f = Font(myf, size)
     return f
 
@@ -1472,6 +1471,11 @@ class Actor(object):
     @property
     def solid_area(self):
         return self._solid_area.move(self.x, self.y)  
+
+
+    def add(self, action): #add an action (not really used outside of smart
+        self.actions[action.name] = action
+        action.actor = self
         
     def smart(self, game, img=None, using=None, idle="idle", action_prefix = ""): #actor.smart
         """ 
@@ -1770,7 +1774,7 @@ class Actor(object):
             _rect = screen.blit(img, r, special_flags=self._blit_flag)
         if self.game.editing == self: #draw bounding box
             r2 = r.inflate(-2,-2)
-            pygame.draw.rect(screen, (0,255,0), r2, 1)
+ #           pygame.draw.rect(screen, (0,255,0), r2, 1)
         return _rect
 
     def draw(self, screen=None): #actor.draw
@@ -2634,6 +2638,9 @@ class Actor(object):
         
     def on_continues(self, text, action="portrait", position=POSITION_TEXT):
         """ Like on_says, but animate the display of text, allowing a skip """
+        if self.game.testing: 
+            self._event_finish()
+            return        
         kwargs =  self._get_text_details()        
         kwargs["show"] = 0
         txt = self.game.add(Text("txt", (self.cx, self.cy), (self.cx, self.cy), text, **kwargs), False, ModalItem)        
@@ -2690,13 +2697,14 @@ class Actor(object):
                 oy, oy2, iy = 190, -400, 160
             else:
                 oy, oy2, iy = 420, self.game.resolution[1]+40, 360
+        ox = 514
         #test for a high contrast version                
         high_contrast = "%s_high_contrast"%background                
         myd = os.path.join(self.game.item_dir, high_contrast)
         if self.game and self.game.settings and self.game.settings.high_contrast and os.path.isdir(myd):
-            msg = self.game.add(ModalItem(background, close_msgbox,(54, oy)).smart(self.game, using=high_contrast))
+            msg = self.game.add(ModalItem(background, close_msgbox,(ox, oy+200)).smart(self.game, using=high_contrast))
         else:
-            msg = self.game.add(ModalItem(background, close_msgbox,(54, oy)).smart(self.game))
+            msg = self.game.add(ModalItem(background, close_msgbox,(ox, oy+200)).smart(self.game))
         msg.actor = self
 
         kwargs =  self._get_text_details(font=font, size=size)
@@ -2720,10 +2728,10 @@ class Actor(object):
         ok = self.game.add(Item("ok").smart(self.game), False, ModalItem)
         ok.interact = close_msgbox
         
-        self.game.stuff_event(ok.on_place, (900, iy+210))
+        self.game.stuff_event(ok.on_place, (930, iy+260))
         self.game.stuff_event(portrait.on_place, (px, py))
         self.game.stuff_event(txt.on_place, (220, iy+5))
-        self.game.stuff_event(msg.on_goto, (54, iy))
+        self.game.stuff_event(msg.on_goto, (ox, iy+216))
     
     def on_asks(self, *args, **kwargs):
         """ A pseudo-queuing function. Display a speech bubble with text and several replies, and wait for player to pick one.
@@ -3837,7 +3845,7 @@ class Mixer(object):
                 log.info("Loading sfx file %s"%fname)
                 if pygame.mixer: 
                     sfx = pygame.mixer.Sound(fname)
-                    sfx.set_volume(self.game.settings.sfx_volume)
+                    if self.game.settings: sfx.set_volume(self.game.settings.sfx_volume)
             else:
                 log.warning("Music sfx %s missing."%fname)
                 return sfx
@@ -4131,7 +4139,7 @@ class Game(object):
         
         self.existing = False #is there a game in progress (either loaded or saved)
         self.version = version
-
+        self.high_contrast = False
 
         self.allow_save = False #are we in the middle of a game, if so, allow save
         self.game = self
@@ -4292,7 +4300,8 @@ class Game(object):
     
     def apply_settings(self):
         """ Apply as many settings in .settings as possible """
-        if not self.settings: return
+        if not self.settings: 
+            self.settings = Settings()
         #apply high contrast
         if not hasattr(self.settings, "high_contrast"): self.settings.high_contrast = False
         self.high_contrast = self.settings.high_contrast
@@ -5792,7 +5801,7 @@ class Game(object):
             else: #wait until time passes
                 if datetime.now() > self._wait: self.finished_wait()
                 
-            if self.scene and self.screen and self.settings and self.settings.high_contrast:
+            if self.scene and self.screen and (self.high_contrast or self.settings and self.settings.high_contrast):
                 contrast_filter = pygame.Surface(self.resolution)
                 contrast_filter.fill((0,0,0))
                 contrast_filter.set_alpha(200)
