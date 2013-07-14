@@ -102,9 +102,9 @@ except ImportError:
 #DEBUG_ASTAR = True
 DEBUG_ASTAR = False
 
-ENABLE_EDITOR = True #default for editor
+ENABLE_EDITOR = False #default for editor
 ENABLE_PROFILING = False
-ENABLE_LOGGING = True
+ENABLE_LOGGING = False
 DEFAULT_TEXT_EDITOR = "gedit"
 
 ENGINE_VERSION = 2 #v1 = used for spaceout
@@ -292,7 +292,7 @@ if logging:
     if ENABLE_LOGGING:
         log_level = logging.DEBUG #what level of debugging
     else:
-        log_level = logging.ERROR
+        log_level = logging.WARNING
 
     LOG_FILENAME = os.path.join(SAVE_DIR, 'pyvida4.log')
     log = logging.getLogger('pyvida4')
@@ -370,8 +370,8 @@ ONCE = 3
 ONCE_BLOCK_DELTA = 4 #play action once, based on action deltas
 REPEAT = 5 #loop action, but reset position each cycle
 
-DEFAULT_FRAME_RATE = 60
-DEFAULT_ACTION_FRAME_RATE = 20
+DEFAULT_FRAME_RATE = 30
+DEFAULT_ACTION_FRAME_RATE = 30
 
 DEFAULT_FONT = os.path.join("data/fonts/", "vera.ttf")
 MENU_COLOUR = (42, 127, 255)
@@ -658,7 +658,7 @@ def process_step(game, step):
     else:
         label = ""
     
-    if function_name == "interact":
+    if function_name == "interact":        
         if logging: log.info("TEST SUITE: %s%s. %s with %s"%(game.steps_complete, label, function_name, actor))
         game.mouse_mode = MOUSE_INTERACT
         if game.trunk_step and game.output_walkthrough: 
@@ -836,7 +836,6 @@ def load_font(fname, size):
         if logging: log.warning("Can't find local %s font, so defaulting to pyvida one"%fname)
         this_dir, this_filename = os.path.split(__file__)
         myf = os.path.join(this_dir, fname)
-        print(myf, size)
         f = Font(myf, size)
     return f
 
@@ -1472,6 +1471,11 @@ class Actor(object):
     @property
     def solid_area(self):
         return self._solid_area.move(self.x, self.y)  
+
+
+    def add(self, action): #add an action (not really used outside of smart
+        self.actions[action.name] = action
+        action.actor = self
         
     def smart(self, game, img=None, using=None, idle="idle", action_prefix = ""): #actor.smart
         """ 
@@ -1770,7 +1774,7 @@ class Actor(object):
             _rect = screen.blit(img, r, special_flags=self._blit_flag)
         if self.game.editing == self: #draw bounding box
             r2 = r.inflate(-2,-2)
-            pygame.draw.rect(screen, (0,255,0), r2, 1)
+ #           pygame.draw.rect(screen, (0,255,0), r2, 1)
         return _rect
 
     def draw(self, screen=None): #actor.draw
@@ -2634,6 +2638,9 @@ class Actor(object):
         
     def on_continues(self, text, action="portrait", position=POSITION_TEXT):
         """ Like on_says, but animate the display of text, allowing a skip """
+        if self.game.testing: 
+            self._event_finish()
+            return        
         kwargs =  self._get_text_details()        
         kwargs["show"] = 0
         txt = self.game.add(Text("txt", (self.cx, self.cy), (self.cx, self.cy), text, **kwargs), False, ModalItem)        
@@ -2660,6 +2667,7 @@ class Actor(object):
         if self.game.testing: 
             self._event_finish()
             return
+
         self.game.block = True #stop other events until says finished
         self._event_finish(block=True) #remove the on_says
 
@@ -2691,7 +2699,14 @@ class Actor(object):
                 oy, oy2, iy = 190, -400, 160
             else:
                 oy, oy2, iy = 420, self.game.resolution[1]+40, 360
-        msg = self.game.add(ModalItem(background, close_msgbox,(54, oy)).smart(self.game))
+        ox = 514
+        #test for a high contrast version                
+        high_contrast = "%s_high_contrast"%background                
+        myd = os.path.join(self.game.item_dir, high_contrast)
+        if self.game and self.game.settings and self.game.settings.high_contrast and os.path.isdir(myd):
+            msg = self.game.add(ModalItem(background, close_msgbox,(ox, oy+200)).smart(self.game, using=high_contrast))
+        else:
+            msg = self.game.add(ModalItem(background, close_msgbox,(ox, oy+200)).smart(self.game))
         msg.actor = self
 
         kwargs =  self._get_text_details(font=font, size=size)
@@ -2715,10 +2730,10 @@ class Actor(object):
         ok = self.game.add(Item("ok").smart(self.game), False, ModalItem)
         ok.interact = close_msgbox
         
-        self.game.stuff_event(ok.on_place, (900, iy+210))
+        self.game.stuff_event(ok.on_place, (930, iy+260))
         self.game.stuff_event(portrait.on_place, (px, py))
         self.game.stuff_event(txt.on_place, (220, iy+5))
-        self.game.stuff_event(msg.on_goto, (54, iy))
+        self.game.stuff_event(msg.on_goto, (ox, iy+216))
     
     def on_asks(self, *args, **kwargs):
         """ A pseudo-queuing function. Display a speech bubble with text and several replies, and wait for player to pick one.
@@ -3191,7 +3206,7 @@ class Text(Item):
     def update_text(self, txt=""): #rebuild the text image
         if txt: self.text = txt
         self.img = self._img = self._generate_text(self.text, self.colour, offset=self.offset)
-        self._mouse_move_img = self._generate_text(self.text, (255,255,255), offset=self.offset)        
+        self._mouse_move_img = self._generate_text(self.text, (255,255,255), offset=self.offset) #overlay
 
     def _on_mouse_move_utility(self, x, y, button, modifiers): #text.mouse_move single button interface
         self.img = self._mouse_move_img
@@ -3677,7 +3692,7 @@ class Scene(object):
         self.music_fname = fname
         self._event_finish()
 
-    def _ambient(self, fname):
+    def _ambient(self, fname, description=None):
         if fname and not os.path.exists(fname): #try scene directory
             sdir = os.path.join(os.getcwd(),os.path.join(self.game.scene_dir, self.name))
             fname = os.path.join(sdir, fname+".ogg")
@@ -3689,10 +3704,10 @@ class Scene(object):
         if self.game and self.game.scene and self.game.scene == self:
             if self.game.camera._ambient_sound: self.game.camera._ambient_sound.stop()
             if self.ambient_fname:
-                self.game.camera._ambient_sound = self.game.mixer._sfx_play(self.ambient_fname, loops=-1)
+                self.game.camera._ambient_sound = self.game.mixer._sfx_play(self.ambient_fname, description, loops=-1)
     
 
-    def on_ambient(self, fname=""): #set the ambient sounds for this scene
+    def on_ambient(self, fname="", description=None): #set the ambient sounds for this scene
         self._ambient(fname)
         self._event_finish()
 
@@ -3810,10 +3825,11 @@ class Mixer(object):
         if pygame.mixer: pygame.mixer.music.set_volume(val)
         self.game._event_finish()
 
-    def _sfx_play(self, fname=None, loops=0, fade_music=False, store=None):
+    def _sfx_play(self, fname=None, description=None, loops=0, fade_music=False, store=None):
         """
         store = True | False -> store the sfx as a variable on the Game object
         fade_music = False | 0..1.0 -> fade the music to <fade_music> level while playing this sfx
+        description = <string> -> human readable description of sfx
         """
         sfx = None
         if store: setattr(self, store, sfx)
@@ -3823,11 +3839,15 @@ class Mixer(object):
             return sfx 
         
         if fname: 
+            if self.game.settings and self.game.settings.sfx_subtitles and description: #subtitle sfx
+                d = "<sound effect: %s>"%description
+                self.game.message(d)
+
             if os.path.exists(fname):
                 log.info("Loading sfx file %s"%fname)
                 if pygame.mixer: 
                     sfx = pygame.mixer.Sound(fname)
-                    sfx.set_volume(self.game.settings.sfx_volume)
+                    if self.game.settings: sfx.set_volume(self.game.settings.sfx_volume)
             else:
                 log.warning("Music sfx %s missing."%fname)
                 return sfx
@@ -3844,8 +3864,8 @@ class Mixer(object):
         if store: setattr(self, store, sfx)
         return sfx
 
-    def on_sfx_play(self, fname=None, loops=0, fade_music=False, store=None):
-        self._sfx_play(fname, loops, fade_music, store)
+    def on_sfx_play(self, fname=None, description=None, loops=0, fade_music=False, store=None):
+        self._sfx_play(fname, description, loops, fade_music, store)            
         self.game._event_finish()
 
     def on_sfx_stop(self, sfx=None):
@@ -4064,7 +4084,9 @@ class Settings(object):
 #        self.music_volume = 0.6
         self.music_volume = 0.6 #XXX music disabled by default
         self.sfx_volume = 0.8
+        self.sfx_subtitles = False
         self.voices_volume = 0.8
+        self.voices_subtitles = True
         
         self.resolution_x = 1024
         self.resolution_y = 768
@@ -4078,6 +4100,8 @@ class Settings(object):
         self.portal_exploration = DEFAULT_EXPLORATION
         self.textspeed = NORMAL
         self.fps = DEFAULT_FRAME_RATE
+        
+        self.high_contrast = False
                 
         self.invert_mouse = False #for lefties
         self.language = "en"
@@ -4148,7 +4172,7 @@ class Game(object):
         
         self.existing = False #is there a game in progress (either loaded or saved)
         self.version = version
-
+        self.high_contrast = False
 
         self.allow_save = False #are we in the middle of a game, if so, allow save
         self.game = self
@@ -4196,6 +4220,12 @@ class Game(object):
         self._menu_modal = False #is this menu blocking game events
         self.modals = []
         self.menu_mouse_pressed = False #stop editor from using menu clicks as edit flags
+        
+        self.messages = [] #non-interactive system messages to display to user (eg sfx subtitles (message, time))
+        self.message_item = Text
+        self.message_duration = 5 #how many seconds to display each message
+        self.message_position = (10, 600) #position of message queue
+        self._message_object = None #special object for onscreen messages
 
         self.mouse_mode = MOUSE_INTERACT #what activity does a mouse click trigger?
         self.mouse_cursors = {} #available mouse images
@@ -4306,7 +4336,13 @@ class Game(object):
     
     def apply_settings(self):
         """ Apply as many settings in .settings as possible """
-        if not self.settings: return
+        if not self.settings: 
+            self.settings = Settings()
+        #apply high contrast
+        if not hasattr(self.settings, "high_contrast"): self.settings.high_contrast = False
+        self.high_contrast = self.settings.high_contrast
+
+        if not hasattr(self.settings, "sfx_subtitles"): self.settings.sfx_subtitles = False
         #apply fullscreen
         if pygame.display.get_surface(): #already existing screen
             is_fullscreen = pygame.display.get_surface().get_flags() & pygame.FULLSCREEN
@@ -4532,6 +4568,8 @@ class Game(object):
         obj.game = self
         return obj
         
+    def message(self, text): #system message to display on screen (eg sfx subtitles)
+        self.messages.append((text, datetime.now()))
         
     def info(self, text, x, y, align=ALIGN_LEFT): #game.info
         """ On screen at one time can be an info text (eg an object name or menu hover) 
@@ -4618,6 +4656,12 @@ class Game(object):
             self.camera.scene(scene) #one room, assume default
             if player:
                 player.relocate(scene, (300,600))
+                
+        #set up the message object for on-screen system messages (eg sfx subtitles)
+#                        self.game.messages.append((d, datetime.now()))
+        self._message_object = Text("_message object", pos=self.message_position, text="", offset=2)
+        self._message_object.game = self
+        
         if not running_headless: self.set_headless(False) #restore headless state
         self._event_finish(block=False)
 #        if draw_progress_bar: print("progress bar will be",self.progress_bar_count)
@@ -4932,11 +4976,13 @@ class Game(object):
             print("relocated debug")
             self.items["debug"].relocate(self.scene, (0,50))
         elif self.ENABLE_EDITOR and key == K_F5:
-            from scripts.chapter11 import interact_Damien
-            interact_Damien(self, self.actors["Damien"], self.player)
+ #           from scripts.chapter11 import interact_Damien
+#            interact_Damien(self, self.actors["Damien"], self.player)
+            self.message("%s"%datetime.now())
         elif self.ENABLE_EDITOR and key == K_F6:
-            from scripts.chapter7 import _goodbyeboy_cutscene
-            _goodbyeboy_cutscene(self, None, self.player)
+            pass
+#            from scripts.chapter7 import _goodbyeboy_cutscene
+#            _goodbyeboy_cutscene(self, None, self.player)
         elif self.ENABLE_EDITOR and key == K_F7:
 #            self.player.gets(choice(self.items.values()))
             from scripts.chapter3 import _cutscene_battle
@@ -5718,6 +5764,9 @@ class Game(object):
             else:
                 print(e.message)
                 return
+        if options.high_contrast or getattr(self.settings, "high_contrast", False):
+            print("Using high contrast")
+            self.high_contrast = True
 
         if android: android.init() #initialise android framework ASAP
         
@@ -5742,6 +5791,7 @@ class Game(object):
             pygame.display.flip() #show updated display to user
 
         pygame.display.set_caption(self.name)
+        old_surface = None #some FX apply a filter to the screen we need to revert sometimes
         
         #set up music
         if self.settings:
@@ -5774,10 +5824,12 @@ class Game(object):
             else:
                 blank = [self.menu, self.modals]
 
-            if self.scene and self.screen:
+            if self.screen:
                 for group in blank:
                     for obj in group: obj.clear()
-                for w in self.scene.walkareas: w.clear() #clear walkarea if editing
+                if self.scene:
+                    for w in self.scene.walkareas: w.clear() #clear walkarea if editing
+                if self._message_object: self._message_object.clear()
 
             if not self._wait: #process events normally
                 self.handle_pygame_events()
@@ -5785,6 +5837,20 @@ class Game(object):
             else: #wait until time passes
                 if datetime.now() > self._wait: self.finished_wait()
                 
+            if self.scene and self.screen and (self.high_contrast or self.settings and self.settings.high_contrast):
+                contrast_filter = pygame.Surface(self.resolution)
+                contrast_filter.fill((0,0,0))
+                contrast_filter.set_alpha(200)
+                old_surface = pygame.display.get_surface().copy()
+                pygame.display.get_surface().blit(contrast_filter, (0,0))
+                #only draw low contrast on areas that AREN'T hotspots
+                for group in [self.scene.objects.values()]: #, self.scene.foreground, self.menu, self.modals]:
+                    for obj in group:
+                        #contrast the clickable area if a portal or has no image
+                        if not obj._image() or type(obj) in [Portal]:
+                            r = obj.clickable_area.inflate(10,10)
+                            pygame.display.get_surface().blit(old_surface, r, r)
+
                 
             if self.scene and self.screen: #draw objects
                 objects = sorted(self.scene.objects.values(), key=lambda x: x.y, reverse=False)
@@ -5792,12 +5858,23 @@ class Game(object):
                 for group in [objects, self.scene.foreground, self.menu, self.modals]:
                     for obj in group: obj.draw()
                 for w in self.scene.walkareas: w.draw() #draw walkarea if editing
-
+                if self._message_object: self._message_object.draw()
+                
             if self.scene and self.screen: #update objects
                 for group in [self.scene.objects.values(), self.menu, self.modals]:
                     for obj in group: obj._update(dt)
                 if self.mouse_cursor and type(self.mouse_cursor) != int:
                     self.mouse_cursor._update(dt)
+                if self._message_object: #update message_object. TODO move to own _update method?
+                    self._message_object.x, self._message_object.y = self.message_position
+                    for message in self.messages:
+                        m, t = message
+                        if t < datetime.now() - timedelta(seconds=self.message_duration):
+                            self.messages.remove(message) #remove out-of-date messages
+                    txt = "\n".join([n[0] for n in self.messages]) if len(self.messages) > 0 else " "
+                    self._message_object.update_text(txt)
+                    self._message_object.y -= self._message_object.img.get_height()
+                    #self._message_object._update(dt)
                                 
             #draw mouse
             m = pygame.mouse.get_pos()
@@ -5867,6 +5944,9 @@ class Game(object):
                 if delay > 0: pygame.time.delay(int(delay))
             
                 pygame.display.flip() #show updated display to user
+                if old_surface: #restore the unfiltered surface
+                    pygame.display.get_surface().blit(old_surface, (0, 0))
+
 
             #if profiling art, save a screenshot if needed
             if self.scene and self.artreactor and self.artreactor_scene != self.scene:
@@ -5879,6 +5959,9 @@ class Game(object):
                 if not self.hide_cursor and cursor_rect: self.screen.blit(self.scene.background(), cursor_rect, cursor_rect)
                 if self.info_image: self.screen.blit(self.scene.background(), info_rect, info_rect)
                 if debug_rect: self.screen.blit(self.scene.background(), debug_rect, debug_rect)
+            else:
+                if not self.hide_cursor and cursor_rect:
+                    pygame.draw.rect(self.screen, (0, 0, 0), cursor_rect)
 
             #if testing, instead of user input, pull an event off the test suite
             if self.testing and len(self.events) == 0 and not self._event: 
