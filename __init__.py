@@ -1220,6 +1220,17 @@ class WalkArea(object):
                     pt_rect = crosshair(self.game.screen, pt, (200,0,5))
                     self._rect.union_ip(pt_rect)
 
+class answer(object):
+    """
+    A decorator for functions that you wish to use as options in an Actor.on_ask event
+
+    Keyword arguments:
+    opt -- the text to display in the question
+    """
+    def __init__(self, opt):
+        self.opt = opt
+    def __call__(self, answer_callback):
+        return (self.opt, answer_callback)
 
 class Actor(object):
     """
