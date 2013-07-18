@@ -1575,6 +1575,15 @@ class Actor(object):
         if self.game and self.game.memory_save:
             self._unload()
 
+        #potentially load some defaults for this actor
+        filepath = os.path.join(myd, "%s.defaults"%slugify(self.name).lower())
+        if os.path.isfile(filepath):
+            print("USING %s"%filepath)
+            actor_defaults = json.loads(open(filepath).read())
+            for key, val in actor_defaults.items():
+                self.__dict__[key] = val
+            
+
         #potentially load some interact/use/look scripts for this actor
         filepath = os.path.join(myd, "%s.py"%slugify(self.name).lower())
         if os.path.isfile(filepath):
@@ -1724,7 +1733,7 @@ class Actor(object):
 #        self.game.screen.blit(self.game.scene.background(), (self.x, self.y), self._image.get_rect())
         if self.game and self.game.headless: return #headless mode skips sound and visuals
 
-        if self._rect and self.game.scene.background():
+        if self._rect and self.game.scene and self.game.scene.background():
             self.game.screen.blit(self.game.scene.background(), self._rect, self._rect)
         if self.game.editing == self:
             r = self._crosshair((255,0,0), (self.ax, self.ay))
@@ -1835,6 +1844,7 @@ class Actor(object):
             #draw name/text point
             self._rect.union_ip(crosshair(screen, (self.nx, self.ny), (255,0,255)))
             stats = self.game.debug_font.render("name %0.2f, %0.2f"%(self._nx, self._ny), True, (255,50,255))
+
             self._rect.union_ip(screen.blit(stats, stats.get_rect().move(self.nx, self.ny)))
 
             #draw speech point
@@ -2572,6 +2582,7 @@ class Actor(object):
 
 
     def _gets(self, item, remove=True):
+
         if type(item) == str: 
             if item in self.game.items:
                 item = self.game.items[item]
@@ -4265,6 +4276,7 @@ class Game(object):
 
         #set up text overlay image
         self.info_colour = (255,255,220)
+
         self.info_image = None
         self.info_position = None
         self.SAYS_WIDTH = 660  #what is the wrap for text in the on_says event?
@@ -5057,6 +5069,7 @@ class Game(object):
             if event.type == QUIT:
                 self.quit = True
                 return
+
             elif event.type == MOUSEBUTTONDOWN:
                 self._on_mouse_down(m[0], m[1], event.button, None)
             elif event.type == MOUSEBUTTONUP:
