@@ -1586,6 +1586,15 @@ class Actor(object):
         if self.game and self.game.memory_save:
             self._unload()
 
+        #potentially load some defaults for this actor
+        filepath = os.path.join(myd, "%s.defaults"%slugify(self.name).lower())
+        if os.path.isfile(filepath):
+            print("USING %s"%filepath)
+            actor_defaults = json.loads(open(filepath).read())
+            for key, val in actor_defaults.items():
+                self.__dict__[key] = val
+            
+
         #potentially load some interact/use/look scripts for this actor
         filepath = os.path.join(myd, "%s.py"%slugify(self.name).lower())
         if os.path.isfile(filepath):
@@ -1735,7 +1744,7 @@ class Actor(object):
 #        self.game.screen.blit(self.game.scene.background(), (self.x, self.y), self._image.get_rect())
         if self.game and self.game.headless: return #headless mode skips sound and visuals
 
-        if self._rect and self.game.scene.background():
+        if self._rect and self.game.scene and self.game.scene.background():
             self.game.screen.blit(self.game.scene.background(), self._rect, self._rect)
         if self.game.editing == self:
             r = self._crosshair((255,0,0), (self.ax, self.ay))
@@ -1846,6 +1855,7 @@ class Actor(object):
             #draw name/text point
             self._rect.union_ip(crosshair(screen, (self.nx, self.ny), (255,0,255)))
             stats = self.game.debug_font.render("name %0.2f, %0.2f"%(self._nx, self._ny), True, (255,50,255))
+
             self._rect.union_ip(screen.blit(stats, stats.get_rect().move(self.nx, self.ny)))
 
             #draw speech point
@@ -2583,6 +2593,7 @@ class Actor(object):
 
 
     def _gets(self, item, remove=True):
+
         if type(item) == str: 
             if item in self.game.items:
                 item = self.game.items[item]
@@ -2659,7 +2670,7 @@ class Actor(object):
         self.game.stuff_event(self.game.on_clear_modals) #clear the text from the screen
         self.game.stuff_event(self.on_wait, None) #push an on_wait as the final event in this script        
 
-    def on_says(self, text, action="portrait", sfx=-1, block=True, modal=True, font=None, background="msgbox", size=None, position=POSITION_BOTTOM):
+    def on_says(self, text, action="portrait", sfx=-1, block=True, modal=True, font=None, background="msgbox", size=None, position=None):
         """ A queuing function. Display a speech bubble with text and wait for player to close it.
         
         Examples::
@@ -2683,6 +2694,8 @@ class Actor(object):
         self._event_finish(block=True) #remove the on_says
 
         self.game.stuff_event(self.on_wait, None) #push an on_wait as the final event in this script
+
+        position = position if position else self.game.default_says_position
         def close_msgbox(game, box, player):
             if game._event and not game._event[0] == msg.actor.on_wait: return
             try:
@@ -2721,7 +2734,7 @@ class Actor(object):
         kwargs =  self._get_text_details(font=font, size=size)
         txt = self.game.add(Text("txt", (220, oy2 + 18), (840, iy+130), text, **kwargs), False, ModalItem)
         
-        #get a portrait for this speech
+        #get a portrait for this speech if one hasn't been passed in
         if type(action) == str: action = self.actions.get(action, None)
         if not action: action = self.actions.get("portrait", self.actions.get("idle", None))
         
@@ -3881,6 +3894,31 @@ class Mixer(object):
         if sfx: sfx.stop()
         self.game._event_finish()
 
+class Filter(object):
+    """ Stub class for creating special camera|scene filters (like tints, sepia, etc) 
+        Can be added to a scene or a camera.
+    """
+    def update(self, dt):
+        """ called regularly """
+        pass
+
+    def behind(self, game, surface=None):
+        """ render to the surface before everything else """
+        pass
+
+
+    def background(self, game, surface=None):
+        """ render after the background has been drawn but before everything else """
+        pass
+
+    def front(self, game, surface=None):
+        """ draw after all actors and items have been rendered but before menu """
+        pass
+
+    def overlay(self, game, surface=None):
+        """ draw over everything, including menu """
+        pass
+
 
 class Camera(object):
     """ Handles the current viewport, transitions and camera movements """
@@ -3890,6 +3928,7 @@ class Camera(object):
         self._effect = None #what effect are we applying?
         self._count = 0
         self._image = None
+        self.filters = [] 
         self._viewport = None #only draw within this Rect
         self._ambient_sound = None
         
@@ -3942,6 +3981,11 @@ class Camera(object):
                 return
             log.info("playing music {}".format(game.scene.music_fname))
             self.game.mixer._music_play(game.scene.music_fname)
+
+    def on_add(self, obj):
+        """ add a filter to the camera """
+        self.filters.append(obj)
+
 
     def on_scene(self, scene):
         """ change the scene """
@@ -4243,9 +4287,13 @@ class Game(object):
 
         #set up text overlay image
         self.info_colour = (255,255,220)
+
         self.info_image = None
         self.info_position = None
         self.SAYS_WIDTH = 660  #what is the wrap for text in the on_says event?
+
+        #defaults for Actor.says
+        self.default_says_position = POSITION_LOW
         
         #variables for special events such as on_wait
         self._wait = None #what time to hold processing events to
@@ -5032,6 +5080,7 @@ class Game(object):
             if event.type == QUIT:
                 self.quit = True
                 return
+
             elif event.type == MOUSEBUTTONDOWN:
                 self._on_mouse_down(m[0], m[1], event.button, None)
             elif event.type == MOUSEBUTTONUP:
@@ -5899,7 +5948,11 @@ class Game(object):
             #pygame.draw.line(self.screen, colour, (pt[0],pt[1]-5), (pt[0],pt[1]+5))
             #pygame.draw.line(self.screen, colour, (pt[0]-5,pt[1]), (pt[0]+5,pt[1]))
 
-            if self.camera and self.camera._effect:
+            if self.camera and self.camera.filters: #apply filter.overlays
+                for f in self.camera.filters:
+                    f.overlay(self, self.screen)
+
+            if self.camera and self.camera._effect: #apply effects
                 finished = self.camera._effect(self.screen)
                 if finished: self.camera._finished_effect()
                 
