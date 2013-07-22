@@ -124,6 +124,7 @@ POSITION_TOP = 1
 POSITION_LOW = 2
 POSITION_TEXT = 3 #play at text point of actor
 
+
 #MUSIC MODES
 QUICKCUT = 1
 FADEOUT = 2
@@ -2695,7 +2696,8 @@ class Actor(object):
 
         self.game.stuff_event(self.on_wait, None) #push an on_wait as the final event in this script
 
-        position = position if position else self.game.default_says_position
+        position = position if position else self.game.default_says_position_vertical
+        position_horizontal = self.game.default_says_position_horizontal
         def close_msgbox(game, box, player):
             if game._event and not game._event[0] == msg.actor.on_wait: return
             try:
@@ -2721,7 +2723,14 @@ class Actor(object):
                 oy, oy2, iy = 190, -400, 160
             else:
                 oy, oy2, iy = 420, self.game.resolution[1]+40, 360
-        ox = 514
+
+        if position_horizontal == LEFT:
+            ox = 50
+        if position_horizontal == RIGHT:
+            ox = self.game.resolution[0] - 50
+        elif position_horizontal == CENTER:
+            ox = self.game.resolution[0]/2
+        
         #test for a high contrast version                
         high_contrast = "%s_high_contrast"%background                
         myd = os.path.join(self.game.item_dir, high_contrast)
@@ -4292,8 +4301,9 @@ class Game(object):
         self.info_position = None
         self.SAYS_WIDTH = 660  #what is the wrap for text in the on_says event?
 
-        #defaults for Actor.says
-        self.default_says_position = POSITION_LOW
+        #defaults for Actor.on_says and Actor.on_asks
+        self.default_says_position_vertical = POSITION_LOW
+        self.default_says_position_horizontal = CENTER
         
         #variables for special events such as on_wait
         self._wait = None #what time to hold processing events to
