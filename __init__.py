@@ -1590,7 +1590,6 @@ class Actor(object):
         #potentially load some defaults for this actor
         filepath = os.path.join(myd, "%s.defaults"%slugify(self.name).lower())
         if os.path.isfile(filepath):
-            print("USING %s"%filepath)
             actor_defaults = json.loads(open(filepath).read())
             for key, val in actor_defaults.items():
                 self.__dict__[key] = val
@@ -1599,7 +1598,6 @@ class Actor(object):
         #potentially load some interact/use/look scripts for this actor
         filepath = os.path.join(myd, "%s.py"%slugify(self.name).lower())
         if os.path.isfile(filepath):
-            print("USING %s"%filepath)
             #add file directory to path so that import can find it
             if os.path.dirname(filepath) not in sys.path: sys.path.append(os.path.dirname(filepath))
             #add to the list of modules we are tracking
@@ -5581,7 +5579,7 @@ class Game(object):
                         ("e_action_delta", editor_action_delta, "d", "edit action deltas"),
                         ("e_actions_close", editor_actions_close, "x", "close action editor")]):
                 txt,fn,k,display_text = btn
-                self.add(MenuItem(txt, fn, (x+i*40, y), (x+i*40,-50), k, display_text=display_text).smart(self))
+                self.add(MenuItem(txt, fn, (x+i*40, y), (x+i*40,-50), k, display_text=display_text).smart(self), replace=True)
 
             #load menu for delta editor
             x,y=50,10
@@ -5590,46 +5588,46 @@ class Game(object):
                         ("e_frame_next", editor_frame_next, "n"),
                         ("e_delta_close", editor_delta_close, "x")]):
                 txt,fn,k = btn
-                self.add(MenuItem(txt, fn, (x+i*40, y), (x+i*40,-50), k).smart(self))
+                self.add(MenuItem(txt, fn, (x+i*40, y), (x+i*40,-50), k).smart(self), replace=True)
                 
             #load menu for editor
-            self.add(MenuItem("e_load", editor_load, (50, 10), (50,-50), "l").smart(self))
-            self.add(MenuItem("e_save", editor_save, (90, 10), (90,-50), "s").smart(self))
-            self.add(MenuItem("e_add", editor_add, (130, 10), (130,-50), "a").smart(self))
-            self.add(MenuItem("e_delete", editor_delete, (170, 10), (170,-50), "a").smart(self))
-            self.add(MenuItem("e_prev", editor_prev, (210, 10), (210,-50), "[").smart(self))
-            self.add(MenuItem("e_next", editor_next, (250, 10), (250,-50), "]").smart(self))
-            self.add(MenuItem("e_walk", editor_walk, (290, 10), (290,-50), "w", display_text="scene walk area").smart(self))
-            self.add(MenuItem("e_portal", editor_portal, (330, 10), (330,-50), "p", display_text="add portal").smart(self))
-            self.add(MenuItem("e_scene", editor_scene, (430, 10), (430,-50), "i", display_text="change scene").smart(self))
-            self.add(MenuItem("e_step", editor_step, (470, 10), (470,-50), "n", display_text="next step").smart(self))
-            self.add(MenuItem("e_jump", editor_jump, (510, 10), (510,-50), "j", display_text="jump to step").smart(self))
-            self.add(MenuItem("e_reload", editor_reload, (550, 10), (550,-50), "r", display_text="reload scripts").smart(self))
-            self.add(MenuItem("e_state_save", editor_state_save, (610, 10), (610,-50), "z", display_text="snapshot game state").smart(self))
-            self.add(MenuItem("e_state_load", editor_state_load, (650, 10), (650,-50), "x", display_text="restore game state snapshot").smart(self))
+            self.add(MenuItem("e_load", editor_load, (50, 10), (50,-50), "l").smart(self), replace=True)
+            self.add(MenuItem("e_save", editor_save, (90, 10), (90,-50), "s").smart(self), replace=True)
+            self.add(MenuItem("e_add", editor_add, (130, 10), (130,-50), "a").smart(self), replace=True)
+            self.add(MenuItem("e_delete", editor_delete, (170, 10), (170,-50), "a").smart(self), replace=True)
+            self.add(MenuItem("e_prev", editor_prev, (210, 10), (210,-50), "[").smart(self), replace=True)
+            self.add(MenuItem("e_next", editor_next, (250, 10), (250,-50), "]").smart(self), replace=True)
+            self.add(MenuItem("e_walk", editor_walk, (290, 10), (290,-50), "w", display_text="scene walk area").smart(self), replace=True)
+            self.add(MenuItem("e_portal", editor_portal, (330, 10), (330,-50), "p", display_text="add portal").smart(self), replace=True)
+            self.add(MenuItem("e_scene", editor_scene, (430, 10), (430,-50), "i", display_text="change scene").smart(self), replace=True)
+            self.add(MenuItem("e_step", editor_step, (470, 10), (470,-50), "n", display_text="next step").smart(self), replace=True)
+            self.add(MenuItem("e_jump", editor_jump, (510, 10), (510,-50), "j", display_text="jump to step").smart(self), replace=True)
+            self.add(MenuItem("e_reload", editor_reload, (550, 10), (550,-50), "r", display_text="reload scripts").smart(self), replace=True)
+            self.add(MenuItem("e_state_save", editor_state_save, (610, 10), (610,-50), "z", display_text="snapshot game state").smart(self), replace=True)
+            self.add(MenuItem("e_state_load", editor_state_load, (650, 10), (650,-50), "x", display_text="restore game state snapshot").smart(self), replace=True)
             
             #a collection widget for adding objects to a scene
-            c = self.add(Collection("e_objects", editor_select_object, (300, 100), (300,-600), K_ESCAPE).smart(self))
-            n = self.add(MenuItem("e_objects_next", editor_collection_next, (700, 610), (700,-100), K_ESCAPE).smart(self))            
-            p = self.add(MenuItem("e_objects_prev", editor_collection_prev, (740, 610), (740,-100), K_ESCAPE).smart(self))            
-            na = self.add(MenuItem("e_objects_newactor", editor_collection_newactor, (620, 610), (680,-100), K_ESCAPE).smart(self))            
-            ni = self.add(MenuItem("e_objects_newitem", editor_collection_newitem, (540, 610), (600,-100), K_ESCAPE).smart(self))            
+            c = self.add(Collection("e_objects", editor_select_object, (300, 100), (300,-600), K_ESCAPE).smart(self), replace=True)
+            n = self.add(MenuItem("e_objects_next", editor_collection_next, (700, 610), (700,-100), K_ESCAPE).smart(self), replace=True)            
+            p = self.add(MenuItem("e_objects_prev", editor_collection_prev, (740, 610), (740,-100), K_ESCAPE).smart(self), replace=True)            
+            na = self.add(MenuItem("e_objects_newactor", editor_collection_newactor, (620, 610), (680,-100), K_ESCAPE).smart(self), replace=True)            
+            ni = self.add(MenuItem("e_objects_newitem", editor_collection_newitem, (540, 610), (600,-100), K_ESCAPE).smart(self), replace=True)            
             na.collection = ni.collection = n.collection = p.collection = c
 
             #collection widget for adding portals to other scenes
-            self.add(Collection("e_portals", editor_select_portal, (300, 100), (300,-600), K_ESCAPE).smart(self))
+            self.add(Collection("e_portals", editor_select_portal, (300, 100), (300,-600), K_ESCAPE).smart(self), replace=True)
             #collection widget for selecting the scene to edit
-            sc = self.add(Collection("e_scenes", editor_select_scene, (300, 100), (300,-600), K_ESCAPE).smart(self))
-            snew = self.add(MenuItem("e_newscene", editor_collection_newscene, (620, 610), (680,-100), K_ESCAPE).smart(self))            
+            sc = self.add(Collection("e_scenes", editor_select_scene, (300, 100), (300,-600), K_ESCAPE).smart(self), replace=True)
+            snew = self.add(MenuItem("e_newscene", editor_collection_newscene, (620, 610), (680,-100), K_ESCAPE).smart(self), replace=True)            
             snew.collection = sc
             #close button for all editor collections
-            self.add(MenuItem("e_close", editor_collection_close, (800, 610), (800,-100), K_ESCAPE).smart(self))
+            self.add(MenuItem("e_close", editor_collection_close, (800, 610), (800,-100), K_ESCAPE).smart(self), replace=True)
             #add menu items for actor editor
             x = 100
             dx = 30
             for i, v in enumerate(["location", "anchor", "stand", "out", "scale", "clickable", "solid", "name", "talk",]):
                 x += dx
-                self.add(MenuItem("e_%s"%v, editor_point, (x, 45), (x,-50), v[0], display_text=v).smart(self))
+                self.add(MenuItem("e_%s"%v, editor_point, (x, 45), (x,-50), v[0], display_text=v).smart(self), replace=True)
             self.items['e_clickable'].interact = editor_edit_rect
             self.items['e_solid'].interact = editor_edit_rect
             self.items['e_out'].set_actions(["idle"], postfix="off")
