@@ -1125,10 +1125,16 @@ class Actor(object):
             d = game.item_dir
         elif isinstance(self, Actor):
             d = game.actor_dir
-        if img:
+        if img: #use supplied images
             images = [img]
-        else:
-            myd = os.path.join(d, name)
+        else: #load from directory
+            #try to find a high contrast version first if needed
+            high_contrast = "%s_high_contrast"%name                
+            myd = os.path.join(d, high_contrast)
+            if self.game and self.game.settings and self.game.settings.high_contrast and os.path.isdir(myd):
+                myd = myd
+            else:
+                myd = os.path.join(d, name)
             
             if not os.path.isdir(myd): #fallback to pyvida defaults
                 this_dir, this_filename = os.path.split(__file__)
@@ -3116,6 +3122,9 @@ class Scene(object):
                 o._set_usage(draw=draw, update=update)
 
     def on_hide(self, objects=None, exclude=[]):
+        """
+        Hide everything in scene
+        """
         self._toggle_usage(objects, exclude, draw=False, update=False)
         self._event_finish()
 
