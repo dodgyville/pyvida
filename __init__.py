@@ -138,6 +138,10 @@ LEFT = 0
 RIGHT = 1
 CENTER = 2
 
+#WALKTHROUGH EXTRAS KEYWORDS
+LABEL = "label"
+HINT = "hint"
+
 COLOURS = {
    "aliceblue": (240, 248, 255),
    "antiquewhite": (250, 235, 215),
@@ -633,16 +637,26 @@ def scene_search(scene, target): #are scenes connected via portals?
 def process_step(game, step):
     """
     Emulate a mouse press event when game.test == True
+
+    Keyword arguments:
+    game -- Game object
+    step -- the essential information for this step eg (use, "item1", "item2") or (interact, "actor")
     """
+    function_name = step[0].__name__ 
+
+    #extras -- a dict containing extra information about this step (eg, label, generator hints (eg this object is an actor)
+    extras = {}
+    if type(step[-1]) == dict:
+        extras = step[-1]
+    elif function_name != "use" and len(step) == 3:
+        extras = {"label":step[2]}
     #modals first, then menu, then regular objects
     fail = False #walkthrough runner can force fail if conditions are bad
-    function_name = step[0].__name__ 
     actor = step[1]
     game.trunk_step = True #is step part of the "official" walkthrough for the game
     if actor[0] == "*": #a non-trunk step (ie probably for testing, not part of walkthrough)
         actor = actor[1:]
         game.trunk_step = False
-    
     actor_object = None
     if actor in game.actors: actor_object = game.actors[actor]
     if actor in game.items: actor_object = game.items[actor]
@@ -654,8 +668,8 @@ def process_step(game, step):
     if game.scene and game.errors < 2 and function_name != "location": #increment time spent in current scene
         game.scene.analytics_count += 1
 
-    if function_name != "use":
-        label = " (%s)"%step[2] if len(step) == 3 else "" #interact/look/goto/location has a label
+    if LABEL in extras:
+        label = " (%s)"%extras[LABEL] #interact/look/goto/location has a label
     else:
         label = ""
     
@@ -698,6 +712,7 @@ def process_step(game, step):
             if logging: log.error("Can't do test suite trigger use, unable to find %s in game objects"%actee)
             if actee not in game.missing_actors: game.missing_actors.append(actee)
             fail = True
+        
         actee_name = actee.display_text if actee and hasattr(actee, "display_text") and actee.display_text else step[2]
         if game.trunk_step and game.output_walkthrough: print("Go to inventory, select %s and use on %s."%(actee_name, actor_name))
 
@@ -720,6 +735,13 @@ def process_step(game, step):
             if logging: log.error("Going from no scene to scene %s"%actor)
         return
     elif function_name == "location": #check current location matches scene "actor"
+        if actor not in game.scenes and game.create_from_walkthrough: #create a directory for this object
+            d = get_smart_directory(game, Scene())
+            myd = os.path.join(d, actor)
+            if not os.path.exists(myd): 
+#                os.makedirs(myd)
+                if logging: log.info("Creating scene at %s"%myd)
+
         if game.trunk_step and game.output_walkthrough: print("Player is in %s."%(actor_name))
         if game.scene.name != actor:
             if logging: log.error("Current scene should be %s, but is currently %s"%(actor, game.scene.name))
@@ -756,6 +778,14 @@ def process_step(game, step):
     if not fail:
         if logging: log.error("Unable to find actor %s in modals, menu or current scene (%s) objects"%(actor, game.scene.name))
         if actor not in game.missing_actors and actor not in game.actors and actor not in game.items: game.missing_actors.append(actor)
+        if HINT in extras and game.create_from_walkthrough: #create a directory for this object
+            d = get_smart_directory(game, extras[HINT]())
+            myd = os.path.join(d, actor)
+            print("Creating %s"%myd)
+            if not os.path.exists(myd): 
+#                os.makedirs(myd)
+                if logging: log.info("Creating %s %s at %s"%(extras[HINT].__name__.lower(), actor, myd)
+
     game.errors += 1
     if game.errors == 2:
         if logging: log.warning("TEST SUITE SUGGESTS GAME HAS GONE OFF THE RAILS AT THIS POINT")
@@ -1233,6 +1263,25 @@ class answer(object):
     def __call__(self, answer_callback):
         return (self.opt, answer_callback)
 
+
+def get_smart_directory(game, obj):
+    """
+    Given an pyvida object, return the smartest parent directory for it.
+    """
+    if isinstance(obj, MenuItem) or isinstance(obj, Collection):
+        d = game.menuitem_dir
+    elif isinstance(obj, ModalItem):
+        d = game.item_dir
+    elif isinstance(obj, Portal):
+        d = game.portal_dir
+    elif isinstance(obj, Item):
+        d = game.item_dir
+    elif isinstance(obj, Actor):
+        d = game.actor_dir
+    elif isinstance(obj, Scene):
+        d = game.scene_dir
+    return d
+
 class Actor(object):
     """
     The base class for all objects in the game, including actors, items, portals, text objects and menu items.
@@ -1512,16 +1561,7 @@ class Actor(object):
         else:
             name = self.name
         if not self.game: self.game = game
-        if isinstance(self, MenuItem) or isinstance(self, Collection):
-            d = game.menuitem_dir
-        elif isinstance(self, ModalItem):
-            d = game.item_dir
-        elif isinstance(self, Portal):
-            d = game.portal_dir
-        elif isinstance(self, Item):
-            d = game.item_dir
-        elif isinstance(self, Actor):
-            d = game.actor_dir
+        d = get_smart_directory(game, self)
             
         myd = os.path.join(d, name)        
         if not os.path.isdir(myd): #fallback to pyvida defaults
@@ -4129,8 +4169,10 @@ class Settings(object):
         self.portal_exploration = DEFAULT_EXPLORATION
         self.textspeed = NORMAL
         self.fps = DEFAULT_FRAME_RATE
+        self.stereoscopic = False #display game in stereoscopic (3D)
         
         self.high_contrast = False
+        self.accessibility_font = None #use this font to override main font (good for using dsylexic-friendly fonts
                 
         self.invert_mouse = False #for lefties
         self.language = "en"
@@ -5713,6 +5755,8 @@ class Game(object):
         parser.add_option("-s", "--step", dest="step", help="Jump to step in walkthrough")
         parser.add_option("-t", "--text", action="store_true", dest="text", help="Play game in text mode (for players with disabilities who use text-to-speech output)", default=False)
         parser.add_option("-w", "--walkthrough", action="store_true", dest="output_walkthrough", help="Print a human readable walkthrough of this game, based on test suites.")
+        parser.add_option("-W", "--walkcreate", action="store_true", dest="create_from_walkthrough", help="Create a smart directory structure based on the walkthrough.")
+
         parser.add_option("-x", "--exit", action="store_true", dest="exit_step", help="Used with --step, exit program after reaching step (good for profiling)")
         parser.add_option("-z", "--zerosound", action="store_true", dest="mute", help="Mute sounds", default=False)        
 
@@ -5749,6 +5793,9 @@ class Game(object):
         if options.output_walkthrough:
             print("Outputting walkthrough")
             self.output_walkthrough = True
+        if options.create_from_walkthrough:
+            print("Creating directory structure from walkthrough")
+            self.create_from_walkthrough = True
         if options.artreactor: 
             t = date.today()
             dname = "artreactor_%s_%s_%s"%(t.year, t.month, t.day)
