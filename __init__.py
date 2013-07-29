@@ -614,7 +614,10 @@ def load_font(fname, size):
         if logging: log.warning("Can't find local %s font, so defaulting to pyvida one"%fname)
         this_dir, this_filename = os.path.split(__file__)
         myf = os.path.join(this_dir, fname)
-        f = Font(myf, size)
+        try:
+            f = Font(myf, size)
+        except:
+            if logging: log.error("Unable to load any fonts called %s"%fname)
     return f
 
 
@@ -4990,10 +4993,10 @@ class Game(object):
         if icon:
             pygame.display.set_icon(pygame.image.load(icon))
         flags = 0
-        if options.fullscreen or self.settings.fullscreen:
+        if options.fullscreen or self.settings and self.settings.fullscreen:
             flags |= pygame.FULLSCREEN 
             self.fullscreen = True
-        if options.high_contrast or getattr(self.settings, "high_contrast", False):
+        if options.high_contrast or self.settings and getattr(self.settings, "high_contrast", False):
             print("Using high contrast")
             self.high_contrast = True
 
