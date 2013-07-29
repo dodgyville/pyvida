@@ -97,7 +97,7 @@ except ImportError:
 #DEBUG_ASTAR = True
 DEBUG_ASTAR = False
 
-ENABLE_EDITOR = False #default for editor
+ENABLE_EDITOR = True #default for editor
 ENABLE_PROFILING = False
 ENABLE_LOGGING = False
 
@@ -1048,6 +1048,7 @@ class Actor(object):
         
 #    alpha = property(get_alpha, set_alpha)
     
+
     def get_scale(self): return self._scale
     def set_scale(self, x): 
         """also change scale of all actions for actor, except talk actions probably"""
@@ -4254,13 +4255,17 @@ class Game(object):
             print("relocated debug")
             self.items["debug"].relocate(self.scene, (0,50))
         elif self.ENABLE_EDITOR and key == K_F5:
+            from scripts.all_chapters import interact_debug_andy
+            interact_debug_andy(self, None, self.player)
  #           from scripts.chapter11 import interact_Damien
 #            interact_Damien(self, self.actors["Damien"], self.player)
-            self.message("%s"%datetime.now())
+#            self.message("%s"%datetime.now())
         elif self.ENABLE_EDITOR and key == K_F6:
-            pass
-#            from scripts.chapter7 import _goodbyeboy_cutscene
-#            _goodbyeboy_cutscene(self, None, self.player)
+#            pass
+            from scripts.chapter7 import _goodbyeboy_cutscene
+            _goodbyeboy_cutscene(self, None, self.player)
+            from scripts.chapter4 import Justin_use_alien_communicator
+            Justin_use_alien_communicator(self.game, self.actors["Justin"], self.items["Alien Communicator"])
         elif self.ENABLE_EDITOR and key == K_F7:
 #            self.player.gets(choice(self.items.values()))
             from scripts.chapter3 import _cutscene_battle
@@ -4992,6 +4997,9 @@ class Game(object):
             print("Using high contrast")
             self.high_contrast = True
 
+#        flags |= pygame.OPENGL
+#        flags |= pygame.HWSURFACE
+#        flags |= pygame.DOUBLEBUF
         self.screen = screen = pygame.display.set_mode(self.resolution, flags)
 
         if android: android.init() #initialise android framework ASAP
