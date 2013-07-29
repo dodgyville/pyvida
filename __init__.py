@@ -1639,10 +1639,11 @@ class Actor(object):
         if logging: log.info("player.set_actions using prefix %s on %s"%(prefix, actions))
         self.editor_clean = False #actor no longer has permissions as set by editor
         for i in actions: 
+            key = i
             if prefix:
-                key = "%s_%s"%(prefix, i)
-            else:
-                key = "%s_%s"%(i, postfix)
+                key = "%s_%s"%(prefix, key)
+            if postfix:
+                key = "%s_%s"%(key, postfix)
             if key in self.actions:
                 self.actions[i] = self.actions[key]
                 if astar:
