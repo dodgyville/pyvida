@@ -97,10 +97,9 @@ except ImportError:
 #DEBUG_ASTAR = True
 DEBUG_ASTAR = False
 
-ENABLE_EDITOR = True #default for editor
+ENABLE_EDITOR = False #default for editor
 ENABLE_PROFILING = False
 ENABLE_LOGGING = False
-
 
 SELECT = 0 #manually select an item
 EDIT = 1  #can click on item to change focus
@@ -649,7 +648,7 @@ def get_point(game, destination):
         if destination in game.actors: destination = (game.actors[destination].sx, game.actors[destination].sy)
         elif destination in game.items: destination = (game.items[destination].sx, game.items[destination].sy)
         
-    elif type(destination) == object:
+    elif hasattr(destination, "sx"): #destination has a stand point, so use that
         destination = (destination.sx, destination.sy)
     return destination
 
@@ -2370,12 +2369,13 @@ class Portal(Item):
         self.display_text = self.name #no overlay info text by default for a portal
         self.display_exit = None #Image to use to show door exit
         self.display_exit_inactive = None #Image to use to show door exit
+
 #        self.interact = self._interact_default
 #        self.look = self._look
 
     def on_auto_align(self): #auto align display_text
-        if logging: log.warning("auto_align only works properly on 1024x768")
-        if self.nx > 880: self.display_text_align = ALIGN_RIGHT #auto align text
+        x = 880 if not self.game else self.game.resolution[0]-240
+        if self.nx > x: self.display_text_align = ALIGN_RIGHT #auto align text
         self._event_finish(block=False)
 
     def smart(self, game, *args, **kwargs): #portal.smart
@@ -2411,9 +2411,6 @@ class Portal(Item):
         if player and player.scene and player.scene != self.scene: #only travel if on same scene as portal
             return
         return self.travel()
-
-#    def _look(self, game, tmat, player):
- #       return self.travel()
 
     def on_reout(self, pt):
         """ queue event for changing the portal out points """
@@ -3506,6 +3503,8 @@ class Settings(object):
         
         self.allow_internet = None #True|False|None check for updates and report stats - None == False and user hasn't been asked
         self.allow_internet_debug = ENABLE_LOGGING #send profiling reports home
+
+        self.double_clicks = True #allow double clicking to short circuit walking to portals
         
         self.fullscreen = DEFAULT_FULLSCREEN
         self.show_portals = False
@@ -3631,6 +3630,7 @@ class Game(object):
         self.mouse_cursor = MOUSE_POINTER #which image to use
         self.mouse_down = None #point of last mouse down (used by editor scale)
         self.hide_cursor = HIDE_MOUSE
+        self.last_clicked = None #what object was last clicked (used for double clicking on portals
         
         #walkthrough and test runner
         self._walkthroughs = []
@@ -4089,6 +4089,39 @@ class Game(object):
                         self.set_editing(i)
                         editor_point(self, self.items["e_location"], self.player, editing=i) 
                 self.editing_index = 0 #must be not-None to trigger drag
+
+    def _click_on_object(self, x, y, button, modifiers,  same_portal_only=False):
+        """ 
+            The click has passed through the modals and the menus and is safe to click on a game object.
+            If this is a second click on the same portal, then move the player closer to the portal (ie skip walk)
+            return True if it has collided with an item
+        """
+        for i in self.scene.objects.values(): #then objects in the scene
+            #skip everything but the existing clicked portal
+            if same_portal_only:
+                if self.last_clicked and self.last_clicked != i: continue #skip if not a double click
+                if not isinstance(i, Portal): continue  #skip if not a portal
+                if self.mouse_mode != MOUSE_INTERACT: continue #skip if not a regular interact click
+
+            if i.collide(x,y) and (i.allow_use or i.allow_interact or i.allow_look):
+                if self.mouse_mode == MOUSE_USE or i is not self.player: #only click on player in USE mode
+                    self.block = True
+                    if self.player and self.scene and self.player in self.scene.objects.values() and i != self.player: 
+                        if self.mouse_mode != MOUSE_LOOK or GOTO_LOOK: 
+                            if self.last_clicked and self.last_clicked == i and isinstance(i, Portal) and self.mouse_mode == MOUSE_INTERACT: #double click
+                                pt = get_point(self.game, i)
+                                self.player._motion_queue = self.player._motion_queue[1:] #almost empty motion queue
+                                self.player.x, self.player.y = self.player._tx, self.player._ty
+                                self.last_clicked = None
+                                return True
+                            else:
+                                self.last_clicked = i #store the recently clicked item
+                                self.player.goto(i)
+                
+                    self.trigger(i) #trigger look, use or interact
+                    return True
+        return False
+
             
     def _on_mouse_up(self, x, y, button, modifiers): #single button interface
         if self.game and self.game.settings and self.game.settings.invert_mouse: #inverted mouse
@@ -4105,7 +4138,9 @@ class Game(object):
                     i.trigger_interact()
                     return
             return
-        if len(self.events) > 0: return #only allow modal events when events in queue
+        if len(self.events) > 0:  #only allow modal events or double clicks on Portals when events in queue
+            self._click_on_object(x, y, button, modifiers, same_portal_only=True) #check for double click
+            return 
         for i in self.menu: #then menu 
             if self.game and self.game.block == True: break #don't allow menu clicks when event queue is blocked
             if i.collide(x,y) and i.allow_interact:
@@ -4128,19 +4163,14 @@ class Game(object):
                 return
                 
         elif self.scene: #regular game interaction
-            for i in self.scene.objects.values(): #then objects in the scene
-                if i.collide(x,y) and (i.allow_use or i.allow_interact or i.allow_look):
-#                   if i.actions.has_key('down'): i.action = i.actions['down']
-                    if self.mouse_mode == MOUSE_USE or i is not self.player: #only click on player in USE mode
-                        self.block = True
-                        if self.player and self.scene and self.player in self.scene.objects.values() and i != self.player: 
-                            if self.mouse_mode != MOUSE_LOOK or GOTO_LOOK: self.player.goto(i)
-                    
-                        self.trigger(i) #trigger look, use or interact
-                        return
+
+            if self._click_on_object(x, y, button, modifiers): return #try a scene object, return if interacted
+
             #or finally, try and walk the player there.
+            self.last_clicked = None #haven't clicked on any object
             if self.player and self.player in self.scene.objects.values():
                 self.player.goto((x,y))
+
 
     def _on_mouse_move_scene(self, x, y, button, modifiers):
         """ possibly draw overlay text """
