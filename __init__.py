@@ -99,7 +99,7 @@ DEBUG_ASTAR = False
 
 ENABLE_EDITOR = False #default for editor
 ENABLE_PROFILING = False
-ENABLE_LOGGING = False
+ENABLE_LOGGING = False #enable DEBUG logging
 
 SELECT = 0 #manually select an item
 EDIT = 1  #can click on item to change focus
@@ -121,9 +121,9 @@ FADEOUT = 2
 
 if logging:
     if ENABLE_LOGGING:
-        log_level = logging.DEBUG #what level of debugging
+        log_level = logging.DEBUG #what level of debugging - all of it
     else:
-        log_level = logging.ERROR
+        log_level = logging.WARNING #just the higher level stuff
 
     LOG_FILENAME = os.path.join(SAVE_DIR, 'pyvida4.log')
     log = logging.getLogger('pyvida4')
