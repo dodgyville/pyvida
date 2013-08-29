@@ -1272,6 +1272,7 @@ class Actor(object):
         self.speed = 10 #speed at which actor moves per frame
         self.inventory = {}
         self._scale = 1.0
+	self._rotate = 0
         self.scene = None
         self._solid_area = Rect(0,0,0,0)
         self._clickable_area = Rect(0,0,0,0)
@@ -1774,6 +1775,8 @@ class Actor(object):
 #        if self._cached_image and self.action and self.action.count == 1: #used cached image
  #           img = self._cached_image
 #        else: #calc new image
+	if self._rotate != 0:
+	    img = pygame.transform.rotate(img, self._rotate)
         if self.scale != 1.0:
             w = int(img.get_width() * self.scale)
             h = int(img.get_height() * self.scale)
@@ -2295,8 +2298,10 @@ class Actor(object):
         self._reparent(obj)
         self._event_finish(block=False)
     
-    def resize(self, start, end, duration):
+    def animate_resize(self, start, end, duration):
         """ animate resizing of character """
+        if logging: log.debug("actor.animate_resize not implemented yet")
+
 #        if logging: log.debug("actor.resize not implemented yet")
         frames = (duration*1000)/self.game.fps
 #        tick = float(duration/self.game.fps  #number of ticks for this anim
@@ -2307,9 +2312,10 @@ class Actor(object):
             self.game.wait(0) #wait at least one frame        
 #        self._event_finish(block=False)
 
-    def on_rotate(self, start, end, duration):
-        """ A queuing function. Animate rotation of character """
-        if logging: log.debug("actor.rotation not implemented yet")
+    def on_rerotate(self, degrees=None, radians=None):
+        """ A queuing function. Rotate an object """
+        if logging: log.debug("actor.on_rerotate radians not implemented yet")
+	self._rotate = degrees
         self._event_finish(block=False)
 
     def on_set_alpha(self, alpha, block=False):
@@ -6043,7 +6049,7 @@ class Game(object):
                 if self.progress_bar_index >= self.progress_bar_count: #switch off progress bar
                     self.progress_bar_count, self.progress_bar_index, self.progress_bar_renderer = 0,0,None
             e = self.events.pop(0) #stored as [(function, args))]
-            if e[0].__name__ not in ["on_add", "on_relocate", "on_rescale","on_reclickable", "on_reanchor", "on_restand", "on_retalk", "on_respeech", "on_resolid"]:
+            if e[0].__name__ not in ["on_add", "on_relocate", "on_rescale","on_reclickable", "on_reanchor", "on_restand", "on_retalk", "on_respeech", "on_resolid", "on_rerotate"]:
                 if logging: log.debug("Doing event %s"%e[0].__name__)
 
             self._event = e
