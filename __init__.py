@@ -784,7 +784,7 @@ def process_step(game, step):
             print("Creating %s"%myd)
             if not os.path.exists(myd): 
 #                os.makedirs(myd)
-                if logging: log.info("Creating %s %s at %s"%(extras[HINT].__name__.lower(), actor, myd)
+                if logging: log.info("Creating %s %s at %s"%(extras[HINT].__name__.lower(), actor, myd))
 
     game.errors += 1
     if game.errors == 2:
@@ -936,6 +936,7 @@ def open_editor(game, filepath, track=True):
         subprocess.call(('open', filepath))
     elif os.name == 'nt':
         os.startfile(filepath)
+
     elif os.name == 'posix':
         subprocess.call(('xdg-open', filepath))
 #    import webbrowser
@@ -1858,6 +1859,7 @@ class Actor(object):
                     ay += dy 
                 self._rect.union_ip(self._draw_image(img, (ax, ay), tint, alpha, screen=screen))
             return 
+
             
         if not self.allow_draw: return
         img = self._image()
@@ -2857,7 +2859,7 @@ class Actor(object):
                 msgbox = m
 
         msgbox.options = []
-        oy, oy2, iy = 490, 800, 360 #XXX magic variables for 1024x768
+        oy, oy2, iy = 490, self.game.resolution[1]+40, self.game.resolution[1]- 260 #XXX magic variables for 1024x768
         if "extra_option" in kwargs: #place options one slot higher as there is an extra one
             iy -= 44 #XXX horrible horrible magic numbers
         remember_question = args[0] if "remember_key" not in kwargs else kwargs["remember_key"]
@@ -6388,7 +6390,7 @@ class Game(object):
         args = list(args)
         args.reverse()
         for i in args:
-            if type(i) != str: i = i.name
+            if type(i) not in [str, unicode]: i = i.name
             if i in self.items: 
                 self.menu.append(self.items[i])
             else:
