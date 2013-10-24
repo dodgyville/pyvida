@@ -292,6 +292,9 @@ COLOURS = {
    "yellowgreen": (154, 205, 50),
 }
 
+#TEXT EFFECTS
+EFFECT_SINE = 1 #sine wave
+
 
 if logging:
     if ENABLE_LOGGING:
@@ -379,6 +382,7 @@ DEFAULT_FRAME_RATE = 30
 DEFAULT_ACTION_FRAME_RATE = 30
 
 DEFAULT_FONT = os.path.join("data/fonts/", "vera.ttf")
+DEFAULT_SIZE = 26
 MENU_COLOUR = (42, 127, 255)
 
 """
@@ -1541,6 +1545,7 @@ class Actor(object):
         action.actor = self
         
     def smart(self, game, img=None, using=None, idle="idle", action_prefix = ""): #actor.smart
+
         """ 
         Intelligently load as many animations and details about this actor/item.
         
@@ -2429,6 +2434,7 @@ class Actor(object):
             self._motion_queue.append((dx2,dy2))
         self._do(action) 
     
+
     def _goto_astar(self, x, y, walk_actions, walkareas=[]):
         """ Call astar search with the scene info to work out best path """
         solids = []
@@ -2705,7 +2711,7 @@ class Actor(object):
             self._event_finish()            
 
         
-    def on_continues(self, text, action="portrait", position=POSITION_TEXT):
+    def on_continues(self, text, action="portrait", position=POSITION_TEXT, effects=0):
         """ Like on_says, but animate the display of text, allowing a skip """
         if self.game.testing: 
             self._event_finish()
@@ -2717,7 +2723,7 @@ class Actor(object):
         self.game.stuff_event(self.game.on_clear_modals) #clear the text from the screen
         self.game.stuff_event(self.on_wait, None) #push an on_wait as the final event in this script        
 
-    def on_says(self, text, action="portrait", sfx=-1, block=True, modal=True, font=None, background="msgbox", size=None, position=None):
+    def on_says(self, text, action="portrait", sfx=-1, block=True, modal=True, font=None, background="msgbox", size=None, position=None, effects=0):
         """ A queuing function. Display a speech bubble with text and wait for player to close it.
         
         Examples::
@@ -2807,9 +2813,10 @@ class Actor(object):
         ok = self.game.add(Item("ok").smart(self.game), False, ModalItem)
         ok.interact = close_msgbox
         
+        tx, ty = msg.ax + 20, msg.ay - 20
         self.game.stuff_event(ok.on_place, (930, iy+260))
         self.game.stuff_event(portrait.on_place, (px, py))
-        self.game.stuff_event(txt.on_place, (220, iy+5))
+        self.game.stuff_event(txt.on_place, (tx, ty))
         self.game.stuff_event(msg.on_goto, (ox, iy+216))
     
     def on_asks(self, *args, **kwargs):
@@ -2902,7 +2909,8 @@ class Actor(object):
             opt.collide = opt._collide #switch on mouse over box
             opt.msgbox = msgbox
             msgbox.options.append(opt.name)
-            self.game.stuff_event(opt.on_place, (250,iy+95+i*44))  #XXX horrible horrible magic numbers
+            tx = msgbox.ax + 40
+            self.game.stuff_event(opt.on_place, (tx,iy+95+i*44))  #XXX horrible horrible magic numbers
         
     def on_remove(self, unparent=False): #remove this actor from its scene #actor.remove
         """ unparent True|False - if this object has a parent, unparent"""
@@ -2924,6 +2932,7 @@ class Actor(object):
             input before we continue """
         pass
         
+
 class Item(Actor):
     pass
 #    _motion_queue = [] #actor's deltas for moving on the screen in the near-future
@@ -3258,13 +3267,14 @@ def text_to_image(text, font, colour, maxwidth,offset=None):
 
 class Text(Item):
     """ Display text on the screen """
-    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=26, wrap=2000, font=None, offset=2, show=None):
+    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=(0, 220, 234), size=None, wrap=2000, font=None, offset=2, show=None):
         Item.__init__(self, name)
         self.x, self.y = pos
         self.w, self.h = dimensions
 #        fname = "data/fonts/domesticManners.ttf"
         self.text = text
         self.wrap = wrap
+        if not size: size = DEFAULT_SIZE
         self.size = size
         self.show = show #how many letters of text to show (None == all)
         self.colour = colour
