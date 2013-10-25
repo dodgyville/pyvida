@@ -1320,6 +1320,7 @@ class Actor(object):
         self._nx, self._ny = 0,0    # displacement point for name
         self._cx, self._cy = 0,0    # displacement point for text when using POSITION_TEXT
         self._tx, self._ty = 0,0    # target for when this actor is mid-movement
+        self._w, self._h = None, None #width and height
         self.display_text = None #can override name for game.info display text
         self.display_text_align = ALIGN_LEFT
         
@@ -1453,42 +1454,27 @@ class Actor(object):
         scale = self.action.scale if self.action else 1 
         y = self._cy
         return self.y - y * scale
-    def set_cy(self, y): 
 
+    def set_cy(self, y): 
         scale = (1.0/self.action.scale) if self.action else 1     
         self._cy = (self.y - y)*scale
-
-    """
-    def get_nx(self): 
-        scale = self.action.scale if self.action else 1 
-        nx = self._nx
-        return self.x + nx * self._scale#name display pt
-
-    def set_nx(self, nx): self._nx = nx - self._x
-    nx = property(get_nx, set_nx)
-
-    def get_ny(self):
-        ny = self._ny
-        return self.y - ny * self._scale
-
-    def set_ny(self, ny): self._ny = ny - self._y
-    ny = property(get_ny, set_ny)
-
-    def get_cx(self): #continues text display pt
-        x = self._cx
-        return self.x - x * self._scale
-
-    def set_cx(self, cx): self._cx = cx - self._x
-    cx = property(get_cx, set_cx)
-
-    def get_cy(self): 
-        y = self._cy
-        return self.y - y * self._scale
-
-    def set_cy(self, cy): self._cy = cy - self._y
-    """
     cy = property(get_cy, set_cy)
 
+    def get_w(self): #width
+        if not self._w:
+            pimg = self._image()
+            self._w = pimg.get_width() if pimg else 0
+        return self._w #width
+    def set_w(self, w): self._w = w
+    w = property(get_w, set_w)
+
+    def get_h(self): #height
+        if not self._h:
+            pimg = self._image()
+            self._h = pimg.get_height() if pimg else 0
+        return self._h 
+    def set_h(self, h): self._h = h
+    h = property(get_h, set_h)
     
     def get_scale(self): return self._scale
     def set_scale(self, x): 
@@ -2787,10 +2773,11 @@ class Actor(object):
         high_contrast = "%s_high_contrast"%background                
         myd = os.path.join(self.game.item_dir, high_contrast)
         if self.game and self.game.settings and self.game.settings.high_contrast and os.path.isdir(myd):
-            msg = self.game.add(ModalItem(background, close_msgbox,(ox, oy+200)).smart(self.game, using=high_contrast))
+            msg = self.game.add(ModalItem(background, close_msgbox,(ox, self.game.resolution[1]+50)).smart(self.game, using=high_contrast))
         else:
-            msg = self.game.add(ModalItem(background, close_msgbox,(ox, oy+200)).smart(self.game))
+            msg = self.game.add(ModalItem(background, close_msgbox,(ox, self.game.resolution[1]+50)).smart(self.game))
         msg.actor = self
+        msg._ay = 0
 
         kwargs =  self._get_text_details(font=font, size=size)
         txt = self.game.add(Text("txt", (220, oy2 + 18), (840, iy+130), text, **kwargs), False, ModalItem)
@@ -2802,22 +2789,25 @@ class Actor(object):
         portrait = Item("portrait")
         portrait.actions["idle"] = portrait.action = action
         portrait = self.game.add(portrait, False, ModalItem)
-        px, py = 65, iy+12 #top corner for portrait
+        portrait_x, portrait_y = 5, 5 #top corner for portrait offset
         #center portrait if smaller than 150x230
         pimg = portrait._image()
-        if pimg and pimg.get_width()<150: #XXX MAGIC VARIABLES AAAAAAIIEEEE
-            px += round((150-pimg.get_width())/2)
-        if pimg and pimg.get_height()<230: #XXX MAGIC VARIABLES AAAAAAIIEEEE
-            py += round((230-pimg.get_height())/2)
                 
+        px, py = self.game.resolution[0]/2 - msg.w/2, self.game.resolution[1] - msg.h #XXX I think this is overriding the POSITION_x stuff, top corner of msgbox
+        offset_x, offset_y = 0, -50 #total offset
+
         ok = self.game.add(Item("ok").smart(self.game), False, ModalItem)
         ok.interact = close_msgbox
         
-        tx, ty = msg.ax + 20, msg.ay - 20
-        self.game.stuff_event(ok.on_place, (930, iy+260))
-        self.game.stuff_event(portrait.on_place, (px, py))
-        self.game.stuff_event(txt.on_place, (tx, ty))
-        self.game.stuff_event(msg.on_goto, (ox, iy+216))
+        tx, ty = ox + portrait.w, iy+216+ offset_y
+#        px, py = msg.ax + 5, iy
+
+        msg._text_offset_x = px + portrait.w + 20 #where the text is placed in this box
+
+        self.game.stuff_event(ok.on_place, (px + msg.w - 30, py + msg.h - 10 + offset_y))
+        self.game.stuff_event(portrait.on_place, (px + portrait_x, py + portrait_y + offset_y))
+        self.game.stuff_event(txt.on_place, (msg._text_offset_x, py + 10 + offset_y))
+        self.game.stuff_event(msg.on_goto, (px + msg.w/2, py + offset_y))
     
     def on_asks(self, *args, **kwargs):
         """ A pseudo-queuing function. Display a speech bubble with text and several replies, and wait for player to pick one.
@@ -2910,7 +2900,7 @@ class Actor(object):
             opt.msgbox = msgbox
             msgbox.options.append(opt.name)
             tx = msgbox.ax + 40
-            self.game.stuff_event(opt.on_place, (tx,iy+95+i*44))  #XXX horrible horrible magic numbers
+            self.game.stuff_event(opt.on_place, (msgbox._text_offset_x + 20, iy + i*44))  #XXX horrible horrible magic numbers
         
     def on_remove(self, unparent=False): #remove this actor from its scene #actor.remove
         """ unparent True|False - if this object has a parent, unparent"""
