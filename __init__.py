@@ -5,6 +5,16 @@ from datetime import datetime, timedelta, date
 import gc, glob, copy, inspect, math, os, operator, pickle, types, sys, time, re
 import json
 
+#DEBUG_ASTAR = True
+DEBUG_ASTAR = False
+
+ENABLE_EDITOR = False #default for editor
+ENABLE_PROFILING = False
+ENABLE_LOGGING = True
+ENABLE_LOCAL_LOGGING = True
+DEFAULT_TEXT_EDITOR = "gedit"
+
+
 try:
     import logging
     import logging.handlers
@@ -35,10 +45,11 @@ DEFAULT_RESOLUTION = (1920,1080)
 APP_DIR = "spaceout"
 
 SAVE_DIR = "saves"
-if "LOCALAPPDATA" in os.environ: #win 7
-    SAVE_DIR = os.path.join(os.environ["LOCALAPPDATA"], APP_DIR, 'saves')
-elif "APPDATA" in os.environ: #win XP
-    SAVE_DIR = os.path.join(os.environ["APPDATA"], APP_DIR, 'saves')
+if not ENABLE_LOCAL_LOGGING: #if not local logging, store whereever system suggests
+    if "LOCALAPPDATA" in os.environ: #win 7
+        SAVE_DIR = os.path.join(os.environ["LOCALAPPDATA"], APP_DIR, 'saves')
+    elif "APPDATA" in os.environ: #win XP
+        SAVE_DIR = os.path.join(os.environ["APPDATA"], APP_DIR, 'saves')
 READONLY = False
 
 if not os.path.exists(SAVE_DIR):
@@ -98,14 +109,6 @@ try:
     import android
 except ImportError:
     android = None
-
-#DEBUG_ASTAR = True
-DEBUG_ASTAR = False
-
-ENABLE_EDITOR = False #default for editor
-ENABLE_PROFILING = False
-ENABLE_LOGGING = False
-DEFAULT_TEXT_EDITOR = "gedit"
 
 ENGINE_VERSION = 2 #v1 = used for spaceout
 
@@ -1327,7 +1330,7 @@ class Actor(object):
         self.speed = 10 #speed at which actor moves per frame
         self.inventory = {}
         self._scale = 1.0
-	self._rotate = 0
+        self._rotate = 0
         self.scene = None
         self._solid_area = Rect(0,0,0,0)
         self._clickable_area = Rect(0,0,0,0)
@@ -3215,7 +3218,6 @@ def truncline(text, font, maxwidth):
 def wrapline(text, font, maxwidth): 
     done=0                      
     wrapped=[]                  
-                               
     while not done:             
         nl, done, stext=truncline(text, font, maxwidth) 
         stext = stext.strip().split("\n")
@@ -3224,10 +3226,10 @@ def wrapline(text, font, maxwidth):
     return wrapped
  
 
-def text_to_image(text, font, colour, maxwidth,offset=None):
+def text_to_image(text, font, colour, maxwidth, offset=None):
     """ Convert block of text to wrapped image """
     text = wrapline(text, font, maxwidth)
-
+    if type(text) == list and text[0] != '': print(text)
     _offset = offset if offset else 0
     dx, dy = 10,10
     if len(text) == 1: #single line
@@ -3344,6 +3346,7 @@ class ModalItem(Actor):
         self.interact = interact
         self.x, self.y = pos
         self.display_text = "" #by default no overlay on modal items
+        self._text_offset_x = 0 #used by message boxes to allow portraits, etc
 
     def collide(self, x,y): #modals cover the whole screen?
         return True
@@ -4360,6 +4363,11 @@ class Game(object):
         self.afps = afps
         self.time_delay = int(1000.0/fps)
         self.fullscreen = fullscreen
+
+        #engine behaviour - different games have different behaviour, configure here.
+        self.allow_player_interact = False #user can click interact on player character
+        self.allow_player_look = False #user can look at player character
+        self.allow_player_use = True #user can use items on the player character
         
     def reset(self):
         """ reset all game state information, perfect for loading new games """
@@ -4587,11 +4595,12 @@ class Game(object):
             setattr(self, a, f)
             return f
         else: #search through actors and items
-            s = deslugify(a)
-            if s in self.actors:
-                return self.actors[s]
-            elif s in self.items:
-                return self.items[s]
+            for s in [deslugify(a), a]: #try deslugged version or then full version
+                if s in self.actors:
+                    return self.actors[s]
+                elif s in self.items:
+                    return self.items[s]
+    
         raise AttributeError
 #        return self.__getattribute__(self, a)
 
@@ -4859,10 +4868,8 @@ class Game(object):
     def _on_mouse_up(self, x, y, button, modifiers): #single button interface
         if self.game and self.game.settings and self.game.settings.invert_mouse: #inverted mouse
             if button==1:
-#                print("SUB BUTTON PRESSED (inverted)")
                 self.mouse_mode = MOUSE_LOOK #subaltern btn pressed 
         elif button<>1: 
-#            print("SUB BUTTON PRESSED")
             self.mouse_mode = MOUSE_LOOK #subaltern btn pressed 
 
         if self.edit_scripts: #potentially edit the script for the requested interaction
