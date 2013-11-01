@@ -3195,25 +3195,25 @@ class Emitter(Item):
 
 #wrapline courtesy http://www.pygame.org/wiki/TextWrapping 
 def truncline(text, font, maxwidth):
-        real=len(text)       
-        stext=text           
-        l=font.size(text)[0]
-        cut=0
-        a=0                  
-        done=1
-        old = None
-        while l > maxwidth:
-            a=a+1
-            n=text.rsplit(None, a)[0]
-            if stext == n:
-                cut += 1
-                stext= n[:-cut]
-            else:
-                stext = n
-            l=font.size(stext)[0]
-            real=len(stext)               
-            done=0                        
-        return real, done, stext             
+    real=len(text)       
+    stext=text           
+    l=font.size(text)[0]
+    cut=0
+    a=0                  
+    done=1
+    old = None
+    while l > maxwidth:
+        a=a+1
+        n=text.rsplit(None, a)[0]
+        if stext == n:
+            cut += 1
+            stext= n[:-cut]
+        else:
+            stext = n
+        l=font.size(stext)[0]
+        real=len(stext)               
+        done=0                        
+    return real, done, stext             
         
 def wrapline(text, font, maxwidth): 
     done=0                      
@@ -3228,8 +3228,11 @@ def wrapline(text, font, maxwidth):
 
 def text_to_image(text, font, colour, maxwidth, offset=None):
     """ Convert block of text to wrapped image """
-    text = wrapline(text, font, maxwidth)
-    if type(text) == list and text[0] != '': print(text)
+    stext = text.strip().split("\n")
+    text = []
+    for t in stext:
+        text.extend(wrapline(t, font, maxwidth))
+
     _offset = offset if offset else 0
     dx, dy = 10,10
     if len(text) == 1: #single line
