@@ -14,6 +14,11 @@ ENABLE_LOGGING = True
 ENABLE_LOCAL_LOGGING = True
 DEFAULT_TEXT_EDITOR = "gedit"
 
+#AVAILABLE BACKENDS
+PYGAME19 = 0
+
+BACKEND = PYGAME19
+
 
 try:
     import logging
@@ -388,6 +393,10 @@ DEFAULT_FONT = os.path.join("data/fonts/", "vera.ttf")
 DEFAULT_SIZE = 26
 MENU_COLOUR = (42, 127, 255)
 
+
+################ PYVIDA-PYGAME19 INTERFACE ################
+
+from pygame.constants import *
 """
 class Surface(Surface):
     def __deepcopy__(self, memo):
@@ -434,6 +443,14 @@ class Font(Font):
         result.__init__(deepcopy(tuple(self), memo))
         return result 
         
+
+def get_keycode(key):
+    """ pyvida2pygame function """
+    key = ord(key) if type(key) == str else key
+    return key
+
+
+######## pyvida functions ######
 
 def use_init_variables(original_class):
     """ Take the value of the args to the init function and assign them to the objects' attributes """
@@ -3285,8 +3302,8 @@ class Text(Item):
         self._on_mouse_move = self._on_mouse_leave = None
         self._clickable_area = self.img.get_rect()
 
-    def update_text(self, txt=""): #rebuild the text image
-        if txt: self.text = txt
+    def update_text(self, txt=None): #rebuild the text image
+        if txt != None: self.text = txt
         self.img = self._img = self._generate_text(self.text, self.colour, offset=self.offset)
         self._mouse_move_img = self._generate_text(self.text, (255,255,255), offset=self.offset) #overlay
 
@@ -3360,7 +3377,7 @@ class MenuItem(Actor):
         Actor.__init__(self, name)
         self.track_interact = False #by default don't track menu items in the save game file
         self.interact = interact
-        self.key = ord(key) if type(key)==str else key #bind menu item to a keyboard key
+        self.key = get_keycode(key) #bind menu item to a keyboard key
         self.x, self.y = spos
         self.in_x, self.in_y = spos #special in point reentry point
         if hpos == (None, None): hpos = (spos[0], -200) #default hide point is off top of screen
@@ -3386,8 +3403,8 @@ class MenuText(Text, MenuItem):
     """ Use text to generate a menu item """
     def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=MENU_COLOUR, size=26, wrap=2000, interact=None, spos=(None, None), hpos=(None, None), key=None, font=DEFAULT_FONT, offset=2):
         if spos == (None, None): spos = pos
-        MenuItem.__init__(self, name, interact, spos, hpos, key, text)
         Text.__init__(self,  name, pos, dimensions, text, colour, size, wrap, font, offset)
+        MenuItem.__init__(self, name, interact, spos, hpos, key, text)
         self.track_interact = False #by default don't track menu items in the save game file
         self.interact = interact
         self.display_text = " "
@@ -4184,6 +4201,7 @@ class Settings(object):
         self.textspeed = NORMAL
         self.fps = DEFAULT_FRAME_RATE
         self.stereoscopic = False #display game in stereoscopic (3D)
+        self.hardware_accelerate = False 
         
         self.high_contrast = False
         self.accessibility_font = None #use this font to override main font (good for using dsylexic-friendly fonts
@@ -5015,7 +5033,7 @@ class Game(object):
             else:
                 if i._on_mouse_leave: i._on_mouse_leave(x, y, button, modifiers)
             
-        if menu_capture == True: return       
+        if menu_capture == True: return    
         for i in self.menu: #then menu
             if i.collide(x,y): #hovering
                 if i.actions and i.actions.has_key('over') and (i.allow_interact or i.allow_use or i.allow_look):
@@ -5054,8 +5072,9 @@ class Game(object):
                         self.modals.remove(remove_item)
                     i.callback(self, i)
                 return
-        for i in self.menu:
-            if key == i.key: i.trigger_interact() #"bound to menu item"
+        for i in [self.menu, self.scene.objects.values() if self.scene else []]:
+            for j in i:
+                if hasattr(j, "key") and key == j.key: j.trigger_interact() #"bound to menu item"
         if self.ENABLE_EDITOR and key == K_F1:
             self.toggle_editor()
         elif self.ENABLE_EDITOR and key == K_F2: #allow set trace if not fullscreen
@@ -5839,7 +5858,8 @@ class Game(object):
             self.headless = True
         os.environ['SDL_VIDEO_CENTERED'] = '1'            
         pygame.init() 
-        
+        pygame.key.set_repeat() #switch off key repeats
+
         if icon and os.path.exists(icon):
             pygame.display.set_icon(pygame.image.load(icon))
         flags = 0
