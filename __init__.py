@@ -789,7 +789,7 @@ def process_step(game, step):
         if actor in possible_names:
             i.trigger_interact()
             return
-    for i in game.menu: #then menu
+    for i in game._menu: #then menu
         if actor == i.name:
             i.trigger_interact()
             return
@@ -992,11 +992,11 @@ def get_function(game, basic):
 
 #### pyvida helper functions ####
 def editor_menu(game):
-    game.menu_hide()
-    game.menu_push() #hide and push old menu to storage
+    game.menu.hide()
+    game.menu.push() #hide and push old menu to storage
     game.set_menu("e_load", "e_save", "e_add", "e_delete", "e_prev", "e_next", "e_walk", "e_portal", "e_scene", "e_step", "e_reload", "e_jump", "e_state_save", "e_state_load")
-    game.menu_hide()
-    game.menu_show()
+    game.menu.hide()
+    game.menu.show()
 
 def editor_point(game, menuItem, player, editing=None):
     #click on an editor button for editing a point
@@ -1092,12 +1092,10 @@ class Action(object):
 
         time_delay = int(1000.0/self.fps)
         current_clock_tick = int(round(time.time() * 1000))
-        if self.name == "title": print("%s %s %s %s"%(self.name, time_delay, self._last_clock_tick, current_clock_tick))
         if current_clock_tick >= self._last_clock_tick + time_delay: #advance frame
             self._last_clock_tick = current_clock_tick
         else:
             return
-
         if self.mode == PINGPONG and self.index == -1: 
             self.step = 1
             self.index = 0
@@ -1861,13 +1859,11 @@ class Actor(object):
                 index = (self.action.index+i)%self.action.count
                 img = self.action.images[index]
                 cx,cy,dx,dy=0,0,0,0
-                if self.action.deltas:
-#                    cindex = (self.action.index)%len(self.action.deltas) #centre image
- #                   cx,cy = self.action.deltas[cindex]
-                    dindex = (self.action.index+i)%len(self.action.deltas)
-                    dx,dy = self.action.deltas[dindex]
-                    ax += dx
-                    ay += dy 
+#                if self.action.deltas:
+#                    dindex = (self.action.index+i)%len(self.action.deltas)
+#                    dx,dy = self.action.deltas[dindex]
+#                    ax += dx
+#                    ay += dy 
                 self._rect.union_ip(self._draw_image(img, (ax, ay), tint, alpha, screen=screen))
             return 
 
@@ -1941,14 +1937,17 @@ class Actor(object):
         if self._parent:
             self.x, self.y = self._parent.x, self._parent.y
         
-        if l == 0 and self.action and self.action.deltas: #use action delta
-            count = len(self.action.deltas)
-            dx, dy = self.action.deltas[self.action.index%count]
-            if self.game and self.game.editing_mode == EDITING_ACTOR: #only move actor if not editing action
-                self.x += dx
-                self.y += dy
-            if self.action.mode == ONCE_BLOCK_DELTA and self.action.index >= count-1:
-                self._event_finish(block=False)
+        if l == 0 and self.action and self.action.deltas: #use action delta #XXX not happy this dupes with action.update
+            time_delay = int(1000.0/self.action.fps)
+            current_clock_tick = int(round(time.time() * 1000))
+            if current_clock_tick >= self.action._last_clock_tick + time_delay: #advance frame or wait
+                count = len(self.action.deltas)
+                dx, dy = self.action.deltas[self.action.index%count]
+                if self.game and self.game.editing_mode == EDITING_ACTOR: #only move actor if not editing action
+                    self.x += dx
+                    self.y += dy
+                if self.action.mode == ONCE_BLOCK_DELTA and self.action.index >= count-1:
+                    self._event_finish(block=False)
             
         dx = 0
         dy = 0
@@ -2848,8 +2847,6 @@ class Actor(object):
             tuples containing a text option to display and a function to call if the player selects this option.
             
         """    
-#        game.menu_fade_out()
-#        game.menu_push() #hide and push old menu to storage
         name = self.display_text if self.display_text else self.name
         if self.game.output_walkthrough: print("%s says \"%s\"."%(name, args[0]))
         if "action" in kwargs:
@@ -3370,7 +3367,6 @@ class ModalItem(Actor):
 
     def collide(self, x,y): #modals cover the whole screen?
         return True
-  
    
 class MenuItem(Actor):
     def __init__(self, name="Untitled Menu Item", interact=None, spos=(None, None), hpos=(None, None), key=None, display_text=""): 
@@ -3403,8 +3399,9 @@ class MenuText(Text, MenuItem):
     """ Use text to generate a menu item """
     def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=MENU_COLOUR, size=26, wrap=2000, interact=None, spos=(None, None), hpos=(None, None), key=None, font=DEFAULT_FONT, offset=2):
         if spos == (None, None): spos = pos
-        Text.__init__(self,  name, pos, dimensions, text, colour, size, wrap, font, offset)
         MenuItem.__init__(self, name, interact, spos, hpos, key, text)
+        Text.__init__(self,  name, pos, dimensions, text, colour, size, wrap, font, offset)
+        self.key = get_keycode(key) #bind menu item to a keyboard key
         self.track_interact = False #by default don't track menu items in the save game file
         self.interact = interact
         self.display_text = " "
@@ -3846,6 +3843,82 @@ class Scene(object):
             self._add(i)
         self._event_finish(block=block)
 
+class MenuManager(object):
+    """ Handles menus, available as game.menu """
+    __metaclass__ = use_on_events
+    def __init__(self, game):
+        self.game = game
+
+    def on_clear(self, menu_items = None):
+        """ clear current menu """
+        if not menu_items:
+            self.game._menu = []
+        else:
+            if not hasattr(menu_items, '__iter__'): menu_items = [menu_items]
+            for i in menu_items:
+                if type(i) == str: i = self.items[i]        
+                if i in self.game._menu: self.game._menu.remove(i)
+        self.game._event_finish()       
+       
+
+    def on_fade_out(self, menu_items=None): 
+        """ animate hiding the menu """
+        if not menu_items:
+            menu_items = self.game._menu
+        if type(menu_items) not in [tuple, list]: menu_items = [menu_items]
+        names = []
+        for i in reversed(menu_items): 
+            if type(i) == str: i = self.items[i]
+            names.append(i.name)
+            self.game.stuff_event(i.on_goto, (i.out_x,i.out_y))
+        if logging: log.debug("fadeOut menu using goto %s"%names)
+        self.game._event_finish()
+        
+    def on_hide(self, menu_items = None):
+        """ hide the menu (all or partial)"""
+        if not menu_items:
+            menu_items = self._menu
+        if type(menu_items) not in [tuple, list]: menu_items = [menu_items]
+        for i in menu_items:
+            if type(i) == str: i = self.game.items[i]
+            self.game.stuff_event(i.on_place, (i.out_x, i.out_y))
+        if logging: log.debug("hide menu using place %s"%[x.name for x in self.game._menu])
+        self.game._event_finish()
+
+    def on_show(self):
+        """ show the menu """
+        for i in self.game._menu: self.game.stuff_event(i.on_place, (i.in_x,i.in_y))
+        if logging: log.debug("show menu using place %s"%[x.name for x in self.game._menu])
+        self.game._event_finish()
+        
+    def on_fade_in(self, menu_items=None): 
+        """ animate showing the menu """
+        if not menu_items:
+            menu_items = self.game._menu
+        if type(menu_items) not in [tuple, list]: menu_items = [menu_items]
+        if logging: log.debug("fadeIn menu, telling items to goto %s"%[x if type(x) == str else x.name for x in menu_items])
+        for i in reversed(menu_items):
+            i = self.game.items.get(i, self.game.actors.get(i, i)) if type(i) == str else i
+            self.game.stuff_event(i.on_goto, (i.in_x,i.in_y))
+        self.game._event_finish()
+
+        
+    def on_push(self):
+        """ push this menu to the list of menus and clear the current menu """
+        if logging: log.debug("push menu %s, %s"%([x.name for x in self.game._menu], self.game._menus))
+        if self.game._menu:
+            self.game._menus.append(self.game._menu)
+            self.game._menu = []
+        self.game._event_finish()
+
+    def on_pop(self):
+        """ pull a menu off the list of menus """
+        if self.game._menus: self.game._menu = self.game._menus.pop()
+        if logging: log.debug("pop menu %s"%[x.name for x in self.game._menu])
+        self.game._event_finish()
+    
+
+
 class Mixer(object):
     """ Handles sound and music """
     __metaclass__ = use_on_events
@@ -4282,6 +4355,7 @@ class Game(object):
         self.name = name
         self.camera = Camera(self) #the camera object
         self.mixer = Mixer(self) #the sound mixer object
+        self.menu = MenuManager(self) #the menu manager object
 
         self.events = []
         self._event = None
@@ -4318,7 +4392,7 @@ class Game(object):
         self.trunk_step = True #is the game currently doing a "trunk" (ie essential) step (player induced steps are always trunk)
             
         #always on screen
-        self.menu = [] 
+        self._menu = [] 
         self._menus = [] #a stack of menus 
         self._menu_modal = False #is this menu blocking game events
         self.modals = []
@@ -4379,6 +4453,7 @@ class Game(object):
         
         #variables for special events such as on_wait
         self._wait = None #what time to hold processing events to
+        self._inside_event_loop = False #are we inside game.run, used by game.smart
         
         self.fps = fps
         self.afps = afps
@@ -4703,8 +4778,18 @@ class Game(object):
         """ Store data on the game object """
         setattr(self, key, value)
         self._event_finish(block=False)
-        
-    def on_smart(self, player=None, player_class=Actor, draw_progress_bar=None, refresh=False, only=None): #game.smart
+    
+    def smart(self, player=None, player_class=Actor, draw_progress_bar=None, refresh=False, only=None): #game.smart
+        """ game.smart can tell if it is being called inside or outside the event loop """
+        if self._inside_event_loop: #add to event queue
+            self.do_smart(player, player_class, draw_progress_bar, refresh, only)
+        else: #call direct immediately
+            self._smart(player, player_class, draw_progress_bar, refresh, only)
+
+    def on_do_smart(self, player=None, player_class=Actor, draw_progress_bar=None, refresh=False, only=None): #game.smart (event queue version)
+        self._smart(player, player_class, draw_progress_bar, refresh, only)
+
+    def _smart(self, player=None, player_class=Actor, draw_progress_bar=None, refresh=False, only=None): #game.smart
         """ cycle through the actors, items and scenes and load the available objects 
             it is very common to have custom methods on the player, so allow smart
             to use a custom class
@@ -4772,7 +4857,6 @@ class Game(object):
 #                        self.game.messages.append((d, datetime.now()))
         self._message_object = Text("_message object", pos=self.message_position, text="", offset=2)
         self._message_object.game = self
-        
         if not running_headless: self.set_headless(False) #restore headless state
         self._event_finish(block=False)
 #        if draw_progress_bar: print("progress bar will be",self.progress_bar_count)
@@ -4801,11 +4885,11 @@ class Game(object):
             self.items['e_out'].set_actions(["idle"], postfix="off")
         self.items['e_out'].do("idle")
 
-        if self.items["e_location"] not in self.menu:
+        if self.items["e_location"] not in self._menu:
             mitems = ["e_location", "e_anchor", "e_stand", "e_scale", "e_name", "e_talk", "e_clickable", "e_solid", "e_out", "e_object_allow_draw", "e_object_allow_look", "e_object_allow_interact", "e_object_allow_use", "e_add_walkareapoint", "e_actions", "e_edit"]
             self.set_menu(*mitems)
-            self.menu_hide(mitems)
-            self.menu_show()
+            self.menu.hide(mitems)
+            self.menu.show()
         self._event_finish(block=False)
             
     def toggle_editor(self):
@@ -4813,8 +4897,8 @@ class Game(object):
                 if self.editing_mode != EDITING_ACTOR: return
 #                self.hide_cursor = HIDE_MOUSE
                 #self.menu_fade_out()
-                self.menu_pop()
-                self.menu_show()
+                self.menu.pop()
+                self.menu.show()
                 self.editing = None
                 self.enabled_editor = False
                 if hasattr(self, "e_objects"): self.e_objects = None #free add object collection
@@ -4858,7 +4942,7 @@ class Game(object):
 
     def _on_mouse_down(self, x, y, button, modifiers): #single button interface for editor
         self.mouse_down = (x,y)
-        for i in self.menu: 
+        for i in self._menu: 
             if i.collide(x,y): return #let mouse_up have a go at menu
 
         if self.enabled_editor and self.scene: #select edit point
@@ -4899,7 +4983,7 @@ class Game(object):
                     i.trigger_interact()
                     return
 
-            for i in self.menu: #then menu 
+            for i in self._menu: #then menu 
                 if i.collide(x,y) and i.allow_interact:
                     if i.actions.has_key('down'): i._do('down')
                     i.trigger_interact() #always trigger interact on menu items
@@ -4922,7 +5006,7 @@ class Game(object):
                     return
             return
         if len(self.events) > 0: return #only allow modal events when events in queue
-        for i in self.menu: #then menu 
+        for i in self._menu: #then menu 
             if self.game and self.game.block == True: break #don't allow menu clicks when event queue is blocked
             if i.collide(x,y) and i.allow_interact:
                 if i.actions.has_key('down'): i._do('down')
@@ -5034,7 +5118,7 @@ class Game(object):
                 if i._on_mouse_leave: i._on_mouse_leave(x, y, button, modifiers)
             
         if menu_capture == True: return    
-        for i in self.menu: #then menu
+        for i in self._menu: #then menu
             if i.collide(x,y): #hovering
                 if i.actions and i.actions.has_key('over') and (i.allow_interact or i.allow_use or i.allow_look):
                     i._do('over')
@@ -5072,7 +5156,7 @@ class Game(object):
                         self.modals.remove(remove_item)
                     i.callback(self, i)
                 return
-        for i in [self.menu, self.scene.objects.values() if self.scene else []]:
+        for i in [self._menu, self.scene.objects.values() if self.scene else []]:
             for j in i:
                 if hasattr(j, "key") and key == j.key: j.trigger_interact() #"bound to menu item"
         if self.ENABLE_EDITOR and key == K_F1:
@@ -5397,10 +5481,10 @@ class Game(object):
                 for i in game.items.values():
                     if i.editable and type(i) not in [Portal, Collection, MenuItem]: e_objects.objects[i.name] = i
                 #game.menu_fade_out()
-                game.menu_push() #hide and push old menu to storage
+                game.menu.push() #hide and push old menu to storage
                 game.set_menu("e_close", "e_objects_next", "e_objects_prev", "e_objects_newitem", "e_objects_newactor", "e_objects")
-                game.menu_hide()
-                game.menu_fade_in()
+                game.menu.hide()
+                game.menu.fade_in()
                 
             def editor_delete(game, menuItem, player):
                 """ remove current object from scene """                
@@ -5418,10 +5502,10 @@ class Game(object):
                 for i in game.scenes.values():
                     if i.editable: e_portals.objects[i.name] = i
                 #game.menu_fade_out()
-                game.menu_push() #hide and push old menu to storage
+                game.menu.push() #hide and push old menu to storage
                 game.set_menu("e_close", "e_portals")
-                game.menu_hide()
-                game.menu_fade_in()                
+                game.menu.hide()
+                game.menu.fade_in()                
 
             def editor_scene(game, menuItem, player):
                 """ set up the collection object for scenes """
@@ -5433,10 +5517,10 @@ class Game(object):
                 for i in game.scenes.values():
                     if i.editable: e_scenes.objects[i.name] = i
                 #game.menu_fade_out()
-                game.menu_push() #hide and push old menu to storage
+                game.menu.push() #hide and push old menu to storage
                 game.set_menu("e_close", "e_newscene", "e_scenes")
-                game.menu_hide()
-                game.menu_fade_in()                
+                game.menu.hide()
+                game.menu.fade_in()                
 
 
             def editor_select_portal(game, collection, player):
@@ -5543,9 +5627,9 @@ class Game(object):
                 
             def editor_collection_close(game, collection, player):
                 """ close an collection object in the editor, shared with e_portals and e_objects """
-                game.menu_fade_out()
-                game.menu_pop()
-                game.menu_fade_in()
+                game.menu.fade_out()
+                game.menu.pop()
+                game.menu.fade_in()
             
             def editor_toggle_draw(game, btn, player):    
                 """ toggle visible on obj """
@@ -5574,12 +5658,12 @@ class Game(object):
                     
             def editor_actions(game, btn, player):
                 """ switch to action editor """
-                game.menu_hide()
-                game.menu_push() #hide and push old menu to storage
+                game.menu.hide()
+                game.menu.push() #hide and push old menu to storage
                 game.set_menu("e_action_prev", "e_action_next", "e_action_reverse", "e_action_delta", "e_action_scale", "e_action_save", "e_actions_close")
                 game.setattr("editing_mode", EDITING_ACTION)
 #                self.set_fps(int(1000.0/DEFAULT_FRAME_RATE)) #slow action for debugging
-                game.menu_show()
+                game.menu.show()
 
             def _editor_action_cycle(game, actor, i=1):
                 action_names = sorted([x.name for x in set(actor.actions.values())])
@@ -5621,20 +5705,20 @@ class Game(object):
 
             def editor_delta_close(game, btn, player):
                 game.setattr("editing_mode", EDITING_ACTION)
-                self.menu_pop()
-                self.menu_show()
+                self.menu.pop()
+                self.menu.show()
 
             def editor_action_delta(game, btn, player):
-                game.menu_hide()
-                game.menu_push() #hide and push old menu to storage
+                game.menu.hide()
+                game.menu.push() #hide and push old menu to storage
                 game.set_menu("e_frame_next", "e_frame_prev", "e_delta_close")
                 game.setattr("editing_mode", EDITING_DELTA)
-                game.menu_show()
+                game.menu.show()
                 
             def editor_actions_close(game, btn, player):
                 game.setattr("editing_mode", EDITING_ACTOR)
-                self.menu_pop()
-                self.menu_show()
+                self.menu.pop()
+                self.menu.show()
                 self.set_fps(int(1000.0/100)) #fast debug
 
 
@@ -5921,6 +6005,7 @@ class Game(object):
         dt = self.fps #time passed (in miliseconds)
         last_clock_tick = current_clock_tick = int(round(time.time() * 1000))
     	self.cursor_show() #switch on after splash
+        self._inside_event_loop = True
         while self.quit == False: #game.draw game.update
             last_clock_tick = int(round(time.time() * 1000))
             self.loop += 1
@@ -5937,9 +6022,9 @@ class Game(object):
                 android.wait_for_resume()
             
             if self.scene:
-                blank = [[self.scene], self.scene.objects.values(), self.scene.foreground, self.menu, self.modals]
+                blank = [[self.scene], self.scene.objects.values(), self.scene.foreground, self._menu, self.modals]
             else:
-                blank = [self.menu, self.modals]
+                blank = [self._menu, self.modals]
 
             if self.screen:
                 for group in blank:
@@ -5961,7 +6046,7 @@ class Game(object):
                 old_surface = pygame.display.get_surface().copy()
                 pygame.display.get_surface().blit(contrast_filter, (0,0))
                 #only draw low contrast on areas that AREN'T hotspots
-                for group in [self.scene.objects.values()]: #, self.scene.foreground, self.menu, self.modals]:
+                for group in [self.scene.objects.values()]: #, self.scene.foreground, self._menu, self.modals]:
                     for obj in group:
                         #contrast the clickable area if a portal or has no image
                         if not obj._image() or type(obj) in [Portal]:
@@ -5971,15 +6056,16 @@ class Game(object):
                 
             if self.scene and self.screen: #draw objects
                 objects = sorted(self.scene.objects.values(), key=lambda x: x.y, reverse=False)
-#                menu_objects = sorted(self.menu, key=lambda x: x.y, reverse=False)
-                for group in [objects, self.scene.foreground, self.menu, self.modals]:
+#                menu_objects = sorted(self._menu, key=lambda x: x.y, reverse=False)
+                for group in [objects, self.scene.foreground, self._menu, self.modals]:
                     for obj in group: obj.draw()
                 for w in self.scene.walkareas: w.draw() #draw walkarea if editing
                 if self._message_object: self._message_object.draw()
                 
             if self.scene and self.screen: #update objects
-                for group in [self.scene.objects.values(), self.menu, self.modals]:
-                    for obj in group: obj._update(dt)
+                for group in [self.scene.objects.values(), self._menu, self.modals]:
+                    for obj in group: 
+                        obj._update(dt)
                 if self.mouse_cursor and type(self.mouse_cursor) != int:
                     self.mouse_cursor._update(dt)
                 if self._message_object: #update message_object. TODO move to own _update method?
@@ -6422,10 +6508,10 @@ class Game(object):
         for i in args:
             if type(i) not in [str, unicode]: i = i.name
             if i in self.items: 
-                self.menu.append(self.items[i])
+                self._menu.append(self.items[i])
             else:
                 if logging: log.error("Menu item %s not found in MenuItem collection"%i)
-        if logging: log.debug("set menu to %s"%[x.name for x in self.menu])
+        if logging: log.debug("set menu to %s"%[x.name for x in self._menu])
         self._event_finish()        
 
     def on_menu_modal(self, modal=True):
@@ -6442,80 +6528,11 @@ class Game(object):
     def on_menus_clear(self):
         """ clear all menus """
         if logging: log.warning("game.menu_clear should use game.remove --- why???")
-        #for i in self.menu:
-        #    del self.menu[i]
-        if logging: log.debug("clear menu %s"%[x.name for x in self.menu])
-        self.menu = []
+
+        if logging: log.debug("clear menu %s"%[x.name for x in self._menu])
+        self._menu = []
         self._menus = []
         self._event_finish()        
-
-    def on_menu_clear(self, menu_items = None):
-        """ clear current menu """
-        if not menu_items:
-            self.menu = []
-        else:
-            if not hasattr(menu_items, '__iter__'): menu_items = [menu_items]
-            for i in menu_items:
-                if type(i) == str: i = self.items[i]        
-                if i in self.menu: self.menu.remove(i)
-        self._event_finish()       
-       
-
-    def on_menu_fade_out(self, menu_items=None): 
-        """ animate hiding the menu """
-        if not menu_items:
-            menu_items = self.menu
-        if type(menu_items) not in [tuple, list]: menu_items = [menu_items]
-        names = []
-        for i in reversed(menu_items): 
-            if type(i) == str: i = self.items[i]
-            names.append(i.name)
-            self.stuff_event(i.on_goto, (i.out_x,i.out_y))
-        if logging: log.debug("fadeOut menu using goto %s"%names)
-        self._event_finish()
-        
-    def on_menu_hide(self, menu_items = None):
-        """ hide the menu (all or partial)"""
-        if not menu_items:
-            menu_items = self.menu
-        if type(menu_items) not in [tuple, list]: menu_items = [menu_items]
-        for i in menu_items:
-            if type(i) == str: i = self.items[i]
-            self.stuff_event(i.on_place, (i.out_x, i.out_y))
-        if logging: log.debug("hide menu using place %s"%[x.name for x in self.menu])
-        self._event_finish()
-
-    def on_menu_show(self):
-        """ show the menu """
-        for i in self.menu: self.stuff_event(i.on_place, (i.in_x,i.in_y))
-        if logging: log.debug("show menu using place %s"%[x.name for x in self.menu])
-        self._event_finish()
-        
-    def on_menu_fade_in(self, menu_items=None): 
-        """ animate showing the menu """
-        if not menu_items:
-            menu_items = self.menu
-        if type(menu_items) not in [tuple, list]: menu_items = [menu_items]
-        if logging: log.debug("fadeIn menu, telling items to goto %s"%[x if type(x) == str else x.name for x in menu_items])
-        for i in reversed(menu_items):
-            i = self.items.get(i, self.actors.get(i, i)) if type(i) == str else i
-            self.stuff_event(i.on_goto, (i.in_x,i.in_y))
-        self._event_finish()
-
-        
-    def on_menu_push(self):
-        """ push this menu to the list of menus and clear the current menu """
-        if logging: log.debug("push menu %s, %s"%([x.name for x in self.menu], self._menus))
-        if self.menu:
-            self._menus.append(self.menu)
-            self.menu = []
-        self._event_finish()
-
-    def on_menu_pop(self):
-        """ pull a menu off the list of menus """
-        if self._menus: self.menu = self._menus.pop()
-        if logging: log.debug("pop menu %s"%[x.name for x in self.menu])
-        self._event_finish()
 
     def on_menu_from_factory(self, menu, items):
         """ Create a menu from a factory """
@@ -6692,7 +6709,7 @@ def utility_menu_create(game, menu, x=-5, y=50, size=20, first=None, layout=HORI
     newmenu = []
     def clicked_menuitem(game, item, player):
         """ close the menu and do the callback """
-        game.menu_clear()
+        game.menu.clear()
         game.set_menu(*item.first.top)
         item.callback(game, item, player)
         
