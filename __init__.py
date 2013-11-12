@@ -3325,6 +3325,13 @@ class Text(Item):
         img = text_to_image(text, self.font, colour, self.wrap, offset=offset)
         return img
 
+    def _image(self):
+        """ return an image for this actor """
+        img = None
+        if self.img: 
+            img = self.img
+        return img
+
     def draw(self, screen=None): #text.draw
 #        print(self.action.name) if self.action else print("no action for Text %s"%self.text)
         if self.game.testing: return
@@ -3477,6 +3484,7 @@ class Collection(MenuItem):
         self.cdx, self.cdy = 50,50 #tile width
         self._on_mouse_move = self._on_mouse_move_collection
         self.reverse_sort = False
+        self.selected = None
   
     def add(self, *args):
         for a in args:
@@ -3513,9 +3521,11 @@ class Collection(MenuItem):
         show = self._get_sorted()[self.index:]
         for i in show:
             if hasattr(i, "_cr") and collide(i._cr, mx, my): 
-                if logging: log.debug("Clicked on %s in collection %s"%(i.name, self.name))
+                if logging: log.debug("On %s in collection %s"%(i.name, self.name))
+                self.selected = i
                 return i
-        if logging: log.debug("Clicked on collection %s, but no object at that point"%(self.name))
+        if logging: log.debug("On collection %s, but no object at that point"%(self.name))
+        self.selected = None
         return None
         
         
@@ -3849,6 +3859,11 @@ class MenuManager(object):
     def __init__(self, game):
         self.game = game
 
+    def on_modal(self, modal=True):
+        """ Set if the menu is currently in modal mode (ie non-menu events are blocked """
+        self.game._menu_modal = modal
+        self.game._event_finish()        
+
     def on_clear(self, menu_items = None):
         """ clear current menu """
         if not menu_items:
@@ -3877,7 +3892,7 @@ class MenuManager(object):
     def on_hide(self, menu_items = None):
         """ hide the menu (all or partial)"""
         if not menu_items:
-            menu_items = self._menu
+            menu_items = self.game._menu
         if type(menu_items) not in [tuple, list]: menu_items = [menu_items]
         for i in menu_items:
             if type(i) == str: i = self.game.items[i]
@@ -6512,13 +6527,7 @@ class Game(object):
             else:
                 if logging: log.error("Menu item %s not found in MenuItem collection"%i)
         if logging: log.debug("set menu to %s"%[x.name for x in self._menu])
-        self._event_finish()        
-
-    def on_menu_modal(self, modal=True):
-        """ Set if the menu is currently in modal mode (ie non-menu events are blocked """
-        self._menu_modal = modal
-        self._event_finish()        
-        
+        self._event_finish()                
         
     def on_modals_clear(self):
         if logging: log.debug("clear modals %s"%[x.name for x in self.modals])
