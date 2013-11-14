@@ -419,6 +419,8 @@ class Font(Font):
         return result 
 """        
 
+SONG_END = pygame.USEREVENT + 1
+
 class Surface(Surface):
     def __deepcopy__(self, memo):
         """ Share surfaces between deep copied objects (only one graphical display) """
@@ -1795,6 +1797,7 @@ class Actor(object):
         if self.game and self.game.headless: return #headless mode skips sound and visuals
 
         if self._rect and self.game.scene and self.game.scene.background():
+            rect = self._rect.move(-self.game.camera.dx, -self.game.camera.dy) 
             self.game.screen.blit(self.game.scene.background(), self._rect, self._rect)
         if self.game.editing == self:
             r = self._crosshair((255,0,0), (self.ax, self.ay))
@@ -1855,6 +1858,9 @@ class Actor(object):
         if self.game and self.game.editing == self and self.game.editing.action and self.game.editing_mode == EDITING_DELTA: #onion skin for delta edit
             self._rect = pygame.Rect(self.x, self.y, 0, 0)
             ax,ay = self.ax, self.ay
+            if self.game and self.game.camera: 
+                ax -= self.game.camera.dx
+                ay -= self.game.camera.dy
             for i, tint, alpha in [(-1, (200,0,0), 0.4), (0, None, 1.0), (1, (0,0,200), 0.4)]: #order, alphas and number of frames to draw
                 index = (self.action.index+i)%self.action.count
                 img = self.action.images[index]
@@ -1871,7 +1877,11 @@ class Actor(object):
         if not self.allow_draw: return
         img = self._image()
         if img: 
-            self._rect = self._draw_image(img, (self.ax, self.ay), self._tint, self._alpha, screen=screen)
+            ax,ay = self.ax, self.ay
+            if self.game and self.game.camera: 
+                ax -= self.game.camera.dx
+                ay -= self.game.camera.dy
+            self._rect = self._draw_image(img, (ax, ay), self._tint, self._alpha, screen=screen)
         else:
             self._rect = pygame.Rect(self.x, self.y,0,0)
         
@@ -3725,7 +3735,11 @@ class Scene(object):
             self._background = load_image(fname)
             self._background_fname = fname
             if self.game:
-                self._rect = Rect(0,0,self.game.resolution[0],self.game.resolution[1]) #tell pyvida to redraw the whole screen to get the new background
+                dx, dy = 0, 0
+                if self.game.camera:
+                    dx -= self.game.camera.dx
+                    dy -= self.game.camera.dy
+                self._rect = Rect(dx, dy, self.game.resolution[0],self.game.resolution[1]) #tell pyvida to redraw the whole screen to get the new background
         return self._background
 
     def on_set_background(self, fname):
@@ -3945,6 +3959,7 @@ class Mixer(object):
         self._music_fname = None
         self._unfade_music = None # (channel_to_watch, new_music_volme)
         self._force_mute = False #override settings
+        self._music_callback = None #callback for when music ends
         
     def update(self, dt): #mixer.update
         if self._force_mute: return
@@ -3964,7 +3979,7 @@ class Mixer(object):
         #    self.music_index = 0
             
 
-    def _music_play(self, fname=None):
+    def _music_play(self, fname=None, loops=-1):
         if self._force_mute: return
         if fname: 
             if os.path.exists(fname):
@@ -3976,10 +3991,10 @@ class Mixer(object):
                 if pygame.mixer: pygame.mixer.music.stop()
                 return
         self.music_index = 0 #reset music counter
-        if pygame.mixer and not self.game.testing: pygame.mixer.music.play(-1) #loop indefinitely
+        if pygame.mixer and not self.game.testing: pygame.mixer.music.play(loops) #loop indefinitely
         
-    def on_music_play(self, fname=None):
-        self._music_play(fname=fname)
+    def on_music_play(self, fname=None, loops=-1):
+        self._music_play(fname=fname, loops=loops)
         self.game._event_finish()
         
     def _music_fade_out(self):
@@ -4060,6 +4075,12 @@ class Mixer(object):
         if sfx: sfx.stop()
         self.game._event_finish()
 
+    def on_music_finish(self, callback=None):
+        """ Set a callback function for when the music finishes playing """
+        self._music_callback = callback
+        pygame.mixer.music.set_endevent(SONG_END) if callback else pygame.mixer.music.set_endevent() #switch event on/off
+        self.game._event_finish()
+
 class Filter(object):
     """ Stub class for creating special camera|scene filters (like tints, sepia, etc) 
         Can be added to a scene or a camera.
@@ -4097,6 +4118,36 @@ class Camera(object):
         self.filters = [] 
         self._viewport = None #only draw within this Rect
         self._ambient_sound = None
+
+        self.dx, self.dy = 0, 0 #camera can offset scene
+
+        #motion control for camera
+        self._vx, self._vy = 0, 0 #velocity of camera
+        self._tx, self._ty = None, None #motion target for camera
+        self._last_clock_tick = 0
+
+    def update(self, dt): #camera.update
+        """ update the camera """
+#        if hasattr(self, "update"): #run this scene's personalised update function
+#            self.update(dt)
+#        if self._tx == None: return
+        time_delay = int(1000.0/self.game.fps)
+        current_clock_tick = int(round(time.time() * 1000))
+ #       self.dx += time_delay * self._vx
+#        self.dy += time_delay * self._vy
+        
+#        velocity in pixels per second * time since last frame in seconds.
+        if current_clock_tick >= self._last_clock_tick + time_delay: #draw another frame
+            self._last_clock_tick = current_clock_tick
+#            self.dx += randint(-10, 10)
+            if self.game.scene and self.game.screen:
+                if self.game.scene.background():
+                    self.game.screen.blit(self.game.scene.background(), (-self.dx, -self.dy))
+            
+#            if self.name == "title": print("reset cache")
+#        else:
+#            if self.name == "title": print("leave cache")
+
         
     def _scene(self, scene):
         """ change the current scene """
@@ -4127,7 +4178,7 @@ class Camera(object):
         if self._ambient_sound: self._ambient_sound.stop()
         if self.game.scene and self.game.screen:
             if self.game.scene.background():
-                self.game.screen.blit(self.game.scene.background(), (0, 0))
+                self.game.screen.blit(self.game.scene.background(), (-self.dx, -self.dy))
             else:
                 if logging: log.warning("No background for scene %s"%self.game.scene.name)
         #start music for this scene
@@ -4153,7 +4204,7 @@ class Camera(object):
         self.filters.append(obj)
 
 
-    def on_scene(self, scene):
+    def on_scene(self, scene): #camera.scene
         """ change the scene """
         if type(scene) == str:
             if scene in self.game.scenes:
@@ -4203,9 +4254,9 @@ class Camera(object):
             return True
         return False #event not finished
 
-    def draw(self, screen): #return a big rect
+    def draw(self, screen): #return a big rect #camera.draw
         if self._image:
-            return screen.blit(self._image, (0,0))
+            return screen.blit(self._image, (self.dx, self.dy))
         else:
             return None
     
@@ -4257,6 +4308,15 @@ class Camera(object):
         
     def on_set_alpha(self, val):
         self.game._event_finish(block=False)
+
+
+    def on_move(self, destination, seconds):
+        self._tx, self._ty = destination #target destination
+        self.dx, self.dy = destination #XXX TODO pan motion not coded yet
+        log.warning("Camera.move not fully implemented yet.")
+
+        self.game._event_finish(block=False)
+
 
 #If we use text reveal
 SLOW = 0
@@ -5266,7 +5326,8 @@ class Game(object):
             if event.type == QUIT:
                 self.quit = True
                 return
-
+            elif event.type == SONG_END:
+                if self.mixer and self.mixer._music_callback: self.mixer._music_callback(self)
             elif event.type == MOUSEBUTTONDOWN:
                 self._on_mouse_down(m[0], m[1], event.button, None)
             elif event.type == MOUSEBUTTONUP:
@@ -6032,11 +6093,12 @@ class Game(object):
             if self.loop >= 10000: self.loop = 0
             
             if self.mixer: self.mixer.update(dt)
+            if self.camera: self.camera.update(dt)
             
             if android and android.check_pause():
                 android.wait_for_resume()
             
-            if self.scene:
+            if self.scene: #clear the screen
                 blank = [[self.scene], self.scene.objects.values(), self.scene.foreground, self._menu, self.modals]
             else:
                 blank = [self._menu, self.modals]
@@ -6207,7 +6269,11 @@ class Game(object):
                             if self.scene: self.camera._play_scene_music() #switch music back on
                             if self.player and self.testing_message:
                                 if self.headless: self.headless = False #force visual if handing over to player
-                                if self.scene: self.screen.blit(self.scene.background(), (0, 0)) #redraw whole screen
+                                dx, dy = 0, 0
+                                if self.game.camera:
+                                    dx -= self.game.camera.dx
+                                    dy -= self.game.camera.dy
+                                if self.scene: self.screen.blit(self.scene.background(), (dx, dy)) #redraw whole screen
                                 self.player.says("Let's play.")
                                 if self.exit_step: self.quit = True #exit program
                                 self.modals_clear()
