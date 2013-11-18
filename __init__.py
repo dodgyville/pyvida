@@ -85,7 +85,7 @@ try:
 except ImportError:
     instancemethod = None
 
-from optparse import OptionParser
+from argparse import ArgumentParser
 from random import choice, randint
 
 import pygame
@@ -954,6 +954,7 @@ def open_editor(game, filepath, track=True):
         #add to the list of modules we are tracking
         module_name = os.path.splitext(os.path.basename(filepath))[0]
         if module_name not in game._modules and module_name != "__init__": 
+            print("ADDING %s TO MODULES"%module_name)
             game._modules[module_name] = 0
             #add file directory to path so that import can find it
             if os.path.dirname(filepath) not in sys.path: sys.path.append(os.path.dirname(filepath))
@@ -1546,7 +1547,7 @@ class Actor(object):
         return self._solid_area.move(self.x, self.y)  
 
 
-    def add(self, action): #add an action (not really used outside of smart
+    def add(self, action): #add an action (not really used outside of smart)
         self.actions[action.name] = action
         action.actor = self
         
@@ -1687,7 +1688,7 @@ class Actor(object):
             else:
                  #warn if using default vida look
                 if logging: log.warning("no look script for %s (write a %s function)"%(self.name, function_name))
-                
+                if self.game.editor_infill_methods: edit_script(self.game, self, basic, script, mode="look")
                 self._look_default(self.game, self, self.game.player)
 
     def trigger_use(self, actor):
@@ -1728,6 +1729,8 @@ class Actor(object):
          else:
                  #warn if using default vida look
                 if self.allow_use: log.warning("no use script for using %s with %s (write a def %s(game, %s, %s): function)"%(actor.name, self.name, basic, slug_actee.lower(), slug_actor.lower()))
+                if self.game.editor_infill_methods: edit_script(self.game, self, basic, script, mode="use")
+
                 self._use_default(self.game, self, actor)
          for receiver, sender in post_use.receivers: #do the signals for post_use
             if isinstance(self, sender): 
@@ -1797,7 +1800,7 @@ class Actor(object):
         if self.game and self.game.headless: return #headless mode skips sound and visuals
 
         if self._rect and self.game.scene and self.game.scene.background():
-            rect = self._rect.move(-self.game.camera.dx, -self.game.camera.dy) 
+#            rect = self._rect .move(-self.game.camera.dx, -self.game.camera.dy) 
             self.game.screen.blit(self.game.scene.background(), self._rect, self._rect)
         if self.game.editing == self:
             r = self._crosshair((255,0,0), (self.ax, self.ay))
@@ -1858,9 +1861,9 @@ class Actor(object):
         if self.game and self.game.editing == self and self.game.editing.action and self.game.editing_mode == EDITING_DELTA: #onion skin for delta edit
             self._rect = pygame.Rect(self.x, self.y, 0, 0)
             ax,ay = self.ax, self.ay
-            if self.game and self.game.camera: 
-                ax -= self.game.camera.dx
-                ay -= self.game.camera.dy
+#            if self.game and self.game.camera: 
+#                ax -= self.game.camera.dx
+#                ay -= self.game.camera.dy
             for i, tint, alpha in [(-1, (200,0,0), 0.4), (0, None, 1.0), (1, (0,0,200), 0.4)]: #order, alphas and number of frames to draw
                 index = (self.action.index+i)%self.action.count
                 img = self.action.images[index]
@@ -3695,10 +3698,8 @@ class Scene(object):
         if current_clock_tick >= self._last_clock_tick + time_delay: #draw another frame
             self.__image = None
             self._last_clock_tick = current_clock_tick
-            if self.name == "title": print("reset cache")
-        else:
-            if self.name == "title": print("leave cache")
-            
+        else: #reuse existing cache
+            pass            
 
     draw = Actor.draw #scene.draw
        
@@ -4130,7 +4131,7 @@ class Camera(object):
         """ update the camera """
 #        if hasattr(self, "update"): #run this scene's personalised update function
 #            self.update(dt)
-#        if self._tx == None: return
+        if self._tx == None: return
         time_delay = int(1000.0/self.game.fps)
         current_clock_tick = int(round(time.time() * 1000))
  #       self.dx += time_delay * self._vx
@@ -4425,6 +4426,10 @@ class Game(object):
         self.version = version
         self.high_contrast = False
 
+        self.parser = ArgumentParser()
+        self.add_arguments()
+
+
         self.allow_save = False #are we in the middle of a game, if so, allow save
         self.game = self
         self.name = name
@@ -4496,6 +4501,8 @@ class Game(object):
         self._modules = {} #list of game-related python modules and their file modification date
         self.catch_exceptions = True #engine will try and continue after encountering exception
         self.output_walkthrough = False
+        self.create_from_walkthrough = False
+
         
         #profiling
         self.profiling = False 
@@ -4513,6 +4520,8 @@ class Game(object):
         self.editing_mode = EDITING_ACTOR
         self.edit_scripts = False #engine clicks trigger script edit instead of game events.
         self.edit_scripts_button = None
+        self.editor_infill_methods = False
+
 #        self._editing_deltas = False #are we in the action editor
 
         #set up text overlay image
@@ -4539,7 +4548,34 @@ class Game(object):
         self.allow_player_interact = False #user can click interact on player character
         self.allow_player_look = False #user can look at player character
         self.allow_player_use = True #user can use items on the player character
-        
+    
+    def add_arguments(self):
+        """ Add allowable commandline arguments """
+        self.parser.add_argument("-a", "--alloweditor", action="store_true", dest="allow_editor", help="Enable editor via F1 key")
+#        self.parser.add_argument("-b", "--blank", action="store_true", dest="force_editor", help="smart load the game but enter the editor")
+        self.parser.add_argument("-c", "--contrast", action="store_true", dest="high_contrast", help="Play game in high contrast mode (for vision impaired players)", default=False)
+        self.parser.add_argument("-d", "--detailed <scene>", dest="analyse_scene", help="Print lots of info about one scene (best used with test runner)")
+        self.parser.add_argument("-e", "--exceptions", action="store_true", dest="allow_exceptions", help="Switch off exception catching.")
+        self.parser.add_argument("-f", "--fullscreen", action="store_true", dest="fullscreen", help="Play game in fullscreen mode", default=False)
+        self.parser.add_argument("-g", action="store_true", dest="infill_methods", help="Launch script editor when use script missing", default=False)
+        self.parser.add_argument("-H", "--headless", action="store_true", dest="headless", help="Run game as headless (no video)")
+        self.parser.add_argument("-i", "--imagereactor", action="store_true", dest="artreactor", help="Save images from each scene")
+        self.parser.add_argument("-l", "--lowmemory", action="store_true", dest="memory_save", help="Run game in low memory mode")
+        self.parser.add_argument("-m", "--matrixinventory", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
+        self.parser.add_argument("-o", "--objects", action="store_true", dest="analyse_characters", help="Print lots of info about actor and items to calculate art requirements", default=False)        
+        self.parser.add_argument("-p", "--profile", action="store_true", dest="profiling", help="Record player movements for testing", default=False)        
+
+        self.parser.add_argument("-R", "--random", action="store_true", dest="stresstest", help="Randomly deviate from walkthrough to stress test robustness of scripting")
+        self.parser.add_argument("-r", "--resolution", dest="resolution", help="Force engine to use resolution WxH or (w,h) (recommended (1600,900))")
+        self.parser.add_argument("-s", "--step", dest="step", help="Jump to step in walkthrough")
+        self.parser.add_argument("-t", "--text", action="store_true", dest="text", help="Play game in text mode (for players with disabilities who use text-to-speech output)", default=False)
+        self.parser.add_argument("-w", "--walkthrough", action="store_true", dest="output_walkthrough", help="Print a human readable walkthrough of this game, based on test suites.")
+        self.parser.add_argument("-W", "--walkcreate", action="store_true", dest="create_from_walkthrough", help="Create a smart directory structure based on the walkthrough.")
+
+        self.parser.add_argument("-x", "--exit", action="store_true", dest="exit_step", help="Used with --step, exit program after reaching step (good for profiling)")
+        self.parser.add_argument("-z", "--zerosound", action="store_true", dest="mute", help="Mute sounds", default=False)        
+
+    
     def reset(self):
         """ reset all game state information, perfect for loading new games """
         self.scene = None
@@ -5066,9 +5102,18 @@ class Game(object):
 
             for i in self.scene.objects.values(): #then objects in the scene
                 if i.collide(x,y) and (i.allow_use or i.allow_interact or i.allow_look):
-                    if self.mouse_mode == MOUSE_USE or i is not self.player: #only click on player in USE mode
- #                       if self.player and self.scene and self.player in self.scene.objects.values() and i != self.player: 
-#                            if self.mouse_mode != MOUSE_LOOK or GOTO_LOOK: self.player.goto(i)                
+                    #don't call trigger on player if game engine flags say "no"
+                    if i == self.player:
+                        if self.allow_player_interact and self.mouse_mode == MOUSE_INTERACT:
+                            self.trigger(i)
+                            return
+                        elif self.allow_player_use and self.mouse_mode == MOUSE_USE:
+                            self.trigger(i)
+                            return
+                        elif self.allow_player_look and self.mouse_mode == MOUSE_LOOK:
+                            self.trigger(i)
+                            return
+                    else: #if not player, call trigger in all scenarios
                         self.trigger(i) #trigger look, use or interact
                         return
             return
@@ -5105,14 +5150,34 @@ class Game(object):
         elif self.scene: #regular game interaction
             for i in self.scene.objects.values(): #then objects in the scene
                 if i.collide(x,y) and (i.allow_use or i.allow_interact or i.allow_look):
-#                   if i.actions.has_key('down'): i.action = i.actions['down']
-                    if self.mouse_mode == MOUSE_USE or i is not self.player: #only click on player in USE mode
+                    #don't call trigger on player if game engine flags say "no"
+                  if i.allow_draw:
+                    if i == self.player:
+                        if self.allow_player_interact and self.mouse_mode == MOUSE_INTERACT:
+                            self.block = True
+                            self.trigger(i)
+                            return
+                        elif self.allow_player_use and self.mouse_mode == MOUSE_USE:
+                            self.block = True
+                            self.trigger(i)
+                            return
+                        elif self.allow_player_look and self.mouse_mode == MOUSE_LOOK:
+                            self.block = True
+                            self.trigger(i)
+                            return
+                    else: #if not player, call trigger in all scenarios
                         self.block = True
-                        if self.player and self.scene and self.player in self.scene.objects.values() and i != self.player: 
-                            if self.mouse_mode != MOUSE_LOOK or GOTO_LOOK: self.player.goto(i)
-                    
+                        if self.mouse_mode != MOUSE_LOOK or GOTO_LOOK: self.player.goto(i)
                         self.trigger(i) #trigger look, use or interact
                         return
+
+      #              if self.mouse_mode == MOUSE_USE or i is not self.player: #only click on player in USE mode
+     #                   self.block = True
+    #                    if self.player and self.scene and self.player in self.scene.objects.values() and i != self.player: 
+   #                         if self.mouse_mode != MOUSE_LOOK or GOTO_LOOK: self.player.goto(i)
+  #                  
+ #                       self.trigger(i) #trigger look, use or interact
+#                        return
             #or finally, try and walk the player there.
             if self.player and self.player in self.scene.objects.values():
                 self.player.goto((x,y))
@@ -5131,7 +5196,7 @@ class Game(object):
                     i._on_mouse_leave(x, y, button, modifiers)
                 if i is not None and i.collide(x,y) and (i.allow_interact or i.allow_use or i.allow_look):
                     #if (i == self.player and self.mouse_mode == MOUSE_USE) or (i != self.player):
-                    if True:
+                    if i.allow_draw:
                         t = i.name if i.display_text == None else i.display_text                    
                         if isinstance(i, Portal) and self.mouse_mode != MOUSE_USE: #hover over portal
                             self.mouse_cursor = MOUSE_LEFT if i._x<512 else MOUSE_RIGHT
@@ -5605,12 +5670,14 @@ class Game(object):
                 mx,my = relative_position(game, collection, m)
                 scene = collection.get_object(m)
                 if not scene: return
-                name = "%s_To_%s"%(game.scene.name.title(), scene.name.title())
+                name = "%s_to_%s"%(game.scene.name.lower(), scene.name.lower())
                 d = os.path.join(game.portal_dir, name)
                 if not os.path.exists(d):
                     os.makedirs(d)
                 obj = Portal(name)
                 obj.game = game
+                obj._directory = os.path.join(get_smart_directory(game, obj), name)
+
                 #try and link
                 name = "%s_To_%s"%(scene.name.title(), game.scene.name.title())
                 link = game.items.get(name, None)
@@ -5933,38 +6000,15 @@ class Game(object):
         
         
     def run(self, splash=None, callback=None, icon=None):
-        parser = OptionParser()
-        parser.add_option("-a", "--alloweditor", action="store_true", dest="allow_editor", help="Enable editor via F1 key")
-#        parser.add_option("-b", "--blank", action="store_true", dest="force_editor", help="smart load the game but enter the editor")
-        parser.add_option("-c", "--contrast", action="store_true", dest="high_contrast", help="Play game in high contrast mode (for vision impaired players)", default=False)
-        parser.add_option("-d", "--detailed <scene>", dest="analyse_scene", help="Print lots of info about one scene (best used with test runner)")
-        parser.add_option("-e", "--exceptions", action="store_true", dest="allow_exceptions", help="Switch off exception catching.")
-        parser.add_option("-f", "--fullscreen", action="store_true", dest="fullscreen", help="Play game in fullscreen mode", default=False)
-        parser.add_option("-H", "--headless", action="store_true", dest="headless", help="Run game as headless (no video)")
-        parser.add_option("-i", "--imagereactor", action="store_true", dest="artreactor", help="Save images from each scene")
-        parser.add_option("-l", "--lowmemory", action="store_true", dest="memory_save", help="Run game in low memory mode")
-        parser.add_option("-m", "--matrixinventory", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
-        parser.add_option("-o", "--objects", action="store_true", dest="analyse_characters", help="Print lots of info about actor and items to calculate art requirements", default=False)        
-        parser.add_option("-p", "--profile", action="store_true", dest="profiling", help="Record player movements for testing", default=False)        
 
-        parser.add_option("-R", "--random", action="store_true", dest="stresstest", help="Randomly deviate from walkthrough to stress test robustness of scripting")
-        parser.add_option("-r", "--resolution", dest="resolution", help="Force engine to use resolution WxH or (w,h) (recommended (1600,900))")
-        parser.add_option("-s", "--step", dest="step", help="Jump to step in walkthrough")
-        parser.add_option("-t", "--text", action="store_true", dest="text", help="Play game in text mode (for players with disabilities who use text-to-speech output)", default=False)
-        parser.add_option("-w", "--walkthrough", action="store_true", dest="output_walkthrough", help="Print a human readable walkthrough of this game, based on test suites.")
-        parser.add_option("-W", "--walkcreate", action="store_true", dest="create_from_walkthrough", help="Create a smart directory structure based on the walkthrough.")
+#        self.parser.add_argument("-l", "--list", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
 
-        parser.add_option("-x", "--exit", action="store_true", dest="exit_step", help="Used with --step, exit program after reaching step (good for profiling)")
-        parser.add_option("-z", "--zerosound", action="store_true", dest="mute", help="Mute sounds", default=False)        
-
-
-#        parser.add_option("-l", "--list", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
-
-#        parser.add_option("-q", "--quiet",
+#        self.parser.add_argument("-q", "--quiet",
  #                 action="store_false", dest="verbose", default=True,
   #                help="don't print status messages to stdout")
 
-        (options, args) = parser.parse_args()    
+        options = self.parser.parse_args()    
+
         self.jump_to_step = None
         self.steps_complete = 0
         if options.test_inventory: self.test_inventory = True
@@ -5973,6 +6017,8 @@ class Game(object):
             self.memory_save = True
         if options.allow_exceptions == True:
             self.catch_exceptions = False
+        if options.infill_methods == True:
+            self.editor_infill_methods = True
         if options.text == True:
             print("Using text mode")
             self.text = True
