@@ -2590,7 +2590,7 @@ class Actor(object):
         walk_actions = [wx for wx in self.actions.keys() if wx in ["left", "right", "up", "down"]]
         if self.scene: #test point will be inside a walkarea
             walkarea_fail = True
-            for w in self.scene.walkareas:
+            for w in self.scene._walkareas:
                 if w.polygon.collide(x,y): walkarea_fail = False
             if logging and walkarea_fail and ignore==False: log.warning("Destination point (%s, %s) for %s is not inside %s walkarea "%(x,y, self.name, self.scene.name))                
         if self.game.testing == True or self.game.enabled_editor: 
@@ -2613,7 +2613,7 @@ class Actor(object):
                 self._goto_direct(x,y, walk_actions)
             else:
 #                self._goto_direct(x,y, walk_actions)
-                walkareas = self.scene.walkareas if self.scene and ignore==False else None
+                walkareas = self.scene._walkareas if self.scene and ignore==False else None
                 self._goto_astar(x,y, walk_actions, walkareas) 
 
     def forget(self, fact):
@@ -2664,7 +2664,6 @@ class Actor(object):
 
 
     def _gets(self, item, remove=True):
-
         if type(item) == str: 
             if item in self.game.items:
                 item = self.game.items[item]
@@ -2700,7 +2699,20 @@ class Actor(object):
         item.on_says(text, action="portrait")
         return
         
-        
+    def _loses(self, item):
+        """ remove item from inventory """
+        if type(item) == str: item = self.game.items[item]
+        if item in self.inventory.values():
+            del self.inventory[item.name]
+        else:
+            log.error("Item %s not in inventory"%item.name)
+
+    def on_loses(self, item):
+        if type(item) != list: item = [item]
+        for i in item:
+            self._loses(i)
+        self._event_finish()        
+
 
     def _get_text_details(self, font=None, size=None):
         """ get a dict of details about the speech of this object """
@@ -3598,20 +3610,50 @@ def pydeepcopy(d, memo):
             if type(v) not in [Font, Surface])
     print(d.keys())    
     return copy.deepcopy(d, memo)
-    
+
+
+class WalkareaManager(object):
+    __metaclass__ = use_on_events
+    def __init__(self, scene, game=None):
+        self.scene = scene
+        self.game = game
+        self._walkareas_old = []
+
+    def _event_finish(self, success=True, block=True):  #scene.event_finish
+        if not self.game: self.game = self.scene.game
+        return self.game._event_finish(success, block)
+
+    def on_set(self, walkareas):
+        self.scene._walkareas = walkareas
+        self._event_finish()
+
+    def on_lock(self):
+        """ Shrink the walk areas down to a zero point so nothing can move """
+        self._walkareas_old = self.scene._walkareas
+        self.scene._walkareas = []
+        self._event_finish()
+
+    def on_unlock(self):
+        """ Shrink the walk areas down to a zero point so nothing can move """
+        self.scene._walkareas = self._walkareas_old
+        self._walkareas_old = []
+        self._event_finish()
+
+
 
 class Scene(object):
     __metaclass__ = use_on_events
-    def __init__(self, name="Untitled Scene"):
+    def __init__(self, name="Untitled Scene", game=None):
         self.name = name
         self.objects = {}
         self.editlocked = False #stop ingame editor from overwriting file
-        self.game = None
+        self.game = game
         self._background = None
         self._background_fname = None
         self._rect = None #area to redraw if needed
         self._last_state = None #name of last state loaded using load_state
-        self.walkareas = [] #a list of WalkArea objects
+        self._walkareas = [] #a list of WalkArea objects #TODO: move to WalkareaManager
+        self.walkareas = WalkareaManager(self, game) #walkarea manager
         self.cx, self.cy = 512,384 #camera pointing at position (center of screen)
         self.scales = {} #when an actor is added to this scene, what scale factor to apply? (from scene.scales)
         self.editable = True #will it appear in the editor (eg portals list)
@@ -3663,6 +3705,8 @@ class Scene(object):
         """ smart scene load """
         sdir = os.path.join(os.getcwd(),os.path.join(game.scene_dir, self.name))
         bname = os.path.join(sdir, "background.png")
+        self.game = game
+        self.walkareas.game = game
         if os.path.isfile(bname):
             self.background(bname)
         self._load_foreground(game)
@@ -3677,8 +3721,8 @@ class Scene(object):
                 self.scales[actor] = float(factor)
                 line = f.readline()
             f.close()
-        if len(self.walkareas) == 0:
-            self.walkareas.append(WalkArea().smart(game))
+        if len(self._walkareas) == 0:
+            self._walkareas.append(WalkArea().smart(game))
 #            self.addWalkarea(walkarea)
 
         # if there is an initial state, load that automatically
@@ -3936,9 +3980,9 @@ class MenuManager(object):
     def on_push(self):
         """ push this menu to the list of menus and clear the current menu """
         if logging: log.debug("push menu %s, %s"%([x.name for x in self.game._menu], self.game._menus))
-        if self.game._menu:
-            self.game._menus.append(self.game._menu)
-            self.game._menu = []
+#        if self.game._menu:
+        self.game._menus.append(self.game._menu)
+        self.game._menu = []
         self.game._event_finish()
 
     def on_pop(self):
@@ -5475,8 +5519,8 @@ class Game(object):
                         f.write('    scene.clean(["%s"])\n'%objects) #remove old actors and items
                         if game.scene.music_fname:
                             f.write('    scene.music("%s")\n'%game.scene.music_fname)
-                        f.write('    scene.walkareas = [')
-                        for w in game.scene.walkareas:
+                        f.write('    scene._walkareas = [')
+                        for w in game.scene._walkareas:
                             walkarea = str(w.polygon.vertexarray)
                             f.write('WalkArea().smart(game, %s),'%(walkarea))
                         f.write(']\n')
@@ -5553,8 +5597,8 @@ class Game(object):
 
             def editor_walk(game, menu_item, player):
                 """ start editing the scene's walkarea """
-                if len(game.scene.walkareas)>0:
-                    game.set_editing(game.scene.walkareas[0])
+                if len(game.scene._walkareas)>0:
+                    game.set_editing(game.scene._walkareas[0])
 
             def editor_step(game, menu_item, player):
                 """ step through the walkthrough """
@@ -5719,7 +5763,7 @@ class Game(object):
                     if name=="": return
                     d = os.path.join(game.scene_dir, name)
                     if not os.path.exists(d): os.makedirs(d)
-                    obj = Scene(name).smart(game)
+                    obj = Scene(name, game).smart(game)
                     if not obj.background():
                         obj._background = create_tiled_background(game.resolution, (200,200,200), (150,150,150))
                         pygame.image.save(obj._background, os.path.join(d, "background.png"))
@@ -6107,8 +6151,7 @@ class Game(object):
         if self.scene and self.screen:
            self.screen.blit(self.scene.background(), (0, 0))
         elif self.screen and splash:
-            scene = Scene(splash)
-            scene.game = self
+            scene = Scene(splash, self)
             scene.background(splash)
             self.screen.blit(scene.background(), (0, 0))
             pygame.display.flip() #show updated display to user
@@ -6153,7 +6196,7 @@ class Game(object):
                 for group in blank:
                     for obj in group: obj.clear()
                 if self.scene:
-                    for w in self.scene.walkareas: w.clear() #clear walkarea if editing
+                    for w in self.scene._walkareas: w.clear() #clear walkarea if editing
                 if self._message_object: self._message_object.clear()
 
             if not self._wait: #process events normally
@@ -6182,7 +6225,7 @@ class Game(object):
 #                menu_objects = sorted(self._menu, key=lambda x: x.y, reverse=False)
                 for group in [objects, self.scene.foreground, self._menu, self.modals]:
                     for obj in group: obj.draw()
-                for w in self.scene.walkareas: w.draw() #draw walkarea if editing
+                for w in self.scene._walkareas: w.draw() #draw walkarea if editing
                 if self._message_object: self._message_object.draw()
                 
             if self.scene and self.screen: #update objects
@@ -6582,8 +6625,7 @@ class Game(object):
         """
  #       self.
         if logging: log.warning("game.splash ignores duration and clicks")
-        scene = Scene(image)
-        scene.game = self
+        scene = Scene(image, game=self)
         scene.background(image)
         #add scene to game, change over to that scene
         self.add(scene)
