@@ -1344,7 +1344,8 @@ class Actor(object):
         self._w, self._h = None, None #width and height
         self.display_text = None #can override name for game.info display text
         self.display_text_align = ALIGN_LEFT
-        
+        self.stand_action = None #instead of idle, do this action        
+
         self.speed = 10 #speed at which actor moves per frame
         self.inventory = {}
         self._scale = 1.0
@@ -2544,7 +2545,15 @@ class Actor(object):
             self._motion_queue = [] #force a*star to recalculate (will probably start a vertical walk)
 
         if x - fuzz - dx  < self.x < x + fuzz +dx and y - fuzz - dy < self.y < y + fuzz + dy: #arrived at point, end event
-            if "idle" in self.actions: self.action = self.actions['idle'] #XXX: magical variables, special cases, urgh
+
+            idle_action = "idle" if not self.stand_action else idle_action
+            if isinstance(idle_action, Action): idle_action = idle_action.name
+            if idle_action in self.actions: 
+                self.action = self.actions[idle_action]
+            
+            if "idle" in self.actions: self.action = self.actions['idle'] #XXX:
+
+
 #            if isinstance(self, MenuItem) or isinstance(self, Collection):
             self.x, self.y = self._tx, self._ty
             if logging: log.debug("actor %s has arrived at %s on scene %s"%(self.name, destination, self.scene.name if self.scene else "none"))
