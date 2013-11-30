@@ -947,10 +947,8 @@ def open_editor(game, filepath, track=True):
     """
     import subprocess, os
     editor = os.getenv('EDITOR', DEFAULT_TEXT_EDITOR)
-
     
     if track:
-
         #add to the list of modules we are tracking
         module_name = os.path.splitext(os.path.basename(filepath))[0]
         if module_name not in game._modules and module_name != "__init__": 
@@ -1025,8 +1023,8 @@ def editor_point(game, menuItem, player, editing=None):
         game.editing_point = None
 
 def editor_add_walkareapoint(game, menuItem, player):
-     if game.editing:
-            game.editing.polygon.vertexarray.append((512,316))
+    if game.editing:
+        game.editing.polygon.vertexarray.append((512,316))
 
 
 def snapshot(obj):
@@ -1240,7 +1238,12 @@ def edit_script(game, obj, basic, script, mode="use"):
         with open(fname, "a") as f:
             f.write("\ndef %s(game, obj, player):\n    pass\n"%basic)
         print("EDIT DEFAULT %s SCRIPT %s"%(mode, fname) )
+#        import importlib
+#        importlib.import_module('matplotlib.text')
+        module_name = os.path.splitext(os.path.basename(fname))[0]
         open_editor(game, fname)
+        __import__(module_name)
+
     toggle_edit_scripts(game)
     return
 
@@ -1599,7 +1602,10 @@ class Actor(object):
         details_name = os.path.join(myd, "details.txt")
         if os.path.isfile(details_name):
             txt = open(details_name).read()
-            data = json.loads(txt)
+            try:
+                data = json.loads(txt)
+            except ValueError:
+                print("Error json loading %s"%details_name)
             for key, value in data.items():
                 if key == "action_prefix": 
                     action_prefix = value
@@ -2262,6 +2268,11 @@ class Actor(object):
     def on_action_usage(self, update=None):
         if update != None: self.action.allow_update = update
         self._event_finish(block=False)
+
+    def on_flip(self):
+        """ Flip the current action """
+        for i, img in enumerate(self.action.images):
+            self.action.images[i] = pygame.transform.flip(self.action.images[i], True, False)
 
     def _rescale(self, scale):
         self.scale = scale    
@@ -3434,6 +3445,27 @@ class MenuFactory(object):
         self.anchor = anchor
     
 
+class Factory(object):
+    """ Fast create actors """
+    __metaclass__ = use_on_events    
+    def __init__(self, game, directory, cls=Actor):
+        self.game = game
+        self.directory = directory
+        self.cls = cls
+
+    def on_spawn(self, name, pos):
+        """ Spawn a copy of this factory's Actor using the name and pos """
+        actor = self.cls(name).smart(self.game, using=self.directory)
+        self.game._add(actor, replace=True)
+        actor._relocate(self.game.scene, pos)
+        self._event_finish(block=False)
+
+    def on_massive(self, num_of_spawns, rect, actions=["idle"]):
+        """ Spawn a massive number of Actors inside <rect> using the actions in <actions> """
+        if logging: log.error("Factory.massive not implemented yet") #TODO: implement
+        self._event_finish(block=False)
+
+
 ALPHABETICAL = 0
 
 class MenuText(Text, MenuItem):
@@ -3747,7 +3779,6 @@ class Scene(object):
             self.update(dt)
         time_delay = int(1000.0/self.fps)
         current_clock_tick = int(round(time.time() * 1000))
-        if self.name == "title": print("%s %s %s %s"%(self.name, time_delay, self._last_clock_tick, current_clock_tick))
         if current_clock_tick >= self._last_clock_tick + time_delay: #draw another frame
             self.__image = None
             self._last_clock_tick = current_clock_tick
@@ -3763,9 +3794,7 @@ class Scene(object):
 
     def _screenshot(self, modals=False): #scene.screenshot
         if self.__image:
-            if self.name == "title": print("using cache for %s"%self.name)
             return self.__image
-        if self.name == "title": print("fresh cache")
         image = pygame.Surface(self.game.resolution)
         if self.background(): image.blit(self.background(), (0, 0))        
         objects = sorted(self.objects.values(), key=lambda x: x.y, reverse=False)
@@ -5000,10 +5029,10 @@ class Game(object):
 #            if obj_cls == Portal: #guess portal links based on name, do before scene loads
         for pname in portals: #try and guess portal links
             if draw_progress_bar: self.progress_bar_count += 1
-            links = pname.split("_To_")
+            links = pname.split("_to_")
             guess_link = None
             if len(links)>1: #name format matches guess
-                guess_link = "%s_To_%s"%(links[1], links[0])
+                guess_link = "%s_to_%s"%(links[1].lower(), links[0].lower())
             if guess_link and guess_link in self.items:
                 self.items[pname].link = self.items[guess_link]
             else:
@@ -5732,7 +5761,7 @@ class Game(object):
                 obj._directory = os.path.join(get_smart_directory(game, obj), name)
 
                 #try and link
-                name = "%s_To_%s"%(scene.name.title(), game.scene.name.title())
+                name = "%s_to_%s"%(scene.name.lower(), game.scene.name.lower())
                 link = game.items.get(name, None)
                 if link: obj.link = link
                 if obj and game.scene:
@@ -5962,8 +5991,8 @@ class Game(object):
             self.add(MenuItem("e_step", editor_step, (470, 10), (470,-50), "n", display_text="next step").smart(self), replace=True)
             self.add(MenuItem("e_jump", editor_jump, (510, 10), (510,-50), "j", display_text="jump to step").smart(self), replace=True)
             self.add(MenuItem("e_reload", editor_reload, (550, 10), (550,-50), "r", display_text="reload scripts").smart(self), replace=True)
-            self.add(MenuItem("e_state_save", editor_state_save, (610, 10), (610,-50), "z", display_text="snapshot game state").smart(self), replace=True)
-            self.add(MenuItem("e_state_load", editor_state_load, (650, 10), (650,-50), "x", display_text="restore game state snapshot").smart(self), replace=True)
+            self.add(MenuItem("e_state_save", editor_state_save, (610, 100), (610,-50), "z", display_text="snapshot game state").smart(self), replace=True)
+            self.add(MenuItem("e_state_load", editor_state_load, (650, 100), (650,-50), "x", display_text="restore game state snapshot").smart(self), replace=True)
             
             #a collection widget for adding objects to a scene
             c = self.add(Collection("e_objects", editor_select_object, (300, 100), (300,-600), K_ESCAPE).smart(self), replace=True)
