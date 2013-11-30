@@ -3771,6 +3771,14 @@ class Scene(object):
         if os.path.isfile(state_name): game.load_state(self, "initial")
         ambient_name = os.path.join(sdir, "ambient.ogg") #ambient sound to
         if os.path.isfile(ambient_name): self.ambient_fname = ambient_name
+
+        #potentially load some defaults for this actor
+        filepath = os.path.join(sdir, "%s.defaults"%slugify(self.name).lower())
+
+        if os.path.isfile(filepath):
+            object_defaults = json.loads(open(filepath).read())
+            for key, val in object_defaults.items():
+                self.__dict__[key] = val
         return self
 
     def _update(self, dt):
@@ -5981,7 +5989,7 @@ class Game(object):
             #load menu for editor
             self.add(MenuItem("e_load", editor_load, (50, 10), (50,-50), "l").smart(self), replace=True)
             self.add(MenuItem("e_save", editor_save, (90, 10), (90,-50), "s").smart(self), replace=True)
-            self.add(MenuItem("e_add", editor_add, (130, 10), (130,-50), "a").smart(self), replace=True)
+            self.add(MenuItem("e_add", editor_add, (130, 10), (130,-50), "+").smart(self), replace=True)
             self.add(MenuItem("e_delete", editor_delete, (170, 10), (170,-50), "a").smart(self), replace=True)
             self.add(MenuItem("e_prev", editor_prev, (210, 10), (210,-50), "[").smart(self), replace=True)
             self.add(MenuItem("e_next", editor_next, (250, 10), (250,-50), "]").smart(self), replace=True)
