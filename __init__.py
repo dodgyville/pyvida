@@ -340,6 +340,11 @@ if logging:
         if logging: log.info("[Win32]")
     if 'darwin' in sys.platform: # check for OS X support
         if logging: log.info("[MacOS]")
+        sdl_version = pygame.get_sdl_version()
+        if len(sdl_version)==3 and (sdl_version[0], sdl_version[1]) == (1, 2) and sdl_version[2]<15:
+            m = "The SDL library on this computer appears to be out-of-date. Fullscreen may not work. You need at least SDL framework 1.2.15."
+            if logging:log.warning(m)
+            print(m)
     if 'linux' in sys.platform:
         if logging: log.info("[Linux]")
 
@@ -6162,6 +6167,8 @@ class Game(object):
         if options.fullscreen or (self.settings and self.settings.fullscreen):
             flags |= pygame.FULLSCREEN 
             self.fullscreen = True
+        #flags |= pygame.HWSURFACE 
+        #flags |= pygame.DOUBLEBUF
         try:
             self.screen = screen = pygame.display.set_mode(self.resolution, flags)
         except Exception as e:
@@ -6172,10 +6179,11 @@ class Game(object):
                 print("Available modes instead of {0}, {1}, {2}:".format(x,y,float(x)/y))
                 print([(x,y,float(x)/y) for x,y in modes])
                 print("Auto setting camera to {0}".format(modes[0]))
+
                 self.resolution = modes[0]
                 self.screen = screen = pygame.display.set_mode(self.resolution, flags)
             else:
-                print(e.message)
+                print("Error",e.message)
                 return
         if options.high_contrast or getattr(self.settings, "high_contrast", False):
             print("Using high contrast")
