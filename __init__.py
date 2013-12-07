@@ -5999,8 +5999,8 @@ class Game(object):
             self.add(MenuItem("e_step", editor_step, (470, 10), (470,-50), "n", display_text="next step").smart(self), replace=True)
             self.add(MenuItem("e_jump", editor_jump, (510, 10), (510,-50), "j", display_text="jump to step").smart(self), replace=True)
             self.add(MenuItem("e_reload", editor_reload, (550, 10), (550,-50), "r", display_text="reload scripts").smart(self), replace=True)
-            self.add(MenuItem("e_state_save", editor_state_save, (610, 100), (610,-50), "z", display_text="snapshot game state").smart(self), replace=True)
-            self.add(MenuItem("e_state_load", editor_state_load, (650, 100), (650,-50), "x", display_text="restore game state snapshot").smart(self), replace=True)
+            self.add(MenuItem("e_state_save", editor_state_save, (810, 50), (810,-50), "z", display_text="snapshot game state").smart(self), replace=True)
+            self.add(MenuItem("e_state_load", editor_state_load, (850, 50), (850,-50), "x", display_text="restore game state snapshot").smart(self), replace=True)
             
             #a collection widget for adding objects to a scene
             c = self.add(Collection("e_objects", editor_select_object, (300, 100), (300,-600), K_ESCAPE).smart(self), replace=True)
@@ -6685,7 +6685,7 @@ class Game(object):
         if callback: callback(self)
         
 
-    def user_input(self, text, callback, position=(50,170), background="msgbox", size=20, colour=(0, 220, 234)):
+    def user_input(self, text, callback, position=(None,None), background="msgbox", size=20, colour=(0, 220, 234)):
         """ A pseudo-queuing function. Display a text input, and wait for player to type something and hit enter
         Examples::
         
@@ -6699,6 +6699,8 @@ class Game(object):
             text option to display and a function to call if the player selects this option.
             
         """ 
+        if position == (None, None):
+            position = (self.resolution[0]/2, self.resolution[1]/2)
         if android:
             print("android skipping user input")
             callback(self.game, None)
@@ -6706,7 +6708,8 @@ class Game(object):
         def interact_msgbox(game, msgbox, player): pass #block modals and menu but let Input object handle user input
         msgbox = self.game.add(ModalItem(background, None, position).smart(self.game))
         msgbox.interact = interact_msgbox
-        txt = self.game.add(Input("input", (position[0]+30, position[1]+30), (840,170), text, wrap=660, callback=callback, size=size, colour=colour), False, ModalItem)
+        w,h = msgbox.w*0.5, msgbox.h*0.8
+        txt = self.game.add(Input("input", (position[0]-w, position[1]-h), position, text, wrap=660, callback=callback, size=size, colour=colour), False, ModalItem)
         txt.remove = [txt, msgbox]
         if self.game.testing: 
             #XXX user input not implemented for android pyvida
