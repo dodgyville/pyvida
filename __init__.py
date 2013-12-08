@@ -4189,7 +4189,6 @@ class Filter(object):
         """ render to the surface before everything else """
         pass
 
-
     def background(self, game, surface=None):
         """ render after the background has been drawn but before everything else """
         pass
@@ -5304,7 +5303,7 @@ class Game(object):
                                 if i.link.scene.name not in self.visited:
                                     t = "To the unknown."
                                 else:
-                                    t = "To %s"%(i.link.scene.name) if i.link.scene.display_text == None else "To %s"%(i.link.scene.display_text)
+                                    t = "To %s"%(i.link.scene.name) if i.link.scene.display_text in [None, ""] else "To %s"%(i.link.scene.display_text)
                             if not self.settings.show_portal_text: t = ""                        
                         self.info(t, i.nx, i.ny, i.display_text_align)
                         return
@@ -6617,6 +6616,7 @@ class Game(object):
         self.time_delay = int(1000.0/self.fps) #this is actually miliseconds per frame
         if self.settings: self.settings.fps = self.fps
         self._event_finish()
+
 
     def on_popup(self, text, image="msgbox", sfx=-1, block=True, modal=True,):
         """ A queuing function. Display an image and wait for player to close it.
