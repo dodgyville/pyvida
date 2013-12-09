@@ -1320,11 +1320,11 @@ class Actor(object):
             d = game.item_dir
         elif isinstance(self, Actor):
             d = game.actor_dir
+
+        myd = os.path.join(d, name)
         if img:
             images = [img]
-        else:
-            myd = os.path.join(d, name)
-            
+        else:            
             if not os.path.isdir(myd): #fallback to pyvida defaults
                 this_dir, this_filename = os.path.split(__file__)
                 log.debug("Unable to find %s, falling back to %s"%(myd, this_dir))
@@ -3424,7 +3424,6 @@ class Scene(object):
         if obj.name in self.scales.keys():
             obj.scale = self.scales[obj.name]
         elif "actors" in self.scales.keys() and not isinstance(obj, Item): #use auto scaling for actor if available
-            print("using scene-wide scale")
             obj.scale = self.scales["actors"]
         if logging: log.debug("Add %s to scene %s"%(obj.name, self.name))
 
@@ -4202,8 +4201,7 @@ class Game(object):
                         if not a: import pdb; pdb.set_trace()
                     a.smart(self)
 #                    self.stuff_event(self.add, a)
-                    if a.__class__ == Portal: portals.append(a.name)
-                    
+                    if a.__class__ == Portal: portals.append(a.name)                  
                             
 #            if obj_cls == Portal: #guess portal links based on name, do before scene loads
         for pname in portals: #try and guess portal links
@@ -4217,6 +4215,7 @@ class Game(object):
             else:
                 if logging: log.warning("game.smart unable to guess link for %s"%pname)
             self.items[pname].auto_align() #auto align portal text
+
         if type(player) == str: player = self.actors[player]
         if player: self.player = player
         if not self.scene and len(self.scenes) == 1: 
