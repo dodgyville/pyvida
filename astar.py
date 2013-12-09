@@ -4,7 +4,7 @@ import operator
 import random
 import unittest
 
-import euclid as eu
+from . import euclid as eu
 
 try:
     import logging
