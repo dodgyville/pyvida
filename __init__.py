@@ -1,5 +1,8 @@
 from __future__ import print_function
-import __builtin__
+try:
+    import __builtin__
+except ImportError: 
+    import builtins
 
 from datetime import datetime, timedelta, date
 import gc, glob, copy, inspect, math, os, operator, pickle, types, sys, time, re
@@ -90,8 +93,8 @@ from random import choice, randint
 
 import pygame
 from pygame.locals import *#QUIT, K_ESCAPE
-from astar import Astar
-import euclid as eu
+from .astar import Astar
+from . import euclid as eu
 
 HIDE_MOUSE = True #start with mouse hidden, first splash will turn it back on
 DEFAULT_FULLSCREEN = False #switch game to fullscreen or not
@@ -1163,7 +1166,7 @@ class Action(object):
             with open(fname+".montage", "r") as f:
                 try:
                     num, w, h  = [int(i) for i in f.readlines()]
-                except ValueError, err:
+                except ValueError as err:
                     if logging: log.error("Can't read values in %s.%s.montage"%(self.name, fname))
                     num,w,h = 0,0,0
             master_image = pygame.image.load(fname + ".png").convert_alpha()
@@ -1173,10 +1176,10 @@ class Action(object):
                 w = master_width/num
                 h = master_height
                 if logging: log.warning("%s montage file for actor %s does not match image dimensions, will guess dimensions (%i, %i)"%(fname, self.name, w, h))
-            for i in xrange(0, num):
+            for i in range(0, num):
                try:
                     self.images.append(master_image.subsurface((i*w,0,w,h)))
-               except ValueError, e:
+               except ValueError as e:
                     if logging: log.error("ValueError: %s (does .montage file match actual image dimensions?)")
         self.count = len(self.images)
         
@@ -1205,7 +1208,7 @@ class Action(object):
             with open(fname+".offset", "r") as f:
                 try:
                     self.ax, self.ay  = [int(i) for i in f.readlines()]
-                except ValueError, err:
+                except ValueError as err:
                     if logging: log.error("Can't read values in %s.%s.offset"%(self.name, fname))
                     self.ax, self.ay = 0,0
        
@@ -1843,8 +1846,8 @@ class Actor(object):
 #        if self._cached_image and self.action and self.action.count == 1: #used cached image
  #           img = self._cached_image
 #        else: #calc new image
-	if self._rotate != 0:
-	    img = pygame.transform.rotate(img, self._rotate)
+        if self._rotate != 0:
+            img = pygame.transform.rotate(img, self._rotate)
         if self.scale != 1.0:
             w = int(img.get_width() * self.scale)
             h = int(img.get_height() * self.scale)
@@ -2389,7 +2392,7 @@ class Actor(object):
 #        tick = float(duration/self.game.fps  #number of ticks for this anim
         step = (end - start)/frames #how much to change the scale each tick
         self.rescale(start)
-        for i in xrange(0, int(frames)):
+        for i in range(0, int(frames)):
             self.rescale(self._scale+step*i)
             self.game.wait(0) #wait at least one frame        
 #        self._event_finish(block=False)
@@ -2397,7 +2400,7 @@ class Actor(object):
     def on_rerotate(self, degrees=None, radians=None):
         """ A queuing function. Rotate an object """
         if logging: log.debug("actor.on_rerotate radians not implemented yet")
-	self._rotate = degrees
+        self._rotate = degrees
         self._event_finish(block=False)
 
     def on_set_alpha(self, alpha, block=False):
@@ -2550,12 +2553,12 @@ class Actor(object):
             dx,dy= 0,0
 #        print("test %s, %s is near %s, %s (%s, %s)"%(self.x, self.y, x,y,dx,dy))
         #XXX requires only vertical/horizontal actions - short circuit action if player is horiztonal or vertical with the point 
-        if dy<>0 and (y-dy < self.y < y + dy): #travelling vertically
+        if dy != 0 and (y-dy < self.y < y + dy): #travelling vertically
             self.y = self._ty
 #            print("*************** arrived at same y value, force goto")
             self._motion_queue = [] #force a*star to recalculate (will probably start a vertical walk)
 
-        if dx<>0 and (x-dx < self.x < x + dx): #travelling vertically
+        if dx != 0 and (x-dx < self.x < x + dx): #travelling vertically
             self.x = self._tx
 #            print("*************** arrived at same x value, force goto")
             self._motion_queue = [] #force a*star to recalculate (will probably start a vertical walk)
@@ -3172,14 +3175,14 @@ class Emitter(Item):
 
 
     def _add_particles(self, num=1):
-        for x in xrange(0,num):
+        for x in range(0,num):
             d = randint(self.direction-float(self.fov/2), self.direction+float(self.fov/2))
             self.particles.append(Particle(self.x + randint(0, self._solid_area.w), self.y + randint(0, self._solid_area.h), self._ax, self._ay, self.speed, d))
             p = self.particles[-1]
             p.index = randint(0, self.frames)
             if self.random_index and self.action:
                 p.action_index = randint(0, self.action.count)
-            for j in xrange(0, self.frames): #fast forward particle to mid position
+            for j in range(0, self.frames): #fast forward particle to mid position
                 self._update_particle(0, p)
             p.hidden = True
 
@@ -3213,7 +3216,7 @@ class Emitter(Item):
         if unhide:
             for p in self.particles:        
                 p.hidden = False
-        for f in xrange(0, frames):
+        for f in range(0, frames):
             for p in self.particles:        
                 self._update_particle(1, p)                
         self._event_finish(block=False)
@@ -5179,7 +5182,7 @@ class Game(object):
         if self.game and self.game.settings and self.game.settings.invert_mouse: #inverted mouse
             if button==1:
                 self.mouse_mode = MOUSE_LOOK #subaltern btn pressed 
-        elif button<>1: 
+        elif button != 1: 
             self.mouse_mode = MOUSE_LOOK #subaltern btn pressed 
 
         if self.edit_scripts: #potentially edit the script for the requested interaction
@@ -6222,7 +6225,7 @@ class Game(object):
         if callback: callback(self)
         dt = self.fps #time passed (in miliseconds)
         last_clock_tick = current_clock_tick = int(round(time.time() * 1000))
-    	self.cursor_show() #switch on after splash
+        self.cursor_show() #switch on after splash
         self._inside_event_loop = True
         while self.quit == False: #game.draw game.update
             last_clock_tick = int(round(time.time() * 1000))
