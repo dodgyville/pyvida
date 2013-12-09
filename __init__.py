@@ -1,4 +1,6 @@
 from __future__ import print_function
+from __future__ import unicode_literals
+
 try:
     import __builtin__
 except ImportError: 
@@ -78,7 +80,10 @@ if language:
 else:
     t = igettext.translation(APP_DIR, os.path.join('data', 'locale'), fallback=True)
 
-gettext = t.ugettext
+try:
+    gettext = t.ugettext
+except AttributeError: #try gettext for python3
+    gettext = t.gettext 
 
 from itertools import chain
 from itertools import cycle
