@@ -1592,6 +1592,7 @@ class Actor(object):
         else:
             name = self.name
         if not self.game: self.game = game
+
         d = get_smart_directory(game, self)
             
         myd = os.path.join(d, name)        
@@ -4055,6 +4056,7 @@ class Mixer(object):
     def __init__(self, game=None):
         self.game = game
         self.music_break = 200000 #fade the music out every x milliseconds
+
         self.music_break_length = 15000 #keep it quiet for y milliseconds
         self.music_index = 0
         self._music_fname = None
@@ -5038,8 +5040,7 @@ class Game(object):
                         if not a: import pdb; pdb.set_trace()
                     a.smart(self)
 #                    self.stuff_event(self.add, a)
-                    if a.__class__ == Portal: portals.append(a.name)
-                    
+                    if a.__class__ == Portal: portals.append(a.name)                  
                             
 #            if obj_cls == Portal: #guess portal links based on name, do before scene loads
         for pname in portals: #try and guess portal links
