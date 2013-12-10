@@ -12,6 +12,7 @@ import json
 
 #DEBUG_ASTAR = True
 DEBUG_ASTAR = False
+DEBUG_STDOUT = True #stream errors to stdout as well as log file
 
 ENABLE_EDITOR = False #default for editor
 ENABLE_PROFILING = False
@@ -325,10 +326,10 @@ if logging:
     handler = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=2000000, backupCount=5)
     handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
     log.addHandler(handler)
-
-    handler = logging.StreamHandler(stream=sys.stdout)
-    handler.setLevel(logging.ERROR)
-    log.addHandler(handler)
+    if DEBUG_STDOUT:
+        handler = logging.StreamHandler(stream=sys.stdout)
+        handler.setLevel(logging.ERROR)
+        log.addHandler(handler)
 
 else: #redirect log to stdout
     logging = True
@@ -1632,7 +1633,11 @@ class Actor(object):
                     action_prefix = value
                     idle = "%s%s"%(action_prefix, idle)
                     continue
-                if key == "font_colour" and value in COLOURS: value = COLOURS[value]
+                if key == "font_colour": 
+                    if type(value) == list:
+                        value = tuple(value)
+                    elif value in COLOURS: 
+                        value = COLOURS[value]
                 setattr(self, key, value)
 
         for action_fname in images: #load actions for this actor
