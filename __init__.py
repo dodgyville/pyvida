@@ -325,6 +325,11 @@ if logging:
     handler = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=2000000, backupCount=5)
     handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
     log.addHandler(handler)
+
+    handler = logging.StreamHandler(stream=sys.stdout)
+    handler.setLevel(logging.ERROR)
+    log.addHandler(handler)
+
 else: #redirect log to stdout
     logging = True
     class PrintLog(object):
@@ -1588,12 +1593,14 @@ class Actor(object):
         
         if using:
             if logging: log.info("actor.smart - using %s for smart load instead of real name %s"%(using, self.name))
-            name = using
+            name = os.path.basename(using)
+            d = os.path.dirname(using)
         else:
             name = self.name
+            d = get_smart_directory(game, self)
+
         if not self.game: self.game = game
 
-        d = get_smart_directory(game, self)
             
         myd = os.path.join(d, name)        
         if not os.path.isdir(myd): #fallback to pyvida defaults
@@ -4278,7 +4285,7 @@ class Camera(object):
         if self._ambient_sound: self._ambient_sound.stop()
         if self.game.scene and self.game.screen:
             if self.game.scene.background():
-                self.game.screen.blit(self.game.scene.background(), (-self.dx, -self.dy))
+                self.game.screen.blit(self.game.scene.background(), (-self.game.scene.dx, -self.game.scene.dy))
             else:
                 if logging: log.warning("No background for scene %s"%self.game.scene.name)
         #start music for this scene
