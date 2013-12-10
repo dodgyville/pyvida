@@ -461,7 +461,7 @@ class Font(Font):
 
 def get_keycode(key):
     """ pyvida2pygame function """
-    key = ord(key) if type(key) == str else key
+    key = ord(key) if type(key) in [str, unicode] else key
     return key
 
 
@@ -479,7 +479,7 @@ def use_init_variables(original_class):
         for i, value in enumerate(oargs):
             if i < len(args): #use the arg values
                 arg = args[i]
-                if value == "interact" and type(args[i]) == str: 
+                if value == "interact" and type(args[i]) in [str, unicode]: 
                     arg = get_function(self.game, args[i])
                 setattr(self, value, arg)
             else: #use default from original __init__ declaration
@@ -937,7 +937,7 @@ def collide(rect, x,y):
 
 def get_point(game, destination):
     """ get a point from a tuple, str or destination """
-    if type(destination) == str:
+    if type(destination) in [str, unicode]:
         if destination in game.actors: destination = (game.actors[destination].sx, game.actors[destination].sy)
         elif destination in game.items: destination = (game.items[destination].sx, game.items[destination].sy)
         
@@ -1016,7 +1016,7 @@ def editor_point(game, menuItem, player, editing=None):
     #click on an editor button for editing a point
     if not editing: editing = game.editing
     if not editing: return
-    if type(menuItem) == str: menuItem = game.items[menuItem]
+    if type(menuItem) in [str, unicode]: menuItem = game.items[menuItem]
     if type(editing) == WalkArea: return
     points = {"e_location": (editing.set_x, editing.set_y),
               "e_anchor": (editing.set_ax, editing.set_ay),
@@ -1715,10 +1715,10 @@ class Actor(object):
         #user actor on this actee
 #        if logging: log.warn("should look for def %s_use_%s"%(slugify(self.name),slugify(obj.name)))
 #        if logging: log.warn("using objects on %s not implemented"%self.name)
-         if type(actor) == str: 
+         if type(actor) in [str, unicode]: 
             if actor in self.game.items: actor = self.game.items[actor]
             if actor in self.game.actors: actor = self.game.actors[actor]
-            if type(actor) == str: 
+            if type(actor) in [str, unicode]: 
                 if logging: log.error("%s trigger use unable to find %s in game objects"%(self.name, actor))
                 return
                 
@@ -1764,7 +1764,7 @@ class Actor(object):
 #        if logging: log.debug("player interact with %s"%self.name)
         self.game.mouse_mode = MOUSE_INTERACT #reset mouse mode
         if self.interact: #if user has supplied an interact override
-            if type(self.interact) == str: 
+            if type(self.interact) in [str, unicode]: 
                 interact = get_function(self.game, self.interact)
                 if interact: 
                     self.interact = interact
@@ -1901,9 +1901,9 @@ class Actor(object):
         img = self._image()
         if img: 
             ax,ay = self.ax, self.ay
-            if self.game and self.game.camera: 
-                ax -= self.game.camera.dx
-                ay -= self.game.camera.dy
+            if self.scene: 
+                ax -= self.scene.dx
+                ay -= self.scene.dy
             self._rect = self._draw_image(img, (ax, ay), self._tint, self._alpha, screen=screen)
         else:
             self._rect = pygame.Rect(self.x, self.y,0,0)
@@ -2340,7 +2340,7 @@ class Actor(object):
         if scene == None:
             if logging: log.error("Unable to relocate %s to non-existent scene (None), relocating on current scene %s"%(self.name, self.game.scene.name))
             scene = self.game.scene
-        if type(scene) == str:
+        if type(scene) in [str, unicode]:
             if scene in self.game.scenes:
                 scene = self.game.scenes[scene]
             else:
@@ -2374,7 +2374,7 @@ class Actor(object):
 
     def _reparent(self, obj):
         if not self.game: return
-        parent = self.game.actors.get(obj, self.game.items.get(obj, None)) if type(obj) == str else obj
+        parent = self.game.actors.get(obj, self.game.items.get(obj, None)) if type(obj) in [str, unicode] else obj
         if parent == None: #try and remove this actor from its parent's children list
             if obj != None: log.error("Unable to reparent %s to %s"%(self.name, obj))
             if self._parent and self in self._parent._children:
@@ -2445,7 +2445,7 @@ class Actor(object):
     def _queue_motion(self, paction, frames=None):
         """ Queue the deltas from an action on this actor's motion_queue """
         action, adjustment = None, None #are we moving based on action, or forcing an adjustment in the location (astar motion)
-        if type(paction) == str: 
+        if type(paction) in [str, unicode]: 
             action = self.actions.get(paction, None)
         elif isinstance(paction, Action):
             action = paction
@@ -2607,7 +2607,7 @@ class Actor(object):
         """    
         if self.game: self.game.block = True
         self._motion_queue_ignore = ignore
-        if type(destination) == str:
+        if type(destination) in [str, unicode]:
             if destination in self.game.items:
                 destination = (self.game.items[destination].sx, self.game.items[destination].sy)
             else:
@@ -2691,13 +2691,13 @@ class Actor(object):
         
     def add_to_inventory(self, item):
         """Add this item in their inventory"""
-        if type(item) == str: item = self.game.items[item]
+        if type(item) in [str, unicode]: item = self.game.items[item]
         self.inventory[item.name] = item
         return item
 
 
     def _gets(self, item, remove=True):
-        if type(item) == str: 
+        if type(item) in [str, unicode]: 
             if item in self.game.items:
                 item = self.game.items[item]
             elif item in self.game.actors:
@@ -2734,7 +2734,7 @@ class Actor(object):
         
     def _loses(self, item):
         """ remove item from inventory """
-        if type(item) == str: item = self.game.items[item]
+        if type(item) in [str, unicode]: item = self.game.items[item]
         if item in self.inventory.values():
             del self.inventory[item.name]
         else:
@@ -2860,7 +2860,8 @@ class Actor(object):
         txt = self.game.add(Text("txt", (220, oy2 + 18), (840, iy+130), text, **kwargs), False, ModalItem)
         
         #get a portrait for this speech if one hasn't been passed in
-        if type(action) == str: action = self.actions.get(action, None)
+        if type(action) in [str, unicode]: action = self.actions.get(action, None)
+        print(type(action), action)
         if not action: action = self.actions.get("portrait", self.actions.get("idle", None))
         
         portrait = Item("portrait")
@@ -3525,7 +3526,7 @@ class SubmenuSelect(object):
             self._select(item)
             
         for i in menu_items:
-            if type(i) == str:
+            if type(i) in [str, unicode]:
 #                item = game.add(MenuItem(i, select_item, (sx, sy), (hx, hy)).smart(game))
                 item = game.add(MenuText("submenu_%s"%i, (280,80), (840,170), i, wrap=800, interact=select_item, spos=(sx, sy), hpos=(hx, hy), font=self.font), False, MenuItem)                
                 sy += MENU_Y_DISPLACEMENT
@@ -3567,8 +3568,8 @@ class Collection(MenuItem):
   
     def add(self, *args):
         for a in args:
-            if type(a) == str and a in self.game.actors: obj = self.game.actors[a]
-            elif type(a) == str and a in self.game.items: obj = self.game.items[a]
+            if type(a) in [str, unicode] and a in self.game.actors: obj = self.game.actors[a]
+            elif type(a) in [str, unicode] and a in self.game.items: obj = self.game.items[a]
             else: obj = a
             self.objects[obj.name] = obj
             self._sorted_objects = None
@@ -3708,7 +3709,7 @@ class Scene(object):
         self._last_state = None #name of last state loaded using load_state
         self._walkareas = [] #a list of WalkArea objects #TODO: move to WalkareaManager
         self.walkareas = WalkareaManager(self, game) #walkarea manager
-        self.cx, self.cy = 512,384 #camera pointing at position (center of screen)
+        self.dx, self.dy = 0,0 #camera displacement from center of screen
         self.scales = {} #when an actor is added to this scene, what scale factor to apply? (from scene.scales)
         self.editable = True #will it appear in the editor (eg portals list)
         self.analytics_count = 0 #used by test runner to measure how "popular" a scene is.
@@ -3839,11 +3840,7 @@ class Scene(object):
             self._background = load_image(fname)
             self._background_fname = fname
             if self.game:
-                dx, dy = 0, 0
-                if self.game.camera:
-                    dx -= self.game.camera.dx
-                    dy -= self.game.camera.dy
-                self._rect = Rect(dx, dy, self.game.resolution[0],self.game.resolution[1]) #tell pyvida to redraw the whole screen to get the new background
+                self._rect = Rect(self.dx, self.dy, self.game.resolution[0],self.game.resolution[1]) #tell pyvida to redraw the whole screen to get the new background
         return self._background
 
     def on_set_background(self, fname):
@@ -3857,7 +3854,7 @@ class Scene(object):
 
     def _remove(self, obj):
         """ remove object from the scene """
-        if type(obj) == str:
+        if type(obj) in [str, unicode]:
             if obj in self.objects:
                 obj = self.objects[obj]
             else:
@@ -3899,8 +3896,8 @@ class Scene(object):
         if not objects: objects = self.objects.values()
         if type(objects) != list: objects = [objects]
         if type(exclude) != list: exclude = [exclude]
-        objects = [self.objects[o] if type(o) == str else o for o in objects]
-        exclude = [self.objects[o] if type(o) == str else o for o in exclude]
+        objects = [self.objects[o] if type(o) in [str, unicode] else o for o in objects]
+        exclude = [self.objects[o] if type(o) in [str, unicode] else o for o in exclude]
         for o in objects:
             if o not in exclude:
                 o._set_usage(draw=draw, update=update)
@@ -3943,7 +3940,7 @@ class Scene(object):
 
     def _add(self, obj):
         """ removes obj from current scene it's in, adds to this scene """
-        obj = self.game.actors.get(obj, self.game.items.get(obj, None)) if type(obj) == str else obj        
+        obj = self.game.actors.get(obj, self.game.items.get(obj, None)) if type(obj) in [str, unicode] else obj        
         if obj.scene:
             obj.scene._remove(obj)
         self.objects[obj.name] = obj
@@ -3989,7 +3986,7 @@ class MenuManager(object):
         else:
             if not hasattr(menu_items, '__iter__'): menu_items = [menu_items]
             for i in menu_items:
-                if type(i) == str: i = self.items[i]        
+                if type(i) in [str, unicode]: i = self.items[i]        
                 if i in self.game._menu: self.game._menu.remove(i)
         self.game._event_finish()       
        
@@ -4001,7 +3998,7 @@ class MenuManager(object):
         if type(menu_items) not in [tuple, list]: menu_items = [menu_items]
         names = []
         for i in reversed(menu_items): 
-            if type(i) == str: i = self.items[i]
+            if type(i) in [str, unicode]: i = self.items[i]
             names.append(i.name)
             self.game.stuff_event(i.on_goto, (i.out_x,i.out_y))
         if logging: log.debug("fadeOut menu using goto %s"%names)
@@ -4013,7 +4010,7 @@ class MenuManager(object):
             menu_items = self.game._menu
         if type(menu_items) not in [tuple, list]: menu_items = [menu_items]
         for i in menu_items:
-            if type(i) == str: i = self.game.items[i]
+            if type(i) in [str, unicode]: i = self.game.items[i]
             self.game.stuff_event(i.on_place, (i.out_x, i.out_y))
         if logging: log.debug("hide menu using place %s"%[x.name for x in self.game._menu])
         self.game._event_finish()
@@ -4029,9 +4026,9 @@ class MenuManager(object):
         if not menu_items:
             menu_items = self.game._menu
         if type(menu_items) not in [tuple, list]: menu_items = [menu_items]
-        if logging: log.debug("fadeIn menu, telling items to goto %s"%[x if type(x) == str else x.name for x in menu_items])
+        if logging: log.debug("fadeIn menu, telling items to goto %s"%[x if type(x) in [str, unicode] else x.name for x in menu_items])
         for i in reversed(menu_items):
-            i = self.game.items.get(i, self.game.actors.get(i, i)) if type(i) == str else i
+            i = self.game.items.get(i, self.game.actors.get(i, i)) if type(i) in [str, unicode] else i
             self.game.stuff_event(i.on_goto, (i.in_x,i.in_y))
         self.game._event_finish()
 
@@ -4222,8 +4219,6 @@ class Camera(object):
         self._viewport = None #only draw within this Rect
         self._ambient_sound = None
 
-        self.dx, self.dy = 0, 0 #camera can offset scene
-
         #motion control for camera
         self._vx, self._vy = 0, 0 #velocity of camera
         self._tx, self._ty = None, None #motion target for camera
@@ -4258,7 +4253,7 @@ class Camera(object):
         if scene == None:
             if logging: log.error("Can't change to non-existent scene, staying on current scene")
             scene = self.game.scene
-        if type(scene) == str:
+        if type(scene) in [str, unicode]:
             if scene in self.game.scenes:
                 scene = self.game.scenes[scene]
             else:
@@ -4309,7 +4304,7 @@ class Camera(object):
 
     def on_scene(self, scene): #camera.scene
         """ change the scene """
-        if type(scene) == str:
+        if type(scene) in [str, unicode]:
             if scene in self.game.scenes:
                 scene = self.game.scenes[scene]
             else:
@@ -5058,7 +5053,7 @@ class Game(object):
             else:
                 if logging: log.warning("game.smart unable to guess link for %s"%pname)
             self.items[pname].auto_align() #auto align portal text
-        if type(player) == str: player = self.actors[player]
+        if type(player) in [str, unicode]: player = self.actors[player]
         if player: self.player = player
         if not self.scene and len(self.scenes) == 1: 
             scene = self.scenes.values()[0]
@@ -5167,7 +5162,7 @@ class Game(object):
                         self.editing_index = i
                         closest_distance = dist
                 if self.editing_index != None: return
-            elif self.editing and type(self.editing_point) == str: #editing a rect (editing_point is rect name on actor)
+            elif self.editing and type(self.editing_point) in [str, unicode]: #editing a rect (editing_point is rect name on actor)
                 closest_distance = 10000.0
                 r = getattr(self.editing, self.editing_point, None)
                 for i,pt in enumerate([(r.left, r.top), (r.right, r.bottom)]): #possible select new point
@@ -5332,7 +5327,7 @@ class Game(object):
         if self.editing and type(self.editing) == WalkArea and self.editing_index != None: #move walkarea point
             self.editing.polygon.vertexarray[self.editing_index] = (x,y)
         elif self.editing and self.editing_index !=None: #move point
-            if type(self.editing_point) == str:  #moving a rect point
+            if type(self.editing_point) in [str, unicode]:  #moving a rect point
                 r = getattr(self.editing, "_%s"%self.editing_point, None) #base relative to object
                 r2 = getattr(self.editing, self.editing_point, None) #relative to screen
                 if r:
@@ -6084,7 +6079,7 @@ class Game(object):
                 if logging: log.info("%s: %s"%(i.name, actions))
         if self.analyse_scene:
             scene = self.analyse_scene
-            if type(scene) == str:
+            if type(scene) in [str, unicode]:
                 if logging: log.warning("Asked to watch scene %s but it was never loaded"%scene)
             else:
                 if logging: log.info("ANALYSED SCENE %s"%scene.name)
@@ -6148,7 +6143,7 @@ class Game(object):
             if not os.path.exists(dname): os.makedirs(dname)
         if options.resolution: #override resolution
             r = options.resolution
-            if type(r) == str:
+            if type(r) in [str, unicode]:
                 r = r.split(",") if "," in r else r.split("x")
                 r = (int(r[0]), int(r[1])) #spot the line where I didn't have an internet connection while writing it
             self.resolution = r
@@ -6420,9 +6415,9 @@ class Game(object):
                             if self.player and self.testing_message:
                                 if self.headless: self.headless = False #force visual if handing over to player
                                 dx, dy = 0, 0
-                                if self.game.camera:
-                                    dx -= self.game.camera.dx
-                                    dy -= self.game.camera.dy
+                                if self.scene:
+                                    dx -= self.scene.dx
+                                    dy -= self.scene.dy
                                 if self.scene: self.screen.blit(self.scene.background(), (dx, dy)) #redraw whole screen
                                 self.player.says("Let's play.")
                                 if self.exit_step: self.quit = True #exit program
@@ -6521,13 +6516,13 @@ class Game(object):
 
     def set_interact(self, actor, fn):
         """ helper function for setting interact on an actor """
-        if type(actor) == str: 
+        if type(actor) in [str, unicode]: 
             actor = self.actors[actor] if actor in self.actors else self.items[actor]
         actor.interact = fn
 
     def set_look(self, actor, fn):
         """ helper function for setting look method on an actor """
-        if type(actor) == str: 
+        if type(actor) in [str, unicode]: 
             actor = self.actors[actor] if actor in self.actors else self.items[actor]
         actor.look = fn
 
@@ -6536,7 +6531,7 @@ class Game(object):
         """ a queuing function, not a queued function (ie it adds events but is not one """
         """ load a state from a file inside a scene directory """
         """ stuff load state events into the start of the queue """
-        if type(scene) == str:
+        if type(scene) in [str, unicode]:
             if scene in self.scenes:
                 scene = self.scenes[scene]
             else:
@@ -6599,12 +6594,12 @@ class Game(object):
         self._event_finish()
 
     def on_do(self, obj, action): #set the action for an item or actor
-        if type(obj) == str: obj = self.actors[obj]
+        if type(obj) in [str, unicode]: obj = self.actors[obj]
         obj._do(action)
         self._event_finish()
         
     def on_relocate(self, obj, scene, destination): #game.relocate
-        if type(obj) == str: obj = self.actors[obj] #XXX should check items, and fail gracefully too
+        if type(obj) in [str, unicode]: obj = self.actors[obj] #XXX should check items, and fail gracefully too
         obj._relocate(scene, destination)
         self._event_finish()
 
@@ -6615,7 +6610,7 @@ class Game(object):
 
     def on_set_player(self, actor):
         """ switch the player object that is controlled by the user """
-        if type(actor) == str: actor = self.actors[actor]
+        if type(actor) in [str, unicode]: actor = self.actors[actor]
         self.player = actor
         self._event_finish(block=False)
 
