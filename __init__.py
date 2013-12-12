@@ -1002,6 +1002,7 @@ def get_function(game, basic):
     modules = [module]
     modules.extend(extra_modules.keys())
     for m in modules:
+        if m not in sys.modules: continue
         if hasattr(sys.modules[m], basic):
               script = getattr(sys.modules[m], basic)
               break
@@ -1284,7 +1285,7 @@ class WalkArea(object):
     def clear(self):
         if self.active == False: return
         if self._rect and self.game.screen:
-            self.game.screen.blit(self.game.scene.background(), self._rect, self._rect)
+            self.game.screen.blit(self.game.scene.background(), self._rect, self._rect.move(self.game.scene.dx, self.game.scene.dy))
 
     def draw(self, screen=None): #walkarea.draw
         if self.game and self.game.editing and self.game.editing == self:
@@ -1423,7 +1424,10 @@ class Actor(object):
     def _event_finish(self, success=True, block=True):  #actor.event_finish
         return self.game._event_finish(success, block)
 
-    def get_x(self): return self._x #position
+    def get_x(self):  #position
+        x = self._x 
+        if self.game and self.game.scene and not isinstance(self, MenuItem): x -= self.game.scene.dx
+        return x 
     def set_x(self, x): self._x = x
     x = property(get_x, set_x)
 
@@ -1834,7 +1838,7 @@ class Actor(object):
 
         if self._rect and self.game.scene and self.game.scene.background():
 #            rect = self._rect .move(-self.game.camera.dx, -self.game.camera.dy) 
-            self.game.screen.blit(self.game.scene.background(), self._rect, self._rect)
+            self.game.screen.blit(self.game.scene.background(), self._rect, self._rect.move(self.game.scene.dx, self.game.scene.dy))
         if self.game.editing == self:
             r = self._crosshair((255,0,0), (self.ax, self.ay))
             if self.game.scene.background(): self.game.screen.blit(self.game.scene.background(), r, r)
@@ -1914,9 +1918,9 @@ class Actor(object):
         img = self._image()
         if img: 
             ax,ay = self.ax, self.ay
-            if self.scene: 
-                ax -= self.scene.dx
-                ay -= self.scene.dy
+#            if self.scene: 
+#                ax -= self.scene.dx
+#                ay -= self.scene.dy
             self._rect = self._draw_image(img, (ax, ay), self._tint, self._alpha, screen=screen)
         else:
             self._rect = pygame.Rect(self.x, self.y,0,0)
@@ -2629,6 +2633,9 @@ class Actor(object):
             destination = (destination, self.y)
         elif type(destination) != tuple:
             destination = (destination.sx, destination.sy)
+
+#        if self.scene: #shift if scene camera is shifted
+#            destination = (destination[0] + self.scene.dx, destination[1] + self.scene.dy)
         x,y = self._tx, self._ty = destination
         d = self.speed
         
@@ -2835,8 +2842,9 @@ class Actor(object):
                 game.modals.remove(t)
                 t = game.remove_related_events(game.items["ok"])
                 game.modals.remove(t)
-                t = game.remove_related_events(game.items["portrait"])
-                game.modals.remove(t)            
+                if action:
+                    t = game.remove_related_events(game.items["portrait"])
+                    game.modals.remove(t)            
             except ValueError:
                 pass
             game.block = False #release event lock
@@ -2873,30 +2881,35 @@ class Actor(object):
         txt = self.game.add(Text("txt", (220, oy2 + 18), (840, iy+130), text, **kwargs), False, ModalItem)
         
         #get a portrait for this speech if one hasn't been passed in
-        if type(action) in [str, unicode]: action = self.actions.get(action, None)
-        print(type(action), action)
-        if not action: action = self.actions.get("portrait", self.actions.get("idle", None))
-        
-        portrait = Item("portrait")
-        portrait.actions["idle"] = portrait.action = action
-        portrait = self.game.add(portrait, False, ModalItem)
-        portrait_x, portrait_y = 5, 5 #top corner for portrait offset
-        #center portrait if smaller than 150x230
-        pimg = portrait._image()
-                
+        if type(action) in [str, unicode]: action = self.actions.get(action, -1)
+        if action == -1: action = self.actions.get("portrait", self.actions.get("idle", None))
+       
+        if action != None:
+            portrait = Item("portrait")
+            portrait.actions["idle"] = portrait.action = action
+            portrait = self.game.add(portrait, False, ModalItem)
+            portrait_x, portrait_y = 5, 5 #top corner for portrait offset
+            portrait_w, portrait_h = portrait.w, portrait.h
+            #center portrait if smaller than 150x230
+            pimg = portrait._image()
+        else: #no action so no portrait                
+            portrait_x, portrait_y = 5, 5 #top corner for portrait offset
+            portrait_w, portrait_h = 0, 0
+    
+
         px, py = self.game.resolution[0]/2 - msg.w/2, self.game.resolution[1] - msg.h #XXX I think this is overriding the POSITION_x stuff, top corner of msgbox
         offset_x, offset_y = 0, -50 #total offset
 
         ok = self.game.add(Item("ok").smart(self.game), False, ModalItem)
         ok.interact = close_msgbox
         
-        tx, ty = ox + portrait.w, iy+216+ offset_y
+        tx, ty = ox + portrait_w, iy+216+ offset_y
 #        px, py = msg.ax + 5, iy
 
-        msg._text_offset_x = px + portrait.w + 20 #where the text is placed in this box
+        msg._text_offset_x = px + portrait_w + 20 #where the text is placed in this box
 
         self.game.stuff_event(ok.on_place, (px + msg.w - 30, py + msg.h - 10 + offset_y))
-        self.game.stuff_event(portrait.on_place, (px + portrait_x, py + portrait_y + offset_y))
+        if action: self.game.stuff_event(portrait.on_place, (px + portrait_x, py + portrait_y + offset_y))
         self.game.stuff_event(txt.on_place, (msg._text_offset_x, py + 10 + offset_y))
         self.game.stuff_event(msg.on_goto, (px + msg.w/2, py + offset_y))
     
@@ -4252,16 +4265,25 @@ class Camera(object):
         if current_clock_tick >= self._last_clock_tick + time_delay: #draw another frame
             self._last_clock_tick = current_clock_tick
 #            self.dx += randint(-10, 10)
+            self.game.scene.dx -= self._vx
+            self.game.scene.dy -= self._vy
+            print("camera dx ",self.game.scene.dx, self._vx)
+            f = 5
+            if self.game.scene.dx > self._tx - f and self.game.scene.dx < self._tx + f \
+                and self.game.scene.dy > self._ty - f and self.game.scene.dy < self._ty + f:
+                    self._tx, self._ty = None, None
+                    print("arrived")
+                    self.game._event_finish(block=True)
             if self.game.scene and self.game.screen:
                 if self.game.scene.background():
-                    self.game.screen.blit(self.game.scene.background(), (-self.dx, -self.dy))
+                    self.game.screen.blit(self.game.scene.background(), (-self.game.scene.dx, -self.game.scene.dy))
             
 #            if self.name == "title": print("reset cache")
 #        else:
 #            if self.name == "title": print("leave cache")
 
         
-    def _scene(self, scene):
+    def _scene(self, scene, camera_point=None):
         """ change the current scene """
         game = self.game
         if scene == None:
@@ -4283,6 +4305,7 @@ class Camera(object):
             for i in scene.objects.values():
                 print(i.display_text)
         self.game.scene = scene
+        if camera_point: scene.dx, scene.dy = camera_point
         if scene.name not in self.game.visited: self.game.visited.append(scene.name) #remember scenes visited
         if logging: log.debug("changing scene to %s"%scene.name)
         if self.game and self.game.headless: return #headless mode skips sound and visuals
@@ -4316,7 +4339,7 @@ class Camera(object):
         self.filters.append(obj)
 
 
-    def on_scene(self, scene): #camera.scene
+    def on_scene(self, scene, camera_point=None): #camera.scene
         """ change the scene """
         if type(scene) in [str, unicode]:
             if scene in self.game.scenes:
@@ -4330,7 +4353,7 @@ class Camera(object):
             precamera_fn = get_function(self.game, "precamera_%s"%slugify(scene.name))
             if precamera_fn: precamera_fn(self.game, scene, self.game.player)
         
-        self._scene(scene)
+        self._scene(scene, camera_point=camera_point)
 
         #check for a postcamera script to run
         if scene:
@@ -4424,10 +4447,14 @@ class Camera(object):
 
     def on_move(self, destination, seconds):
         self._tx, self._ty = destination #target destination
-        self.dx, self.dy = destination #XXX TODO pan motion not coded yet
-        log.warning("Camera.move not fully implemented yet.")
 
-        self.game._event_finish(block=False)
+        self._vx = float(self.game.scene.dx - self._tx)/(seconds*self.game.fps)
+        self._vy = float(self.game.scene.dy - self._ty)/(seconds*self.game.fps)
+
+#        self._vx, self._vy = 
+#        self.dx, self.dy = destination #XXX TODO pan motion not coded yet
+#        log.warning("Camera.move not fully implemented yet.")
+
 
 
 #If we use text reveal
@@ -5309,7 +5336,7 @@ class Game(object):
                     if i.allow_draw:
                         t = i.name if i.display_text == None else i.display_text                    
                         if isinstance(i, Portal) and self.mouse_mode != MOUSE_USE: #hover over portal
-                            self.mouse_cursor = MOUSE_LEFT if i._x<512 else MOUSE_RIGHT
+                            self.mouse_cursor = MOUSE_LEFT if i._x<self.resolution[0]/2 else MOUSE_RIGHT
                         elif self.mouse_mode == MOUSE_LOOK:
                             self.mouse_cursor = MOUSE_CROSSHAIR #MOUSE_EYES
                         elif self.mouse_mode != MOUSE_USE:
@@ -6394,7 +6421,7 @@ class Game(object):
             
             #hide mouse
             if self.scene and self.scene.background():
-                if not self.hide_cursor and cursor_rect: self.screen.blit(self.scene.background(), cursor_rect, cursor_rect)
+                if not self.hide_cursor and cursor_rect: self.screen.blit(self.scene.background(), cursor_rect, cursor_rect.move(self.scene.dx, self.scene.dy))
                 if self.info_image: self.screen.blit(self.scene.background(), info_rect, info_rect)
                 if debug_rect: self.screen.blit(self.scene.background(), debug_rect, debug_rect)
             else:
