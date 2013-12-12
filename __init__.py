@@ -22,8 +22,10 @@ DEFAULT_TEXT_EDITOR = "gedit"
 
 #AVAILABLE BACKENDS
 PYGAME19 = 0
+PYGAME19GL = 1
+PYGLET12 = 2
 
-BACKEND = PYGAME19
+BACKEND = PYGLET12
 
 
 try:
@@ -366,7 +368,7 @@ if logging:
     if not pygame.font: log.warning('Warning, fonts disabled')
     if not pygame.mixer: log.warning('Warning, sound disabled')
     log.warning("game.scene.camera panning not implemented yet")
-    log.warning("broad try excepts around pygame.image.loads")
+    log.warning("broad try excepts around image_loads")
     log.warning("smart load should load non-idle action as default if there is only one action")
     log.warning("actor.asks not fully implemented")
     log.warning("pre_interact signal not implemented")
@@ -411,6 +413,15 @@ DEFAULT_ACTION_FRAME_RATE = 30
 DEFAULT_FONT = os.path.join("data/fonts/", "vera.ttf")
 DEFAULT_SIZE = 26
 MENU_COLOUR = (42, 127, 255)
+
+
+if BACKEND == PYGAME19GL:
+    from pygame19gl import *
+elif BACKEND == PYGLET12:
+    from pyglet12 import *
+else:
+    from pygame19 import *
+
 
 
 ################ PYVIDA-PYGAME19 INTERFACE ################
@@ -871,7 +882,7 @@ def get_available_languages():
 def load_image(fname):
     im = None
     try:
-        im = pygame.image.load(fname)
+        im = image_load(fname)
     except:
         if logging: log.warning("unable to load image %s"%fname)
     return im
@@ -1172,7 +1183,7 @@ class Action(object):
         
         #load the image and slice info if necessary
         if not os.path.isfile(fname+".montage"):
-            self.images = [pygame.image.load(fname+".png").convert_alpha()] #single image
+            self.images = [load_image(fname+".png")] #single image
             self._raw_width, self._raw_height = self.images[0].get_size()
         else:
             with open(fname+".montage", "r") as f:
@@ -1181,7 +1192,7 @@ class Action(object):
                 except ValueError as err:
                     if logging: log.error("Can't read values in %s.%s.montage"%(self.name, fname))
                     num,w,h = 0,0,0
-            master_image = pygame.image.load(fname + ".png").convert_alpha()
+            master_image = load_image(fname + ".png")
             master_width, master_height = master_image.get_size()
             self._raw_width, self._raw_height = master_width, master_height
             if master_width/num != w:
@@ -1662,7 +1673,7 @@ class Actor(object):
         if self.action == None and len(self.actions)>0 and self.actions.keys() != ["%sportrait"%action_prefix]: 
             self.action = self.actions.values()[0] #or default to first loaded
 #        try:
-#            self._image = pygame.image.load(os.path.join(d, "%s/idle.png"%self.name)).convert_alpha()
+#            self._image = image_load(os.path.join(d, "%s/idle.png"%self.name)).convert_alpha()
         if self.action and self.action.image():
             r = self.action.image().get_rect()
             self._clickable_area = Rect(0, 0, r.w, r.h)
@@ -3053,7 +3064,7 @@ class Portal(Item):
         for p in ["", "_inactive"]:
             fname = os.path.join(os.getcwd(), os.path.join(game.interface_dir, "p_exit%s.png"%p))
             if os.path.isfile(fname):
-                setattr(self, "display_exit%s"%p, pygame.image.load(fname).convert_alpha())
+                setattr(self, "display_exit%s"%p, load_image(fname))
 #        if game.settings.show_portal_text:
  #           self.display_text = self.name
                 
@@ -4391,7 +4402,10 @@ class Camera(object):
 
     def draw(self, screen): #return a big rect #camera.draw
         if self._image:
-            return screen.blit(self._image, (self.dx, self.dy))
+	    dx, dy = 0,0 
+	    if self.game and self.game.scene:
+		   dx, dy = self.game.scene.dx, self.game.scene.dy
+            return screen.blit(self._image, (dx, dy))
         else:
             return None
     
@@ -4786,7 +4800,8 @@ class Game(object):
                 flags |= pygame.FULLSCREEN 
             else:
                 flags |= pygame.RESIZABLE
-            self.screen = pygame.display.set_mode(self.resolution, flags)
+            self.screen = display_set_mode(self.resolution, flags)
+
         #apply music volume
         music_volume = self.settings.music_volume if self.settings.music_on else 0
         self.mixer.music_volume(music_volume)
@@ -5552,13 +5567,13 @@ class Game(object):
                     ]:
             try: #use specific mouse cursors or use pyvida defaults
                 cursor_pwd = os.path.join(os.getcwd(), os.path.join(self.interface_dir, value))
-                self.mouse_cursors[key] = pygame.image.load(cursor_pwd).convert_alpha()
+                self.mouse_cursors[key] = load_image(cursor_pwd)
             except:
                 if logging: log.warning("Can't find local %s cursor, so defaulting to pyvida one"%value)
                 this_dir, this_filename = os.path.split(__file__)
                 myf = os.path.join(this_dir, "data/interface", value)
                 if os.path.isfile(myf):
-                    self.mouse_cursors[key] = pygame.image.load(myf).convert_alpha()
+                    self.mouse_cursors[key] = load_image(myf)
     
     def _load_editor(self):
             """ Load the ingame edit menu """
@@ -6200,11 +6215,11 @@ class Game(object):
         if options.headless: 
             self.headless = True
         os.environ['SDL_VIDEO_CENTERED'] = '1'            
-        pygame.init() 
-        pygame.key.set_repeat() #switch off key repeats
+        pre_init() 
+        set_key_repeat(False)
 
         if icon and os.path.exists(icon):
-            pygame.display.set_icon(pygame.image.load(icon))
+            set_icon(load_image(icon))
         flags = 0
         if options.fullscreen or (self.settings and self.settings.fullscreen):
             flags |= pygame.FULLSCREEN 
@@ -6212,7 +6227,7 @@ class Game(object):
         #flags |= pygame.HWSURFACE 
         #flags |= pygame.DOUBLEBUF
         try:
-            self.screen = screen = pygame.display.set_mode(self.resolution, flags)
+            self.screen = screen = display_set_mode(self.resolution, flags)
         except Exception as e:
             if "No video mode large enough" in e.message: #try and set camera scale
                 print(e.message)
@@ -6223,19 +6238,19 @@ class Game(object):
                 print("Auto setting camera to {0}".format(modes[0]))
 
                 self.resolution = modes[0]
-                self.screen = screen = pygame.display.set_mode(self.resolution, flags)
+                self.screen = screen = display_set_mode(self.resolution, flags)
             else:
                 print("Error",e.message)
                 return
         if options.high_contrast or getattr(self.settings, "high_contrast", False):
             print("Using high contrast")
             self.high_contrast = True
-
+        post_init()
         if android: android.init() #initialise android framework ASAP
         
         #do post pygame init loading
         #set up mouse cursors
-        pygame.mouse.set_visible(False) #hide system mouse cursor
+        mouse_set_visible(False) #hide system mouse cursor
         self._load_mouse_cursors()
         
         #set up default game font
