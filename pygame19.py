@@ -1,7 +1,7 @@
 import pygame
 
 def display_set_mode(resolution, flags):
-    pygame.display.set_mode(resolution, flags)
+    return pygame.display.set_mode(resolution, flags)
 
 
 def pre_init():
@@ -12,11 +12,19 @@ def post_init():
     """ Called after display_set_mode """
     pass
 
+def image_load(filename, convert_alpha=False):
+    if convert_alpha:
+        i = pygame.image.load(filename).convert_alpha()
+    else:
+        i = pygame.image.load(filename)
+    return i
 
-def image_load(filename):
-    return pygame.image.load(filename).convert_alpha()
+def screen_blit(screen, img, dest, area=None, special_flags = 0):
+    r = screen.blit(img, dest, area=area, special_flags=special_flags)
+    return r
 
-
+def display_flip():
+    pygame.display.flip() #show updated display to user
 
 def set_key_repeat(value=False):
     #switch off key repeats
@@ -30,7 +38,13 @@ def mouse_set_visible(value=True):
     return pygame.mouse.set_visible(value) 
 
 
-def load_font(filename):
-    pyglet.font.add_file(filename)
-    import pdb; pdb.set_trace()
-    action_man = pyglet.font.load('Action Man')
+#fonts
+
+class Font(pygame.font.Font):
+    pass
+
+
+#sound
+
+def set_volume(volume):
+    if pygame.mixer: pygame.mixer.music.set_volume(volume)

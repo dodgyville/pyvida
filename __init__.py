@@ -25,7 +25,7 @@ PYGAME19 = 0
 PYGAME19GL = 1
 PYGLET12 = 2
 
-BACKEND = PYGLET12
+BACKEND = PYGAME19
 
 
 try:
@@ -879,10 +879,10 @@ def get_available_languages():
         languages.append(language) #the default
     return languages
   
-def load_image(fname):
+def load_image(fname, convert_alpha=False):
     im = None
     try:
-        im = image_load(fname)
+        im = image_load(fname, convert_alpha=convert_alpha)
     except:
         if logging: log.warning("unable to load image %s"%fname)
     return im
@@ -1183,7 +1183,7 @@ class Action(object):
         
         #load the image and slice info if necessary
         if not os.path.isfile(fname+".montage"):
-            self.images = [load_image(fname+".png")] #single image
+            self.images = [load_image(fname+".png", convert_alpha=True)] #single image
             self._raw_width, self._raw_height = self.images[0].get_size()
         else:
             with open(fname+".montage", "r") as f:
@@ -1192,7 +1192,7 @@ class Action(object):
                 except ValueError as err:
                     if logging: log.error("Can't read values in %s.%s.montage"%(self.name, fname))
                     num,w,h = 0,0,0
-            master_image = load_image(fname + ".png")
+            master_image = load_image(fname + ".png", convert_alpha=True)
             master_width, master_height = master_image.get_size()
             self._raw_width, self._raw_height = master_width, master_height
             if master_width/num != w:
@@ -1296,7 +1296,7 @@ class WalkArea(object):
     def clear(self):
         if self.active == False: return
         if self._rect and self.game.screen:
-            self.game.screen.blit(self.game.scene.background(), self._rect, self._rect.move(self.game.scene.dx, self.game.scene.dy))
+            screen_blit(self.game.screen, self.game.scene.background(), self._rect, self._rect.move(self.game.scene.dx, self.game.scene.dy))
 
     def draw(self, screen=None): #walkarea.draw
         if self.game and self.game.editing and self.game.editing == self:
@@ -1844,18 +1844,18 @@ class Actor(object):
                 receiver(self.game, self, self.game.player)
 
     def clear(self): #actor.clear
-#        self.game.screen.blit(self.game.scene.background(), (self.x, self.y), self._image.get_rect())
+#        screen_blit(self.game.screen, self.game.scene.background(), (self.x, self.y), self._image.get_rect())
         if self.game and self.game.headless: return #headless mode skips sound and visuals
 
         if self._rect and self.game.scene and self.game.scene.background():
 #            rect = self._rect .move(-self.game.camera.dx, -self.game.camera.dy) 
-            self.game.screen.blit(self.game.scene.background(), self._rect, self._rect.move(self.game.scene.dx, self.game.scene.dy))
+            screen_blit(self.game.screen, self.game.scene.background(), self._rect, self._rect.move(self.game.scene.dx, self.game.scene.dy))
         if self.game.editing == self:
             r = self._crosshair((255,0,0), (self.ax, self.ay))
-            if self.game.scene.background(): self.game.screen.blit(self.game.scene.background(), r, r)
+            if self.game.scene.background(): screen_blit(self.game.screen, self.game.scene.background(), r, r)
 #        if self._image:
  #           r = self._image.get_rect().move(self.x, self.y)    
-  #          self.game.screen.blit(self._image, r)
+  #          screen_blit(self.game.screen, self._image, r)
       
     
     def _crosshair(self, colour, pt):
@@ -1897,7 +1897,7 @@ class Actor(object):
         if alpha != 1.0:
             _rect = blit_alpha(screen, img, r, alpha*255)
         else:
-            _rect = screen.blit(img, r, special_flags=self._blit_flag)
+            _rect = screen_blit(screen, img, r, special_flags=self._blit_flag)
         if self.game.editing == self: #draw bounding box
             r2 = r.inflate(-2,-2)
  #           pygame.draw.rect(screen, (0,255,0), r2, 1)
@@ -1951,42 +1951,42 @@ class Actor(object):
             #draw location point
             self._rect.union_ip(crosshair(screen, (self.x, self.y), (0,0,255)))
             stats = self.game.debug_font.render("loc %0.2f, %0.2f"%(self.x, self.y+12), True, (255,155,0))
-            edit_rect = screen.blit(stats, stats.get_rect().move(self.x, self.y))
+            edit_rect = screen_blit(screen, stats, stats.get_rect().move(self.x, self.y))
             self._rect.union_ip(edit_rect)
             
             #draw anchor point
             self._rect.union_ip(crosshair(screen, (self.ax, self.ay), (255,0,0)))
             stats = self.game.debug_font.render("anchor %0.2f, %0.2f"%(self._ax, self._ay), True, (255,155,0))
-            self._rect.union_ip(screen.blit(stats, stats.get_rect().move(self.ax, self.ay)))
+            self._rect.union_ip(screen_blit(screen, stats, stats.get_rect().move(self.ax, self.ay)))
 
             #draw stand point
             self._rect.union_ip(crosshair(screen, (self.sx, self.sy), (255,200,0)))
             stats = self.game.debug_font.render("stand %0.2f, %0.2f"%(self._sx, self._sy), True, (225,255,50))
-            self._rect.union_ip(screen.blit(stats, stats.get_rect().move(self.sx, self.sy)))
+            self._rect.union_ip(screen_blit(screen, stats, stats.get_rect().move(self.sx, self.sy)))
 
             #draw name/text point
             self._rect.union_ip(crosshair(screen, (self.nx, self.ny), (255,0,255)))
             stats = self.game.debug_font.render("name %0.2f, %0.2f"%(self._nx, self._ny), True, (255,50,255))
 
-            self._rect.union_ip(screen.blit(stats, stats.get_rect().move(self.nx, self.ny)))
+            self._rect.union_ip(screen_blit(screen, stats, stats.get_rect().move(self.nx, self.ny)))
 
             #draw speech point
             self._rect.union_ip(crosshair(self.game.screen, (self.cx, self.cy), (255,0,255)))
             stats = self.game.debug_font.render("speech %0.2f, %0.2f"%(self._cx, self._cy), True, (255,50,255))
-            self._rect.union_ip(self.game.screen.blit(stats, stats.get_rect().move(self.cx, self.cy)))
+            self._rect.union_ip(screen_blit(self.game.screen, stats, stats.get_rect().move(self.cx, self.cy)))
 
 
             #draw speech point
             self._rect.union_ip(crosshair(self.game.screen, (self.cx, self.cy), (255,0,255)))
             stats = self.game.debug_font.render("text %0.2f, %0.2f"%(self._cx, self._cy), True, (255,50,255))
-            self._rect.union_ip(self.game.screen.blit(stats, stats.get_rect().move(self.cx, self.cy)))
+            self._rect.union_ip(screen_blit(self.game.screen, stats, stats.get_rect().move(self.cx, self.cy)))
 
 
             #draw out point if portal
             if hasattr(self, "set_ox"):
                 self._rect.union_ip(crosshair(screen, (self.ox, self.oy), (0,255,0)))
                 stats = self.game.debug_font.render("out %0.2f, %0.2f"%(self._ox, self._oy), True, (105,255,100))
-                self._rect.union_ip(screen.blit(stats, stats.get_rect().move(self.ox, self.oy)))
+                self._rect.union_ip(screen_blit(screen, stats, stats.get_rect().move(self.ox, self.oy)))
 
 
     def _update(self, dt): #actor.update
@@ -3064,7 +3064,7 @@ class Portal(Item):
         for p in ["", "_inactive"]:
             fname = os.path.join(os.getcwd(), os.path.join(game.interface_dir, "p_exit%s.png"%p))
             if os.path.isfile(fname):
-                setattr(self, "display_exit%s"%p, load_image(fname))
+                setattr(self, "display_exit%s"%p, load_image(fname, convert_alpha=True))
 #        if game.settings.show_portal_text:
  #           self.display_text = self.name
                 
@@ -3684,7 +3684,7 @@ class Collection(MenuItem):
                     ndx,ndy = nw1, nh1
                 img = pygame.transform.scale(img, (ndx, ndy))
                 r = img.get_rect().move(x+self.x, y+self.y)
-                self.game.screen.blit(img, r)
+                screen_blit(self.game.screen, img, r)
             x += dx+2
             if float(x)/(w-sy-dx)>1:
                 x = sx
@@ -3848,7 +3848,7 @@ class Scene(object):
        
     def clear(self): #scene.clear
         if self._rect and self.game and self.game.scene:
-            self.game.screen.blit(self.game.scene.background(), self._rect, self._rect)
+            screen_blit(self.game.screen, self.game.scene.background(), self._rect, self._rect)
             self._rect = None
 
     def _screenshot(self, modals=False): #scene.screenshot
@@ -3874,7 +3874,7 @@ class Scene(object):
         if fname == None and self._background == None and self._background_fname: #load image
             fname = self._background_fname
         if fname:
-            self._background = load_image(fname)
+            self._background = load_image(fname, convert_alpha=True)
             self._background_fname = fname
             if self.game:
                 self._rect = Rect(self.dx, self.dy, self.game.resolution[0],self.game.resolution[1]) #tell pyvida to redraw the whole screen to get the new background
@@ -4287,7 +4287,7 @@ class Camera(object):
                     self.game._event_finish(block=True)
             if self.game.scene and self.game.screen:
                 if self.game.scene.background():
-                    self.game.screen.blit(self.game.scene.background(), (-self.game.scene.dx, -self.game.scene.dy))
+                    screen_blit(self.game.screen, self.game.scene.background(), (-self.game.scene.dx, -self.game.scene.dy))
             
 #            if self.name == "title": print("reset cache")
 #        else:
@@ -4324,7 +4324,7 @@ class Camera(object):
         if self._ambient_sound: self._ambient_sound.stop()
         if self.game.scene and self.game.screen:
             if self.game.scene.background():
-                self.game.screen.blit(self.game.scene.background(), (-self.game.scene.dx, -self.game.scene.dy))
+                screen_blit(self.game.screen, self.game.scene.background(), (-self.game.scene.dx, -self.game.scene.dy))
             else:
                 if logging: log.warning("No background for scene %s"%self.game.scene.name)
         #start music for this scene
@@ -4405,7 +4405,7 @@ class Camera(object):
 	    dx, dy = 0,0 
 	    if self.game and self.game.scene:
 		   dx, dy = self.game.scene.dx, self.game.scene.dy
-            return screen.blit(self._image, (dx, dy))
+            return screen_blit(screen, self._image, (dx, dy))
         else:
             return None
     
@@ -5565,16 +5565,17 @@ class Game(object):
                         (MOUSE_RIGHT, "i_right.png"),
                         (MOUSE_EYES, "c_look.png"),
                     ]:
-            try: #use specific mouse cursors or use pyvida defaults
-                cursor_pwd = os.path.join(os.getcwd(), os.path.join(self.interface_dir, value))
-                self.mouse_cursors[key] = load_image(cursor_pwd)
-            except:
+            #use specific mouse cursors or use pyvida defaults
+            cursor_pwd = os.path.join(os.getcwd(), os.path.join(self.interface_dir, value))
+            image = load_image(cursor_pwd, convert_alpha=True)
+            if not image:
                 if logging: log.warning("Can't find local %s cursor, so defaulting to pyvida one"%value)
                 this_dir, this_filename = os.path.split(__file__)
                 myf = os.path.join(this_dir, "data/interface", value)
                 if os.path.isfile(myf):
-                    self.mouse_cursors[key] = load_image(myf)
-    
+                    image = load_image(myf, convert_alpha=True)
+            self.mouse_cursors[key] = image    
+
     def _load_editor(self):
             """ Load the ingame edit menu """
             #load debug font
@@ -6260,19 +6261,19 @@ class Game(object):
         self.font = load_font(fname, size)        
         
         if self.scene and self.screen:
-           self.screen.blit(self.scene.background(), (0, 0))
+           screen_blit(self.screen, self.scene.background(), (0, 0))
         elif self.screen and splash:
             scene = Scene(splash, self)
             scene.background(splash)
-            self.screen.blit(scene.background(), (0, 0))
-            pygame.display.flip() #show updated display to user
+            screen_blit(self.screen, scene.background(), (0, 0))
+            display_flip()
 
         pygame.display.set_caption(self.name)
         old_surface = None #some FX apply a filter to the screen we need to revert sometimes
         
         #set up music
         if self.settings:
-            if pygame.mixer: pygame.mixer.music.set_volume(self.settings.music_volume)
+            set_volume(self.settings.music_volume)
 
         if self.ENABLE_EDITOR: #editor enabled for this game instance
             self._load_editor()
@@ -6369,26 +6370,26 @@ class Game(object):
                 obj_image = self.mouse_cursor.action.image()
                 mouse_image = self.mouse_cursors[MOUSE_POINTER]
                 if not self.hide_cursor:
-                    cursor_rect = self.screen.blit(obj_image, (m[0], m[1]))
+                    cursor_rect = screen_blit(self.screen, obj_image, (m[0], m[1]))
                 else:
                     if self.loop%20 == 0: print("(mx,my)",m)
                 
             if mouse_image and not self.hide_cursor: 
                 if cursor_rect:
-                    cursor_rect.union_ip(self.screen.blit(mouse_image, (m[0]-15, m[1]-15)))
+                    cursor_rect.union_ip(screen_blit(self.screen, mouse_image, (m[0]-15, m[1]-15)))
                 else:
-                    cursor_rect = self.screen.blit(mouse_image, (m[0]-15, m[1]-15))
+                    cursor_rect = screen_blit(self.screen, mouse_image, (m[0]-15, m[1]-15))
 
 
             #draw info text if available
             if self.info_image:
-                info_rect = self.screen.blit(self.info_image, self.info_position)
+                info_rect = screen_blit(self.screen, self.info_image, self.info_position)
 
             debug_rect = None            
             if self.enabled_editor == True and self.debug_font:
                 dcol = (255,255,120)
                 #print the mouse location on the screen
-                debug_rect = self.screen.blit(self.debug_font.render("%i, %i"%(m[0], m[1]), True, dcol), (self.resolution[0]-80,5))
+                debug_rect = screen_blit(self.screen, self.debug_font.render("%i, %i"%(m[0], m[1]), True, dcol), (self.resolution[0]-80,5))
                 if isinstance(self.editing, Actor):
                     action, size = "none", ""
                     if self.editing.action:
@@ -6396,7 +6397,7 @@ class Game(object):
                         action = self.editing.action.name
                         size = " %ix%i"%(actor_img.get_width(), actor_img.get_height())
                     img_obj_details = self.debug_font.render("%s (%s%s)"%(self.editing.name, action, size), True, dcol)
-                    rect_obj_details = self.screen.blit(img_obj_details, (self.resolution[0]-10-img_obj_details.get_width(), 30))
+                    rect_obj_details = screen_blit(self.screen, img_obj_details, (self.resolution[0]-10-img_obj_details.get_width(), 30))
                     debug_rect.union_ip(rect_obj_details)
                 
             #pt = m
@@ -6423,7 +6424,7 @@ class Game(object):
                 delay = self.time_delay - used_time  #how much pause do we need to limit frame rate?
                 if delay > 0: pygame.time.delay(int(delay))
             
-                pygame.display.flip() #show updated display to user
+                display_flip() #show updated display to user
                 if old_surface: #restore the unfiltered surface
                     pygame.display.get_surface().blit(old_surface, (0, 0))
 
@@ -6436,9 +6437,9 @@ class Game(object):
             
             #hide mouse
             if self.scene and self.scene.background():
-                if not self.hide_cursor and cursor_rect: self.screen.blit(self.scene.background(), cursor_rect, cursor_rect.move(self.scene.dx, self.scene.dy))
-                if self.info_image: self.screen.blit(self.scene.background(), info_rect, info_rect)
-                if debug_rect: self.screen.blit(self.scene.background(), debug_rect, debug_rect)
+                if not self.hide_cursor and cursor_rect: screen_blit(self.screen, self.scene.background(), cursor_rect, cursor_rect.move(self.scene.dx, self.scene.dy))
+                if self.info_image: screen_blit(self.screen, self.scene.background(), info_rect, info_rect)
+                if debug_rect: screen_blit(self.screen, self.scene.background(), debug_rect, debug_rect)
             else:
                 if not self.hide_cursor and cursor_rect:
                     pygame.draw.rect(self.screen, (0, 0, 0), cursor_rect)
@@ -6473,7 +6474,7 @@ class Game(object):
                                 if self.scene:
                                     dx -= self.scene.dx
                                     dy -= self.scene.dy
-                                if self.scene: self.screen.blit(self.scene.background(), (dx, dy)) #redraw whole screen
+                                if self.scene: screen_blit(self.screen, self.scene.background(), (dx, dy)) #redraw whole screen
                                 self.player.says("Let's play.")
                                 if self.exit_step: self.quit = True #exit program
                                 self.modals_clear()
@@ -6744,8 +6745,8 @@ class Game(object):
         self.camera._scene(scene)
         if self.screen:
             if scene.background():
-                self.screen.blit(scene.background(), (0, 0))
-                pygame.display.flip()            
+                screen_blit(self.screen, scene.background(), (0, 0))
+                display_flip()
 #        self._event_finish() #finish the event
         self.on_wait(duration) #does the event_finish for us
         if callback: callback(self)
