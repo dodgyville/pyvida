@@ -6849,7 +6849,12 @@ class Game(object):
         ody = 900
         menu = []
         for item in items:
+            kwargs = item[2] if len(item)>2 else {}
             txt = self.add(MenuText(item[0], (x,y), (840,170), item[0], wrap=800, interact=item[1], spos=(x, y), hpos=(x, y + ody), key="f", font=factory.font, size=factory.size, colour=factory.colour), False, MenuItem)
+            for k, v in kwargs.items():
+                setattr(txt, k, v)
+                if k == "key": txt.key = get_keycode(v)
+            if "text" in kwargs.keys(): txt.update_text() #force update on MenuText
             y += dy
             x += dx
             menu.append(txt)
