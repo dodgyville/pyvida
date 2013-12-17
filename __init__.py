@@ -1332,6 +1332,8 @@ def get_smart_directory(game, obj):
         d = game.menuitem_dir
     elif isinstance(obj, ModalItem):
         d = game.item_dir
+    elif isinstance(obj, Emitter):
+        d = game.emitter_dir
     elif isinstance(obj, Portal):
         d = game.portal_dir
     elif isinstance(obj, Item):
@@ -1617,7 +1619,6 @@ class Actor(object):
 
         if not self.game: self.game = game
 
-            
         myd = os.path.join(d, name)        
         if not os.path.isdir(myd): #fallback to pyvida defaults
             this_dir, this_filename = os.path.split(__file__)
@@ -3179,13 +3180,13 @@ class Emitter(Item):
         smoke = Emmitter(**EMITTER_SMOKE)
     """
     __metaclass__ = use_on_events    
-    def __init__(self, name, number, frames, direction, fov, speed, acceleration, size_start, size_end, alpha_start, alpha_end,random_index):
+    def __init__(self, name, number=10, frames=10, direction=0, fov=0, speed=1, acceleration=(0,0), size_start=1, size_end=1, alpha_start=1.0, alpha_end=0,random_index=0):
         Item.__init__(self, name)
         self.name = name
         self.number = number
         self.frames = frames
         self.direction = direction
-        self.fov = fov
+        self.fov = fov #field of view (how wide is the nozzle?)
         self.speed = speed
         self.acceleration = acceleration #in the x,y directions
         self.size_start = size_start
@@ -4543,15 +4544,6 @@ class Game(object):
     
     enabled_editor = False
     
-    actor_dir = os.path.join("data", "actors")
-    item_dir = os.path.join("data", "items")
-    menuitem_dir = os.path.join("data", "menu") 
-    scene_dir = os.path.join("data", "scenes")
-    interface_dir = os.path.join("data", "interface")
-    portal_dir = os.path.join("data", "portals")
-    music_dir = os.path.join("data", "music")
-    save_dir = SAVE_DIR
-
     quit = False
     screen = None
    
@@ -4563,6 +4555,17 @@ class Game(object):
         afps -- the default framerate for actions (eg an Actor's animation might play at 16fps while the engine is running at 30fps)
         """
         if logging: log.debug("game object created at %s"%datetime.now())
+        self.actor_dir = os.path.join("data", "actors")
+        self.item_dir = os.path.join("data", "items")
+        self.menuitem_dir = os.path.join("data", "menu") 
+        self.scene_dir = os.path.join("data", "scenes")
+        self.interface_dir = os.path.join("data", "interface")
+        self.portal_dir = os.path.join("data", "portals")
+        self.music_dir = os.path.join("data", "music")
+        self.emitter_dir = os.path.join("data", "emitters")
+        self.save_dir = SAVE_DIR
+
+
 #        log = log
 #        self.voice_volume = 1.0
 #        self.effects_volume = 1.0
@@ -5069,7 +5072,7 @@ class Game(object):
             self.progress_bar_renderer = draw_progress_bar
             self.progress_bar_index = 0
             self.progress_bar_count = 0
-        for obj_cls in [Actor, Item, Portal, Scene]:
+        for obj_cls in [Actor, Item, Emitter, Portal, Scene]:
             dname = "%s_dir"%obj_cls.__name__.lower()
             if not os.path.exists(getattr(self, dname)): continue #skip directory if non-existent
             for name in os.listdir(getattr(self, dname)):
