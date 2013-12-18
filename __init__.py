@@ -3194,7 +3194,7 @@ class Emitter(Item):
         self.alpha_start, self.alpha_end = alpha_start, alpha_end
         self.random_index = random_index #should each particle start mid-action?
         self._solid_area = Rect(0,0,0,0) #used for the spawn area
-        
+
 #        self.spawn = Rect(0,0,0,0) #size of spawning area (only w,h used)
 
     @property
@@ -3269,10 +3269,10 @@ class Emitter(Item):
         r = math.radians(p.direction)
         a = p.speed * cos(r)
         o = p.speed * sin(r)
-        p.y -= a
+        p.y -= a 
         p.x += o
-        p.x -= self.acceleration[0]
-        p.y -= self.acceleration[1]
+        p.x -= self.acceleration[0] * p.index
+        p.y -= self.acceleration[1] * p.index
         p.index +=  1
         p.action_index += 1
         if p.index >= self.frames: #reset
@@ -4504,6 +4504,7 @@ class Settings(object):
         self.fps = DEFAULT_FRAME_RATE
         self.stereoscopic = False #display game in stereoscopic (3D)
         self.hardware_accelerate = False 
+        self.backend = PYGAME19
         
         self.high_contrast = False
         self.accessibility_font = None #use this font to override main font (good for using dsylexic-friendly fonts
