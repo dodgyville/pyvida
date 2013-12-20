@@ -12,8 +12,10 @@ def post_init():
     """ Called after display_set_mode """
     pass
 
-def image_load(filename, convert_alpha=False):
-    if convert_alpha:
+def image_load(filename, convert_alpha=False, eight_bit=False):
+    if eight_bit:
+        i = pygame.image.load(filename).convert(8)
+    elif convert_alpha:
         i = pygame.image.load(filename).convert_alpha()
     else:
         i = pygame.image.load(filename)

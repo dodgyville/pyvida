@@ -879,10 +879,10 @@ def get_available_languages():
         languages.append(language) #the default
     return languages
   
-def load_image(fname, convert_alpha=False):
+def load_image(fname, convert_alpha=False, eight_bit=False):
     im = None
     try:
-        im = image_load(fname, convert_alpha=convert_alpha)
+        im = image_load(fname, convert_alpha=convert_alpha, eight_bit=eight_bit)
     except:
         if logging: log.warning("unable to load image %s"%fname)
     return im
@@ -3760,6 +3760,7 @@ class Scene(object):
         self.fps = 0.5 #how often to regenerate _image, None means no cacheing
         self._last_clock_tick = int(round(time.time() * 1000)+randint(0,1000)) #when was the last update with a bit of noise at the start
         self.__image = None #image cache
+        self.eight_bit = False #if False use the system default, else override for backgrounds
 
     def __deepcopy__(self, memo):
         """ Share surfaces between deep copied objects (only one graphical display) """
@@ -3875,10 +3876,10 @@ class Scene(object):
         if fname == None and self._background == None and self._background_fname: #load image
             fname = self._background_fname
         if fname:
-            self._background = load_image(fname, convert_alpha=True)
+            self._background = load_image(fname, convert_alpha=True, eight_bit=self.eight_bit)
             self._background_fname = fname
             if self.game:
-                self._rect = Rect(self.dx, self.dy, self.game.resolution[0],self.game.resolution[1]) #tell pyvida to redraw the whole screen to get the new background
+                self._rect = Rect(0, 0, self.game.resolution[0],self.game.resolution[1]) #tell pyvida to redraw the whole screen to get the new background
         return self._background
 
     def on_set_background(self, fname):
@@ -6345,6 +6346,7 @@ class Game(object):
                 if self._message_object: self._message_object.draw()
                 
             if self.scene and self.screen: #update objects
+                self.scene._update(dt)
                 for group in [self.scene.objects.values(), self._menu, self.modals]:
                     for obj in group: 
                         obj._update(dt)
