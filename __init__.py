@@ -1770,14 +1770,18 @@ class Actor(object):
          script = get_function(self.game, basic)
 
          if self.game.edit_scripts: 
-            edit_script(self.game, self, basic, script, mode="use")
+            btn = self.game.edit_scripts_button if self.game.edit_scripts_button else None
+            if self != btn:
+                edit_script(self.game, self, basic, script, mode="use")
+            else:
+                print("Won't edit Edit Button")
             return
 
          if script:
                 script(self.game, self, actor)
          else:
                  #warn if using default vida look
-                if self.allow_use: log.warning("no use script for using %s with %s (write a def %s(game, %s, %s): function)"%(actor.name, self.name, basic, slug_actee.lower(), slug_actor.lower()))
+                if self.allow_use: log.error("no use script for using %s with %s (write a def %s(game, %s, %s): function)"%(actor.name, self.name, basic, slug_actee.lower(), slug_actor.lower()))
                 if self.game.editor_infill_methods: edit_script(self.game, self, basic, script, mode="use")
 
                 self._use_default(self.game, self, actor)
@@ -2599,12 +2603,11 @@ class Actor(object):
 
         if x - fuzz - dx  < self.x < x + fuzz +dx and y - fuzz - dy < self.y < y + fuzz + dy: #arrived at point, end event
 
-            idle_action = "idle" if not self.stand_action else idle_action
+            idle_action = "idle" if not self.stand_action else self.stand_action
             if isinstance(idle_action, Action): idle_action = idle_action.name
             if idle_action in self.actions: 
                 self.action = self.actions[idle_action]
-            
-            if "idle" in self.actions: self.action = self.actions['idle'] #XXX:
+            elif "idle" in self.actions: self.action = self.actions['idle'] #fall back to idle if idle_action actually missing
 
 
 #            if isinstance(self, MenuItem) or isinstance(self, Collection):
@@ -5324,7 +5327,8 @@ class Game(object):
                             return
                     else: #if not player, call trigger in all scenarios
                         self.block = True
-                        if self.mouse_mode != MOUSE_LOOK or GOTO_LOOK: self.player.goto(i)
+                        if self.mouse_mode != MOUSE_LOOK or GOTO_LOOK: 
+                            if self.player in self.scene.objects.values(): self.player.goto(i)
                         self.trigger(i) #trigger look, use or interact
                         return
 
