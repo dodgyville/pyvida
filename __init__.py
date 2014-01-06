@@ -314,6 +314,19 @@ COLOURS = {
 #TEXT EFFECTS
 EFFECT_SINE = 1 #sine wave
 
+def create_log(logname, fname, log_level):
+    log = logging.getLogger(logname)
+    if logging: log.setLevel(log_level)
+
+    handler = logging.handlers.RotatingFileHandler(fname, maxBytes=2000000, backupCount=5)
+    handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+    log.addHandler(handler)
+    if DEBUG_STDOUT:
+        handler = logging.StreamHandler(stream=sys.stdout)
+        handler.setLevel(logging.ERROR)
+        log.addHandler(handler)
+    return log
+
 
 if logging:
     if ENABLE_LOGGING:
@@ -321,17 +334,11 @@ if logging:
     else:
         log_level = logging.WARNING
 
-    LOG_FILENAME = os.path.join(SAVE_DIR, 'pyvida4.log')
-    log = logging.getLogger('pyvida4')
-    if logging: log.setLevel(log_level)
+    LOG_FILENAME = os.path.join(SAVE_DIR, 'pyvida.log')
+    ANALYSIS_FILENAME = os.path.join(SAVE_DIR, 'analysis.log')
+    log = create_log("pyvida", LOG_FILENAME, log_level)
+    analysis_log = create_log("analysis", ANALYSIS_FILENAME, log_level)
 
-    handler = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=2000000, backupCount=5)
-    handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
-    log.addHandler(handler)
-    if DEBUG_STDOUT:
-        handler = logging.StreamHandler(stream=sys.stdout)
-        handler.setLevel(logging.ERROR)
-        log.addHandler(handler)
 
 else: #redirect log to stdout
     logging = True
@@ -346,6 +353,7 @@ else: #redirect log to stdout
         def error(self, txt):
             print(txt)
     log = PrintLog()
+    analysis_log = PrintLog()
 
 
 if logging:
@@ -1909,6 +1917,7 @@ class Actor(object):
         return _rect
 
     def draw(self, screen=None): #actor.draw
+        screen2 = screen
         screen = self.game.screen if self.game and not screen else screen
 
         if self.game and self.game.editing == self and self.game.editing.action and self.game.editing_mode == EDITING_DELTA: #onion skin for delta edit
@@ -4668,6 +4677,7 @@ class Game(object):
         self.profiling = False 
         self.enabled_profiling = False
         self.analyse_scene = None
+        self.estimate_cost = None
         self.artreactor = None #which directory to store screenshots
         self.artreactor_scene = None #which was the last scene the artreactor took a screenshot of
         self.analyse_characters = False
@@ -4719,7 +4729,8 @@ class Game(object):
         self.parser.add_argument("-f", "--fullscreen", action="store_true", dest="fullscreen", help="Play game in fullscreen mode", default=False)
         self.parser.add_argument("-g", action="store_true", dest="infill_methods", help="Launch script editor when use script missing", default=False)
         self.parser.add_argument("-H", "--headless", action="store_true", dest="headless", help="Run game as headless (no video)")
-        self.parser.add_argument("-i", "--imagereactor", action="store_true", dest="artreactor", help="Save images from each scene")
+        self.parser.add_argument("-i", "--imagereactor", action="store_true", dest="artreactor", help="Save images from each scene (don't run headless)")
+        self.parser.add_argument("-k", "--kost <background> <actor> <items>", nargs=3, dest="estimate_cost", help="Estimate cost of artwork in game (background is cost per background, etc)")
         self.parser.add_argument("-l", "--lowmemory", action="store_true", dest="memory_save", help="Run game in low memory mode")
         self.parser.add_argument("-m", "--matrixinventory", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
         self.parser.add_argument("-o", "--objects", action="store_true", dest="analyse_characters", help="Print lots of info about actor and items to calculate art requirements", default=False)        
@@ -5052,7 +5063,9 @@ class Game(object):
         self._event_finish(block=False)
     
     def smart(self, player=None, player_class=Actor, draw_progress_bar=None, refresh=False, only=None): #game.smart
-        """ game.smart can tell if it is being called inside or outside the event loop """
+        """ game.smart can tell if it is being called inside or outside the event loop 
+            draw_progress_bar is the fn that handles drawing of a progress bar
+        """
         if self._inside_event_loop: #add to event queue
             self.do_smart(player, player_class, draw_progress_bar, refresh, only)
         else: #call direct immediately
@@ -6128,29 +6141,44 @@ class Game(object):
             if logging: log.error("The following actors were never loaded:")
             for i in self.missing_actors: log.error(i)
         scenes = sorted(self.scenes.values(), key=lambda x: x.analytics_count, reverse=True)
-        if logging: log.info("Scenes listed in order of time spent")
+        analysis_log.info("Scenes (%s) listed in order of time spent"%len(scenes))
         for s in scenes:
             t = s.analytics_count * 30
-            if logging: log.info("%s - %s steps (%s.%s minutes)"%(s.name, s.analytics_count, t/60, t%60))
+            analysis_log.info("%s - %s steps (%s.%s minutes)"%(s.name, s.analytics_count, t/60, t%60))
         actors = sorted(self.actors.values(), key=lambda x: x.analytics_count, reverse=True)
-        if logging: log.info("Actors listed in order of interactions")
+        analysis_log.info("Actors (%s) listed in order of interactions"%len(actors))
         for s in actors:
             t = s.analytics_count * 30
-            if logging: log.info("%s - %s interactions (%s.%s minutes)"%(s.name, s.analytics_count, t/60, t%60))
+            analysis_log.info("%s - %s interactions (%s.%s minutes)"%(s.name, s.analytics_count, t/60, t%60))
         if self.analyse_characters:
             if logging: log.info("Objects with action calls")
             for i in (self.actors.values() + self.items.values()):
                 actions = sorted(i._count_actions.iteritems(), key=operator.itemgetter(1))
-                if logging: log.info("%s: %s"%(i.name, actions))
+                analysis_log.info("%s: %s"%(i.name, actions))
         if self.analyse_scene:
             scene = self.analyse_scene
             if type(scene) in [str, unicode]:
-                if logging: log.warning("Asked to watch scene %s but it was never loaded"%scene)
+                analysis_log.warning("Asked to watch scene %s but it was never loaded"%scene)
             else:
-                if logging: log.info("ANALYSED SCENE %s"%scene.name)
-                if logging: log.info("Used actors %s"%[x.name for x in scene._total_actors])
-                if logging: log.info("Used items %s"%[x.name for x in scene._total_items])
-        
+                analysis_log.info("ANALYSED SCENE %s"%scene.name)
+                analysis_log.info("Used actors %s"%[x.name for x in scene._total_actors])
+                analysis_log.info("Used items %s"%[x.name for x in scene._total_items])
+        if self.estimate_cost:
+            analysis_log.info("ESTIMATE ARTWORK COST")
+            actor_cost = 0
+            item_cost = 0
+            scene_cost = 0
+            for k, v in self.actors.items():
+                analysis_log.info("{0}".format(v.name))
+                actor_cost += len(v.actions) * float(self.estimate_cost[1])
+            for k, v in self.items.items():
+                analysis_log.info("{0}".format(v.name))
+                item_cost += len(v.actions) * float(self.estimate_cost[2])
+            for scene in self.scenes.values():
+                scene_cost += float(self.estimate_cost[0])
+            total = actor_cost + item_cost + scene_cost
+            analysis_log.info("Actors: ${0}, Items: ${1}, Backgrounds: ${2}, Total: ${3}".format(actor_cost, item_cost, scene_cost, total))
+            
         t = self.steps_complete * 30 #30 seconds per step
         if logging: log.info("Finished %s steps, estimated at %s.%s minutes"%(self.steps_complete, t/60, t%60))
     
@@ -6213,6 +6241,7 @@ class Game(object):
                 r = (int(r[0]), int(r[1])) #spot the line where I didn't have an internet connection while writing it
             self.resolution = r
         if options.analyse_scene: self.analyse_scene = options.analyse_scene
+        if options.estimate_cost: self.estimate_cost = options.estimate_cost
         if options.step: #switch on test runner to step through walkthrough
             self.testing = True
             self.tests = copy.deepcopy(self._walkthroughs)
@@ -6298,6 +6327,7 @@ class Game(object):
             if self.ENABLE_EDITOR and self.loop%10 == 0: #if editor is available, watch code for changes
                 modified_modules = self.check_modules()
                 if modified_modules:
+                    print("game loop mod")
                     self.reload_modules()
 #                    "would try and reload now")
             if self.loop >= 10000: self.loop = 0
@@ -6442,7 +6472,8 @@ class Game(object):
             #if profiling art, save a screenshot if needed
             if self.scene and self.artreactor and self.artreactor_scene != self.scene:
                 scene = self.scene
-                pygame.image.save(self.screen, "%s/%s_%0.4d.jpeg"%(self.artreactor, slugify(scene.name), self.steps_complete))
+                sshot = self._screenshot()
+                pygame.image.save(sshot, "%s/%s_%0.4d.jpeg"%(self.artreactor, slugify(scene.name), self.steps_complete))
                 self.artreactor_scene = self.scene
             
             #hide mouse
@@ -6500,6 +6531,7 @@ class Game(object):
                 
         if not self._event: #waiting, so do an immediate process 
             if self.progress_bar_count>0: #advance the progress bar if there is one.
+                print("event",self.events[0])
                 self.progress_bar_index += 1 
                 if self.screen and self.progress_bar_renderer and self.progress_bar_index%10 == 0: #draw progress bar                
                     self.progress_bar_renderer(self, self.screen)
