@@ -1,10 +1,52 @@
 """
 Python3 
 """
-import glob, pyglet, os
+import glob, pyglet, os, sys
 from datetime import datetime
 
+from argparse import ArgumentParser
 from collections import Iterable
+from gettext import gettext
+
+
+try:
+    import android
+except ImportError:
+    android = None
+
+try:
+    import logging
+    import logging.handlers
+except ImportError:
+    logging = None
+
+
+"""
+Constants
+"""
+DEBUG_ASTAR = False
+DEBUG_STDOUT = True #stream errors to stdout as well as log file
+
+ENABLE_EDITOR = False #default for editor
+ENABLE_PROFILING = False
+ENABLE_LOGGING = True
+ENABLE_LOCAL_LOGGING = True
+DEFAULT_TEXT_EDITOR = "gedit"
+
+VERSION_MAJOR = 5 #major incompatibilities
+VERSION_MINOR = 0 #minor/bug fixes, can run same scripts
+VERSION_SAVE = 5  #save/load version, only change on incompatible changes
+
+#AVAILABLE BACKENDS
+PYGAME19 = 0
+PYGAME19GL = 1
+PYGLET12 = 2
+BACKEND = PYGAME19
+
+HIDE_MOUSE = True #start with mouse hidden, first splash will turn it back on
+DEFAULT_FULLSCREEN = False #switch game to fullscreen or not
+DEFAULT_EXPLORATION = True #show "unknown" on portal links before first visit there
+DEFAULT_PORTAL_TEXT = True #show portal text
 
 
 DEFAULT_RESOLUTION = (1920, 1080)
@@ -16,10 +58,147 @@ DIRECTORY_PORTALS = "data/portals"
 DIRECTORY_ITEMS = "data/items"
 DIRECTORY_SCENES = "data/scenes"
 DIRECTORY_FONTS = "data/fonts"
+DIRECTORY_EMITTERS = "data/emitters"
+DIRECTORY_SAVES = "saves"
+DIRECTORY_INTERFACE = "data/interface"
+
+DEFAULT_MENU_FONT = os.path.join(DIRECTORY_FONTS, "vera.ttf")
+DEFAULT_MENU_SIZE = 26
+DEFAULT_MENU_COLOUR = (42, 127, 255)
+
+#LAYOUTS FOR MENUS and MENU FACTORIES
+HORIZONTAL = 0
+VERTICAL = 1    
+
+#on says position
+POSITION_BOTTOM = 0
+POSITION_TOP = 1
+POSITION_LOW = 2
+POSITION_TEXT = 3 #play at text point of actor
+
+
+#ANCHORS FOR MENUS and MENU FACTORIES
+LEFT = 0
+RIGHT = 1
+CENTER = 2
+
+MOUSE_USE = 1
+MOUSE_LOOK = 2  #SUBALTERN
+MOUSE_INTERACT = 3   #DEFAULT ACTION FOR MAIN BTN
+
+
+#WALKTHROUGH EXTRAS KEYWORDS
+LABEL = "label"
+HINT = "hint"
+
+"""
+Testing utilities
+"""
+
+#### pygame testing functions ####
+
+def reset(): pass #stub for letting save game know when a reset point has been reached
+
+def goto(): pass #stub
+
+def interact(): pass #stub
+
+def use(): pass #stub
+
+def look(): pass #stub
+
+def has(): pass #stub
+
+def select(): pass #stub
+
+def toggle(): pass #stub 
+
+def assertLocation(): pass #stub
+
+def assertVicinty(): pass #stub
+
+def location(): pass #stub #XXX deprecated
+
+def description(): pass #used by walkthrough output
+
+"""
+Logging
+"""
+
+def create_log(logname, fname, log_level):
+    log = logging.getLogger(logname)
+    if logging: log.setLevel(log_level)
+
+    handler = logging.handlers.RotatingFileHandler(fname, maxBytes=2000000, backupCount=5)
+    handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+    log.addHandler(handler)
+    if DEBUG_STDOUT:
+        handler = logging.StreamHandler(stream=sys.stdout)
+        handler.setLevel(logging.ERROR)
+        log.addHandler(handler)
+    return log
+
+
+if logging:
+    if ENABLE_LOGGING:
+        log_level = logging.DEBUG #what level of debugging
+    else:
+        log_level = logging.WARNING
+    LOG_FILENAME = os.path.join(DIRECTORY_SAVES, 'pyvida.log')
+    ANALYSIS_FILENAME = os.path.join(DIRECTORY_SAVES, 'analysis.log')
+    log = create_log("pyvida", LOG_FILENAME, log_level)
+    analysis_log = create_log("analysis", ANALYSIS_FILENAME, log_level)
+
 
 """
 Utilities
 """
+def deslugify(txt):
+    """ replace underscores with spaces, basically """
+    return txt.replace("_", " ")
+
+def slugify(txt):
+    """ slugify a piece of text """
+    txt = txt.replace(" ", "_")
+    txt = txt.replace("-", "")
+    txt = txt.replace(".", "_")
+    txt = txt.replace("!", "")
+    txt = txt.replace("+", "")
+    txt = txt.replace("]", "")
+    txt = txt.replace("[", "")
+    txt = txt.replace("}", "")
+    txt = txt.replace("{", "")
+    txt = txt.replace("/", "_")
+    txt = txt.replace("\\", "_")
+    return txt.replace("'", "")
+
+
+
+def get_available_languages():
+    """ Return a list of available locale names """
+    languages = glob.glob("data/locale/*")
+    languages = [os.path.basename(x) for x in languages if os.path.isdir(x)]
+    languages.sort()
+    if language not in languages:
+        languages.append(language) #the default
+    return languages
+  
+def load_image(fname, convert_alpha=False, eight_bit=False):
+    im = pyglet.image.load(fname)
+    return im
+
+class answer(object):
+    """
+    A decorator for functions that you wish to use as options in an Actor.on_ask event
+
+    Keyword arguments:
+    opt -- the text to display in the question
+    """
+    def __init__(self, opt):
+        self.opt = opt
+    def __call__(self, answer_callback):
+        return (self.opt, answer_callback)
+
 
 def get_smart_directory(game, obj):
     """
@@ -29,6 +208,8 @@ def get_smart_directory(game, obj):
 #        d = game.emitter_dir
     if isinstance(obj, Portal):
         d = game.directory_portals
+    elif isinstance(obj, Emitter):
+        d = game.directory_emitters
     elif isinstance(obj, Item):
         d = game.directory_items
     elif isinstance(obj, Actor):
@@ -36,6 +217,28 @@ def get_smart_directory(game, obj):
     elif isinstance(obj, Scene):
         d = game.directory_scenes
     return d
+
+def get_function(game, basic):
+    """ 
+        Search memory for a function that matches this name 
+        Also search any modules in game._modules (eg used when cProfile has taken control of __main__ )
+    """
+    if hasattr(basic, "__call__"): basic = basic.__name__
+    script = None
+    module = "main" if android else "__main__" #which module to search for functions
+    extra_modules = game._modules if __name__ == "pyvida" and game else []
+    modules = [module]
+    modules.extend(extra_modules.keys())
+    for m in modules:
+        if m not in sys.modules: continue
+        if hasattr(sys.modules[m], basic):
+              script = getattr(sys.modules[m], basic)
+              break
+        elif hasattr(sys.modules[m], basic.lower()):
+              script = getattr(sys.modules[m], basic.lower())
+              break
+    return script
+
 
 def create_event(q):
     return lambda self, *args, **kwargs: self.game.queue_event(q, self, *args, **kwargs)
@@ -53,100 +256,70 @@ def use_on_events(name, bases, dic):
 Classes
 """
 
-class EventLoop(pyglet.app.EventLoop):
-    pass
 
-event_loop = EventLoop()
-
-class Game(metaclass=use_on_events):
-    def __init__(self, name, resolution=DEFAULT_RESOLUTION):
-        self.name = name
-        self.resolution = resolution
+#If we use text reveal
+SLOW = 0
+NORMAL = 1
+FAST = 2
+class Settings(object):
+    """ game settings saveable by user """
+    def __init__(self):
+        self.music_on = True
+        self.sfx_on = True
+        self.voices_on = True
+        
+#        self.music_volume = 0.6
+        self.music_volume = 0.6 #XXX music disabled by default
+        self.sfx_volume = 0.8
+        self.sfx_subtitles = False
+        self.voices_volume = 0.8
+        self.voices_subtitles = True
+        
+        self.resolution_x = 1024
+        self.resolution_y = 768
+        
+        self.allow_internet = None #True|False|None check for updates and report stats - None == False and user hasn't been asked
+        self.allow_internet_debug = ENABLE_LOGGING #send profiling reports home
+        
+        self.fullscreen = DEFAULT_FULLSCREEN
+        self.show_portals = False
+        self.show_portal_text = DEFAULT_PORTAL_TEXT
+        self.portal_exploration = DEFAULT_EXPLORATION
+        self.textspeed = NORMAL
         self.fps = DEFAULT_FPS
-        self.default_actor_fps = DEFAULT_ACTOR_FPS
-        self.game = self
-
-        self.directory_portals = DIRECTORY_PORTALS
-        self.directory_items = DIRECTORY_ITEMS
-        self.directory_scenes = DIRECTORY_SCENES
-        self.directory_actors = DIRECTORY_ACTORS
-
-        self._actors = {}
-        self._items = {}
-        self._modals = []
-        self._scenes = {}
-        self._gui = []
-        self._window = pyglet.window.Window(*resolution)
-        self._window.on_draw = self.pyglet_draw
-
-        self._waiting = False
-        self._busy = False #game is never busy
-        self._events = []
-        self._event = None
-        self._event_index = 0
-
-        pyglet.clock.schedule(self.update)
-
-    def smart(self):
-        #Load every thing
-        return self
-#        load = [(Actors, self.directory_actors), (Scene, self.directory_scenes), 
-#        for action_file in glob.glob(os.path.join(self._directory, "*.png")):
-#            action_name = os.path.splitext(os.path.basename(action_file))
-#            action = Action(action_name).smart(game, actor=self, filename=action_file)
-#            self._actions[action_name] = action     
-
-    def on_wait(self):
-        """ Wait for all scripting events to finish """
-        self._waiting = True
-        return  
-
-    def add(self, *objects):
-#        if not isinstance(objects, Iterable): objects = list(objects)
-        for obj in objects:
-            if isinstance(obj, Actor):
-                self._actors[obj.name] = obj
-
-    def run(self):
-        event_loop.run()
-#        pyglet.app.run()
-
-    def pyglet_draw(self):
-        for actor in self._actors.values():
-            actor.pyglet_draw()
-        for modal in self._modals:
-            modal.pyglet_draw()
+        self.stereoscopic = False #display game in stereoscopic (3D)
+        self.hardware_accelerate = False 
+        self.backend = BACKEND
+        
+        self.high_contrast = False
+        self.accessibility_font = None #use this font to override main font (good for using dsylexic-friendly fonts
+                
+        self.invert_mouse = False #for lefties
+        self.language = "en"
 
 
-    def queue_event(self, event, *args, **kwargs):
-        self._events.append((event, args, kwargs))
 
-    def update(self, dt):
-        """ Handle game events """
-        if self._waiting: 
-            """ check all the Objects with existing events, if any of them are busy, don't process the next event """
-            none_busy = True
-            for event in self._events[:self._event_index]: #event_index is point to the game.wait event at the moment
-                obj = event[1][0] #first arg is always the object that called the event
-                if obj._busy == True: 
-                    none_busy = False
-            if none_busy == True: self._waiting = False #no prior events are busy, so stop waiting
 
-#        if self._event_index < len(self.events) and len(self._events)>0:
+    def save(self, save_dir):
+        """ save the current game settings """
+        if logging: log.debug("Saving settings to %s"%save_dir)
+        fname = os.path.join(save_dir, "game.settings")
+        with open(fname, "w") as f:
+           pickle.dump(self, f)
 
-            return
-        if len(self._events)>0 and self._event_index < len(self._events):
-            if self._event_index>0:
-                for event in self._events[:self._event_index-1]: #check the previous events' objects, delete if not busy
-                    if event[1][0]._busy == False:
-                        self._events.remove(event)
-                        self._event_index -= 1
-            e = self._events[self._event_index] #stored as [(function, args))]
-            if e[1][0]._busy: return #don't do this event yet if the owner is busy
-            self._event = e
-            print("Start",e[0], e[1][0].name, datetime.now(), e[1][0]._busy)
-            e[0](*e[1], **e[2]) #call the function with the args and kwargs
-            self._event_index += 1
+    def load(self, save_dir):
+        """ load the current game settings """
+        if logging: log.debug("Loading settings from %s"%save_dir)
+        fname = os.path.join(save_dir, "game.settings")
+        try:
+            with open(fname, "rU") as f:
+               data = pickle.load(f)
+            return data
+        except: #if any problems, use default settings
+            log.warning("Unable to load settings from %s, using defaults"%fname)
+            #use loaded settings            
+            return self 
+
 
 
 class Action(object):
@@ -206,22 +379,21 @@ class Actor(metaclass=use_on_events):
     busy = property(get_busy, set_busy)
 
 
-    def smart(self, game):
+    def smart(self, game): #actor.smart
         self.game = game
-        self._directory = os.path.join(self.game.directory_actors, self.name)
-        
+        d = get_smart_directory(game, self)
+        self._directory = os.path.join(d, self.name)
         for action_file in glob.glob(os.path.join(self._directory, "*.png")):
             action_name = os.path.splitext(os.path.basename(action_file))[0]
             action = Action(action_name).smart(game, actor=self, filename=action_file)
             self._actions[action_name] = action
-        self.action = self._actions["idle"]
+        self.action = self._actions["idle"] if "idle" in self._actions else self._actions.values()[0]
         return self
 
     def pyglet_draw(self):
         if self._sprite:
             self._sprite.position = (self.x, self.y)
             self._sprite.draw()
-
 
     def on_animation_end(self):
 #        self.busy = False
@@ -281,14 +453,48 @@ class Actor(metaclass=use_on_events):
 class Item(Actor):
     pass
 
-class Scene(object):
-    def __init__(self, name):
+class Portal(Actor):
+    pass
+
+class Emitter(Actor):
+    pass
+
+class Scene(metaclass=use_on_events):
+    def __init__(self, name, game=None):
         self._objects = []
-        self.game = None
+        self.name = name
+        self.game = game
+        self._background = None
+        self._background_fname = None
+        self._busy = False
+        self._music_filename = None
+        self._ambient_filename = None        
+        self.x = 0
+        self.y = 0
+        self.display_text = None #used on portals if not None
+        self.description = None #text for blind users
 
     def smart(self, game):
         self.game = game
         return self
+
+    def on_add(self, *objects):
+        if not isinstance(objects, Iterable): objects = list(objects)
+        self._objects.extend(objects)
+
+    def on_background(self, fname=None):
+        if fname: log.debug("Set background for scene %s to %s"%(self.name, fname))
+        if fname == None and self._background == None and self._background_fname: #load image
+            fname = self._background_fname
+        if fname:
+            self._background = load_image(fname)
+            self._background_fname = fname
+
+    def pyglet_draw(self):
+        if self._background:
+            self._background.blit(self.x, self.y)
+        for obj in self._objects.values():
+            obj.pyglet_draw()
 
 
 class Text(Actor):
@@ -311,19 +517,393 @@ class Collection(Actor):
         self._objects = []
 
 
-class MenuManager(object):
-    pass
+class MenuManager(metaclass=use_on_events):
+    def __init__(self, game):
+        self.name = "Default Menu Manager"
+        self.game = game
+        self._busy = False
 
-class SceneManager(object):
-    pass
+    def on_show(self):
+        for obj in self.game._menu: 
+            obj.visible = True
+        if logging: log.debug("show menu using place %s"%[x.name for x in self.game._menu])
+        
+    def on_hide(self, menu_items = None):
+        """ hide the menu (all or partial)"""
+        if not menu_items:
+            menu_items = self.game._menu
+        if type(menu_items) not in [tuple, list]: menu_items = [menu_items]
+        for i in menu_items:
+            if type(i) in [str]: i = self.game.items[i]
+            i.visible = False
+        if logging: log.debug("hide menu using place %s"%[x.name for x in self.game._menu])
 
-class CameraManager(object):
-    pass
 
-class SoundManager(object):
-    pass
+class Camera(metaclass=use_on_events): #the view manager
+    def __init__(self, game):
+        self.name = "Default Camera"
+        self.game = game
+        self._busy = False
+        self._ambient_sound = None
+        
+
+    def _scene(self, scene, camera_point=None):
+        """ change the current scene """
+        game = self.game
+        if scene == None:
+            if logging: log.error("Can't change to non-existent scene, staying on current scene")
+            scene = self.game.scene
+        if type(scene) in [str]:
+            if scene in self.game._scenes:
+                scene = self.game._scenes[scene]
+            else:
+                if logging: log.error("camera on_scene: unable to find scene %s"%scene)
+                scene = self.game.scene
+#        if self.game.text:
+#            print("The view has changed to scene %s"%scene.name)
+#            if scene.description:
+#                print(scene.description)
+#            else:
+#                print("There is no description for this scene")
+#            print("You can see:")
+#            for i in scene.objects.values():
+#                print(i.display_text)
+        self.game.scene = scene
+        if camera_point: scene.dx, scene.dy = camera_point
+        if scene.name not in self.game.visited: self.game.visited.append(scene.name) #remember scenes visited
+        if logging: log.debug("changing scene to %s"%scene.name)
+        if self.game and self.game._headless: return #headless mode skips sound and visuals
+
+        if self._ambient_sound: self._ambient_sound.stop()
+#        if self.game.scene and self.game._window:
+#            if self.game.scene._background:
+#                self.game.scene._background.blit((0,0))
+#                screen_blit(self.game.screen, self.game.scene.background(), (-self.game.scene.dx, -self.game.scene.dy))
+#            else:
+#                if logging: log.warning("No background for scene %s"%self.game.scene.name)
+        #start music for this scene
+ #       self._play_scene_music()
+#        if game.scene._ambient_filename:
+#            self._ambient_sound = self.game.mixer._sfx_play(game.scene._ambient_filename, loops=-1)
+
+
+    def on_scene(self, scene):
+        """ change the scene """
+        if type(scene) in [str]:
+            if scene in self.game._scenes:
+                scene = self.game._scenes[scene]
+            else:
+                if logging: log.error("camera on_scene: unable to find scene %s"%scene)
+                scene = self.game.scene
+
+        #check for a precamera script to run
+        if scene:
+            precamera_fn = get_function(self.game, "precamera_%s"%slugify(scene.name))
+            if precamera_fn: precamera_fn(self.game, scene, self.game.player)
+        
+        self._scene(scene)
+
+        #check for a postcamera script to run
+        if scene:
+            postcamera_fn = get_function(self.game, "postcamera_%s"%slugify(scene.name))
+            if postcamera_fn: postcamera_fn(self.game, scene, self.game.player)
+        
+
+class Mixer(metaclass=use_on_events): #the sound manager 
+    def __init__(self, game):
+        self.game = game
+        self.name = "Default Mixer"
+        self._busy = False
+
+    def on_music_play(self, filename, loops=None):
+        music = pyglet.media.load(filename)
+#        music = pyglet.resource.media(filename)
+        music.play()
+
+    def on_music_finish(self, callback=None):
+        pass
+
+
+"""
+Factories 
+"""
 
 
 
+class MenuFactory(object):
+    """ define some defaults for a menu so that it is faster to add new items """
+    def __init__(self, name, pos=(0,0), size=26, font=DEFAULT_MENU_FONT, colour=DEFAULT_MENU_COLOUR, layout=VERTICAL, anchor = LEFT, padding = 0):
+        self.name = name
+        self.position = pos
+        self.size = size
+        self.font = font
+        self.colour = colour
+        self.layout = layout
+        self.padding = padding
+        self.anchor = anchor
+    
+
+"""
+Game class
+"""
+
+class Game(metaclass=use_on_events):
+    def __init__(self, name="Untitled Game", version="v1.0", engine=VERSION_MAJOR, fullscreen=DEFAULT_FULLSCREEN, resolution=DEFAULT_RESOLUTION, fps=DEFAULT_FPS, afps=DEFAULT_ACTOR_FPS, projectsettings=None):
+
+        self.name = name
+        self.resolution = resolution
+        self.fps = fps
+        self.default_actor_fps =afps
+        self.game = self
+        self.player = None
+        self.scene = None
+
+        self.camera = Camera(self) #the camera object
+        self.mixer = Mixer(self) #the sound mixer object
+        self.menu = MenuManager(self) #the menu manager object
+        self._menu_factories = {}
+
+        self.directory_portals = DIRECTORY_PORTALS
+        self.directory_items = DIRECTORY_ITEMS
+        self.directory_scenes = DIRECTORY_SCENES
+        self.directory_actors = DIRECTORY_ACTORS
+        self.directory_emitters = DIRECTORY_EMITTERS
+        self.directory_interface = DIRECTORY_INTERFACE
+
+        self._actors = {}
+        self._items = {}
+        self._modals = []
+        self._menu = []
+        self._scenes = {}
+        self._gui = []
+        self._window = pyglet.window.Window(*resolution)
+        self._window.on_draw = self.pyglet_draw
+
+        #event handling
+        self._waiting = False
+        self._busy = False #game is never busy
+        self._events = []
+        self._event = None
+        self._event_index = 0
+
+        self._selected_options = [] #keep track of convo trees
+        self.visited = [] #list of scene names visited
+      
+        self._modules = {}
+        self._walkthrough = []
+        self._headless = False
+
+        self.parser = ArgumentParser()
+        self.add_arguments()
+
+        pyglet.clock.schedule(self.update) #the pyvida game scripting event loop
+
+
+    @property
+    def w(self):
+        return self._window.w
+
+    @property
+    def h(self):
+        return self._window.h
+
+    def add_arguments(self):
+        """ Add allowable commandline arguments """
+        self.parser.add_argument("-a", "--alloweditor", action="store_true", dest="allow_editor", help="Enable editor via F1 key")
+#        self.parser.add_argument("-b", "--blank", action="store_true", dest="force_editor", help="smart load the game but enter the editor")
+        self.parser.add_argument("-c", "--contrast", action="store_true", dest="high_contrast", help="Play game in high contrast mode (for vision impaired players)", default=False)
+        self.parser.add_argument("-d", "--detailed <scene>", dest="analyse_scene", help="Print lots of info about one scene (best used with test runner)")
+        self.parser.add_argument("-e", "--exceptions", action="store_true", dest="allow_exceptions", help="Switch off exception catching.")
+        self.parser.add_argument("-f", "--fullscreen", action="store_true", dest="fullscreen", help="Play game in fullscreen mode", default=False)
+        self.parser.add_argument("-g", action="store_true", dest="infill_methods", help="Launch script editor when use script missing", default=False)
+        self.parser.add_argument("-H", "--headless", action="store_true", dest="headless", help="Run game as headless (no video)")
+        self.parser.add_argument("-i", "--imagereactor", action="store_true", dest="artreactor", help="Save images from each scene (don't run headless)")
+        self.parser.add_argument("-k", "--kost <background> <actor> <items>", nargs=3, dest="estimate_cost", help="Estimate cost of artwork in game (background is cost per background, etc)")
+        self.parser.add_argument("-l", "--lowmemory", action="store_true", dest="memory_save", help="Run game in low memory mode")
+        self.parser.add_argument("-m", "--matrixinventory", action="store_true", dest="test_inventory", help="Test each item in inventory against each item in scene", default=False)
+        self.parser.add_argument("-o", "--objects", action="store_true", dest="analyse_characters", help="Print lots of info about actor and items to calculate art requirements", default=False)        
+        self.parser.add_argument("-p", "--profile", action="store_true", dest="profiling", help="Record player movements for testing", default=False)        
+
+        self.parser.add_argument("-R", "--random", action="store_true", dest="stresstest", help="Randomly deviate from walkthrough to stress test robustness of scripting")
+        self.parser.add_argument("-r", "--resolution", dest="resolution", help="Force engine to use resolution WxH or (w,h) (recommended (1600,900))")
+        self.parser.add_argument("-s", "--step", dest="step", help="Jump to step in walkthrough")
+        self.parser.add_argument("-t", "--text", action="store_true", dest="text", help="Play game in text mode (for players with disabilities who use text-to-speech output)", default=False)
+        self.parser.add_argument("-w", "--walkthrough", action="store_true", dest="output_walkthrough", help="Print a human readable walkthrough of this game, based on test suites.")
+        self.parser.add_argument("-W", "--walkcreate", action="store_true", dest="create_from_walkthrough", help="Create a smart directory structure based on the walkthrough.")
+
+        self.parser.add_argument("-x", "--exit", action="store_true", dest="exit_step", help="Used with --step, exit program after reaching step (good for profiling)")
+        self.parser.add_argument("-z", "--zerosound", action="store_true", dest="mute", help="Mute sounds", default=False)        
+
+    def walkthroughs(self, suites):
+        """ use test suites to enable jumping forward """
+        self._walkthrough = [i for sublist in suites for i in sublist]  #all tests, flattened in order
+
+    def on_menu_from_factory(self, menu, items):
+        """ Create a menu from a factory """
+        factory = self._menu_factories[menu]
+        #guesstimate width of whole menu so we can do some fancy layout stuff
+        x,y = factory.position
+        for i, item in enumerate(items):
+            obj = Text(item[0], (x, y+factory.size*i))
+            self.add(obj)
+
+    def on_smart(self, player=None, player_class=Actor, draw_progress_bar=None, refresh=False, only=None): #game.smart
+        self._smart(player, player_class, draw_progress_bar, refresh, only)
+
+    def _smart(self, player=None, player_class=Actor, draw_progress_bar=None, refresh=False, only=None): #game.smart
+        """ cycle through the actors, items and scenes and load the available objects 
+            it is very common to have custom methods on the player, so allow smart
+            to use a custom class
+            player is the the first actor the user controls.
+            player_class can be used to override the player class with a custom one.
+            draw_progress_bar is the fn that handles the drawing of a progress bar on this screen
+            refresh = reload the defaults for this actor (but not images)
+        """
+        portals = []
+        for obj_cls in [Actor, Item, Emitter, Portal, Scene]:
+            dname = "directory_%ss"%obj_cls.__name__.lower()
+            if not os.path.exists(getattr(self, dname)): continue #skip directory if non-existent
+            for name in os.listdir(getattr(self, dname)):
+                if draw_progress_bar: 
+                    self.progress_bar_count += 1
+                if only and name not in only: continue #only load specific objects 
+                if logging: log.debug("game.smart loading %s %s"%(obj_cls.__name__.lower(), name))
+                #if there is already a non-custom Actor or Item with that name, warn!
+                if obj_cls == Actor and name in self._actors and self._actors[name].__class__ == Actor and not refresh:
+                    if logging: log.warning("game.smart skipping %s, already an actor with this name!"%(name))
+                elif obj_cls == Item and name in self._items  and self._items[name].__class__ == Item and not refresh:
+                    if logging: log.warning("game.smart skipping %s, already an item with this name!"%(name))
+                else:
+                    if not refresh: #create a new object
+                        if type(player)==str and player == name:
+                            a = player_class(name)
+                        else:
+                            a = obj_cls(name)
+                        self.add(a)
+                    else: #if just refreshing, then use the existing object
+                        a = self._actors.get(name, self._items.get(name, self._scenes.get(name, None)))
+                        if not a: import pdb; pdb.set_trace()
+                    a.smart(self)
+                    if a.__class__ == Portal: portals.append(a.name)                  
+        for pname in portals: #try and guess portal links
+            if draw_progress_bar: self.progress_bar_count += 1
+            links = pname.split("_to_")
+            guess_link = None
+            if len(links)>1: #name format matches guess
+                guess_link = "%s_to_%s"%(links[1].lower(), links[0].lower())
+            if guess_link and guess_link in self._items:
+                self._items[pname].link = self._items[guess_link]
+            else:
+                if logging: log.warning("game.smart unable to guess link for %s"%pname)
+            self._items[pname].auto_align() #auto align portal text
+        if type(player) in [str]: player = self._actors[player]
+        if player: self.player = player
+
+
+    def set_modules(self, modules):        
+        """ when editor reloads modules, which modules are game related? """
+        for i in modules:
+            self._modules[i] = 0 
+        if ENABLE_EDITOR: #if editor is available, watch code for changes
+            self.check_modules() #set initial timestamp record
+
+    def run(self, splash=None, callback=None, icon=None):
+        #event_loop.run()
+        options = self.parser.parse_args()    
+        if callback: callback(self)
+        pyglet.app.run()
+
+    def queue_event(self, event, *args, **kwargs):
+        self._events.append((event, args, kwargs))
+
+    def update(self, dt):
+        """ Handle game events """
+        if self._waiting: 
+            """ check all the Objects with existing events, if any of them are busy, don't process the next event """
+            none_busy = True
+            for event in self._events[:self._event_index]: #event_index is point to the game.wait event at the moment
+                obj = event[1][0] #first arg is always the object that called the event
+                if obj._busy == True: 
+                    none_busy = False
+            if none_busy == True: self._waiting = False #no prior events are busy, so stop waiting
+
+#        if self._event_index < len(self.events) and len(self._events)>0:
+
+            return
+        if len(self._events)>0 and self._event_index < len(self._events):
+            if self._event_index>0:
+                for event in self._events[:self._event_index-1]: #check the previous events' objects, delete if not busy
+                    if event[1][0]._busy == False:
+                        self._events.remove(event)
+                        self._event_index -= 1
+            e = self._events[self._event_index] #stored as [(function, args))]
+            if e[1][0]._busy: return #don't do this event yet if the owner is busy
+            self._event = e
+            print("Start",e[0], e[1][0].name, datetime.now(), e[1][0]._busy)
+            e[0](*e[1], **e[2]) #call the function with the args and kwargs
+            self._event_index += 1
+
+    def pyglet_draw(self):
+        """ Draw the scene """
+        if not self.scene: return
+        print("Draw!")
+        self.scene.pyglet_draw()
+        for item in self._menu:
+            item.pyglet_draw()
+
+        for modal in self._modals:
+            modal.pyglet_draw()
+
+    def add(self, *objects, replace=False):
+        if not isinstance(objects, Iterable): objects = list(objects)
+        for obj in objects:
+            if isinstance(obj, Scene):
+                self._scenes[obj.name] = obj
+#                if self.analyse_scene == obj.name: 
+#                    self.analyse_scene = obj
+#                    obj._total_actors = [] #store all actors referenced in this scene
+#                    obj._total_items = []
+            if isinstance(obj, MenuFactory):
+                self._menu_factories[obj.name] = obj
+            elif isinstance(obj, Portal):
+                self._items[obj.name] = obj
+            elif isinstance(obj, Item):
+                self._items[obj.name] = obj
+            elif isinstance(obj, Actor):
+                self._actors[obj.name] = obj
+
+    def on_wait(self):
+        """ Wait for all scripting events to finish """
+        self._waiting = True
+        return  
+
+    def on_splash(self, image, callback, duration, immediately=False):
+        """ show a splash screen then pass to callback after duration 
+        """
+        if logging: log.warning("game.splash ignores duration and clicks")
+        scene = Scene(image, game=self)
+        scene.background(image)
+        #add scene to game, change over to that scene
+        self.add(scene)
+        self.camera.scene(scene)
+        if scene._background:
+            self._background.blit(0,0)
+        if callback: callback(self)
+
+    def on_set_menu(self, *args):
+        """ add the items in args to the menu """
+        args = list(args)
+        args.reverse()
+        for i in args:
+            if type(i) not in [str]: i = i.name
+            if i in self._items: 
+                self._menu.append(self._items[i])
+            else:
+                if logging: log.error("Menu item %s not found in MenuItem collection"%i)
+        if logging: log.debug("set menu to %s"%[x.name for x in self._menu])
+
+
+    def on_load_state(self, scene, state):
+        pass
 
 
