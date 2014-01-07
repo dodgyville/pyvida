@@ -439,7 +439,13 @@ class Actor(metaclass=use_on_events):
     def smart(self, game): #actor.smart
         self.game = game
         d = get_smart_directory(game, self)
-        self._directory = os.path.join(d, self.name)
+        myd = os.path.join(d, self.name)        
+        if not os.path.isdir(myd): #fallback to pyvida defaults
+            this_dir, this_filename = os.path.split(__file__)
+            log.debug("Unable to find %s, falling back to %s"%(myd, this_dir))
+            myd = os.path.join(this_dir, d, name)
+
+        self._directory = myd
         for action_file in glob.glob(os.path.join(self._directory, "*.png")):
             action_name = os.path.splitext(os.path.basename(action_file))[0]
             action = Action(action_name).smart(game, actor=self, filename=action_file)
@@ -688,7 +694,7 @@ class Scene(metaclass=use_on_events):
             obj.pyglet_draw()
 
 
-class Text(Actor):
+class Text(Item):
     def __init__(self, name, pos):
         super().__init__(name)
         self._display_text = name
@@ -703,7 +709,7 @@ class Text(Actor):
         self._label.draw()
 
 
-class Collection(Actor):
+class Collection(Item):
     def __init__(self):
         self._objects = []
 
@@ -1066,8 +1072,13 @@ class Game(metaclass=use_on_events):
         #guesstimate width of whole menu so we can do some fancy layout stuff
         x,y = factory.position
         for i, item in enumerate(items):
-            obj = Text(item[0], (x, y+factory.size*i))
+            if item[0] in self._items.keys():
+                obj = self._items[items[0]]
+                obj.x, obj.y = x, y
+            else:
+                obj = Text(item[0], (x, y+factory.size*i))
             self.add(obj)
+
 
     def on_smart(self, player=None, player_class=Actor, draw_progress_bar=None, refresh=False, only=None): #game.smart
         self._smart(player, player_class, draw_progress_bar, refresh, only)
@@ -1188,7 +1199,6 @@ class Game(metaclass=use_on_events):
         for item in self.scene._objects.values():
             item.pyglet_draw()
 
-
         for item in self._menu:
             item.pyglet_draw()
 
@@ -1263,10 +1273,9 @@ class Game(metaclass=use_on_events):
         args.reverse()
         for i in args:
             if type(i) not in [str]: i = i.name
-            if i in self._items: 
+            if i in self._items.keys(): 
                 self._menu.append(self._items[i])
             else:
                 if logging: log.error("Menu item %s not found in MenuItem collection"%i)
         if logging: log.debug("set menu to %s"%[x.name for x in self._menu])
-
 
