@@ -193,8 +193,8 @@ def get_available_languages():
     return languages
   
 def load_image(fname, convert_alpha=False, eight_bit=False):
-#    im = pyglet.image.load(fname)
-    im = pyglet.image.load(fname, decoder=PNGImageDecoder())
+    im = pyglet.image.load(fname)
+#    im = pyglet.image.load(fname, decoder=PNGImageDecoder())
     return im
 
 def get_point(game, destination):
@@ -474,7 +474,7 @@ class Actor(metaclass=use_on_events):
     ay = property(get_ay, set_ay)
 
     def _update(self, dt):
-        print("Actor._update for",self.name)
+        pass
 
     def smart(self, game): #actor.smart
         self.game = game
@@ -494,10 +494,11 @@ class Actor(metaclass=use_on_events):
         return self
 
     def pyglet_draw(self): #actor.draw
+        x,y = self.x - self.ax, self.game.resolution[1] - self.y - self.ay
         if self._sprite:
-            self._sprite.position = (self.x + self.ax, -self.y + self.ay)
+            self._sprite.position = (x, y)
             self._sprite.draw()
-        crosshair((self.x, self.y), (1.0, 0, 0, 1.0))
+        crosshair((x, y), (1.0, 0, 0, 1.0))
 
     def on_animation_end(self):
 #        self.busy = False
