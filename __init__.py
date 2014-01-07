@@ -43,6 +43,8 @@ PYGAME19GL = 1
 PYGLET12 = 2
 BACKEND = PYGAME19
 
+COORDINATE_MODIFIER = -1 #pyglet has (0,0) in bottom left, we want it in the bottom right
+
 HIDE_MOUSE = True #start with mouse hidden, first splash will turn it back on
 DEFAULT_FULLSCREEN = False #switch game to fullscreen or not
 DEFAULT_EXPLORATION = True #show "unknown" on portal links before first visit there
@@ -94,6 +96,10 @@ HINT = "hint"
 
 #EDITOR CONSTANTS
 MENU_EDITOR = "e_load", "e_save", "e_add", "e_delete", "e_prev", "e_next", "e_walk", "e_portal", "e_scene", "e_step", "e_reload", "e_jump", "e_state_save", "e_state_load"
+
+#KEYS
+K_ESCAPE = "X"
+K_s = "s"
 
 """
 Testing utilities
@@ -345,7 +351,7 @@ class Action(object):
     def draw(self):
         self._sprite.draw()
 
-    def smart(self, game, actor=None, filename=None):
+    def smart(self, game, actor=None, filename=None): #action.smart
         #load the image and slice info if necessary
         self.actor = actor if actor else self.actor
         self.game = game
@@ -375,6 +381,18 @@ class Rect(object):
         self.x, self.y = x, y
         self.w, self.h = w, h
 
+def crosshair(point, colour):
+        pyglet.gl.glColor4f(*colour)               
+        x,y=point                                
+        pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x, y-5, x, y+5))) 
+        pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x-5, y, x+5, y))) 
+        label = pyglet.text.Label("{0}, {1}".format(x,y),
+                          font_name='Times New Roman',
+                          font_size=12,
+                          x=x+6, y=y,
+                          anchor_x='left', anchor_y='center')
+        label.draw()
+
 
 class Actor(metaclass=use_on_events):
     def __init__(self, name):
@@ -383,7 +401,7 @@ class Actor(metaclass=use_on_events):
         self._actions = {}
         self.action = None
         self.game = None
-        self.x, self.y = 0, 0
+        self._x, self._y = 0, 0
         self.sx, self.sx = 0,0 #stand points
         self._ax, self._ax = 0,0 #anchor points
         self.scale = 1.0
@@ -409,7 +427,7 @@ class Actor(metaclass=use_on_events):
         self._events = []
 
         self._tint = None
-        pyglet.clock.schedule_interval(self._update, 0.1) #update the stars
+
 
     def get_busy(self, x):
         return self._busy
@@ -418,9 +436,29 @@ class Actor(metaclass=use_on_events):
         self._busy = x
     busy = property(get_busy, set_busy)
 
+
+    def update_anchor(self):
+        if isinstance(self._sprite._animation, pyglet.image.Animation):
+            for f in _sprite._animation:
+                f.image.anchor_x = self._ax
+                f.image.anchor_y = self._ay
+        else:
+            self._sprite._animation.anchor_x = self._ax
+            self._sprite._animation.anchor_y = self._ay
+
+    def get_x(self): return self._x
+    def set_x(self, v): self._x = v
+    x = property(get_x, set_x)
+
+    def get_y(self): return self._y
+
+    def set_y(self, v): self._y = v
+    y = property(get_y, set_y)
+
     def get_ax(self):
         return self._ax
     def set_ax(self, v):
+        self._ax = v
         self._sprite.anchor_x = v
         return
     ax = property(get_ax, set_ax)
@@ -428,13 +466,13 @@ class Actor(metaclass=use_on_events):
     def get_ay(self):
         return self._ax
     def set_ay(self, v):
+        self._ay = v
         self._sprite.anchor_y = v
         return
     ay = property(get_ay, set_ay)
 
-
     def _update(self, dt):
-        pass
+        print("Actor._update for",self.name)
 
     def smart(self, game): #actor.smart
         self.game = game
@@ -453,10 +491,11 @@ class Actor(metaclass=use_on_events):
         self._do("idle" if "idle" in self._actions else self._actions.keys()[0])
         return self
 
-    def pyglet_draw(self):
+    def pyglet_draw(self): #actor.draw
         if self._sprite:
-            self._sprite.position = (self.x, self.y)
+            self._sprite.position = (self.x + self.ax, -self.y + self.ay)
             self._sprite.draw()
+        crosshair((self.x, self.y), (1.0, 0, 0, 1.0))
 
     def on_animation_end(self):
 #        self.busy = False
@@ -642,7 +681,7 @@ class Scene(metaclass=use_on_events):
 
         return self
 
-    def on_add(self, objects):
+    def on_add(self, objects): #scene.add
         if not isinstance(objects, Iterable): objects = [objects]
         for obj in objects:
             obj = self.game._actors.get(obj, self.game._items.get(obj, None)) if type(obj) in [str] else obj        
@@ -1068,6 +1107,9 @@ class Game(metaclass=use_on_events):
 
     def on_menu_from_factory(self, menu, items):
         """ Create a menu from a factory """
+        if menu not in self._menu_factories: 
+            log.error("Unable to find menu factory '{0}'".format(menu))
+            return
         factory = self._menu_factories[menu]
         #guesstimate width of whole menu so we can do some fancy layout stuff
         x,y = factory.position
@@ -1077,8 +1119,7 @@ class Game(metaclass=use_on_events):
                 obj.x, obj.y = x, y
             else:
                 obj = Text(item[0], (x, y+factory.size*i))
-            self.add(obj)
-
+            self._add(obj)
 
     def on_smart(self, player=None, player_class=Actor, draw_progress_bar=None, refresh=False, only=None): #game.smart
         self._smart(player, player_class, draw_progress_bar, refresh, only)
@@ -1092,7 +1133,6 @@ class Game(metaclass=use_on_events):
             draw_progress_bar is the fn that handles the drawing of a progress bar on this screen
             refresh = reload the defaults for this actor (but not images)
         """
-        print("SMART LOAD")
         portals = []
         for obj_cls in [Actor, Item, Emitter, Portal, Scene]:
             dname = "directory_%ss"%obj_cls.__name__.lower()
@@ -1113,7 +1153,7 @@ class Game(metaclass=use_on_events):
                             a = player_class(name)
                         else:
                             a = obj_cls(name)
-                        self.add(a)
+                        self._add(a)
                     else: #if just refreshing, then use the existing object
                         a = self._actors.get(name, self._items.get(name, self._scenes.get(name, None)))
                         if not a: import pdb; pdb.set_trace()
@@ -1160,6 +1200,12 @@ class Game(metaclass=use_on_events):
         self._events.append((event, args, kwargs))
 
     def update(self, dt):
+        """ Run update on scene objects """
+        scene_objects = self.scene._objects.values() if self.scene else []
+        for items in [scene_objects, self._menu, self._modals]:
+            for item in items:
+                if hasattr(item, "_update"): item._update(dt)
+
         """ Handle game events """
         if self._waiting: 
             """ check all the Objects with existing events, if any of them are busy, don't process the next event """
@@ -1186,7 +1232,7 @@ class Game(metaclass=use_on_events):
             e[0](*e[1], **e[2]) #call the function with the args and kwargs
             self._event_index += 1
 
-    def pyglet_draw(self):
+    def pyglet_draw(self): #game.draw
         """ Draw the scene """
         if not self.scene: return
 #        self.scene.pyglet_draw()
@@ -1205,7 +1251,8 @@ class Game(metaclass=use_on_events):
         for modal in self._modals:
             modal.pyglet_draw()
 
-    def add(self, *objects, replace=False):
+
+    def _add(self, *objects, replace=False):
         if not isinstance(objects, Iterable): objects = list(objects)
         for obj in objects:
             if isinstance(obj, Scene):
@@ -1222,6 +1269,10 @@ class Game(metaclass=use_on_events):
                 self._items[obj.name] = obj
             elif isinstance(obj, Actor):
                 self._actors[obj.name] = obj
+
+
+    def on_add(self, *objects, replace=False): #game.add
+        self._add(objects, replace=replace)
 
     def on_load_state(self, scene, state):
         """ a queuing function, not a queued function (ie it adds events but is not one """
