@@ -8,6 +8,7 @@ from argparse import ArgumentParser
 from collections import Iterable
 from gettext import gettext
 
+from pyglet.image.codecs.png import PNGImageDecoder
 
 try:
     import android
@@ -355,7 +356,7 @@ class Action(object):
         #load the image and slice info if necessary
         self.actor = actor if actor else self.actor
         self.game = game
-        image = pyglet.image.load(filename)
+        image = pyglet.image.load(filename, decoder=PNGImageDecoder())
         fname = os.path.splitext(filename)[0]
         montage_fname = fname + ".montage"
         if not os.path.isfile(montage_fname):
