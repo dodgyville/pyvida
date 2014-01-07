@@ -193,7 +193,8 @@ def get_available_languages():
     return languages
   
 def load_image(fname, convert_alpha=False, eight_bit=False):
-    im = pyglet.image.load(fname)
+#    im = pyglet.image.load(fname)
+    im = pyglet.image.load(fname, decoder=PNGImageDecoder())
     return im
 
 def get_point(game, destination):
@@ -356,7 +357,7 @@ class Action(object):
         #load the image and slice info if necessary
         self.actor = actor if actor else self.actor
         self.game = game
-        image = pyglet.image.load(filename, decoder=PNGImageDecoder())
+        image = load_image(filename)
         fname = os.path.splitext(filename)[0]
         montage_fname = fname + ".montage"
         if not os.path.isfile(montage_fname):
@@ -744,8 +745,9 @@ class Text(Item):
                                   x=pos[0], y=pos[1],
                                   anchor_x='center', anchor_y='center')
 
+
     def pyglet_draw(self):
-        self._label.position = (self.x, self.y)
+        self._label.position = (self.x, self.game.resolution[1] - self.y)
         self._label.draw()
 
 
@@ -1253,16 +1255,20 @@ class Game(metaclass=use_on_events):
             modal.pyglet_draw()
 
 
-    def _add(self, *objects, replace=False):
-        if not isinstance(objects, Iterable): objects = list(objects)
+    def _add(self, objects, replace=False):
+        if not isinstance(objects, Iterable): objects = [objects]
         for obj in objects:
+            try:
+                obj.game = self
+            except:
+                import pdb; pdb.set_trace()
             if isinstance(obj, Scene):
                 self._scenes[obj.name] = obj
 #                if self.analyse_scene == obj.name: 
 #                    self.analyse_scene = obj
 #                    obj._total_actors = [] #store all actors referenced in this scene
 #                    obj._total_items = []
-            if isinstance(obj, MenuFactory):
+            elif isinstance(obj, MenuFactory):
                 self._menu_factories[obj.name] = obj
             elif isinstance(obj, Portal):
                 self._items[obj.name] = obj
@@ -1272,7 +1278,7 @@ class Game(metaclass=use_on_events):
                 self._actors[obj.name] = obj
 
 
-    def on_add(self, *objects, replace=False): #game.add
+    def on_add(self, objects, replace=False): #game.add
         self._add(objects, replace=replace)
 
     def on_load_state(self, scene, state):
