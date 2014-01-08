@@ -1,7 +1,7 @@
 """
 Python3 
 """
-import glob, pyglet, os, sys
+import glob, pyglet, os, sys, copy
 from datetime import datetime
 
 from argparse import ArgumentParser
@@ -28,7 +28,7 @@ Constants
 DEBUG_ASTAR = False
 DEBUG_STDOUT = True #stream errors to stdout as well as log file
 
-ENABLE_EDITOR = False #default for editor
+ENABLE_EDITOR = True #default for editor
 ENABLE_PROFILING = False
 ENABLE_LOGGING = True
 ENABLE_LOCAL_LOGGING = True
@@ -208,6 +208,14 @@ def get_point(game, destination):
     return destination
 
 
+def collide(rect, x,y):
+    """ text is point x,y is inside rectangle """
+    return not ((x < rect[0])
+        or (x > rect[2] + rect[0])
+        or (y < rect[1])
+        or (y > rect[3] + rect[1]))
+
+
 class answer(object):
     """
     A decorator for functions that you wish to use as options in an Actor.on_ask event
@@ -383,18 +391,105 @@ class Rect(object):
         self.x, self.y = x, y
         self.w, self.h = w, h
 
-def crosshair(point, colour):
+    def __str__(self):
+        return "{}, {}, {}, {}".format(self.x, self.y, self.w, self.h)
+
+    def collidepoint(self, x, y):
+        return collide((self.x, self.y, self.w, self.h), x,y)
+
+    def move(self, dx, dy):
+        return Rect(self.x+dx, self.y+dy, self.w, self.h)
+
+
+
+def crosshair(game, point, colour):
         pyglet.gl.glColor4f(*colour)               
         x,y=point                                
         pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x, y-5, x, y+5))) 
         pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x-5, y, x+5, y))) 
-        label = pyglet.text.Label("{0}, {1}".format(x,y),
+        label = pyglet.text.Label("{0}, {1}".format(x,game.resolution[1]-y),
                           font_name='Times New Roman',
                           font_size=12,
                           x=x+6, y=y,
                           anchor_x='left', anchor_y='center')
         label.draw()
 
+
+def rectangle(game, rect, colour=(1.0, 1.0, 1.0)):
+        pyglet.gl.glColor4f(*colour)               
+        x,y=rect.x,rect.y
+        w,h=rect.w,rect.h
+
+        #y is inverted for pyglet
+        gy = game.resolution[1]-y
+        pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x, gy, x+w, gy))) 
+        pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x+w, gy, x+w, gy-h))) 
+        pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x+w, gy-h, x, gy-h))) 
+        pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x, gy-h, x, gy))) 
+
+        label = pyglet.text.Label("{0}, {1}".format(x,game.resolution[1]-y),
+                          font_name='Times New Roman',
+                          font_size=12,
+                          x=x+6, y=gy,
+                          anchor_x='left', anchor_y='top')
+        label.draw()
+
+
+
+
+def get_pixel_from_image(image, x, y):
+        #Grab 1x1-pixel image. Converting entire image to ImageData takes much longer than just
+        #grabbing the single pixel with get_region() and converting just that.
+        image_data = image.get_region(x,y,1,1).get_image_data()
+        #Get (very small) image as a string. The magic number '4' is just len('RGBA').
+        data = image_data.get_data('RGBA',4)
+        #Convert Unicode strings to integers. Provided by Alex Holkner on the mailing list.
+        #components = map(ord, list(data))        #components only contains one pixel. I want to return a color that I can pass to
+        #pyglet.gl.glColor4f(), so I need to put it in the 0.0-1.0 range.
+        return (data[0], data[1], data[2], data[3])
+
+
+
+#signal dispatching, based on django.dispatch
+class Signal(object):
+    def __init__(self, providing_args=None):
+        self.receivers = []
+        if providing_args is None:
+            providing_args = []
+        self.providing_args = set(providing_args)
+       
+    def connect(self, receiver, sender):
+        if (receiver, sender) not in self.receivers: self.receivers.append((receiver, sender))
+
+
+post_interact = Signal(providing_args=["game", "instance", "player"])
+pre_interact = Signal(providing_args=["game", "instance", "player"])
+
+post_use = Signal(providing_args=["game", "instance", "player"])
+pre_use = Signal(providing_args=["game", "instance", "player"])
+
+pre_leave = Signal(providing_args=["game", "instance", "player"])
+post_arrive = Signal(providing_args=["game", "instance", "player"])
+
+def receiver(signal, **kwargs):
+    """
+    A decorator for connecting receivers to signals. Used by passing in the
+    signal and keyword arguments to connect::
+
+        @receiver(post_save, sender=MyModel)
+        def signal_receiver(sender, **kwargs):
+            ...
+
+    """
+    def _decorator(func):
+        signal.connect(func, **kwargs)
+        return func
+    return _decorator
+
+
+"""
+Classes
+"""
 
 class Actor(metaclass=use_on_events):
     def __init__(self, name):
@@ -409,8 +504,9 @@ class Actor(metaclass=use_on_events):
         self.scale = 1.0
         self.rotate = 0
 
-        self._solid_area = Rect(0,0,0,0)
-        self._clickable_area = Rect(0,0,0,0)
+        self._solid_area = Rect(0,0,60,100)
+        self._clickable_area = Rect(0,0,70,110)
+        self._clickable_mask = None
 
         self.allow_draw = True
         self.allow_update = True
@@ -476,6 +572,99 @@ class Actor(metaclass=use_on_events):
     def _update(self, dt):
         pass
 
+    @property
+    def clickable_area(self):
+        return self._clickable_area.move(self.x, self.y)
+
+    @property
+    def clickable_mask(self):
+        if self._clickable_mask: return self._clickable_mask
+#        r = self._clickable_area.move(self.ax, self.ay)
+#        if self.scale != 1.0:
+#            r.width *= self.scale
+#            r.height *= self.scale
+        mask = pyglet.image.SolidColorImagePattern((255, 255, 255, 255))
+        self._clickable_mask = mask.create_image(self.clickable_area.w, self.clickable_area.h)
+        self._clickable_mask.save('test.png')
+        return self._clickable_mask
+
+
+    def collide(self, x,y, image=False): #Actor.collide
+        """ collide with actor's clickable 
+            if image is true, ignore clickable and collide with image.
+        """
+        if x < self.clickable_area.x or x > self.clickable_area.x + self.clickable_area.w or \
+            y < self.clickable_area.y or y > self.clickable_area.y + self.clickable_area.h:
+                return
+        x = x - self.x
+        y = y - self.y
+        data = get_pixel_from_image(self.clickable_mask, x, y)
+#        if self.name == "Exit Game": import pdb; pdb.set_trace()
+        if data[:2] == (0,0,0) or data[3] == 255: return False #clicked on black or transparent, so not a collide
+        return True
+#        else:
+#            return collide(self._image().get_rect().move(self.x, self.y), x, y)
+
+
+    def trigger_interact(self):
+        if self.interact: #if user has supplied an interact override
+            if type(self.interact) in [str]: 
+                interact = get_function(self.game, self.interact)
+                if interact: 
+                    self.interact = interact
+                else:
+                    if logging: log.error("Unable to find interact fn %s"%self.interact)
+            n = self.interact.__name__ if self.interact else "self.interact is None"
+            if logging: log.debug("Player interact (%s (%s)) with %s"%(n, self.interact if self.interact else "none", self.name))
+            script = self.interact
+            script(self.game, self, self.game.player)
+        else: #else, search several namespaces or use a default
+            basic = "interact_%s"%slugify(self.name)
+            script = get_function(self.game, basic)
+            if script:
+                if self.game.edit_scripts: 
+                    edit_script(self.game, self, basic, script, mode="interact")
+                    return
+    
+                if not self.game.catch_exceptions: #allow exceptions to crash engine
+                    script(self.game, self, self.game.player)
+                else:
+                    try:
+                        script(self.game, self, self.game.player)
+                    except:
+                        log.error("Exception in %s"%script.__name__)
+                        print("\nError running %s\n"%script.__name__)
+                        if traceback: traceback.print_exc(file=sys.stdout)
+                        print("\n\n")
+                        
+                if logging: log.debug("Player interact (%s) with %s"%(script.__name__, self.name))
+            else:
+                #warn if using default vida interact
+                if not isinstance(self, Portal):
+                    if logging: log.warning("No interact script for %s (write a def %s(game, %s, player): function)"%(self.name, basic, slugify(self.name)))
+                script = None #self._interact_default
+                self._interact_default(self.game, self, self.game.player)
+
+        for receiver, sender in post_interact.receivers: #do the signals for post_interact
+            if isinstance(self, sender): 
+                receiver(self.game, self, self.game.player)
+
+
+    def _interact_default(self, game, actor, player):
+        """ default queuing interact smethod """
+        if isinstance(self, Item): #very generic
+            c = ["It's not very interesting.",
+            "I'm not sure what you want me to do with that.",
+            "I've already tried using that, it just won't fit."]
+        else: #probably an Actor object
+            c = ["They're not responding to my hails.",
+            "Perhaps they need a good poking.",
+            "They don't want to talk to me."]
+        if self.game.player: self.game.player.says(choice(c))
+        self._event_finish()
+
+
+
     def smart(self, game): #actor.smart
         self.game = game
         d = get_smart_directory(game, self)
@@ -494,11 +683,16 @@ class Actor(metaclass=use_on_events):
         return self
 
     def pyglet_draw(self): #actor.draw
-        x,y = self.x - self.ax, self.game.resolution[1] - self.y - self.ay
+
         if self._sprite:
-            self._sprite.position = (x, y)
+            self._sprite.position = (self.x - self.ax, self.game.resolution[1] - self.y - self.ay)
             self._sprite.draw()
-        crosshair((x, y), (1.0, 0, 0, 1.0))
+        self.debug_pyglet_draw(self.x, self.y)
+
+    def debug_pyglet_draw(self, x,y):
+        """ Draw some debug info """
+        crosshair(self.game, (x, y), (1.0, 0, 0, 1.0))
+        rectangle(self.game, self.clickable_area, (0.0, 1.0, 0.4, 1.0))
 
     def on_animation_end(self):
 #        self.busy = False
@@ -727,6 +921,7 @@ class Scene(metaclass=use_on_events):
             self._background_fname = fname
 
     def pyglet_draw(self):
+        pass
 #        if self._background:
 #            print("Draw2!", len(self._objects), self._background)
 #            self._background.blit(self.x, self.y)
@@ -740,17 +935,19 @@ class Text(Item):
     def __init__(self, name, pos):
         super().__init__(name)
         self._display_text = name
+        self.x, self.y = pos
         self._label = pyglet.text.Label(self._display_text,
                                   font_name='Times New Roman',
                                   font_size=36,
-                                  x=pos[0], y=pos[1],
-                                  anchor_x='center', anchor_y='center')
-
-
+                                  x=self.x, y=self.y,
+                                  anchor_x='left', anchor_y='top')
+        self._clickable_area = Rect(0, 0, self._label.content_width, self._label.content_height)
+        
     def pyglet_draw(self):
-        self._label.position = (self.x, self.game.resolution[1] - self.y)
+        x, y = self.x + self.ax, self.game.resolution[1] - self.y - self.ay 
+        self._label.x, self._label.y = x,y
         self._label.draw()
-
+        self.debug_pyglet_draw(x, y)
 
 class Collection(Item):
     def __init__(self):
@@ -768,7 +965,7 @@ class MenuManager(metaclass=use_on_events):
             obj.visible = True
         if logging: log.debug("show menu using place %s"%[x.name for x in self.game._menu])
         
-    def on_hide(self, menu_items = None):
+    def _hide(self, menu_items = None):
         """ hide the menu (all or partial)"""
         if not menu_items:
             menu_items = self.game._menu
@@ -777,6 +974,14 @@ class MenuManager(metaclass=use_on_events):
             if type(i) in [str]: i = self.game.items[i]
             i.visible = False
         if logging: log.debug("hide menu using place %s"%[x.name for x in self.game._menu])
+
+    def on_hide(self, menu_items = None):
+        self._hide(self)
+        
+
+    def on_fade_out(self):
+        log.warning("menumanager.fade_out does not fade")
+        self._hide(self)
 
 
 class Camera(metaclass=use_on_events): #the view manager
@@ -1017,6 +1222,9 @@ class Game(metaclass=use_on_events):
         self._window = pyglet.window.Window(*resolution)
         self._window.on_draw = self.pyglet_draw
         self._window.on_key_press = self.on_key_press
+        self._window.on_mouse_motion = self.on_mouse_motion
+        self._window.on_mouse_press = self.on_mouse_press
+        self._window.on_mouse_release = self.on_mouse_release
 
         #event handling
         self._waiting = False
@@ -1031,6 +1239,7 @@ class Game(metaclass=use_on_events):
         self._modules = {}
         self._walkthrough = []
         self._headless = False
+        self._allow_editing = ENABLE_EDITOR
 
         self.parser = ArgumentParser()
         self.add_arguments()
@@ -1077,6 +1286,23 @@ class Game(metaclass=use_on_events):
         if symbol == pyglet.window.key.F2:
             import pdb; pdb.set_trace()
 
+    def on_mouse_motion(self,x, y, dx, dy):
+        """ Change mouse cursor depending on what the mouse is hovering over """
+        pass 
+
+    def on_mouse_press(self, x, y, button, modifiers):
+        """ If the mouse is over an object with a down action, switch to that action """
+        pass
+
+    def on_mouse_release(self, x, y, button, modifiers):
+        """ Call the correct function depending on what the mouse has clicked on """
+        y = self.game.resolution[1] - y #invert y-axis if needed
+        for obj in self._modals:
+            if obj.collide(x,y):
+                print("Collide with ",obj.name)
+        for obj in self._menu:
+            if obj.collide(x,y):
+                obj.trigger_interact()
 
     def add_arguments(self):
         """ Add allowable commandline arguments """
@@ -1123,6 +1349,7 @@ class Game(metaclass=use_on_events):
                 obj.x, obj.y = x, y
             else:
                 obj = Text(item[0], (x, y+factory.size*i))
+                obj.interact = item[1] #set callback
             self._add(obj)
 
     def on_smart(self, player=None, player_class=Actor, draw_progress_bar=None, refresh=False, only=None): #game.smart
@@ -1177,12 +1404,31 @@ class Game(metaclass=use_on_events):
         if type(player) in [str]: player = self._actors[player]
         if player: self.player = player
 
+    def check_modules(self):
+        """ poll system to see if python files have changed """
+        modified = False
+#        if 'win32' in sys.platform: # don't allow on windows XXX why?
+#            return modified
+        for i in self._modules.keys(): #for modules we are watching
+            if not i in sys.modules:
+                log.error("Unable to reload module %s (not in sys.modules)"%i)
+                continue
+            fname = sys.modules[i].__file__
+            fname, ext = os.path.splitext(fname)
+            if ext == ".pyc": ext = ".py"
+            fname = "%s%s"%(fname, ext)
+            ntime = os.stat(fname).st_mtime #check the modified timestamp
+            if ntime > self._modules[i]: #if modified since last check, return True
+                self._modules[i] = ntime
+                modified = True
+        return modified
+
 
     def set_modules(self, modules):        
         """ when editor reloads modules, which modules are game related? """
         for i in modules:
             self._modules[i] = 0 
-        if ENABLE_EDITOR: #if editor is available, watch code for changes
+        if self._allow_editing: #if editor is available, watch code for changes
             self.check_modules() #set initial timestamp record
 
     def run(self, splash=None, callback=None, icon=None):
@@ -1197,7 +1443,7 @@ class Game(metaclass=use_on_events):
             self.add(scene)
             self.camera.scene(scene)
 
-        if callback: callback(self)
+        if callback: callback(0, self)
         pyglet.app.run()
 
     def queue_event(self, event, *args, **kwargs):
@@ -1313,10 +1559,11 @@ class Game(metaclass=use_on_events):
         self._waiting = True
         return  
 
-    def on_splash(self, image, callback, duration, immediately=False):
+    def on_splash(self, image, callback, duration=None, immediately=False):
         """ show a splash screen then pass to callback after duration 
         """
         if logging: log.warning("game.splash ignores duration and clicks")
+        if self._allow_editing: duration = 0.1 #skip delay on splash when editing
         scene = Scene(image, game=self)
         scene.background(image)
         #add scene to game, change over to that scene
@@ -1324,7 +1571,12 @@ class Game(metaclass=use_on_events):
         self.camera.scene(scene)
         if scene._background:
             self._background.blit(0,0)
-        if callback: callback(self)
+        if callback:
+            if not duration:
+                callback(0, self)
+            else:
+                pyglet.clock.schedule_once(callback, duration, self)
+
 
     def on_set_menu(self, *args):
         """ add the items in args to the menu """
