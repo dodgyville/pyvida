@@ -103,6 +103,12 @@ K_ESCAPE = "X"
 K_s = "s"
 
 """
+GLOBALS (yuck)
+"""
+_pyglet_fonts = {DEFAULT_MENU_FONT:"Vera"}
+
+
+"""
 Testing utilities
 """
 
@@ -193,9 +199,16 @@ def get_available_languages():
     return languages
   
 def load_image(fname, convert_alpha=False, eight_bit=False):
-    im = pyglet.image.load(fname)
+    im = pyglet.image.codecs.pil.PILImageDecoder().decode(open(fname, "rb"), fname)
+#    im = pyglet.image.codecs.png.PNGImageDecoder().decode(open(fname, "rb"), fname)
+#    im = pyglet.image.load(fname)
 #    im = pyglet.image.load(fname, decoder=PNGImageDecoder())
     return im
+
+def get_font(game, filename, fontname):
+    pyglet.font.add_file(filename)
+    return pyglet.font.load(fontname)
+
 
 def get_point(game, destination):
     """ get a point from a tuple, str or destination """
@@ -206,6 +219,17 @@ def get_point(game, destination):
     elif type(destination) == object:
         destination = (destination.sx, destination.sy)
     return destination
+
+def get_object(game, obj):
+    """ get an object from a name or object """
+    if type(obj) != str: return obj
+    if obj in game._scenes: 
+        obj = game._scenes[obj]
+    elif obj in game._items.keys(): 
+        obj = game._items[obj]
+    elif obj in game._actors.keys(): 
+        obj = game._actors[obj]
+    return obj
 
 
 def collide(rect, x,y):
@@ -400,6 +424,9 @@ class Rect(object):
     def move(self, dx, dy):
         return Rect(self.x+dx, self.y+dy, self.w, self.h)
 
+    @property
+    def center(self):
+        return (self.x + self.w//2, self.y + self.h//2)
 
 
 def crosshair(game, point, colour):
@@ -440,7 +467,7 @@ def rectangle(game, rect, colour=(1.0, 1.0, 1.0)):
 def get_pixel_from_image(image, x, y):
         #Grab 1x1-pixel image. Converting entire image to ImageData takes much longer than just
         #grabbing the single pixel with get_region() and converting just that.
-        image_data = image.get_region(x,y,1,1).get_image_data()
+        image_data = image.get_region(int(x),int(y),1,1).get_image_data()
         #Get (very small) image as a string. The magic number '4' is just len('RGBA').
         data = image_data.get_data('RGBA',4)
         #Convert Unicode strings to integers. Provided by Alex Holkner on the mailing list.
@@ -492,7 +519,7 @@ Classes
 """
 
 class Actor(metaclass=use_on_events):
-    def __init__(self, name):
+    def __init__(self, name, interact=None):
         super().__init__()
         self.name = name
         self._actions = {}
@@ -501,8 +528,12 @@ class Actor(metaclass=use_on_events):
         self._x, self._y = 0, 0
         self.sx, self.sx = 0,0 #stand points
         self._ax, self._ax = 0,0 #anchor points
+        self.nx, self.ny = 0, 0 # displacement point for name
+        self.z = 1000 #where in the z layer is this actor (< 1000 further away, >1000 closer to player)
         self.scale = 1.0
         self.rotate = 0
+        self.display_text = None #can override name for game.info display text
+        self.display_text_align = LEFT
 
         self._solid_area = Rect(0,0,60,100)
         self._clickable_area = Rect(0,0,70,110)
@@ -514,7 +545,7 @@ class Actor(metaclass=use_on_events):
         self.allow_interact = True
         self.allow_look = True
 
-        self.interact = None #special queuing function for interacts
+        self.interact = interact #special queuing function for interacts
         self.look = None #override queuing function for look
         self.uses = {} #override use functions (actor is key name)
 
@@ -585,7 +616,7 @@ class Actor(metaclass=use_on_events):
 #            r.height *= self.scale
         mask = pyglet.image.SolidColorImagePattern((255, 255, 255, 255))
         self._clickable_mask = mask.create_image(self.clickable_area.w, self.clickable_area.h)
-        self._clickable_mask.save('test.png')
+        self._clickable_mask.save("saves/%s.png"%self.name)
         return self._clickable_mask
 
 
@@ -598,8 +629,8 @@ class Actor(metaclass=use_on_events):
                 return
         x = x - self.x
         y = y - self.y
+#        if self.name == "New Game": import pdb; pdb.set_trace()
         data = get_pixel_from_image(self.clickable_mask, x, y)
-#        if self.name == "Exit Game": import pdb; pdb.set_trace()
         if data[:2] == (0,0,0) or data[3] == 255: return False #clicked on black or transparent, so not a collide
         return True
 #        else:
@@ -665,25 +696,59 @@ class Actor(metaclass=use_on_events):
 
 
 
-    def smart(self, game): #actor.smart
+#    def on_smart(self, game, img=None, using=None, idle="idle", action_prefix = ""): #actor.smart
+#        return self._smart(game)
+
+    def smart(self, game, image=None, using=None, idle="idle", action_prefix = ""): #actor.smart
+        """ 
+        Intelligently load as many animations and details about this actor/item.
+        
+        Most of the information is derived from the file structure.
+        
+        If no <image>, smart will load all .PNG files in data/actors/<Actor Name> as actions available for this actor.
+
+        If there is an <image>, create an idle action for that.
+        
+        If <using>, use that directory to smart load into a new object with <name>
+
+        If <idle>, use that action for defaults rather than "idle"
+
+        If <action_prefix>, prefix value to defaults (eg astar, idle), useful for swapping clothes on actor, etc 
+        """
         self.game = game
-        d = get_smart_directory(game, self)
-        myd = os.path.join(d, self.name)        
+        if using:
+            if logging: log.info("actor.smart - using %s for smart load instead of real name %s"%(using, self.name))
+            name = os.path.basename(using)
+            d = os.path.dirname(using)
+        else:
+            name = self.name
+            d = get_smart_directory(game, self)
+
+        myd = os.path.join(d, name)        
         if not os.path.isdir(myd): #fallback to pyvida defaults
             this_dir, this_filename = os.path.split(__file__)
             log.debug("Unable to find %s, falling back to %s"%(myd, this_dir))
             myd = os.path.join(this_dir, d, name)
 
         self._directory = myd
-        for action_file in glob.glob(os.path.join(self._directory, "*.png")):
+
+        if image:
+            images = [image]
+        else:
+            images = glob.glob(os.path.join(myd, "*.png"))
+            if os.path.isdir(myd) and len(glob.glob("%s/*"%myd)) == 0:
+                if logging: log.info("creating placeholder file in empty %s dir"%name)
+                f = open(os.path.join(d, "%s/placeholder.txt"%name),"a")
+                f.close()
+        for action_file in images:
             action_name = os.path.splitext(os.path.basename(action_file))[0]
             action = Action(action_name).smart(game, actor=self, filename=action_file)
             self._actions[action_name] = action
-        self._do("idle" if "idle" in self._actions else self._actions.keys()[0])
+        if len(self._actions)>0: #do an action by default
+            self._do("idle" if "idle" in self._actions else list(self._actions.keys())[0])
         return self
 
     def pyglet_draw(self): #actor.draw
-
         if self._sprite:
             self._sprite.position = (self.x - self.ax, self.game.resolution[1] - self.y - self.ay)
             self._sprite.draw()
@@ -691,6 +756,7 @@ class Actor(metaclass=use_on_events):
 
     def debug_pyglet_draw(self, x,y):
         """ Draw some debug info """
+        return
         crosshair(self.game, (x, y), (1.0, 0, 0, 1.0))
         rectangle(self.game, self.clickable_area, (0.0, 1.0, 0.4, 1.0))
 
@@ -712,6 +778,11 @@ class Actor(metaclass=use_on_events):
         label.on_clicked = on_clicked
         self.game._modals.append(label)
     
+
+    def on_collection_select(self, collection, obj):
+        print("handling object selection")
+        import pdb; pdb.set_trace()
+        
 
     def on_says(self, text):
         print("Finished on_says",text, datetime.now())
@@ -788,26 +859,17 @@ class Actor(metaclass=use_on_events):
         self.scale = scale
 
     def on_relocate(self, scene, destination=None, scale=None): #actor.relocate
-        if scale: self._rescale(scale)
-        scene = self.game._scenes[scene] if scene in self.game._scenes.keys() else scene
-        scene.add(self)
-        if destination:
-            pt = get_point(self.game, destination)
-            self.x, self.y = pt
+        self._relocate(scene, destination, scale)
 
-    def _relocate(self, scene, destination=None): #actor.relocate
-        if type(obj) in [str]: obj = self._actors[obj] #XXX should check items, and fail gracefully too
-        if type(scene) in [str]:
-            if scene in self.game._scenes:
-                scene = self.game._scenes[scene]
-            else:
-                if logging: log.error("Unable to relocate %s to non-existent scene %s, leaving."%(self.name, scene))
-                return
+    def _relocate(self, scene, destination=None, scale=None): #actor.relocate
+        if scale: self._rescale(scale)
+        scene = get_object(self.game, scene)
+        scene.add(self)
         if destination:
             pt = get_point(self.game, destination)
             self.x, self.y = pt
-        scene.add(self)
         return
+
         if self.game and scene and self == self.game.player and self.game.test_inventory: #test player's inventory against scene        
             for inventory_item in self.inventory.values():
                 for scene_item in scene.objects.values():
@@ -824,8 +886,14 @@ class Actor(metaclass=use_on_events):
 class Item(Actor):
     pass
 
-class Portal(Actor):
-    pass
+class Portal(Actor, metaclass=use_on_events):
+    def on_auto_align(self): #auto align display_text
+        if not self.game:
+            log.warning("Unable to auto_align {} without a game object"%self.name)
+            return
+        if logging: log.warning("auto_align only works properly on 1024x768")
+        if self.nx > self.game.resolution[0]//2: self.display_text_align = RIGHT #auto align text
+
 
 class Emitter(Actor):
     pass
@@ -857,6 +925,7 @@ class Scene(metaclass=use_on_events):
         self.game = game
         self._background = None
         self._background_fname = None
+        self._foreground = []
         self._busy = False
         self._music_filename = None
         self._ambient_filename = None        
@@ -868,17 +937,43 @@ class Scene(metaclass=use_on_events):
 
         self.walkareas = WalkareaManager(self, game) #pyvida4 compatability
 
-    def smart(self, game):
+
+    @property
+    def background(self):
+        if self._background: return self._background
+        if self._background_fname:
+            self._background = load_image(self._background_fname)
+        return self._background
+
+    def smart(self, game): #scene.smart
         self.game = game
         sdir = os.path.join(os.getcwd(),os.path.join(game.directory_scenes, self.name))
         bname = os.path.join(sdir, "background.png")
         self.game = game
         if os.path.isfile(bname):
-            self.background(bname)
-
+            self.set_background(bname)
+        self._load_foreground(game)
         return self
 
+    def _load_foreground(self, game):
+        sdir = os.path.join(os.getcwd(),os.path.join(game.directory_scenes, self.name))    
+        for element in glob.glob(os.path.join(sdir,"*.png")): #add foreground elments
+            x,y = 0,0
+            fname = os.path.splitext(os.path.basename(element))[0]
+
+            if os.path.isfile(os.path.join(sdir, fname+".details")): #find a details file for each element
+                with open(os.path.join(sdir, fname+".details"), "r") as f:
+                    x, y  = [int(i) for i in f.readlines()]
+#                a = Item(fname, x=x, y=y).createAction("idle", bname+fname)
+                f = self.game._add(Item("%s_%s"%(self.name, fname)).smart(game, image=element))
+                f.x, f.y = x,y
+                self._foreground.append(f) #add foreground items as items
+
+
     def on_add(self, objects): #scene.add
+        self._add(objects)
+
+    def _add(self, objects): 
         if not isinstance(objects, Iterable): objects = [objects]
         for obj in objects:
             obj = self.game._actors.get(obj, self.game._items.get(obj, None)) if type(obj) in [str] else obj        
@@ -911,16 +1006,16 @@ class Scene(metaclass=use_on_events):
             if i.name not in objs and not isinstance(i, Portal) and i != self.game.player: self._remove(i)
 
 
-    def on_background(self, fname=None):
+    def on_set_background(self, fname=None):
         if fname: log.debug("Set background for scene %s to %s"%(self.name, fname))
         if fname == None and self._background == None and self._background_fname: #load image
             fname = self._background_fname
         print("background", fname)
         if fname:
-            self._background = load_image(fname)
+#            self._background = load_image(fname)
             self._background_fname = fname
 
-    def pyglet_draw(self):
+    def pyglet_draw(self): #scene.draw (not used)
         pass
 #        if self._background:
 #            print("Draw2!", len(self._objects), self._background)
@@ -932,30 +1027,77 @@ class Scene(metaclass=use_on_events):
 
 
 class Text(Item):
-    def __init__(self, name, pos):
-        super().__init__(name)
-        self._display_text = name
+    def __init__(self, name, pos=(0,0), display_text=None, colour=(255, 255, 255, 255), font=None, size=32, wrap=800, offset=0, interact=None):
+        super().__init__(name, interact)
+        self._display_text = display_text if display_text else name
         self.x, self.y = pos
+        if len(colour) == 3: colour = (colour[0], colour[1], colour[2], 255) #add an alpha value if needed
+        font_name = "Times New Roman" #"Arial"
+        if font:
+            if font not in _pyglet_fonts:
+                log.error("Unable to find %s in fonts, use game.add_font"%font)
+            else:
+                font_name = _pyglet_fonts[font]
         self._label = pyglet.text.Label(self._display_text,
-                                  font_name='Times New Roman',
-                                  font_size=36,
+                                  font_name=font_name,
+                                  font_size=size,
+                                  color=colour,
                                   x=self.x, y=self.y,
                                   anchor_x='left', anchor_y='top')
         self._clickable_area = Rect(0, 0, self._label.content_width, self._label.content_height)
         
     def pyglet_draw(self):
+        if not self.game:
+            log.warning("Unable to draw Text %s without a self.game object"%self.name)
+            return
         x, y = self.x + self.ax, self.game.resolution[1] - self.y - self.ay 
         self._label.x, self._label.y = x,y
         self._label.draw()
         self.debug_pyglet_draw(x, y)
 
-class Collection(Item):
-    def __init__(self):
-        self._objects = []
 
+
+class Collection(Item, pyglet.event.EventDispatcher):
+    def __init__(self, name, callback, padding=(10,10), dimensions=(300,300), tile_size=50):
+        super().__init__(name)
+        self._objects = []
+        self.callback = callback
+        self.padding = padding
+        self.dimensions = dimensions
+        self.tile_size = tile_size
+
+    def on_smart(self, *args, **kwargs):
+        Item.on_smart(self, *args, **kwargs)
+        self.dimensions = (self.clickable_area.w, self.clickable_area.h)
+
+    def on_add(self, obj, callback=None):
+        """ Add an object to this collection and set up an event handler for it in the event it gets selected """
+        obj = get_object(self.game, obj)
+        obj.push_handlers(self)
+        self._objects.append(obj)
+        if callback:
+            obj.on_collection_select = callback
+
+    def something(self):
+        obj = None #the object selected in the collection
+        self.dispatch_events('on_collection_select', self, obj)
+
+    def pyglet_draw(self): #collection.draw
+        x,y = padding[0], padding[1]
+        w = self.clickable_area.w
+        for obj in self._objects:
+            if obj._sprite:
+                obj._sprite.position = (self.x + x, self.game.resolution[1] - self.y - y)
+                obj._sprite.draw()
+            if x + self.tile_size > self.dimensions[0]:
+                x = self.padding[0]
+            else:    
+                x += self.tile_size + self.padding[0]
+Collection.register_event_type('on_collection_select')
 
 class MenuManager(metaclass=use_on_events):
     def __init__(self, game):
+        super().__init__()
         self.name = "Default Menu Manager"
         self.game = game
         self._busy = False
@@ -977,11 +1119,23 @@ class MenuManager(metaclass=use_on_events):
 
     def on_hide(self, menu_items = None):
         self._hide(self)
-        
 
     def on_fade_out(self):
         log.warning("menumanager.fade_out does not fade")
         self._hide(self)
+
+    def on_push(self):
+        """ push this menu to the list of menus and clear the current menu """
+        if logging: log.debug("push menu %s, %s"%([x.name for x in self.game._menu], self.game._menus))
+#        if self.game._menu:
+        self.game._menus.append(self.game._menu)
+        self.game._menu = []
+
+    def on_pop(self):
+        """ pull a menu off the list of menus """
+        if self.game._menus: self.game._menu = self.game._menus.pop()
+        if logging: log.debug("pop menu %s"%[x.name for x in self.game._menu])
+
 
 
 class Camera(metaclass=use_on_events): #the view manager
@@ -994,6 +1148,8 @@ class Camera(metaclass=use_on_events): #the view manager
 
     def _scene(self, scene, camera_point=None):
         """ change the current scene """
+        if self.game.scene: #unload background when not in use
+            self.game.scene._background = None
         game = self.game
         if scene == None:
             if logging: log.error("Can't change to non-existent scene, staying on current scene")
@@ -1023,7 +1179,7 @@ class Camera(metaclass=use_on_events): #the view manager
 #        if self.game.scene and self.game._window:
 #            if self.game.scene._background:
 #                self.game.scene._background.blit((0,0))
-#                screen_blit(self.game.screen, self.game.scene.background(), (-self.game.scene.dx, -self.game.scene.dy))
+#                screen_blit(self.game.screen, self.game.scene.set_background(), (-self.game.scene.dx, -self.game.scene.dy))
 #            else:
 #                if logging: log.warning("No background for scene %s"%self.game.scene.name)
         #start music for this scene
@@ -1217,6 +1373,7 @@ class Game(metaclass=use_on_events):
         self._items = {}
         self._modals = []
         self._menu = []
+        self._menus = [] #a stack of menus 
         self._scenes = {}
         self._gui = []
         self._window = pyglet.window.Window(*resolution)
@@ -1238,8 +1395,17 @@ class Game(metaclass=use_on_events):
       
         self._modules = {}
         self._walkthrough = []
+        self._walkthrough_index = 0 #our location in the walkthrough
+        self._walkthrough_target = 0  #our target
+        self._walkthrough_stored_state = None #TODO: for jumping back to a previous state in the game (WIP)
+
         self._headless = False
         self._allow_editing = ENABLE_EDITOR
+
+        self._progress_bar_count = 0 #how many event steps in this progress block
+        self._progress_bar_index = 0 #how far along the event list are we for this progress block
+        self._progress_bar_renderer = None #if exists, call during loop
+
 
         self.parser = ArgumentParser()
         self.add_arguments()
@@ -1323,7 +1489,7 @@ class Game(metaclass=use_on_events):
 
         self.parser.add_argument("-R", "--random", action="store_true", dest="stresstest", help="Randomly deviate from walkthrough to stress test robustness of scripting")
         self.parser.add_argument("-r", "--resolution", dest="resolution", help="Force engine to use resolution WxH or (w,h) (recommended (1600,900))")
-        self.parser.add_argument("-s", "--step", dest="step", help="Jump to step in walkthrough")
+        self.parser.add_argument("-s", "--step", dest="target_step", help="Jump to step in walkthrough")
         self.parser.add_argument("-t", "--text", action="store_true", dest="text", help="Play game in text mode (for players with disabilities who use text-to-speech output)", default=False)
         self.parser.add_argument("-w", "--walkthrough", action="store_true", dest="output_walkthrough", help="Print a human readable walkthrough of this game, based on test suites.")
         self.parser.add_argument("-W", "--walkcreate", action="store_true", dest="create_from_walkthrough", help="Create a smart directory structure based on the walkthrough.")
@@ -1335,6 +1501,19 @@ class Game(metaclass=use_on_events):
         """ use test suites to enable jumping forward """
         self._walkthrough = [i for sublist in suites for i in sublist]  #all tests, flattened in order
 
+    def reset(self):
+        """ reset all game state information, perfect for loading new games """
+        self.scene = None
+        self.player = None
+        self._actors = {}
+#        self._items = dict([(key,value) for key,value in self.items.items() if isinstance(value, MenuItem)])
+        self._items = {}
+        self._scenes = {}
+#        self._emitters = {}                
+#        if self.ENABLE_EDITOR: #editor enabled for this game instance
+#            self._load_editor()
+
+
     def on_menu_from_factory(self, menu, items):
         """ Create a menu from a factory """
         if menu not in self._menu_factories: 
@@ -1342,15 +1521,53 @@ class Game(metaclass=use_on_events):
             return
         factory = self._menu_factories[menu]
         #guesstimate width of whole menu so we can do some fancy layout stuff
-        x,y = factory.position
+
+        new_menu = []
+        min_y = 0
+        min_x = 0
+        total_w = 0
+        total_h = 0
         for i, item in enumerate(items):
             if item[0] in self._items.keys():
-                obj = self._items[items[0]]
-                obj.x, obj.y = x, y
+                obj = get_object(self.game, item[0])
+                obj.interact = item[1]
             else:
-                obj = Text(item[0], (x, y+factory.size*i))
+                obj = Text(item[0], font=factory.font, colour=factory.colour, size=factory.size)
+                obj.game = self
                 obj.interact = item[1] #set callback
+            kwargs = item[2] if len(item)>2 else {}
+            for k, v in kwargs.items():
+                setattr(obj, k, v)
+ #               if k == "key": obj.key = get_keycode(v)
+#            if "text" in kwargs.keys(): obj.update_text() #force update on MenuText
+
             self._add(obj)
+            new_menu.append(obj)
+            w,h = obj.clickable_area.w, obj.clickable_area.h
+            total_w += w + factory.padding
+            total_h += h + factory.padding
+            if h > min_y: min_y = obj.clickable_area.h
+            if w > min_x: min_x = obj.clickable_area.w
+
+        total_w -= factory.padding
+        total_h -= factory.padding
+        #calculate the best position for the item        
+        if factory.anchor == LEFT:
+            x,y = factory.position
+        elif factory.anchor == RIGHT:
+            x,y = factory.position[0]-total_w, factory.position[1]
+        elif factory.anchor == CENTER:
+            x,y = factory.position[0]-(total_w/2), factory.position[1]
+        
+        for obj in new_menu:
+            w,h = obj.clickable_area.w, obj.clickable_area.h
+            if factory.layout == HORIZONTAL:
+                dx, dy = w + factory.padding, 0
+            elif factory.layout == VERTICAL:
+                dx, dy = 0, h + factory.padding
+            obj.x, obj.y = x, y
+            x += dx
+            y += dy
 
     def on_smart(self, player=None, player_class=Actor, draw_progress_bar=None, refresh=False, only=None): #game.smart
         self._smart(player, player_class, draw_progress_bar, refresh, only)
@@ -1364,13 +1581,18 @@ class Game(metaclass=use_on_events):
             draw_progress_bar is the fn that handles the drawing of a progress bar on this screen
             refresh = reload the defaults for this actor (but not images)
         """
+        if draw_progress_bar:
+            self._progress_bar_renderer = draw_progress_bar
+            self._progress_bar_index = 0
+            self._progress_bar_count = 0
+
         portals = []
         for obj_cls in [Actor, Item, Emitter, Portal, Scene]:
             dname = "directory_%ss"%obj_cls.__name__.lower()
             if not os.path.exists(getattr(self, dname)): continue #skip directory if non-existent
             for name in os.listdir(getattr(self, dname)):
-                if draw_progress_bar: 
-                    self.progress_bar_count += 1
+                if draw_progress_bar: #estimate the size of the loading
+                    self._progress_bar_count += 1
                 if only and name not in only: continue #only load specific objects 
                 if logging: log.debug("game.smart loading %s %s"%(obj_cls.__name__.lower(), name))
                 #if there is already a non-custom Actor or Item with that name, warn!
@@ -1391,7 +1613,7 @@ class Game(metaclass=use_on_events):
                     a.smart(self)
                     if a.__class__ == Portal: portals.append(a.name)                  
         for pname in portals: #try and guess portal links
-            if draw_progress_bar: self.progress_bar_count += 1
+            if draw_progress_bar: self._progress_bar_count += 1
             links = pname.split("_to_")
             guess_link = None
             if len(links)>1: #name format matches guess
@@ -1436,10 +1658,19 @@ class Game(metaclass=use_on_events):
         options = self.parser.parse_args()    
         if options.mute == True:
             self.mixer._force_mute = True
+        if options.target_step: #switch on test runner to step through walkthrough
+            if options.target_step.isdigit():
+                self._walkthrough_target = int(options.target_step) #automatically run to <step> in walkthrough
+            else:
+                pass
+                log.error("TODO: take step labels are walkthrough targets")
+#                for step in self._walkthrough:                      
+                    #self.jump_to_step = options.step
+
 
         if splash:
             scene = Scene(splash, self)
-            scene.background(splash)
+            scene.set_background(splash)
             self.add(scene)
             self.camera.scene(scene)
 
@@ -1469,30 +1700,60 @@ class Game(metaclass=use_on_events):
 #        if self._event_index < len(self.events) and len(self._events)>0:
 
             return
-        if len(self._events)>0 and self._event_index < len(self._events):
+        print('FPS is %f' % pyglet.clock.get_fps())
+
+        done_events = 0
+        del_events = 0
+        #if there are events and we are not at the end of them
+        if len(self._events)>0: 
             if self._event_index>0:
                 for event in self._events[:self._event_index-1]: #check the previous events' objects, delete if not busy
                     if event[1][0]._busy == False:
+                        del_events += 1
                         self._events.remove(event)
                         self._event_index -= 1
-            e = self._events[self._event_index] #stored as [(function, args))]
-            if e[1][0]._busy: return #don't do this event yet if the owner is busy
-            self._event = e
-            print("Start",e[0], e[1][0].name, datetime.now(), e[1][0]._busy)
-            e[0](*e[1], **e[2]) #call the function with the args and kwargs
-            self._event_index += 1
+
+            if self._event_index < len(self._events):
+                #possibly start the current event
+                e = self._events[self._event_index] #stored as [(function, args))]
+                if e[1][0]._busy: return #don't do this event yet if the owner is busy
+                self._event = e
+                print("Start",e[0], e[1][0].name, datetime.now(), e[1][0]._busy)
+                done_events += 1
+
+                e[0](*e[1], **e[2]) #call the function with the args and kwargs
+                self._event_index += 1
+            #if self._event_index<len(self._events)-1: self._event_index += 1
+
+        #auto trigger an event from the walkthrough if needed and nothing else is happening
+        if done_events == 0 and del_events == 0 and self._walkthrough_target > self._walkthrough_index: 
+            print("AUTO WALKTHROUGH")
+            walkthrough = self._walkthrough[self._walkthrough_index]
+            function_name = walkthrough[0].__name__ 
+            self._walkthrough_index += 1            
+            if function_name == "interact":
+                print("trigger interact", self._walkthrough_target, self._walkthrough_index)
+                button = pyglet.window.mouse.LEFT
+                modifiers = 0
+                obj = get_object(self, walkthrough[1])
+                x, y = obj.clickable_area.center
+                self._window.dispatch_event('on_mouse_release', x, self.resolution[1] - y, button, modifiers)
+#        print("Done %s, deleted %s"%(done_events, del_events))         
 
     def pyglet_draw(self): #game.draw
         """ Draw the scene """
         if not self.scene: return
 #        self.scene.pyglet_draw()
-        if self.scene._background:
+        if self.scene.background:
             self._window.clear()
-            self.scene._background.blit(self.scene.x, self.scene.y)
+            self.scene.background.blit(self.scene.x, self.scene.y)
         else:
             print("no background")
 
         for item in self.scene._objects.values():
+            item.pyglet_draw()
+        #draw scene foregrounds
+        for item in self.scene._foreground:
             item.pyglet_draw()
 
         for item in self._menu:
@@ -1502,9 +1763,9 @@ class Game(metaclass=use_on_events):
             modal.pyglet_draw()
 
 
-    def _add(self, objects, replace=False):
-        if not isinstance(objects, Iterable): objects = [objects]
-        for obj in objects:
+    def _add(self, objects, replace=False): #game.add
+        objects_iterable = [objects] if not isinstance(objects, Iterable) else objects
+        for obj in objects_iterable:
             try:
                 obj.game = self
             except:
@@ -1523,10 +1784,21 @@ class Game(metaclass=use_on_events):
                 self._items[obj.name] = obj
             elif isinstance(obj, Actor):
                 self._actors[obj.name] = obj
+        return objects
 
 
     def on_add(self, objects, replace=False): #game.add
         self._add(objects, replace=replace)
+
+    def add_font(self, filename, fontname):
+        font = get_font(self, filename, fontname)
+        _pyglet_fonts[filename] = fontname 
+
+    def set_interact(self, actor, fn):
+        """ helper function for setting interact on an actor """
+        actor = get_object(self, actor)
+        actor.interact = fn
+
 
     def on_load_state(self, scene, state):
         """ a queuing function, not a queued function (ie it adds events but is not one """
@@ -1565,7 +1837,7 @@ class Game(metaclass=use_on_events):
         if logging: log.warning("game.splash ignores duration and clicks")
         if self._allow_editing: duration = 0.1 #skip delay on splash when editing
         scene = Scene(image, game=self)
-        scene.background(image)
+        scene.set_background(image)
         #add scene to game, change over to that scene
         self.add(scene)
         self.camera.scene(scene)
@@ -1577,6 +1849,11 @@ class Game(metaclass=use_on_events):
             else:
                 pyglet.clock.schedule_once(callback, duration, self)
 
+    def on_relocate(self, obj, scene, destination): #game.relocate
+        obj = get_object(self.game, obj)
+        scene = get_object(self.game, scene)
+        destination = get_point(self.game, destination)
+        obj._relocate(scene, destination)
 
     def on_set_menu(self, *args):
         """ add the items in args to the menu """
