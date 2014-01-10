@@ -1,8 +1,10 @@
 """
 Python3 
 """
-import glob, pyglet, os, sys, copy
+import glob, imp, json, pyglet, os, sys, copy
 from datetime import datetime
+import tkinter as tk
+import threading, traceback
 
 from argparse import ArgumentParser
 from collections import Iterable
@@ -68,6 +70,8 @@ DIRECTORY_INTERFACE = "data/interface"
 DEFAULT_MENU_FONT = os.path.join(DIRECTORY_FONTS, "vera.ttf")
 DEFAULT_MENU_SIZE = 26
 DEFAULT_MENU_COLOUR = (42, 127, 255)
+
+
 
 #LAYOUTS FOR MENUS and MENU FACTORIES
 HORIZONTAL = 0
@@ -199,7 +203,8 @@ def get_available_languages():
     return languages
   
 def load_image(fname, convert_alpha=False, eight_bit=False):
-    im = pyglet.image.codecs.pil.PILImageDecoder().decode(open(fname, "rb"), fname)
+    with open(fname, "rb") as f:
+        im = pyglet.image.codecs.pil.PILImageDecoder().decode(f, fname)
 #    im = pyglet.image.codecs.png.PNGImageDecoder().decode(open(fname, "rb"), fname)
 #    im = pyglet.image.load(fname)
 #    im = pyglet.image.load(fname, decoder=PNGImageDecoder())
@@ -429,39 +434,55 @@ class Rect(object):
         return (self.x + self.w//2, self.y + self.h//2)
 
 
+
 def crosshair(game, point, colour):
-        pyglet.gl.glColor4f(*colour)               
+        fcolour = fColour(colour)
+        pyglet.gl.glColor4f(*fcolour)               
         x,y=point                                
         pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x, y-5, x, y+5))) 
         pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x-5, y, x+5, y))) 
+        pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0) # undo alpha for pyglet drawing
+
         label = pyglet.text.Label("{0}, {1}".format(x,game.resolution[1]-y),
-                          font_name='Times New Roman',
-                          font_size=12,
+                          font_name='Arial',
+                          font_size=10,
+                          color=colour,
                           x=x+6, y=y,
                           anchor_x='left', anchor_y='center')
         label.draw()
+        return point
 
 
-def rectangle(game, rect, colour=(1.0, 1.0, 1.0)):
-        pyglet.gl.glColor4f(*colour)               
+def rectangle(game, rect, colour=(255, 255, 255, 255)):
+        fcolour = fColour(colour)
+        pyglet.gl.glColor4f(*fcolour)               
         x,y=rect.x,rect.y
         w,h=rect.w,rect.h
 
         #y is inverted for pyglet
         gy = game.resolution[1]-y
-        pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x, gy, x+w, gy))) 
-        pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x+w, gy, x+w, gy-h))) 
-        pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x+w, gy-h, x, gy-h))) 
-        pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x, gy-h, x, gy))) 
+        p1 = (x, gy)
+        p2 = (x + w, gy)
+        p3 = (x + w, gy + h)
+        p4 = (x, gy + h)
+        pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (p1[0], p1[1], p2[0], p2[1]))) 
+        pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (p2[0],p2[1], p3[0], p3[1]))) 
+        pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (p3[0],p3[1], p4[0], p4[1]))) 
+        pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (p4[0],p4[1], p1[0], p1[1]))) 
+        pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0) # undo alpha for pyglet drawing
 
         label = pyglet.text.Label("{0}, {1}".format(x,game.resolution[1]-y),
-                          font_name='Times New Roman',
-                          font_size=12,
+                          font_name='Arial',
+                          font_size=10,
+                          color=colour,
                           x=x+6, y=gy,
                           anchor_x='left', anchor_y='top')
         label.draw()
+        return [p1, p2, p3, p4]
 
-
+def fColour(colour):
+    """ Convert a pyglet colour (0-255) to a floating point (0 - 1.0) colour as used by GL  """
+    return map(lambda x: x/255, colour)
 
 
 def get_pixel_from_image(image, x, y):
@@ -536,7 +557,7 @@ class Actor(metaclass=use_on_events):
         self.display_text_align = LEFT
 
         self._solid_area = Rect(0,0,60,100)
-        self._clickable_area = Rect(0,0,70,110)
+        self._clickable_area = Rect(0, 0, 0, 0)
         self._clickable_mask = None
 
         self.allow_draw = True
@@ -544,6 +565,8 @@ class Actor(metaclass=use_on_events):
         self.allow_use = True
         self.allow_interact = True
         self.allow_look = True
+        self._editing = None #what attribute of this Actor are we editing
+        self.show_debug = False 
 
         self.interact = interact #special queuing function for interacts
         self.look = None #override queuing function for look
@@ -556,7 +579,12 @@ class Actor(metaclass=use_on_events):
         self._events = []
 
         self._tint = None
-
+        self._editable = [
+            ("position", (self.x, self.y),  (int, int)),
+            ("anchor", (self.ax, self.ay), (int, int)),
+            ("interact", self.interact, str),
+            ("allow_draw", self.allow_draw, bool), # ( "allow_update", "allow_use", "allow_interact", "allow_look"]        
+            ]
 
     def get_busy(self, x):
         return self._busy
@@ -605,7 +633,7 @@ class Actor(metaclass=use_on_events):
 
     @property
     def clickable_area(self):
-        return self._clickable_area.move(self.x, self.y)
+        return self._clickable_area.move(self.x + self.ax, self.y + self.ay)
 
     @property
     def clickable_mask(self):
@@ -692,7 +720,6 @@ class Actor(metaclass=use_on_events):
             "Perhaps they need a good poking.",
             "They don't want to talk to me."]
         if self.game.player: self.game.player.says(choice(c))
-        self._event_finish()
 
 
 
@@ -715,6 +742,7 @@ class Actor(metaclass=use_on_events):
 
         If <action_prefix>, prefix value to defaults (eg astar, idle), useful for swapping clothes on actor, etc 
         """
+        DEFAULT_CLICKABLE = Rect(0, 0, 70, 110)
         self.game = game
         if using:
             if logging: log.info("actor.smart - using %s for smart load instead of real name %s"%(using, self.name))
@@ -746,19 +774,55 @@ class Actor(metaclass=use_on_events):
             self._actions[action_name] = action
         if len(self._actions)>0: #do an action by default
             self._do("idle" if "idle" in self._actions else list(self._actions.keys())[0])
+
+        #guessestimate the clickable mask for this actor
+        if self._sprite:
+            w,h = self._sprite.width,self._sprite.height
+            self._clickable_area = Rect(0, 0, w, h)
+            if logging: log.debug("Setting %s _clickable area to %s"%(self.name, self._clickable_area))
+        else:
+            if not isinstance(self, Portal):
+                if logging: log.warning("%s %s smart load unable to get clickable area from action image, using default"%(self.__class__, self.name))
+            self._clickable_area = DEFAULT_CLICKABLE
+
+
+        #potentially load some defaults for this actor
+        filepath = os.path.join(myd, "%s.defaults"%slugify(self.name).lower())
+        if os.path.isfile(filepath):
+            actor_defaults = json.loads(open(filepath).read())
+            for key, val in actor_defaults.items():
+                self.__dict__[key] = val
+            
+
+        #potentially load some interact/use/look scripts for this actor
+        filepath = os.path.join(myd, "%s.py"%slugify(self.name).lower())
+        if os.path.isfile(filepath):
+            #add file directory to path so that import can find it
+            if os.path.dirname(filepath) not in sys.path: sys.path.append(os.path.dirname(filepath))
+            #add to the list of modules we are tracking
+            module_name = os.path.splitext(os.path.basename(filepath))[0]
+            game._modules[module_name] = 0
+            __import__(module_name) #load now
+            game.reload_modules(modules=[module_name]) #reload now to refresh existing references
+
         return self
 
     def pyglet_draw(self): #actor.draw
         if self._sprite:
-            self._sprite.position = (self.x - self.ax, self.game.resolution[1] - self.y - self.ay)
+            self._sprite.position = (self.x + self.ax, self.game.resolution[1] - self.y - self.ay - self._sprite.height)
             self._sprite.draw()
-        self.debug_pyglet_draw(self.x, self.y)
+        if self.show_debug:
+            self.debug_pyglet_draw()
 
-    def debug_pyglet_draw(self, x,y):
-        """ Draw some debug info """
-        return
-        crosshair(self.game, (x, y), (1.0, 0, 0, 1.0))
-        rectangle(self.game, self.clickable_area, (0.0, 1.0, 0.4, 1.0))
+    def debug_pyglet_draw(self):
+        """ Draw some debug info (store it for the unittests) """
+        self._debugs = []
+        #position = green
+        self._debugs.append(crosshair(self.game, (self.x, self.game.resolution[1] - self.y), (0, 255, 0, 255)))
+        #anchor - blue
+        self._debugs.append(crosshair(self.game, (self.x + self.ax, self.game.resolution[1] - self.y + self.ay ), (0, 0, 255, 255)))
+        #clickable area
+        self._debugs.append(rectangle(self.game, self.clickable_area, (0, 255, 100, 255)))
 
     def on_animation_end(self):
 #        self.busy = False
@@ -1050,11 +1114,11 @@ class Text(Item):
         if not self.game:
             log.warning("Unable to draw Text %s without a self.game object"%self.name)
             return
-        x, y = self.x + self.ax, self.game.resolution[1] - self.y - self.ay 
+        x, y = self.x - self.ax, self.game.resolution[1] - self.y + self.ay 
         self._label.x, self._label.y = x,y
         self._label.draw()
-        self.debug_pyglet_draw(x, y)
-
+        if self.show_debug:
+            self.debug_pyglet_draw()
 
 
 class Collection(Item, pyglet.event.EventDispatcher):
@@ -1311,7 +1375,6 @@ class Mixer(metaclass=use_on_events): #the sound manager
 
     def on_sfx_play(self, fname=None, description=None, loops=0, fade_music=False, store=None):
         self._sfx_play(fname, description, loops, fade_music, store)            
-        self.game._event_finish()
 
     def on_sfx_stop(self, sfx=None):
         #if sfx: sfx.stop()
@@ -1392,7 +1455,8 @@ class Game(metaclass=use_on_events):
 
         self._selected_options = [] #keep track of convo trees
         self.visited = [] #list of scene names visited
-      
+
+        #editor and walkthrough      
         self._modules = {}
         self._walkthrough = []
         self._walkthrough_index = 0 #our location in the walkthrough
@@ -1401,10 +1465,12 @@ class Game(metaclass=use_on_events):
 
         self._headless = False
         self._allow_editing = ENABLE_EDITOR
+        self._editing = None
 
         self._progress_bar_count = 0 #how many event steps in this progress block
         self._progress_bar_index = 0 #how far along the event list are we for this progress block
         self._progress_bar_renderer = None #if exists, call during loop
+
 
 
         self.parser = ArgumentParser()
@@ -1448,6 +1514,7 @@ class Game(metaclass=use_on_events):
     def on_key_press(self, symbol, modifiers):
         global use_effect
         if symbol == pyglet.window.key.F1:
+            edit_object(self, list(self.scene._objects.values()), 0)
             self.menu_from_factory("editor", MENU_EDITOR)
         if symbol == pyglet.window.key.F2:
             import pdb; pdb.set_trace()
@@ -1653,6 +1720,50 @@ class Game(metaclass=use_on_events):
         if self._allow_editing: #if editor is available, watch code for changes
             self.check_modules() #set initial timestamp record
 
+    def reload_modules(self, modules=None):
+        """
+        Reload all the interact/use/look functions from the tracked modules (game._modules)
+
+        modules -- use the listed modules instead of game._modules
+        """
+
+        print("RELOAD MODULES")
+        #clear signals so they reload
+        for i in [post_interact, pre_interact, post_use, pre_use, pre_leave, post_arrive]:
+            i.receivers = []
+        
+        #reload modules
+        module = "main" if android else "__main__" #which module to search for functions
+        modules = modules if modules else self._modules.keys()
+        if type(modules) != list: modules = [modules]
+        for i in self._modules.keys():
+            try:
+                imp.reload(sys.modules[i])
+            except:
+                log.error("Exception in reload_modules")
+                print(sys.modules)
+                print("\nError reloading %s\n"%sys.modules[i])
+                if traceback: traceback.print_exc(file=sys.stdout)
+                print("\n\n")
+            for fn in dir(sys.modules[i]): #update main namespace with new functions
+                new_fn = getattr(sys.modules[i], fn)
+                if hasattr(new_fn, "__call__"): setattr(sys.modules[module], new_fn.__name__, new_fn)
+
+        #XXX update .uses{} values too.
+        for i in (list(self.actors.values()) + list(self.items.values())):
+            if i.interact: 
+                if type(i.interact) != str:
+                    new_fn = get_function(self.game, i.interact.__name__)
+                    if new_fn: i.interact = new_fn #only replace if function found, else rely on existing fn
+            if i.name == "Brutus Ship": import pdb; pdb.set_trace()
+            if i.look: 
+                if type(i.look) != str:
+                    new_fn = get_function(self.game, i.look.__name__)
+                    if new_fn: i.look = new_fn #only replace if function found, else rely on existing fn
+
+        log.info("Editor has done a module reload")
+
+
     def run(self, splash=None, callback=None, icon=None):
         #event_loop.run()
         options = self.parser.parse_args()    
@@ -1700,8 +1811,6 @@ class Game(metaclass=use_on_events):
 #        if self._event_index < len(self.events) and len(self._events)>0:
 
             return
-        print('FPS is %f' % pyglet.clock.get_fps())
-
         done_events = 0
         del_events = 0
         #if there are events and we are not at the end of them
@@ -1750,7 +1859,8 @@ class Game(metaclass=use_on_events):
         else:
             print("no background")
 
-        for item in self.scene._objects.values():
+        objects = sorted(self.scene._objects.values(), key=lambda x: x.y, reverse=False)
+        for item in objects:
             item.pyglet_draw()
         #draw scene foregrounds
         for item in self.scene._foreground:
@@ -1787,7 +1897,7 @@ class Game(metaclass=use_on_events):
         return objects
 
 
-    def on_add(self, objects, replace=False): #game.add
+    def add(self, objects, replace=False): #game.add
         self._add(objects, replace=replace)
 
     def add_font(self, filename, fontname):
@@ -1867,3 +1977,126 @@ class Game(metaclass=use_on_events):
                 if logging: log.error("Menu item %s not found in MenuItem collection"%i)
         if logging: log.debug("set menu to %s"%[x.name for x in self._menu])
 
+"""
+Editor stuff
+
+        self._editable = [
+            ("position", (self.x, self.y),  (int, int)),
+            ("anchor", (self.ax, self.ay), (int, int)),
+            ("interact", self.interact, str),
+            ("allow_draw", self.allow_draw, bool), # ( "allow_update", "allow_use", "allow_interact", "allow_look"]        
+            ]
+"""
+
+
+class Navigator(tk.Toplevel):
+    def __init__(self, app, parent, game):
+        tk.Toplevel.__init__(self, parent)
+        self.parent = parent
+        self.app = app
+        self.game = game
+        self.createWidgets()
+        self.title("Navigator")
+
+
+    def createWidgets(self):
+        self.prev_button = tk.Button(self, text='<-', command=self.prev).grid(column=0, row=0)
+        self.edit_button = tk.Button(self, text='Edit', command=self.create_editor)
+        self.edit_button.grid(column=1, row=0)
+        self.next_button = tk.Button(self, text='->', command=self.next).grid(column=2, row=0)
+   
+
+    def _navigate(self, delta):
+        obj = self.app.objects[self.app.index]
+        obj.show_debug = False
+        self.app.index += delta
+        if self.app.index < 0: self.app.index = len(self.app.objects)-1
+        if self.app.index >= len(self.app.objects): self.app.index = 0
+        print(self.app.index, [(i,x.name) for i,x in enumerate(self.app.objects)])
+        obj = self.app.objects[self.app.index]
+        obj.show_debug = True
+        self.edit_button["text"] = obj.name
+
+    def prev(self):
+        self._navigate(-1) #decrement navigation
+
+    def next(self):
+        self._navigate(1) #increment navigation
+
+    def create_editor(self):
+        obj = self.app.objects[self.app.index]
+        self.app.create_editor(obj)
+    
+
+class Editor(tk.Toplevel):
+    def __init__(self, app, parent, game, obj):
+        tk.Toplevel.__init__(self, parent)
+        self.title(obj.name)
+        self.frame = tk.Frame(parent)
+        self.app = app
+        self.obj = obj
+        self.game = game
+        self._editing = tk.StringVar()
+        self.createWidgets()
+
+    def close_editor(self):
+        self.destroy()
+
+    def createWidgets(self):
+        for i, editable in enumerate(self.obj._editable):
+            label, attrs, types = editable
+            tk.Radiobutton(self, text=label, variable=self._editing, value=label, indicatoron=0).grid(row=i, column=0)
+            if type(types) == tuple: #assume two ints
+                e = tk.Entry(self)
+                e.grid(row=i, column=1)
+                e.insert(0, attrs[0])
+                e = tk.Entry(self)
+                e.grid(row=i, column=2)
+                e.insert(0, attrs[1])
+            elif types == str:
+                e = tk.Entry(self)
+                e.grid(row=i, column=1, columnspan=2)
+                if attrs: e.insert(0, attrs)
+            elif types == bool:
+                tk.Checkbutton(self, variable=attrs).grid(row=i, column=1, columnspan=2)
+
+        self.QUIT = tk.Button(self)
+        self.QUIT["text"] = "Close"
+        self.QUIT["fg"]   = "red"
+        self.QUIT["command"] =  self.close_editor
+        self.QUIT.grid(row=i+1)
+
+
+class MyTkApp(threading.Thread):
+    def __init__(self, game, objects, index, callback=None):
+        threading.Thread.__init__(self)
+        self.game = game
+        self.objects = objects
+        self.index = index
+        self.callback = callback
+        self._editors = []
+        self.start()
+
+    def create_editor(self, obj):
+        self._editors.append(Editor(self, self.parent, self.game, obj))
+    def run(self):
+        self.parent=tk.Tk()
+        self.parent.protocol("WM_DELETE_WINDOW", self.callback)
+        self.navigator = Navigator(self, self.parent, self.game)
+        self.navigator.geometry('400x100+{}+{}'.format(self.game.resolution[0]-400, 0))
+        self.create_editor(self.objects[self.index])
+        #create close all button
+        self.close = tk.Button(self.parent)
+        self.close["text"] = "Close Editor"
+        self.close["command"] =  self.callback
+        self.close.grid()
+
+        self.parent.mainloop()
+
+def edit_object(game, objects, index):
+    """ Open a tk editor for this object and import the values back into the project when done """
+    obj = game._editing = objects[index]
+    obj.show_debug = True
+    def close_editor():
+        app.parent.destroy()
+    app = MyTkApp(game, objects, index, close_editor)
