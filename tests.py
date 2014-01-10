@@ -27,7 +27,14 @@ class ActorLocationTest(unittest.TestCase):
 
     def test_anchor(self):
         self.actor.x, self.actor.y = 100,100
-        self.actor.ax, self.actor.ay = -25, -100
+        self.actor._ax, self.actor._ay = -25, -100
+        self.assertEqual(self.actor._ax, -25)
+        self.assertEqual(self.actor._ay, -100)
+
+        self.actor.ax, self.actor.ay = 75, 0
+        self.assertEqual(self.actor._ax, -25)
+        self.assertEqual(self.actor._ay, -100)
+        
         self.actor.pyglet_draw()
         self.assertEqual(self.actor._sprite.x, 75)
         self.assertEqual(self.actor._sprite.y, RESOLUTION_Y - self.actor.y - self.actor._sprite.height - self.actor.ay)
@@ -42,7 +49,7 @@ class ActorLocationTest(unittest.TestCase):
 
     def test_debug_draw(self):
         self.actor.x, self.actor.y = 100,100
-        self.actor.ax, self.actor.ay = -25, -100
+        self.actor._ax, self.actor._ay = -25, -100
         self.actor.show_debug = True
         self.actor.pyglet_draw() #will also draw debugs now
         self.assertEqual(len(self.actor._debugs), 3)

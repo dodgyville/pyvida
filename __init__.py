@@ -548,7 +548,7 @@ class Actor(metaclass=use_on_events):
         self.game = None
         self._x, self._y = 0, 0
         self.sx, self.sx = 0,0 #stand points
-        self._ax, self._ax = 0,0 #anchor points
+        self._ax, self._ay = 0,0 #anchor points
         self.nx, self.ny = 0, 0 # displacement point for name
         self.z = 1000 #where in the z layer is this actor (< 1000 further away, >1000 closer to player)
         self.scale = 1.0
@@ -560,7 +560,7 @@ class Actor(metaclass=use_on_events):
         self._clickable_area = Rect(0, 0, 0, 0)
         self._clickable_mask = None
 
-        self.allow_draw = True
+        self._allow_draw = True
         self.allow_update = True
         self.allow_use = True
         self.allow_interact = True
@@ -568,7 +568,7 @@ class Actor(metaclass=use_on_events):
         self._editing = None #what attribute of this Actor are we editing
         self.show_debug = False 
 
-        self.interact = interact #special queuing function for interacts
+        self._interact = interact #special queuing function for interacts
         self.look = None #override queuing function for look
         self.uses = {} #override use functions (actor is key name)
 
@@ -579,11 +579,11 @@ class Actor(metaclass=use_on_events):
         self._events = []
 
         self._tint = None
-        self._editable = [
-            ("position", (self.x, self.y),  (int, int)),
-            ("anchor", (self.ax, self.ay), (int, int)),
-            ("interact", self.interact, str),
-            ("allow_draw", self.allow_draw, bool), # ( "allow_update", "allow_use", "allow_interact", "allow_look"]        
+        self._editable = [ #(human readable, get variable names, set variable names, widget types)
+            ("position", (self.get_x, self.get_y), (self.set_x, self.set_y),  (int, int)),
+            ("anchor", (self.get_ax, self.get_ay), (self.set_ax, self.set_ay), (int, int)),
+            ("interact", self.get_interact, self.set_interact, str),
+            ("allow_draw", self.get_allow_draw, self.set_allow_draw, bool), # ( "allow_update", "allow_use", "allow_interact", "allow_look"]        
             ]
 
     def get_busy(self, x):
@@ -615,18 +615,31 @@ class Actor(metaclass=use_on_events):
     def get_ax(self):
         return self._ax
     def set_ax(self, v):
-        self._ax = v
+        self._ax = v - self.x
         self._sprite.anchor_x = v
         return
     ax = property(get_ax, set_ax)
 
     def get_ay(self):
-        return self._ax
+        return self._ay
     def set_ay(self, v):
-        self._ay = v
+        self._ay = v - self.y
         self._sprite.anchor_y = v
         return
     ay = property(get_ay, set_ay)
+
+    def set_interact(self, v):
+        self._interact = v
+    def get_interact(self):
+        return self._interact
+    interact = property(get_interact, set_interact)
+
+    def set_allow_draw(self, v):
+        self._allow_draw = v
+    def get_allow_draw(self):
+        return self._allow_draw
+    allow_draw = property(set_allow_draw, get_allow_draw)
+
 
     def _update(self, dt):
         pass
@@ -808,7 +821,7 @@ class Actor(metaclass=use_on_events):
         return self
 
     def pyglet_draw(self): #actor.draw
-        if self._sprite:
+        if self._sprite and self._allow_draw:
             self._sprite.position = (self.x + self.ax, self.game.resolution[1] - self.y - self.ay - self._sprite.height)
             self._sprite.draw()
         if self.show_debug:
@@ -913,7 +926,7 @@ class Actor(metaclass=use_on_events):
 
     def on_usage(self, draw=None, update=None, look=None, interact=None, use=None):
         """ Set the player->object interact flags on this object """
-        if draw != None: self.allow_draw = draw 
+        if draw != None: self._allow_draw = draw 
         if update != None: self.allow_update = update
         if look != None: self.allow_look = look
         if interact != None: self.allow_interact = interact
@@ -1466,6 +1479,7 @@ class Game(metaclass=use_on_events):
         self._headless = False
         self._allow_editing = ENABLE_EDITOR
         self._editing = None
+        self._editing_point = None #the set fns to pump in new x,y coords
 
         self._progress_bar_count = 0 #how many event steps in this progress block
         self._progress_bar_index = 0 #how far along the event list are we for this progress block
@@ -1521,7 +1535,9 @@ class Game(metaclass=use_on_events):
 
     def on_mouse_motion(self,x, y, dx, dy):
         """ Change mouse cursor depending on what the mouse is hovering over """
-        pass 
+        if self._editing and self._editing_point: #we are editing something so send through the new x,y in pyvida format
+            self._editing_point[0](x)
+            self._editing_point[1](self.resolution[1] - y)
 
     def on_mouse_press(self, x, y, button, modifiers):
         """ If the mouse is over an object with a down action, switch to that action """
@@ -1529,6 +1545,10 @@ class Game(metaclass=use_on_events):
 
     def on_mouse_release(self, x, y, button, modifiers):
         """ Call the correct function depending on what the mouse has clicked on """
+        if self._editing and self._editing_point: #we are editing a point so we need to release it now
+            self.game._editing_point = None
+            return
+
         y = self.game.resolution[1] - y #invert y-axis if needed
         for obj in self._modals:
             if obj.collide(x,y):
@@ -1904,11 +1924,10 @@ class Game(metaclass=use_on_events):
         font = get_font(self, filename, fontname)
         _pyglet_fonts[filename] = fontname 
 
-    def set_interact(self, actor, fn):
+    def set_interact(self, actor, fn): #game.set_interact
         """ helper function for setting interact on an actor """
         actor = get_object(self, actor)
         actor.interact = fn
-
 
     def on_load_state(self, scene, state):
         """ a queuing function, not a queued function (ie it adds events but is not one """
@@ -1984,7 +2003,7 @@ Editor stuff
             ("position", (self.x, self.y),  (int, int)),
             ("anchor", (self.ax, self.ay), (int, int)),
             ("interact", self.interact, str),
-            ("allow_draw", self.allow_draw, bool), # ( "allow_update", "allow_use", "allow_interact", "allow_look"]        
+            ("allow_draw", self._allow_draw, bool), # ( "allow_update", "allow_use", "allow_interact", "allow_look"]        
             ]
 """
 
@@ -2037,28 +2056,39 @@ class Editor(tk.Toplevel):
         self.obj = obj
         self.game = game
         self._editing = tk.StringVar()
+        self._editing.set("Nothing")
         self.createWidgets()
+        self.lift(aboveThis=parent)
+        parent.attributes("-topmost", 1)
 
     def close_editor(self):
         self.destroy()
 
+    def selected(self):
+        print(self._editing.get())
+        for editable in self.obj._editable:
+            if self._editing.get() == editable[0]: #this is what we want to edit now.
+                label, get_attrs, set_attrs, types = editable
+                self.game._editing = self.obj
+                self.game._editing_point = set_attrs
+
     def createWidgets(self):
         for i, editable in enumerate(self.obj._editable):
-            label, attrs, types = editable
-            tk.Radiobutton(self, text=label, variable=self._editing, value=label, indicatoron=0).grid(row=i, column=0)
+            label, get_attrs, set_attrs, types = editable
+            tk.Radiobutton(self, text=label, variable=self._editing, value=label, indicatoron=0, command=self.selected).grid(row=i, column=0)
             if type(types) == tuple: #assume two ints
                 e = tk.Entry(self)
                 e.grid(row=i, column=1)
-                e.insert(0, attrs[0])
+                e.insert(0, get_attrs[0]())
                 e = tk.Entry(self)
                 e.grid(row=i, column=2)
-                e.insert(0, attrs[1])
+                e.insert(0, get_attrs[1]())
             elif types == str:
                 e = tk.Entry(self)
                 e.grid(row=i, column=1, columnspan=2)
-                if attrs: e.insert(0, attrs)
+#                if get_attrs: e.insert(0, get_attrs())
             elif types == bool:
-                tk.Checkbutton(self, variable=attrs).grid(row=i, column=1, columnspan=2)
+                tk.Checkbutton(self, variable=get_attrs()).grid(row=i, column=1, columnspan=2)
 
         self.QUIT = tk.Button(self)
         self.QUIT["text"] = "Close"
@@ -2084,7 +2114,7 @@ class MyTkApp(threading.Thread):
         self.parent.protocol("WM_DELETE_WINDOW", self.callback)
         self.navigator = Navigator(self, self.parent, self.game)
         self.navigator.geometry('400x100+{}+{}'.format(self.game.resolution[0]-400, 0))
-        self.create_editor(self.objects[self.index])
+#        self.create_editor(self.objects[self.index])
         #create close all button
         self.close = tk.Button(self.parent)
         self.close["text"] = "Close Editor"
