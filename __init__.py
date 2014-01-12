@@ -4,7 +4,10 @@ Python3
 import glob, imp, json, pyglet, os, sys, copy
 from datetime import datetime
 import tkinter as tk
+import tkinter.filedialog
+
 import threading, traceback
+from random import choice
 
 from argparse import ArgumentParser
 from collections import Iterable
@@ -436,14 +439,17 @@ class Rect(object):
 
 
 def crosshair(game, point, colour):
+
         fcolour = fColour(colour)
-        pyglet.gl.glColor4f(*fcolour)               
-        x,y=point                                
+        pyglet.gl.glColor4f(*fcolour)       
+
+        #y is inverted for pyglet
+        x,y=point[0], game.resolution[1]-point[1]                               
         pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x, y-5, x, y+5))) 
         pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x-5, y, x+5, y))) 
         pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0) # undo alpha for pyglet drawing
 
-        label = pyglet.text.Label("{0}, {1}".format(x,game.resolution[1]-y),
+        label = pyglet.text.Label("{0}, {1}".format(x,y),
                           font_name='Arial',
                           font_size=10,
                           color=colour,
@@ -463,8 +469,8 @@ def rectangle(game, rect, colour=(255, 255, 255, 255)):
         gy = game.resolution[1]-y
         p1 = (x, gy)
         p2 = (x + w, gy)
-        p3 = (x + w, gy + h)
-        p4 = (x, gy + h)
+        p3 = (x + w, gy - h)
+        p4 = (x, gy - h)
         pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (p1[0], p1[1], p2[0], p2[1]))) 
         pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (p2[0],p2[1], p3[0], p3[1]))) 
         pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (p3[0],p3[1], p4[0], p4[1]))) 
@@ -475,7 +481,7 @@ def rectangle(game, rect, colour=(255, 255, 255, 255)):
                           font_name='Arial',
                           font_size=10,
                           color=colour,
-                          x=x+6, y=gy,
+                          x=x+w+6, y=gy-h,
                           anchor_x='left', anchor_y='top')
         label.draw()
         return [p1, p2, p3, p4]
@@ -494,7 +500,10 @@ def get_pixel_from_image(image, x, y):
         #Convert Unicode strings to integers. Provided by Alex Holkner on the mailing list.
         #components = map(ord, list(data))        #components only contains one pixel. I want to return a color that I can pass to
         #pyglet.gl.glColor4f(), so I need to put it in the 0.0-1.0 range.
-        return (data[0], data[1], data[2], data[3])
+        try:
+            return (data[0], data[1], data[2], data[3])
+        except:
+            import pdb; pdb.set_trace()
 
 
 
@@ -546,6 +555,7 @@ class Actor(metaclass=use_on_events):
         self._actions = {}
         self.action = None
         self.game = None
+        self.scene = None
         self._x, self._y = 0, 0
         self.sx, self.sx = 0,0 #stand points
         self._ax, self._ay = 0,0 #anchor points
@@ -553,12 +563,17 @@ class Actor(metaclass=use_on_events):
         self.z = 1000 #where in the z layer is this actor (< 1000 further away, >1000 closer to player)
         self.scale = 1.0
         self.rotate = 0
+
         self.display_text = None #can override name for game.info display text
         self.display_text_align = LEFT
+        self.font_speech = None #use default font (from game)
+        self.font_speech_size = None #use default font size (from game)
+        self.font_colour = None #use default
 
         self._solid_area = Rect(0,0,60,100)
         self._clickable_area = Rect(0, 0, 0, 0)
         self._clickable_mask = None
+        self._clickable_fullscreen = False #override clickable to make it cover all the screen
 
         self._allow_draw = True
         self.allow_update = True
@@ -571,7 +586,8 @@ class Actor(metaclass=use_on_events):
         self._interact = interact #special queuing function for interacts
         self.look = None #override queuing function for look
         self.uses = {} #override use functions (actor is key name)
-
+        self.facts = []
+        self.inventory = {}
 
         self._directory = None
         self._busy = False
@@ -640,6 +656,33 @@ class Actor(metaclass=use_on_events):
         return self._allow_draw
     allow_draw = property(set_allow_draw, get_allow_draw)
 
+    @property
+    def w(self):
+        return self._sprite.width
+
+    @property
+    def h(self):
+        return self._sprite.height
+
+    def _get_text_details(self, font=None, size=None, wrap=None):
+        """ get a dict of details about the speech of this object """
+        kwargs = {}
+        if wrap != None: kwargs["wrap"] = wrap
+        if self.font_colour != None: kwargs["colour"] = self.font_colour
+        if font:
+            kwargs["font"] = font 
+        elif self.font_speech:
+            kwargs["font"] = self.font_speech
+        elif self.game and self.game.font_speech:
+            kwargs["font"] = self.game.font_speech
+        if size:
+            kwargs["size"] = size
+        elif self.font_speech_size:
+            kwargs["size"] = self.font_speech_size
+        elif self.game and self.game.font_speech_size:
+            kwargs["size"] = self.game.font_speech_size
+        return kwargs
+
 
     def _update(self, dt):
         pass
@@ -657,21 +700,21 @@ class Actor(metaclass=use_on_events):
 #            r.height *= self.scale
         mask = pyglet.image.SolidColorImagePattern((255, 255, 255, 255))
         self._clickable_mask = mask.create_image(self.clickable_area.w, self.clickable_area.h)
-        self._clickable_mask.save("saves/%s.png"%self.name)
         return self._clickable_mask
 
+    def fullscreen(self, v=True): #make the clickable_area cover the whole screen, useful for some modals
+        self._clickable_fullscreen = v
 
     def collide(self, x,y, image=False): #Actor.collide
         """ collide with actor's clickable 
             if image is true, ignore clickable and collide with image.
         """
-        if x < self.clickable_area.x or x > self.clickable_area.x + self.clickable_area.w or \
-            y < self.clickable_area.y or y > self.clickable_area.y + self.clickable_area.h:
-                return
-        x = x - self.x
-        y = y - self.y
+        if self._clickable_fullscreen: return True
+        if not self.clickable_area.collidepoint(x,y): return
+#        x = x - self.x 
+#        y = y - self.y - self.clickable_area.y
 #        if self.name == "New Game": import pdb; pdb.set_trace()
-        data = get_pixel_from_image(self.clickable_mask, x, y)
+        data = get_pixel_from_image(self.clickable_mask, x - self.clickable_area.x, y - self.clickable_area.y)
         if data[:2] == (0,0,0) or data[3] == 255: return False #clicked on black or transparent, so not a collide
         return True
 #        else:
@@ -679,6 +722,7 @@ class Actor(metaclass=use_on_events):
 
 
     def trigger_interact(self):
+        print("Interact with",self.name)
         if self.interact: #if user has supplied an interact override
             if type(self.interact) in [str]: 
                 interact = get_function(self.game, self.interact)
@@ -694,11 +738,11 @@ class Actor(metaclass=use_on_events):
             basic = "interact_%s"%slugify(self.name)
             script = get_function(self.game, basic)
             if script:
-                if self.game.edit_scripts: 
-                    edit_script(self.game, self, basic, script, mode="interact")
-                    return
+#                if self.game.edit_scripts: 
+#                    edit_script(self.game, self, basic, script, mode="interact")
+#                    return
     
-                if not self.game.catch_exceptions: #allow exceptions to crash engine
+                if not self.game._catch_exceptions: #allow exceptions to crash engine
                     script(self.game, self, self.game.player)
                 else:
                     try:
@@ -736,8 +780,6 @@ class Actor(metaclass=use_on_events):
 
 
 
-#    def on_smart(self, game, img=None, using=None, idle="idle", action_prefix = ""): #actor.smart
-#        return self._smart(game)
 
     def smart(self, game, image=None, using=None, idle="idle", action_prefix = ""): #actor.smart
         """ 
@@ -804,6 +846,11 @@ class Actor(metaclass=use_on_events):
         if os.path.isfile(filepath):
             actor_defaults = json.loads(open(filepath).read())
             for key, val in actor_defaults.items():
+                if key == "font_colour": 
+                    if type(val) == list:
+                        val = tuple(val)
+                    elif val in COLOURS: 
+                        val = COLOURS[val]
                 self.__dict__[key] = val
             
 
@@ -831,9 +878,9 @@ class Actor(metaclass=use_on_events):
         """ Draw some debug info (store it for the unittests) """
         self._debugs = []
         #position = green
-        self._debugs.append(crosshair(self.game, (self.x, self.game.resolution[1] - self.y), (0, 255, 0, 255)))
+        self._debugs.append(crosshair(self.game, (self.x, self.y), (0, 255, 0, 255)))
         #anchor - blue
-        self._debugs.append(crosshair(self.game, (self.x + self.ax, self.game.resolution[1] - self.y + self.ay ), (0, 0, 255, 255)))
+        self._debugs.append(crosshair(self.game, (self.x + self.ax, self.y + self.ay ), (0, 0, 255, 255)))
         #clickable area
         self._debugs.append(rectangle(self.game, self.clickable_area, (0, 255, 100, 255)))
 
@@ -843,27 +890,142 @@ class Actor(metaclass=use_on_events):
 
     def on_animation_end_once(self):
         """ When an animation has been called once only """
-        print("Finished do_once", self.action.name, datetime.now())
         self.busy = False
         self._do("idle")
 
-    def _says(self, text):
-        pos = (self.game._window.width//2, self.game._window.height//2)
-        label = Text(text, pos)
-        def on_clicked(clicks):
-            self.game._models.remove(label)
-        label.on_clicked = on_clicked
-        self.game._modals.append(label)
+    def on_asks(self, statement, *args, **kwargs):
+        """ A queuing function. Display a speech bubble with text and several replies, and wait for player to pick one.
+
+            Use the @answer decorator to avoid passing in tuples
+            args are the options
+            kwargs are passed through to on_says
+        
+        Examples::
+        
+            def friend_function(game, guard, player):
+                guard.says("OK then. You may pass.")
+                player.says("Thanks.")
+                
+            def foe_function(game, guard, player):
+                guard.says("Then you shall not pass.")
+                
+            guard.asks("Friend or foe?", ("Friend", friend_function), ("Foe", foe_function), **kwargs)
+        
+        Options::
+        
+            tuples containing a text option to display and a function to call if the player selects this option.
+            
+        """    
+        name = self.display_text if self.display_text else self.name
+        if self.game._output_walkthrough: print("%s says \"%s\"."%(name, args[0]))
+        items = self._says(statement, **kwargs) 
+        label = None
+        for item in items:
+            if isinstance(item, Text): label=item
+            def collide_never(x,y): #for asks, most modals can't be clicked, only the txt modelitam options can.
+                return False
+            item.collide = collide_never
+
+        #add the options
+        kwargs =  self.game.player._get_text_details() #use the player's text options
+        for i, option in enumerate(args):
+            text, callback = option
+            opt = Text("option{}".format(i), display_text=text, **kwargs)
+            opt.x, opt.y = label.x + 10, label.y + (i+1)*opt.h + 5
+            def answer_callback(game, btn, player):
+                self._busy = False #no longer busy, so game can stop waiting
+                self.game._modals = [] #empty modals
+                callback(game, btn, player)
+            opt.interact = answer_callback
+            self.game.add(opt)
+            self.game._modals.append(opt)
+
+
+    def on_says(self, text, *args, **kwargs):
+        print("Finished on_says",text, datetime.now())
+        self._says(text, *args, **kwargs)
+
+    def _says(self, text, action="portrait", font=None, size=None, using=None, position=None, delay=0.01, step=3, ok=True):
+        if self.game._walkthrough_target > self.game._walkthrough_index: #in auto walkthrough so skip says
+            return []
+        #do high contrast if requested and available
+        background = using if using else None
+        high_contrast = "%s_high_contrast"%using
+        myd = os.path.join(self.game.directory_items, high_contrast)
+        using = high_contrast if self.game.settings.high_contrast and os.path.isdir(myd) else background
+            
+        msgbox = self.game.add(Item("msgbox").smart(self.game, using=using))
+        if ok: ok = self.game.add(Item("ok").smart(self.game))
+
+        kwargs =  self._get_text_details(font=font, size=size)
+        label = Text(text, delay=delay, step=step, **kwargs)
+        #position 10% off the bottom
+        x, y = self.game.resolution[0]//2 - msgbox.w//2, self.game.resolution[1]*0.9 - msgbox.h
+
+        label.game = self.game
+        label.fullscreen(True)
+        label.x,label.y = x+10,y+10
+        if ok:
+            ok.x, ok.y = x + msgbox.w - ok.w//2, y + msgbox.h - ok.h//2
+        msgbox.x, msgbox.y = x,y
+
+        #make the game wait until the user closes the modal
+        self._busy = True 
+        self.game._waiting = True
+
+        items = [msgbox, label]
+        if ok: items.append(ok)
+
+        def close_on_says(game, obj, player):
+            if ok: self.game._modals.remove(ok)
+            self.game._modals.remove(label)
+            self.game._modals.remove(msgbox)
+            self._busy = False
+        for obj in items:
+            obj.interact = close_on_says
+        self.game._modals.extend(items)
+        return items
+
+    def on_forget(self, fact):
+        """ A queuing function. Forget a fact from the list of facts 
+            
+            Example::
+            
+                player.forget("spoken to everyone")
+        """
+        if fact in self.facts:
+            self.facts.remove(fact)
+            if logging: log.debug("Forgetting fact '%s' for player %s"%(fact, self.name))
+        else:
+            if logging: log.warning("Can't forget fact '%s' ... was not in memory."%(fact))
+            
+        #self._event_finish()
+
+    def on_remember(self, fact):
+        """ A queuing function. Remember a fact to the list of facts
+            
+            Example::
+                player.remember("spoken to everyone")            
+        """
+        if fact not in self.facts: self.facts.append(fact)
+
+    def remembers(self, fact):
+        """ A pseudo-queuing function. Return true if fact in the list of facts 
+
+            Example::
+        
+                if player.remembers("spoken to everyone"): player.says("I've spoken to everyone")
+        
+        """
+        return True if fact in self.facts else False       
     
 
     def on_collection_select(self, collection, obj):
+        """ Called when this object is selected in a collection """
         print("handling object selection")
         import pdb; pdb.set_trace()
         
 
-    def on_says(self, text):
-        print("Finished on_says",text, datetime.now())
-        self._says(text)
 
     def _do(self, action, callback=None):
         callback = self.on_animation_end if callback == None else callback
@@ -905,6 +1067,7 @@ class Actor(metaclass=use_on_events):
         self._set(("ax", "ay"), point)
 
     def on_reclickable(self, rect):
+        self._clickable_mask = None #clear the mask
         self._set(["_clickable_area"], [rect])
 
     def on_resolid(self, rect):
@@ -1053,8 +1216,9 @@ class Scene(metaclass=use_on_events):
     def _add(self, objects): 
         if not isinstance(objects, Iterable): objects = [objects]
         for obj in objects:
-            obj = self.game._actors.get(obj, self.game._items.get(obj, None)) if type(obj) in [str] else obj        
+            obj = get_object(self.game, obj)
             self._objects[obj.name] = obj
+            obj.scene = self
 
     def _remove(self, obj):
         """ remove object from the scene """
@@ -1084,12 +1248,13 @@ class Scene(metaclass=use_on_events):
 
 
     def on_set_background(self, fname=None):
+        self._set_background(fname)
+
+    def _set_background(self, fname=None):
         if fname: log.debug("Set background for scene %s to %s"%(self.name, fname))
         if fname == None and self._background == None and self._background_fname: #load image
             fname = self._background_fname
-        print("background", fname)
         if fname:
-#            self._background = load_image(fname)
             self._background_fname = fname
 
     def pyglet_draw(self): #scene.draw (not used)
@@ -1104,10 +1269,25 @@ class Scene(metaclass=use_on_events):
 
 
 class Text(Item):
-    def __init__(self, name, pos=(0,0), display_text=None, colour=(255, 255, 255, 255), font=None, size=32, wrap=800, offset=0, interact=None):
+    def __init__(self, name, pos=(0,0), display_text=None, colour=(255, 255, 255, 255), font=None, size=26, wrap=800, offset=0, interact=None, delay=0, step=2):
+        """
+        delay : How fast to display chunks of the text
+        step : How many characters to advance during delayed display
+        """
         super().__init__(name, interact)
         self._display_text = display_text if display_text else name
         self.x, self.y = pos
+        self.step = step
+
+        #animate the text
+        if delay>0:
+            self._text_index = 0
+            pyglet.clock.schedule_interval(self._animate_text, delay)
+        else:
+            self._text_index = len(self._display_text)
+
+        self.__text = self._display_text[:self._text_index]
+
         if len(colour) == 3: colour = (colour[0], colour[1], colour[2], 255) #add an alpha value if needed
         font_name = "Times New Roman" #"Arial"
         if font:
@@ -1115,7 +1295,7 @@ class Text(Item):
                 log.error("Unable to find %s in fonts, use game.add_font"%font)
             else:
                 font_name = _pyglet_fonts[font]
-        self._label = pyglet.text.Label(self._display_text,
+        self._label = pyglet.text.Label(self.__text,
                                   font_name=font_name,
                                   font_size=size,
                                   color=colour,
@@ -1123,6 +1303,24 @@ class Text(Item):
                                   anchor_x='left', anchor_y='top')
         self._clickable_area = Rect(0, 0, self._label.content_width, self._label.content_height)
         
+    @property
+    def w(self):
+        return self._label.content_width
+
+    @property
+    def h(self):
+        return self._label.content_height
+
+
+    def _animate_text(self, dt):
+        """ called by the clock at regular intervals """
+        if self._text_index == len(self._display_text):
+            pyglet.clock.unschedule(self._animate_text)
+        else:
+            self._text_index += self.step
+            self.__text = self._display_text[:self._text_index]
+            self._label.text = self.__text
+
     def pyglet_draw(self):
         if not self.game:
             log.warning("Unable to draw Text %s without a self.game object"%self.name)
@@ -1134,18 +1332,28 @@ class Text(Item):
             self.debug_pyglet_draw()
 
 
-class Collection(Item, pyglet.event.EventDispatcher):
+class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
     def __init__(self, name, callback, padding=(10,10), dimensions=(300,300), tile_size=50):
         super().__init__(name)
-        self._objects = []
+        self._objects = {}
+        self._sorted_objects = None
+        self.index = 0 #where in the index to start showing
+
         self.callback = callback
         self.padding = padding
         self.dimensions = dimensions
         self.tile_size = tile_size
 
-    def on_smart(self, *args, **kwargs):
-        Item.on_smart(self, *args, **kwargs)
+    def on_empty(self):
+        self._objects = {}
+        self._sorted_objects = None
+        self.index = 0
+
+
+    def smart(self, *args, **kwargs):
+        Item.smart(self, *args, **kwargs)
         self.dimensions = (self.clickable_area.w, self.clickable_area.h)
+        return self
 
     def on_add(self, obj, callback=None):
         """ Add an object to this collection and set up an event handler for it in the event it gets selected """
@@ -1162,7 +1370,7 @@ class Collection(Item, pyglet.event.EventDispatcher):
     def pyglet_draw(self): #collection.draw
         x,y = padding[0], padding[1]
         w = self.clickable_area.w
-        for obj in self._objects:
+        for obj in self._objects.values():
             if obj._sprite:
                 obj._sprite.position = (self.x + x, self.game.resolution[1] - self.y - y)
                 obj._sprite.draw()
@@ -1445,6 +1653,10 @@ class Game(metaclass=use_on_events):
         self.directory_emitters = DIRECTORY_EMITTERS
         self.directory_interface = DIRECTORY_INTERFACE
 
+        #defaults
+        self.font_speech = None
+        self.font_speech_size = None
+
         self._actors = {}
         self._items = {}
         self._modals = []
@@ -1458,9 +1670,10 @@ class Game(metaclass=use_on_events):
         self._window.on_mouse_motion = self.on_mouse_motion
         self._window.on_mouse_press = self.on_mouse_press
         self._window.on_mouse_release = self.on_mouse_release
+        self._window.on_mouse_drag = self.on_mouse_drag
 
         #event handling
-        self._waiting = False
+        self._waiting = False #If true, don't process any new events until the existing ones are no longer busy
         self._busy = False #game is never busy
         self._events = []
         self._event = None
@@ -1475,6 +1688,11 @@ class Game(metaclass=use_on_events):
         self._walkthrough_index = 0 #our location in the walkthrough
         self._walkthrough_target = 0  #our target
         self._walkthrough_stored_state = None #TODO: for jumping back to a previous state in the game (WIP)
+
+        self._output_walkthrough = False
+        self._create_from_walkthrough = False
+        self._catch_exceptions = True #engine will try and continue after encountering exception
+
 
         self._headless = False
         self._allow_editing = ENABLE_EDITOR
@@ -1535,9 +1753,7 @@ class Game(metaclass=use_on_events):
 
     def on_mouse_motion(self,x, y, dx, dy):
         """ Change mouse cursor depending on what the mouse is hovering over """
-        if self._editing and self._editing_point: #we are editing something so send through the new x,y in pyvida format
-            self._editing_point[0](x)
-            self._editing_point[1](self.resolution[1] - y)
+        pass
 
     def on_mouse_press(self, x, y, button, modifiers):
         """ If the mouse is over an object with a down action, switch to that action """
@@ -1545,17 +1761,31 @@ class Game(metaclass=use_on_events):
 
     def on_mouse_release(self, x, y, button, modifiers):
         """ Call the correct function depending on what the mouse has clicked on """
-        if self._editing and self._editing_point: #we are editing a point so we need to release it now
-            self.game._editing_point = None
-            return
-
         y = self.game.resolution[1] - y #invert y-axis if needed
         for obj in self._modals:
             if obj.collide(x,y):
-                print("Collide with ",obj.name)
+                obj.trigger_interact()
+        #don't process other objects while there are modals
+        if len(self._modals)>0: return 
+
+        #try menu events
         for obj in self._menu:
             if obj.collide(x,y):
                 obj.trigger_interact()
+                return
+
+        #finally, try scene objects
+        for obj in self.scene._objects.values():
+            if obj.collide(x,y):
+                obj.trigger_interact()
+                return
+
+
+    def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
+        if self._editing and self._editing_point: #we are editing something so send through the new x,y in pyvida format
+            self._editing_point[0](x)
+            self._editing_point[1](self.resolution[1] - y)
+
 
     def add_arguments(self):
         """ Add allowable commandline arguments """
@@ -1770,7 +2000,7 @@ class Game(metaclass=use_on_events):
                 if hasattr(new_fn, "__call__"): setattr(sys.modules[module], new_fn.__name__, new_fn)
 
         #XXX update .uses{} values too.
-        for i in (list(self.actors.values()) + list(self.items.values())):
+        for i in (list(self._actors.values()) + list(self._items.values())):
             if i.interact: 
                 if type(i.interact) != str:
                     new_fn = get_function(self.game, i.interact.__name__)
@@ -1811,13 +2041,7 @@ class Game(metaclass=use_on_events):
     def queue_event(self, event, *args, **kwargs):
         self._events.append((event, args, kwargs))
 
-    def update(self, dt):
-        """ Run update on scene objects """
-        scene_objects = self.scene._objects.values() if self.scene else []
-        for items in [scene_objects, self._menu, self._modals]:
-            for item in items:
-                if hasattr(item, "_update"): item._update(dt)
-
+    def _handle_events(self):
         """ Handle game events """
         if self._waiting: 
             """ check all the Objects with existing events, if any of them are busy, don't process the next event """
@@ -1826,17 +2050,16 @@ class Game(metaclass=use_on_events):
                 obj = event[1][0] #first arg is always the object that called the event
                 if obj._busy == True: 
                     none_busy = False
-            if none_busy == True: self._waiting = False #no prior events are busy, so stop waiting
-
-#        if self._event_index < len(self.events) and len(self._events)>0:
-
-            return
+            if none_busy == True: 
+                self._waiting = False #no prior events are busy, so stop waiting
+            else:
+                return #game is waiting on an actor, so leave
         done_events = 0
         del_events = 0
         #if there are events and we are not at the end of them
         if len(self._events)>0: 
             if self._event_index>0:
-                for event in self._events[:self._event_index-1]: #check the previous events' objects, delete if not busy
+                for event in self._events[:self._event_index]: #check the previous events' objects, delete if not busy
                     if event[1][0]._busy == False:
                         del_events += 1
                         self._events.remove(event)
@@ -1845,29 +2068,49 @@ class Game(metaclass=use_on_events):
             if self._event_index < len(self._events):
                 #possibly start the current event
                 e = self._events[self._event_index] #stored as [(function, args))]
-                if e[1][0]._busy: return #don't do this event yet if the owner is busy
+                obj = e[1][0]
+                if obj._busy: return #don't do this event yet if the owner is busy
                 self._event = e
-                print("Start",e[0], e[1][0].name, datetime.now(), e[1][0]._busy)
+#                print("Start",e[0], e[1][0].name, datetime.now(), e[1][0]._busy)
                 done_events += 1
 
                 e[0](*e[1], **e[2]) #call the function with the args and kwargs
                 self._event_index += 1
+
+                #if, after running the event, the obj is not busy, then it's OK to do the next event immediately.
+                if not obj._busy:
+                    self._handle_events()
+
             #if self._event_index<len(self._events)-1: self._event_index += 1
 
         #auto trigger an event from the walkthrough if needed and nothing else is happening
         if done_events == 0 and del_events == 0 and self._walkthrough_target > self._walkthrough_index: 
-            print("AUTO WALKTHROUGH")
             walkthrough = self._walkthrough[self._walkthrough_index]
             function_name = walkthrough[0].__name__ 
-            self._walkthrough_index += 1            
+            self._walkthrough_index += 1    
+            print("AUTO WALKTHROUGH", walkthrough)
             if function_name == "interact":
                 print("trigger interact", self._walkthrough_target, self._walkthrough_index)
                 button = pyglet.window.mouse.LEFT
                 modifiers = 0
                 obj = get_object(self, walkthrough[1])
+                import pdb; pdb.set_trace()
                 x, y = obj.clickable_area.center
                 self._window.dispatch_event('on_mouse_release', x, self.resolution[1] - y, button, modifiers)
-#        print("Done %s, deleted %s"%(done_events, del_events))         
+            elif function_name == "description":
+                pass
+
+#        print("Done %s, deleted %s"%(done_events, del_events))  
+
+
+    def update(self, dt): #game.update
+        """ Run update on scene objects """
+        scene_objects = self.scene._objects.values() if self.scene else []
+        for items in [scene_objects, self._menu, self._modals]:
+            for item in items:
+                if hasattr(item, "_update"): item._update(dt)
+
+        self._handle_events()
 
     def pyglet_draw(self): #game.draw
         """ Draw the scene """
@@ -1875,6 +2118,7 @@ class Game(metaclass=use_on_events):
 #        self.scene.pyglet_draw()
         if self.scene.background:
             self._window.clear()
+            pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0) # undo alpha for pyglet drawing            
             self.scene.background.blit(self.scene.x, self.scene.y)
         else:
             print("no background")
@@ -1891,7 +2135,6 @@ class Game(metaclass=use_on_events):
 
         for modal in self._modals:
             modal.pyglet_draw()
-
 
     def _add(self, objects, replace=False): #game.add
         objects_iterable = [objects] if not isinstance(objects, Iterable) else objects
@@ -1917,8 +2160,8 @@ class Game(metaclass=use_on_events):
         return objects
 
 
-    def add(self, objects, replace=False): #game.add
-        self._add(objects, replace=replace)
+    def add(self, objects, replace=False): #game.add (not an event driven function)
+        return self._add(objects, replace=replace)
 
     def add_font(self, filename, fontname):
         font = get_font(self, filename, fontname)
@@ -1966,17 +2209,23 @@ class Game(metaclass=use_on_events):
         if logging: log.warning("game.splash ignores duration and clicks")
         if self._allow_editing: duration = 0.1 #skip delay on splash when editing
         scene = Scene(image, game=self)
-        scene.set_background(image)
+        scene._set_background(image)
+        self._busy = True #set Game object to busy
+        self._waiting = True #make game wait until splash is finished
         #add scene to game, change over to that scene
         self.add(scene)
-        self.camera.scene(scene)
+        self.camera._scene(scene)
         if scene._background:
             self._background.blit(0,0)
+
+        def splash_finish(d, game):
+            self._busy = False #finish the event
+            callback(d, game)
         if callback:
             if not duration:
-                callback(0, self)
+                splash_finish(0, self)
             else:
-                pyglet.clock.schedule_once(callback, duration, self)
+                pyglet.clock.schedule_once(splash_finish, duration, self)
 
     def on_relocate(self, obj, scene, destination): #game.relocate
         obj = get_object(self.game, obj)
@@ -1993,7 +2242,7 @@ class Game(metaclass=use_on_events):
             if i in self._items.keys(): 
                 self._menu.append(self._items[i])
             else:
-                if logging: log.error("Menu item %s not found in MenuItem collection"%i)
+                if logging: log.error("Menu item %s not found in Item collection"%i)
         if logging: log.debug("set menu to %s"%[x.name for x in self._menu])
 
 """
@@ -2023,7 +2272,14 @@ class Navigator(tk.Toplevel):
         self.edit_button = tk.Button(self, text='Edit', command=self.create_editor)
         self.edit_button.grid(column=1, row=0)
         self.next_button = tk.Button(self, text='->', command=self.next).grid(column=2, row=0)
-   
+        def save_state(*args, **kwargs):
+            print(args, kwargs)
+        def load_state(*args, **kwargs):
+            print(args, kwargs)
+            options = {}
+            return tk.filedialog.LoadFileDialog.askopenfile(mode='r', **options)
+        self.state_save_button = tk.Button(self, text='save state', command=save_state).grid(column=0, row=1)
+        self.state_load_button = tk.Button(self, text='load state', command=load_state).grid(column=1, row=1)
 
     def _navigate(self, delta):
         obj = self.app.objects[self.app.index]
