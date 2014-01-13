@@ -33,7 +33,7 @@ class ActorTest(unittest.TestCase):
         self.assertEqual(self.actor._ax, -25)
         self.assertEqual(self.actor._ay, -100)
 
-        self.actor.ax, self.actor.ay = 75, 0
+        self.actor.ax, self.actor.ay = -25, -100
         self.assertEqual(self.actor._ax, -25)
         self.assertEqual(self.actor._ay, -100)
         
@@ -99,13 +99,41 @@ class ActorTest(unittest.TestCase):
         self.assertEqual(msgbox.w, 100)
 
 
-class GameEventsTest(unittest.TestCase):
+class ActorSmartTest(unittest.TestCase):
+    def setUp(self):
+        self.game = Game("Unit Tests", fps=60, afps=16, resolution=RESOLUTION)
+        self.game.settings = Settings()
+
+    def _generic_tests(self, actor):
+        self.assertIn("idle", actor._actions.keys())
+        self.assertEqual(actor.action.name, "idle")
+        self.assertEqual(actor.w, 100)
+
+    def test_smart(self):
+        self.actor = Actor("_test_actor").smart(self.game)
+        self._generic_tests(self.actor)
+
+    def test_smart_using(self):
+        self.actor = Actor("_test_actor").smart(self.game, using="data/actors/_test_actor")
+        self._generic_tests(self.actor)
+
+        self.actor = Actor("_test_actor").smart(self.game, using="data/items/_test_item")
+        self._generic_tests(self.actor)
+
+
+    def test_item_smart_using(self):
+        actor = Item("msgbox").smart(self.game, using="data/items/_test_item")
+        self.assertEqual(actor.name, "msgbox")
+        self._generic_tests(actor)
+
+
+class EventTest(unittest.TestCase):
     def setUp(self):
         self.game = Game("Unit Tests", fps=60, afps=16, resolution=RESOLUTION)
         self.game.settings = Settings()
         self.actor = Actor("_test_actor").smart(self.game)
-        self.msgbox = Item("msgbox").smart(self.game, using="data/actors/_test_actor")
-        self.ok = Item("ok").smart(self.game, using="data/actors/_test_actor")
+        self.msgbox = Item("msgbox").smart(self.game, using="data/items/_test_item")
+        self.ok = Item("ok").smart(self.game, using="data/items/_test_item")
         self.scene = Scene("_test_scene")
         self.game.add([self.scene, self.actor, self.msgbox, self.ok])
 
@@ -130,8 +158,8 @@ class GameEventsTest(unittest.TestCase):
 
 
     def test_event_ordering(self):
-        self.actor.says("Hello World")
-        self.actor.says("Goodbye World")
+        self.actor.says("Hello World", ok=False)
+        self.actor.says("Goodbye World", ok=False)
         events = self.game._events
         self.assertEqual(events[0][1][1], "Hello World")
         self.assertEqual(events[1][1][1], "Goodbye World")
@@ -141,13 +169,13 @@ class GameEventsTest(unittest.TestCase):
         self.actor.says("Hello World", using="data/items/_test_item", ok=False)
         self.actor.says("Goodbye World", using="data/items/_test_item", ok=False)
 
-        self.game.update(0) #start the first on_says
+        self.game.update(0, single_event=True) #start the first on_says
         self.assertEqual(self.game._event_index, 1)
         self.assertEqual(self.game._waiting, True)
         self.assertEqual(self.actor._busy, True)
         self.assertEqual(len(self.game._modals), 2)
 
-        self.game.update(0) #should still be blocking as user has done nothing
+        self.game.update(0, single_event=True) #should still be blocking as user has done nothing
 
         self.assertEqual(self.game._event_index, 1)
         self.assertEqual(self.game._waiting, True)
@@ -163,19 +191,140 @@ class GameEventsTest(unittest.TestCase):
         self.assertEqual(self.game._event_index, 1) #still on first event
         self.assertEqual(self.game._waiting, True) #game still waiting
 
-        self.game.update(0) #trigger the next on_says, everything should be waiting again
+        self.game.update(0, single_event=True) #trigger the next on_says, everything should be waiting again
 
-        self.assertEqual(self.game._event_index, 2)
+        self.assertEqual(self.game._event_index, 1)
         self.assertTrue(self.game._waiting)
         self.assertTrue(self.actor._busy)
         self.assertEqual(len(self.game._modals), 2)
 
         self.game._modals[0].trigger_interact() #finish the on says
 
+        self.game.update(0, single_event=True) #trigger the next on_says, everything should be waiting again
+
+
         self.assertEqual(len(self.game._modals), 0)
         self.assertEqual(len(self.game._events), 0)
+
+
+    def test_relocate_says_events(self):
+        self.actor.relocate(self.scene, (100,100))
+        self.actor.says("Hello World", ok=False)
+        self.actor.relocate(self.scene, (200,200))
+        self.assertEqual([x[0].__name__ for x in self.game._events], ['on_relocate', 'on_says', 'on_relocate'])
+
+        self.game.update(0, single_event=True) #do relocate, probably starts on_says
+        self.game.update(0, single_event=True) #finish the relocate, starts on_says
+
+        self.assertEqual([x[0].__name__ for x in self.game._events], ['on_says', 'on_relocate'])
+        self.assertEqual(self.game._event_index, 1)
+        self.assertTrue(self.game._waiting) #waiting for modals to clear
+        self.assertTrue(self.actor._busy) #waiting for modals to clear
+        self.assertEqual(len(self.game._modals), 2) #no OK button
+
+        #need to trip the modals
+        self.game._modals[0].trigger_interact()
+
+        self.game.update(0) #finish the on_says and start and fininsh on_relocate
+        self.assertEqual(len(self.game._modals), 0) #on_says cleared
+        self.assertEqual([x[0].__name__ for x in self.game._events], [])
+
+    def test_on_asks(self):
+        @answer("Hello World")
+        def answer0(game, btn, player):
+            self.actor.says("Hello World", ok=False)
+
+        @answer("Goodbye World")
+        def answer1(game, btn, player):
+            self.actor.says("Goodbye World", ok=False)
+        self.actor.asks("What should we do?", answer0, answer1, ok=False)
+
+        self.assertEqual(len(self.game._modals), 0)
+
+        self.game.update(0, single_event=True) #start on_asks
+        self.assertEqual(len(self.game._modals), 4) #no OK button, so msgbox, statement, two options
+        self.assertEqual([x[0].__name__ for x in self.game._events], ['on_asks'])
+
+        self.game.update(0, single_event=True) #start on_asks
+        self.assertEqual([x[0].__name__ for x in self.game._events], ['on_asks'])
+ 
+        self.game._modals[2].trigger_interact() #first option
+
+        self.game.update(0, single_event=True) #finish on_asks, start on_says
+    
+        self.assertEqual([x[0].__name__ for x in self.game._events], ['on_says'])
+
         
 
+    def test_load_state(self):
+        self.actor.relocate(self.scene, (100,100))
+        self.actor.says("Hello World", ok=False)
+        self.game.load_state(self.scene, "initial")
+        self.actor.relocate(self.scene, (200,200))
+
+        self.assertEqual([x[0].__name__ for x in self.game._events], ['on_relocate', 'on_says',  'on_clean', 'on_relocate', 'on_relocate'])
+        self.game.update(0, single_event=True) #do relocate, probably starts on_says
+        self.game.update(0, single_event=True) #finish the relocate, starts on_says
+
+        #need to trip the modals
+        self.game._modals[0].trigger_interact()
+        self.game.update(0, single_event=True) #finish the on_says and start and fininsh on_relocate
+
+        self.assertEqual([x[0].__name__ for x in self.game._events], ['on_clean', 'on_relocate', 'on_relocate'])
+
+class WalkthroughTest(unittest.TestCase):
+    def setUp(self):
+        self.game = Game("Unit Tests", fps=60, afps=16, resolution=RESOLUTION)
+        self.game.settings = Settings()
+        self.actor = Actor("_test_actor").smart(self.game)
+        self.msgbox = Item("msgbox").smart(self.game, using="data/items/_test_item")
+        self.ok = Item("ok").smart(self.game, using="data/items/_test_item")
+        self.scene = Scene("_test_scene")
+        self.game._headless = True
+        self.game.add([self.scene, self.actor, self.msgbox, self.ok])
+
+        @answer("Hello World")
+        def answer0(game, btn, player):
+            self.actor.says("Hello World", ok=False)
+
+        @answer("Goodbye World")
+        def answer1(game, btn, player):
+            self.actor.says("Goodbye World", ok=False)
+
+        def interact__test_actor(game, actor, player):
+            self.actor.asks("What should we do?", answer0, answer1, ok=False)
+        self.actor.interact = interact__test_actor
+        suites = [[
+            (description, "Test Test Suite"),
+            (location, "_test_scene"),
+            (interact, "_test_actor"),
+            (interact, "Hello World"),
+        ]]
+        self.game.walkthroughs(suites)
+
+    def test_walkthrough(self):
+#        self._walkthrough = []
+        self._walkthrough_index = 0 #our location in the walkthrough
+        self._walkthrough_target = 0  #our target
+        self.assertEqual([x[0].__name__ for x in self.game._walkthrough], ['description', 'location', 'interact', 'interact'])
+
+        self.game._walkthrough_index = 0 #our location in the walkthrough
+        self.game._walkthrough_target = 3  #our target
+
+        self.game.update(0, single_event=True) #do the description step
+        self.assertEqual(len(self.game._events), 0) #no events, so walkthrough could keep going
+
+        self.game.update(0, single_event=True) #do the location test
+        self.game.update(0, single_event=True) #do the interact that triggers the on_asks
+
+        self.assertEqual([x[0].__name__ for x in self.game._events], ['on_asks'])
+
+        self.game.update(0, single_event=True) #do the interact that triggers the Hello World option
+        self.game.update(0, single_event=True) #trigger the on_says
+        self.game.update(0, single_event=True) #clear the on_says
+
+        self.assertEqual([x[0].__name__ for x in self.game._events], [])
+        
 
 
 if __name__ == '__main__':
