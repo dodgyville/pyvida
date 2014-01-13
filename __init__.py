@@ -1544,6 +1544,16 @@ class MenuManager(metaclass=use_on_events):
         if logging: log.debug("pop menu %s"%[x.name for x in self.game._menu])
 
 
+    def on_clear(self, menu_items = None):
+        """ clear current menu """
+        if not menu_items:
+            self.game._menu = []
+        else:
+            if not hasattr(menu_items, '__iter__'): menu_items = [menu_items]
+            for i in menu_items:
+                obj = get_object(self.game, i)
+                if obj in self.game._menu: self.game._menu.remove(obj)
+
 
 class Camera(metaclass=use_on_events): #the view manager
     def __init__(self, game):
