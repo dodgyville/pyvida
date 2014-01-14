@@ -5,6 +5,8 @@ import glob, imp, json, pyglet, os, sys, copy
 from datetime import datetime
 import tkinter as tk
 import tkinter.filedialog
+import subprocess
+
 
 import threading, traceback
 from random import choice
@@ -315,6 +317,37 @@ def use_on_events(name, bases, dic):
 #        if logging: log.debug("class %s has queue function %s available"%(name.lower(), qname))
         dic[qname] = create_event(dic[queue_method])
     return type(name, bases, dic)
+
+
+def open_editor(game, filepath, track=True):
+    """
+        Open a text editor to edit fname, used by the editor when editing scripts
+
+        track -- add to game._modules for tracking and reloading
+    """
+    editor = os.getenv('EDITOR', DEFAULT_TEXT_EDITOR)
+    
+    if track:
+        #add to the list of modules we are tracking
+        module_name = os.path.splitext(os.path.basename(filepath))[0]
+        if module_name not in game._modules and module_name != "__init__": 
+            print("ADDING %s TO MODULES"%module_name)
+            game._modules[module_name] = 0
+            #add file directory to path so that import can find it
+            if os.path.dirname(filepath) not in sys.path: sys.path.append(os.path.dirname(filepath))
+    
+    if sys.platform.startswith('darwin'):
+        subprocess.call(('open', filepath))
+    elif os.name == 'nt':
+        os.startfile(filepath)
+    elif os.name == 'posix':
+        subprocess.call(('xdg-open', filepath))
+#    import webbrowser
+#    webbrowser.open("file.txt")
+#    x = os.spawnlp(os.P_WAIT,editor,editor,filehandle.name)
+#    if x != 0:
+#        print("ERROR")
+#    return filehandle.read()
 
 
 """
@@ -2525,13 +2558,29 @@ class Navigator(tk.Toplevel):
         self.game = game
         self.createWidgets()
         self.title("Navigator")
-
+        self.scene = tk.StringVar(self.parent)
 
     def createWidgets(self):
-        self.prev_button = tk.Button(self, text='<-', command=self.prev).grid(column=0, row=0)
+        row = 0
+        def change_scene(*args, **kwargs):
+            if self.game._editing.show_debug:
+                self.game._editing.show_debug = False
+            scene = self.game._scenes[self.scene.get()]
+            self.app.objects = objects = list(scene._objects.values())
+            self.game.camera.scene(scene)
+            self.app.index = 0
+            if len(objects)>0:
+                self.game._editing = objects[self.app.index]
+                self.game._editing.show_debug = True
+        option = tk.OptionMenu(self, self.scene, *[x.name for x in self.game._scenes.values()], command=change_scene).grid(column=0,row=row)
+
+        row += 1
+        self.prev_button = tk.Button(self, text='<-', command=self.prev).grid(column=0, row=row)
         self.edit_button = tk.Button(self, text='Edit', command=self.create_editor)
-        self.edit_button.grid(column=1, row=0)
-        self.next_button = tk.Button(self, text='->', command=self.next).grid(column=2, row=0)
+        self.edit_button.grid(column=1, row=row)
+        self.next_button = tk.Button(self, text='->', command=self.next).grid(column=2, row=row)
+
+        row += 1
         def save_state(*args, **kwargs):
             d = tk.filedialog.SaveFileDialog(self.parent)
             pattern, default, key = "*.py", "", None
@@ -2556,8 +2605,8 @@ class Navigator(tk.Toplevel):
                 state_name = os.path.splitext(os.path.basename(fname))[0]
                 print("STATE_NAME",state_name)
                 self.game.load_state(self.game.scene, state_name)
-        self.state_save_button = tk.Button(self, text='save state', command=save_state).grid(column=0, row=1)
-        self.state_load_button = tk.Button(self, text='load state', command=load_state).grid(column=1, row=1)
+        self.state_save_button = tk.Button(self, text='save state', command=save_state).grid(column=0, row=row)
+        self.state_load_button = tk.Button(self, text='load state', command=load_state).grid(column=1, row=row)
 
     def _navigate(self, delta):
         obj = self.app.objects[self.app.index]
@@ -2608,6 +2657,26 @@ class Editor(tk.Toplevel):
                 self.game._editing = self.obj
                 self.game._editing_point = set_attrs
 
+    def edit_btn(self):
+        """ Open the script for this object for editing """
+        obj = self.obj
+        directory = obj._directory
+        fname = os.path.join(directory, "%s.py"%slugify(obj.name).lower())
+        if not os.path.isfile(fname): #create a new module for this actor
+            with open(fname, "a") as f:
+                f.write("from pyvida import gettext as _\n\n")
+
+        #add the function            
+#        with open(fname, "a") as f:
+#            f.write("\ndef %s(game, obj, player):\n    pass\n"%basic)
+#        print("EDIT DEFAULT %s SCRIPT %s"%(mode, fname) )
+#        import importlib
+#        importlib.import_module('matplotlib.text')
+        module_name = os.path.splitext(os.path.basename(fname))[0]
+        open_editor(self.game, fname)
+        __import__(module_name)
+        
+
     def createWidgets(self):
         for i, editable in enumerate(self.obj._editable):
             label, get_attrs, set_attrs, types = editable
@@ -2626,11 +2695,15 @@ class Editor(tk.Toplevel):
             elif types == bool:
                 tk.Checkbutton(self, variable=get_attrs()).grid(row=i, column=1, columnspan=2)
 
+        i += 1
+        self.edit_script = tk.Button(self, text="Edit", command=self.edit_btn).grid(row=i, column=0)
+
         self.QUIT = tk.Button(self)
         self.QUIT["text"] = "Close"
         self.QUIT["fg"]   = "red"
         self.QUIT["command"] =  self.close_editor
-        self.QUIT.grid(row=i+1)
+        i += 1
+        self.QUIT.grid(row=i)
 
 
 class MyTkApp(threading.Thread):
