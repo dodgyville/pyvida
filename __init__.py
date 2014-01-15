@@ -1,19 +1,15 @@
 """
 Python3 
 """
-import glob, imp, json, pyglet, os, sys, copy
-from datetime import datetime
-import tkinter as tk
-import tkinter.filedialog
-import subprocess
-
-
-import threading, traceback
-from random import choice
-
+import glob, imp, json, math, pyglet, os, subprocess, sys, copy
 from argparse import ArgumentParser
 from collections import Iterable
+from datetime import datetime
 from gettext import gettext
+from random import choice
+import tkinter as tk
+import tkinter.filedialog
+import threading, traceback
 
 from pyglet.image.codecs.png import PNGImageDecoder
 
@@ -57,6 +53,8 @@ HIDE_MOUSE = True #start with mouse hidden, first splash will turn it back on
 DEFAULT_FULLSCREEN = False #switch game to fullscreen or not
 DEFAULT_EXPLORATION = True #show "unknown" on portal links before first visit there
 DEFAULT_PORTAL_TEXT = True #show portal text
+#GOTO_LOOK = True  #should player walk to object when looking at it
+GOTO_LOOK = False
 
 
 DEFAULT_RESOLUTION = (1920, 1080)
@@ -72,7 +70,7 @@ DIRECTORY_EMITTERS = "data/emitters"
 DIRECTORY_SAVES = "saves"
 DIRECTORY_INTERFACE = "data/interface"
 
-DEFAULT_MENU_FONT = os.path.join(DIRECTORY_FONTS, "vera.ttf")
+FONT_VERA = DEFAULT_MENU_FONT = os.path.join(DIRECTORY_FONTS, "vera.ttf")
 DEFAULT_MENU_SIZE = 26
 DEFAULT_MENU_COLOUR = (42, 127, 255)
 
@@ -98,6 +96,12 @@ MOUSE_USE = 1
 MOUSE_LOOK = 2  #SUBALTERN
 MOUSE_INTERACT = 3   #DEFAULT ACTION FOR MAIN BTN
 
+MOUSE_POINTER = 0
+MOUSE_CROSSHAIR = 1
+MOUSE_LEFT = 2
+MOUSE_RIGHT = 3
+MOUSE_EYES = 4
+
 
 #WALKTHROUGH EXTRAS KEYWORDS
 LABEL = "label"
@@ -114,7 +118,7 @@ K_s = "s"
 """
 GLOBALS (yuck)
 """
-_pyglet_fonts = {DEFAULT_MENU_FONT:"Vera"}
+_pyglet_fonts = {DEFAULT_MENU_FONT:"bitstream vera sans"}
 
 
 """
@@ -208,6 +212,7 @@ def get_available_languages():
     return languages
   
 def load_image(fname, convert_alpha=False, eight_bit=False):
+    if not os.path.isfile(fname): return None
     with open(fname, "rb") as f:
         im = pyglet.image.codecs.pil.PILImageDecoder().decode(f, fname)
 #    im = pyglet.image.codecs.png.PNGImageDecoder().decode(open(fname, "rb"), fname)
@@ -222,12 +227,18 @@ def get_font(game, filename, fontname):
 
 def get_point(game, destination):
     """ get a point from a tuple, str or destination """
+    obj = None
+    if destination == game.player: import pdb; pdb.set_trace()
     if type(destination) in [str]:
-        if destination in game._actors: destination = (game._actors[destination].sx, game._actors[destination].sy)
-        elif destination in game._items: destination = (game._items[destination].sx, game._items[destination].sy)
-        
-    elif type(destination) == object:
-        destination = (destination.sx, destination.sy)
+        if destination in game._actors: 
+            obj = game._actors[destination]
+        elif destination in game._items: 
+            obj = game._items[destiantion]
+    elif isinstance(destination, Actor):
+        obj = destination
+
+    if obj:
+        destination = obj.sx + obj.x, obj.sy + obj.y
     return destination
 
 def get_object(game, obj):
@@ -391,6 +402,7 @@ class Settings(object):
         
         self.high_contrast = False
         self.accessibility_font = None #use this font to override main font (good for using dsylexic-friendly fonts
+        self.show_gui = True #when in-game, show a graphical user interface
                 
         self.invert_mouse = False #for lefties
         self.language = "en"
@@ -426,6 +438,9 @@ class Action(object):
         self.actor = None
         self.game = None
         self._sprite = None
+        self.speed = 10 #speed if used in pathplanning
+        self.angle_start = 0 #arc zone this action can be used for in pathplanning
+        self.angle_end = 0
 
     def draw(self):
         self._sprite.draw()
@@ -458,16 +473,29 @@ class Action(object):
 class Rect(object):
     def __init__(self, x,y,w,h):
         self.x, self.y = x, y
-        self.w, self.h = w, h
+        self._w, self._h = w, h
+        self.scale = 1.0
 
     def __str__(self):
         return "{}, {}, {}, {}".format(self.x, self.y, self.w, self.h)
+
+    def get_w(self): return int(self._w * self.scale)
+    def set_w(self, v): self._w = v
+    w = property(get_w, set_w)
+
+    def get_h(self): return int(self._h * self.scale)
+    def set_h(self, v): self._h = v
+    h = property(get_h, set_h)
+
 
     def collidepoint(self, x, y):
         return collide((self.x, self.y, self.w, self.h), x,y)
 
     def move(self, dx, dy):
         return Rect(self.x+dx, self.y+dy, self.w, self.h)
+
+#    def scale(self, v):
+#        self.w, self.h = int(self.w*v), int(self.h*v)
 
     @property
     def center(self):
@@ -531,6 +559,7 @@ def fColour(colour):
 def get_pixel_from_image(image, x, y):
         #Grab 1x1-pixel image. Converting entire image to ImageData takes much longer than just
         #grabbing the single pixel with get_region() and converting just that.
+        if x >= image.width: x = image.width-1
         image_data = image.get_region(int(x),int(y),1,1).get_image_data()
         #Get (very small) image as a string. The magic number '4' is just len('RGBA').
         data = image_data.get_data('RGBA',4)
@@ -594,6 +623,8 @@ class Actor(metaclass=use_on_events):
         self.game = None
         self.scene = None
         self._x, self._y = 0, 0
+        self._goto_x, self._goto_y = None, None
+        self._goto_dx, self._goto_dy = 0, 0
         self._sx, self._sy = 0, 0 #stand points
         self._ax, self._ay = 0, 0 #anchor points
         self._nx, self._ny = 0, 0 # displacement point for name
@@ -601,8 +632,8 @@ class Actor(metaclass=use_on_events):
         self._parent = None
 
         self.z = 1000 #where in the z layer is this actor (< 1000 further away, >1000 closer to player)
-        self.scale = 1.0
-        self.rotate = 0
+        self._scale = 1.0
+        self._rotate = 0
 
         self.display_text = None #can override name for game.info display text
         self.display_text_align = LEFT
@@ -631,7 +662,7 @@ class Actor(metaclass=use_on_events):
         self.inventory = {}
 
         self._directory = None
-        self._busy = False
+        self._busy = False #don't process any more events for this actor until busy is False, will block all events if game._waiting = True
         self._sprite = None
         self._events = []
 
@@ -669,18 +700,18 @@ class Actor(metaclass=use_on_events):
     y = property(get_y, set_y)
 
     def get_ax(self):
-        return self._ax
+        return int(self._ax * self._scale)
     def set_ax(self, v):
-        self._ax = v
-        if self._sprite: self._sprite.anchor_x = v  - self.x
+        self._ax = v // self._scale
+        if self._sprite: self._sprite.anchor_x = self._ax  - self.x
         return
     ax = property(get_ax, set_ax)
 
     def get_ay(self):
-        return self._ay
+        return int(self._ay * self._scale)
     def set_ay(self, v):
-        self._ay = v 
-        if self._sprite: self._sprite.anchor_y = v - self.y
+        self._ay = v // self._scale
+        if self._sprite: self._sprite.anchor_y = self._ay - self.y
         return
     ay = property(get_ay, set_ay)
 
@@ -704,6 +735,15 @@ class Actor(metaclass=use_on_events):
     def get_sy(self): return self._sy
     def set_sy(self, v): self._sy = v
     sy = property(get_sy, set_sy)
+
+    def get_scale(self): return self._scale
+    def set_scale(self, v): 
+        if self._sprite: self._sprite.scale = v
+        if self._clickable_area: self._clickable_area.scale = v
+        if self._clickable_mask: self._clickable_mask.scale = v
+        self._scale = v
+    scale = property(get_scale, set_scale)
+
 
     def set_interact(self, v):
         self._interact = v
@@ -745,8 +785,18 @@ class Actor(metaclass=use_on_events):
         return kwargs
 
 
-    def _update(self, dt):
-        pass
+    def _update(self, dt): #actor._update
+        if self._goto_x != None:
+            self.x += self._goto_dx 
+            self.y += self._goto_dy
+            speed = self.action.speed
+            target = Rect(self._goto_x, self._goto_y, speed+1, speed+1).move(-speed//2,-speed//2)
+            if target.collidepoint(self.x, self.y):
+                print("ARRIVED")
+                self._busy = False
+                self._goto_x, self._goto_y = None, None
+                self._goto_dx, self._goto_dy = 0, 0
+                
 
     @property
     def clickable_area(self):
@@ -884,10 +934,22 @@ class Actor(metaclass=use_on_events):
                 if logging: log.info("creating placeholder file in empty %s dir"%name)
                 f = open(os.path.join(d, "%s/placeholder.txt"%name),"a")
                 f.close()
+
+        #smart actions for pathplanning and which arcs they cover (in degrees)
+        PATHPLANNING = {"left": (225, 315),
+            "right": (45, 135),
+            "up": (-45, 45),
+            "down": (135, 225)
+            }
+
         for action_file in images:
             action_name = os.path.splitext(os.path.basename(action_file))[0]
             action = Action(action_name).smart(game, actor=self, filename=action_file)
             self._actions[action_name] = action
+            if action_name in PATHPLANNING:
+                p = PATHPLANNING[action_name]
+                action.angle_start = p[0]
+                action.angle_end = p[1]
         if len(self._actions)>0: #do an action by default
             self._do("idle" if "idle" in self._actions else list(self._actions.keys())[0])
 
@@ -1111,7 +1173,8 @@ class Actor(metaclass=use_on_events):
             self._sprite.delete()
         self.action = self._actions[action]
         self._sprite = pyglet.sprite.Sprite(self.action._animation)
-        if self._tint: self._sprite.color = self._tint 
+        if self._tint: self._sprite.color = self._tint
+        if self._scale: self._sprite.scale = self.scale 
         self._sprite.on_animation_end = callback
 
     def on_do(self, action):
@@ -1199,14 +1262,12 @@ class Actor(metaclass=use_on_events):
         if interact != None: self.allow_interact = interact
         if use != None: self.allow_use = use
 
-    def _rescale(self, scale):
-        self.scale = scale
 
     def on_relocate(self, scene, destination=None, scale=None): #actor.relocate
         self._relocate(scene, destination, scale)
 
     def _relocate(self, scene, destination=None, scale=None): #actor.relocate
-        if scale: self._rescale(scale)
+        if scale: self.scale = scale
         scene = get_object(self.game, scene)
         scene._add(self)
         if destination:
@@ -1226,6 +1287,26 @@ class Actor(metaclass=use_on_events):
                             if scene_item.allow_use: log.warning("%s default use script missing: def %s(game, %s, %s)"%(scene.name, basic, actee.lower(), actor.lower()))
 
 
+    def on_goto(self, destination, ignore=False):
+        point = get_point(self.game, destination)
+        way_points = [(self.x, self.y), point]
+        current_point = way_points[0]
+        next_point = way_points[1]
+        self._goto_x, self._goto_y = next_point
+
+        x,y = self._goto_x - current_point[0], self._goto_y - current_point[1]
+        distance = math.hypot(x, y)
+        if distance == 0: return #already there
+        d = self.action.speed/distance
+        self._goto_dx = x * d
+        self._goto_dy = y * d
+        angle = math.degrees(math.atan(-x/distance))
+        self._busy = True
+
+        print("GOTO", angle, self._goto_x, self._goto_y, self._goto_dx, self._goto_dy, math.degrees(math.atan(100/10)))
+
+        
+
 
 class Item(Actor):
     pass
@@ -1234,6 +1315,8 @@ class Portal(Actor, metaclass=use_on_events):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._ox, self._oy = 0,0 #out point for this portal
+        self.interact = self._interact_default
+        self.link = None
 
     def get_oy(self): return self._oy
     def set_oy(self, oy): self._oy = oy
@@ -1242,6 +1325,15 @@ class Portal(Actor, metaclass=use_on_events):
     def get_ox(self): return self._ox
     def set_ox(self, ox): self._ox = ox
     ox = property(get_ox, set_ox)   
+
+    def _post_arrive(self, portal, actor):
+        for receiver, sender in post_arrive.receivers: #do the signals for post_interact
+            receiver(self.game, portal, actor)
+    
+    def _pre_leave(self, portal, actor):
+        for receiver, sender in pre_leave.receivers: #do the signals for post_interact
+            receiver(self.game, portal, actor)
+
 
     def on_auto_align(self): #auto align display_text
         if not self.game:
@@ -1253,6 +1345,53 @@ class Portal(Actor, metaclass=use_on_events):
     def on_reout(self, pt):
         """ queue event for changing the portal out points """
         self._ox, self._oy = pt[0], pt[1]
+
+    def _interact_default(self, game, tmat, player):
+#        if player and player.scene and player.scene != self.scene: #only travel if on same scene as portal
+#            return
+        return self.travel()
+
+    def exit_here(self, actor=None):
+        """ exit the scene via the portal """
+        if actor == None: actor = self.game.player
+        actor.goto((self.sx, self.sy)) 
+        self._pre_leave(self, actor)
+        actor.goto((self.ox, self.oy)) 
+
+    def relocate_here(self, actor=None):
+        """ Relocate actor to this portal's out point """
+        if actor == None: actor = self.game.player
+        actor.relocate(self.scene, (self.ox, self.oy)) #moves player to scene        
+
+    def relocate_link(self, actor=None):
+        """ Relocate actor to this portal's link's out point """
+        if actor == None: actor = self.game.player
+        actor.relocate(self.link.scene, (self.link.ox, self.link.oy)) #moves player to scene            
+
+    def enter_link(self, actor=None):
+        """ exit the portal's link """
+        if actor == None: actor = self.game.player
+        actor.goto((self.link.sx, self.link.sy), ignore=True) #walk into scene        
+        self._post_arrive(self.link, actor)           
+
+    def travel(self, actor=None):
+        """ default interact method for a portal, march player through portal and change scene """
+        if actor == None: actor = self.game.player
+        if actor == None:
+            log.warning("No actor available for this portal")
+            return
+        if not self.link:
+            self.game.player.says("It doesn't look like that goes anywhere.")
+            if logging: log.error("portal %s has no link"%self.name)
+            return
+        if self.link.scene == None:
+            if logging: log.error("Unable to travel through portal %s"%self.name)
+        else:
+            if logging: log.info("Portal - actor %s goes from scene %s to %s"%(actor.name, self.scene.name, self.link.scene.name))
+        self.exit_here(actor)
+        self.relocate_link(actor)
+        self.game.camera.scene(self.link.scene) #change the scene
+        self.enter_link(actor)
 
 
 
@@ -1360,6 +1499,10 @@ class Scene(metaclass=use_on_events):
         if not isinstance(objects, Iterable): objects = [objects]
         for obj in objects:
             obj = get_object(self.game, obj)
+            if obj.name in self.scales.keys():
+                obj.scale = self.scales[obj.name]
+            elif "actors" in self.scales.keys() and not isinstance(obj, Item): #use auto scaling for actor if available
+                obj.scale = self.scales["actors"]
             self._objects[obj.name] = obj
             obj.scene = self
 
@@ -1543,6 +1686,9 @@ class MenuManager(metaclass=use_on_events):
         self._busy = False
 
     def on_show(self):
+        self._show()
+
+    def _show(self):
         for obj in self.game._menu: 
             obj.visible = True
         if logging: log.debug("show menu using place %s"%[x.name for x in self.game._menu])
@@ -1558,11 +1704,15 @@ class MenuManager(metaclass=use_on_events):
         if logging: log.debug("hide menu using place %s"%[x.name for x in self.game._menu])
 
     def on_hide(self, menu_items = None):
-        self._hide(self)
+        self._hide()
 
     def on_fade_out(self):
         log.warning("menumanager.fade_out does not fade")
-        self._hide(self)
+        self._hide()
+
+    def on_fade_in(self):
+        log.warning("menumanager.fade_in does not fade")
+        self._show()
 
     def on_push(self):
         """ push this menu to the list of menus and clear the current menu """
@@ -1805,11 +1955,13 @@ class Game(metaclass=use_on_events):
         self.game = self
         self.player = None
         self.scene = None
+        self._info_object = None
 
         self.camera = Camera(self) #the camera object
         self.mixer = Mixer(self) #the sound mixer object
         self.menu = MenuManager(self) #the menu manager object
         self._menu_factories = {}
+
 
         self.directory_portals = DIRECTORY_PORTALS
         self.directory_items = DIRECTORY_ITEMS
@@ -1821,6 +1973,9 @@ class Game(metaclass=use_on_events):
         #defaults
         self.font_speech = None
         self.font_speech_size = None
+        self.font_info = FONT_VERA
+        self.font_info_size = 16
+        self.font_info_colour = (255, 220, 0) #off yellow
 
         self._actors = {}
         self._items = {}
@@ -1868,10 +2023,18 @@ class Game(metaclass=use_on_events):
         self._progress_bar_index = 0 #how far along the event list are we for this progress block
         self._progress_bar_renderer = None #if exists, call during loop
 
+        self.messages = [] #non-interactive system messages to display to user (eg sfx subtitles (message, time))
 
 
         self.parser = ArgumentParser()
         self.add_arguments()
+
+        #mouse
+        self.mouse_cursors = {} #available mouse images
+        self._load_mouse_cursors()
+        self.mouse_mode = MOUSE_INTERACT #what activity does a mouse click trigger?
+        self.mouse_cursor = self._mouse_cursor = MOUSE_POINTER #which image to use
+        self.hide_cursor = HIDE_MOUSE
 
         pyglet.clock.schedule(self.update) #the pyvida game scripting event loop
 
@@ -1908,6 +2071,22 @@ class Game(metaclass=use_on_events):
     def h(self):
         return self._window.get_size()[1]
 
+    def _set_mouse_cursor(self, cursor):
+        if cursor not in self.mouse_cursors:
+            log.error("Unable to set mouse to %s, no cursor available"%cursor)
+            return
+        image = self.mouse_cursors[cursor] 
+        cursor = pyglet.window.ImageMouseCursor(image, 16, 8)
+        self._window.set_mouse_cursor(cursor)
+
+    def set_mouse_cursor(self, cursor):
+        self._mouse_cursor = cursor
+        self._set_mouse_cursor(self._mouse_cursor)
+
+    def get_mouse_cursor(self):
+        return self._mouse_cursor
+    mouse_cursor = property(get_mouse_cursor, set_mouse_cursor)
+
     def on_key_press(self, symbol, modifiers):
         global use_effect
         if symbol == pyglet.window.key.F1:
@@ -1919,7 +2098,30 @@ class Game(metaclass=use_on_events):
 
     def on_mouse_motion(self,x, y, dx, dy):
         """ Change mouse cursor depending on what the mouse is hovering over """
-        pass
+        if not self.scene: return
+        for obj in self.scene._objects.values():
+            if obj.collide(x,y) and obj.allow_draw:
+                t = obj.name if obj.display_text == None else obj.display_text
+                if isinstance(obj, Portal):
+                    if self.settings.portal_exploration and obj.link and obj.link.scene:
+                        if obj.link.scene.name not in self.visited:
+                            t = "To the unknown."
+                        else:
+                            t = "To %s"%(obj.link.scene.name) if obj.link.scene.display_text in [None, ""] else "To %s"%(obj.link.scene.display_text)
+                    if not self.settings.show_portal_text: t = ""                        
+
+                if isinstance(obj, Portal) and self.mouse_mode != MOUSE_USE: #hover over portal
+                    self.mouse_cursor = MOUSE_LEFT if obj._x<self.resolution[0]/2 else MOUSE_RIGHT
+                else:
+                    self.mouse_cursor = MOUSE_CROSSHAIR
+
+                self.info(t, obj.x + obj.nx, obj.y + obj.ny, obj.display_text_align)
+                return
+
+        #Not over any thing of importance
+        self._info_object = None #clear info 
+        self.mouse_cursor = MOUSE_POINTER #reset mouse pointer
+
 
     def on_mouse_press(self, x, y, button, modifiers):
         """ If the mouse is over an object with a down action, switch to that action """
@@ -1945,8 +2147,14 @@ class Game(metaclass=use_on_events):
         #finally, try scene objects
         for obj in self.scene._objects.values():
             if obj.collide(x,y):
+                if self.mouse_mode != MOUSE_LOOK or GOTO_LOOK: 
+                    if self.player in self.scene._objects.values() and self.player != obj: self.player.goto(obj)
                 obj.trigger_interact()
                 return
+
+        #no objects to interact with, so just go to the point
+        if self.player and self.scene and self.player.scene == self.scene:
+            self.player.goto((x,y))
 
 
     def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
@@ -2059,6 +2267,27 @@ class Game(metaclass=use_on_events):
             x += dx
             y += dy
 
+        
+    def message(self, text): #system message to display on screen (eg sfx subtitles)
+        self.messages.append((text, datetime.now()))
+        
+    def info(self, text, x, y, align=LEFT): #game.info
+        """ On screen at one time can be an info text (eg an object name or menu hover) 
+            Set that here.
+        """
+#        colour = (250,250,40) #yellow
+#        colour = (170, 222, 135) #pale green
+        colour = self.font_info_colour
+        font = self.font_info
+        size = self.font_info_size
+        self._info_object = Text("_info_text", display_text=text, font=font, colour=colour, size=size, offset=1)
+        self._info_object.game = self
+        if text and len(text) == 0: return
+        w = self._info_object.w
+        if align == RIGHT: x -= w
+        if align == CENTER: x -= int(float(w)/2)
+        self._info_object.x, self._info_object.y = x, y
+
     def on_smart(self, player=None, player_class=Actor, draw_progress_bar=None, refresh=False, only=None): #game.smart
         self._smart(player, player_class, draw_progress_bar, refresh, only)
 
@@ -2079,20 +2308,22 @@ class Game(metaclass=use_on_events):
         portals = []
         for obj_cls in [Actor, Item, Emitter, Portal, Scene]:
             dname = "directory_%ss"%obj_cls.__name__.lower()
-            if not os.path.exists(getattr(self, dname)): continue #skip directory if non-existent
+#            dname = get_smart_directory(self, obj)
+            if not os.path.exists(getattr(self, dname)): 
+                continue #skip directory if non-existent
             for name in os.listdir(getattr(self, dname)):
                 if draw_progress_bar: #estimate the size of the loading
                     self._progress_bar_count += 1
                 if only and name not in only: continue #only load specific objects 
                 if logging: log.debug("game.smart loading %s %s"%(obj_cls.__name__.lower(), name))
                 #if there is already a non-custom Actor or Item with that name, warn!
-                if obj_cls == Actor and name in self._actors and self._actors[name].__class__ == Actor and not refresh:
+                if obj_cls == Actor and name in self._actors and isinstance(self._actors[name], Actor) and not refresh:
                     if logging: log.warning("game.smart skipping %s, already an actor with this name!"%(name))
-                elif obj_cls == Item and name in self._items  and self._items[name].__class__ == Item and not refresh:
+                elif obj_cls == Item and name in self._items  and isinstance(self._items[name], Item) and not refresh:
                     if logging: log.warning("game.smart skipping %s, already an item with this name!"%(name))
                 else:
                     if not refresh: #create a new object
-                        if type(player)==str and player == name:
+                        if type(player)==str and player == name: #create the player object
                             a = player_class(name)
                         else:
                             a = obj_cls(name)
@@ -2101,7 +2332,7 @@ class Game(metaclass=use_on_events):
                         a = self._actors.get(name, self._items.get(name, self._scenes.get(name, None)))
                         if not a: import pdb; pdb.set_trace()
                     a.smart(self)
-                    if a.__class__ == Portal: portals.append(a.name)                  
+                    if isinstance(a, Portal): portals.append(a.name)   
         for pname in portals: #try and guess portal links
             if draw_progress_bar: self._progress_bar_count += 1
             links = pname.split("_to_")
@@ -2324,6 +2555,9 @@ class Game(metaclass=use_on_events):
         for item in self.scene._foreground:
             item.pyglet_draw()
 
+        if self._info_object:
+            self._info_object.pyglet_draw()
+
         for item in self._menu:
             item.pyglet_draw()
 
@@ -2364,6 +2598,27 @@ class Game(metaclass=use_on_events):
 
     def add(self, objects, replace=False): #game.add (not an event driven function)
         return self._add(objects, replace=replace)
+
+    def _load_mouse_cursors(self):
+        """ called by Game after display initialised to load mouse cursor images """
+        for key,value in [(MOUSE_POINTER, "pointer.png"),
+                        (MOUSE_CROSSHAIR, "cross.png"),
+                        (MOUSE_LEFT, "left.png"),
+                        (MOUSE_RIGHT, "right.png"),
+                        (MOUSE_EYES, "look.png"),
+                    ]:
+            #use specific mouse cursors or use pyvida defaults
+            cursor_pwd = os.path.join(os.getcwd(), os.path.join(self.directory_interface, value))
+            image = load_image(cursor_pwd, convert_alpha=True)
+            if not image:
+                if logging: log.warning("Can't find local %s cursor, so defaulting to pyvida one"%value)
+                this_dir, this_filename = os.path.split(__file__)
+                myf = os.path.join(this_dir, self.directory_interface, value)
+                if os.path.isfile(myf):
+                    image = load_image(myf, convert_alpha=True)
+            self.mouse_cursors[key] = image    
+
+
 
     def add_font(self, filename, fontname):
         font = get_font(self, filename, fontname)
@@ -2556,12 +2811,13 @@ class Navigator(tk.Toplevel):
         self.parent = parent
         self.app = app
         self.game = game
-        self.createWidgets()
         self.title("Navigator")
         self.scene = tk.StringVar(self.parent)
+        self.createWidgets()
 
     def createWidgets(self):
         row = 0
+        frame = self.parent #self for new window, parent for one window
         def change_scene(*args, **kwargs):
             if self.game._editing.show_debug:
                 self.game._editing.show_debug = False
@@ -2572,13 +2828,14 @@ class Navigator(tk.Toplevel):
             if len(objects)>0:
                 self.game._editing = objects[self.app.index]
                 self.game._editing.show_debug = True
-        option = tk.OptionMenu(self, self.scene, *[x.name for x in self.game._scenes.values()], command=change_scene).grid(column=0,row=row)
+            self.game.player.relocate(scene)
+        option = tk.OptionMenu(frame, self.scene, *[x.name for x in self.game._scenes.values()], command=change_scene).grid(column=0,row=row)
 
         row += 1
-        self.prev_button = tk.Button(self, text='<-', command=self.prev).grid(column=0, row=row)
-        self.edit_button = tk.Button(self, text='Edit', command=self.create_editor)
+        self.prev_button = tk.Button(frame, text='<-', command=self.prev).grid(column=0, row=row)
+        self.edit_button = tk.Button(frame, text='Edit', command=self.create_editor)
         self.edit_button.grid(column=1, row=row)
-        self.next_button = tk.Button(self, text='->', command=self.next).grid(column=2, row=row)
+        self.next_button = tk.Button(frame, text='->', command=self.next).grid(column=2, row=row)
 
         row += 1
         def save_state(*args, **kwargs):
@@ -2605,8 +2862,8 @@ class Navigator(tk.Toplevel):
                 state_name = os.path.splitext(os.path.basename(fname))[0]
                 print("STATE_NAME",state_name)
                 self.game.load_state(self.game.scene, state_name)
-        self.state_save_button = tk.Button(self, text='save state', command=save_state).grid(column=0, row=row)
-        self.state_load_button = tk.Button(self, text='load state', command=load_state).grid(column=1, row=row)
+        self.state_save_button = tk.Button(frame, text='save state', command=save_state).grid(column=0, row=row)
+        self.state_load_button = tk.Button(frame, text='load state', command=load_state).grid(column=1, row=row)
 
     def _navigate(self, delta):
         obj = self.app.objects[self.app.index]
@@ -2678,27 +2935,28 @@ class Editor(tk.Toplevel):
         
 
     def createWidgets(self):
+        frame = self.parent
         for i, editable in enumerate(self.obj._editable):
             label, get_attrs, set_attrs, types = editable
-            tk.Radiobutton(self, text=label, variable=self._editing, value=label, indicatoron=0, command=self.selected).grid(row=i, column=0)
+            tk.Radiobutton(frame, text=label, variable=self._editing, value=label, indicatoron=0, command=self.selected).grid(row=i, column=0)
             if type(types) == tuple: #assume two ints
-                e = tk.Entry(self)
+                e = tk.Entry(frame)
                 e.grid(row=i, column=1)
                 e.insert(0, get_attrs[0]())
-                e = tk.Entry(self)
+                e = tk.Entry(frame)
                 e.grid(row=i, column=2)
                 e.insert(0, get_attrs[1]())
             elif types == str:
-                e = tk.Entry(self)
+                e = tk.Entry(frame)
                 e.grid(row=i, column=1, columnspan=2)
 #                if get_attrs: e.insert(0, get_attrs())
             elif types == bool:
-                tk.Checkbutton(self, variable=get_attrs()).grid(row=i, column=1, columnspan=2)
+                tk.Checkbutton(frame, variable=get_attrs()).grid(row=i, column=1, columnspan=2)
 
         i += 1
-        self.edit_script = tk.Button(self, text="Edit", command=self.edit_btn).grid(row=i, column=0)
+        self.edit_script = tk.Button(frame, text="Edit", command=self.edit_btn).grid(row=i, column=0)
 
-        self.QUIT = tk.Button(self)
+        self.QUIT = tk.Button(frame)
         self.QUIT["text"] = "Close"
         self.QUIT["fg"]   = "red"
         self.QUIT["command"] =  self.close_editor

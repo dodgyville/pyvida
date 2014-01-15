@@ -99,6 +99,35 @@ class ActorTest(unittest.TestCase):
         self.assertEqual(msgbox.w, 100)
 
 
+class ActorScaleTest(unittest.TestCase):
+    def setUp(self):
+        self.game = Game("Unit Tests", fps=60, afps=16, resolution=RESOLUTION)
+        self.game.settings = Settings()
+        self.actor = Actor("_test_actor").smart(self.game)
+        self.actor.x, self.actor.y = 500,1000
+        self.game.add(self.actor)
+
+
+    def test_scale(self):
+        a = self.actor
+        self.assertEqual(float(a.scale), 1.0)
+        self.assertEqual([a._clickable_area.w, a._clickable_area.h], [100, 100])
+
+        a.scale = 0.5
+        self.assertEqual(a.x, 500)
+        self.assertEqual(a.ax, 0)
+        self.assertEqual([a._clickable_area.w, a._clickable_area.h], [50,50])
+
+        a.scale = 1.0
+        a.ay = -500
+        self.assertEqual(a.ay, -500)
+        self.assertEqual([a._clickable_area.w, a._clickable_area.h], [100,100])
+
+        a.scale = 0.5
+        self.assertEqual(a.ay, -250)
+        self.assertEqual([a._clickable_area.w, a._clickable_area.h], [50,50])
+
+
 class ActorSmartTest(unittest.TestCase):
     def setUp(self):
         self.game = Game("Unit Tests", fps=60, afps=16, resolution=RESOLUTION)
