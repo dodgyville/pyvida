@@ -213,8 +213,11 @@ def get_available_languages():
   
 def load_image(fname, convert_alpha=False, eight_bit=False):
     if not os.path.isfile(fname): return None
-    with open(fname, "rb") as f:
-        im = pyglet.image.codecs.pil.PILImageDecoder().decode(f, fname)
+    try:
+        with open(fname, "rb") as f:
+            im = pyglet.image.codecs.pil.PILImageDecoder().decode(f, fname)
+    except:
+        im = pyglet.image.load(fname)
 #    im = pyglet.image.codecs.png.PNGImageDecoder().decode(open(fname, "rb"), fname)
 #    im = pyglet.image.load(fname)
 #    im = pyglet.image.load(fname, decoder=PNGImageDecoder())
@@ -560,6 +563,7 @@ def get_pixel_from_image(image, x, y):
         #Grab 1x1-pixel image. Converting entire image to ImageData takes much longer than just
         #grabbing the single pixel with get_region() and converting just that.
         if x >= image.width: x = image.width-1
+        if y >= image.height: y = image.height-1
         image_data = image.get_region(int(x),int(y),1,1).get_image_data()
         #Get (very small) image as a string. The magic number '4' is just len('RGBA').
         data = image_data.get_data('RGBA',4)
@@ -825,7 +829,7 @@ class Actor(metaclass=use_on_events):
 #        x = x - self.x 
 #        y = y - self.y - self.clickable_area.y
 #        if self.name == "New Game": import pdb; pdb.set_trace()
-        data = get_pixel_from_image(self.clickable_mask, x - self.clickable_area.x, y - self.clickable_area.y)
+        data = get_pixel_from_image(self.clickable_mask, x - self.clickable_area.x , y - self.clickable_area.y)
         if data[:2] == (0,0,0) or data[3] == 255: return False #clicked on black or transparent, so not a collide
         return True
 #        else:
@@ -1949,7 +1953,6 @@ class Game(metaclass=use_on_events):
     def __init__(self, name="Untitled Game", version="v1.0", engine=VERSION_MAJOR, fullscreen=DEFAULT_FULLSCREEN, resolution=DEFAULT_RESOLUTION, fps=DEFAULT_FPS, afps=DEFAULT_ACTOR_FPS, projectsettings=None):
 
         self.name = name
-        self.resolution = resolution
         self.fps = fps
         self.default_actor_fps =afps
         self.game = self
@@ -1984,6 +1987,13 @@ class Game(metaclass=use_on_events):
         self._menus = [] #a stack of menus 
         self._scenes = {}
         self._gui = []
+        #scale the game if the screen is too small
+        display = pyglet.window.get_platform().get_default_display()
+        w = display.get_default_screen().width        
+        if w<resolution[0]:
+            ratio = w/resolution[0]
+            resolution = w, int(resolution[1] * ratio)
+        self.resolution = resolution
         self._window = pyglet.window.Window(*resolution)
         self._window.on_draw = self.pyglet_draw
         self._window.on_key_press = self.on_key_press
@@ -2099,6 +2109,12 @@ class Game(metaclass=use_on_events):
     def on_mouse_motion(self,x, y, dx, dy):
         """ Change mouse cursor depending on what the mouse is hovering over """
         if not self.scene: return
+        if len(self._modals)>0: return
+        for obj in self._menu:
+            if obj.collide(x,y):
+                 self.mouse_cursor = MOUSE_CROSSHAIR
+                 return
+
         for obj in self.scene._objects.values():
             if obj.collide(x,y) and obj.allow_draw:
                 t = obj.name if obj.display_text == None else obj.display_text
@@ -2515,7 +2531,7 @@ class Game(metaclass=use_on_events):
             #if self._event_index<len(self._events)-1: self._event_index += 1
 
         #auto trigger an event from the walkthrough if needed and nothing else is happening
-        if done_events == 0 and del_events == 0 and self._walkthrough_target >= self._walkthrough_index: 
+        if done_events == 0 and del_events == 0 and self._walkthrough_target > self._walkthrough_index: 
             self._process_walkthrough()
         return safe_to_call_again
 #        print("Done %s, deleted %s"%(done_events, del_events))  
@@ -2534,7 +2550,7 @@ class Game(metaclass=use_on_events):
             while self._handle_events(): #loop while there are events safe to process
                 pass
 
-        if self._headless and self._walkthrough_target >= self._walkthrough_index and len(self._modals)>0:
+        if self._headless and self._walkthrough_target > self._walkthrough_index and len(self._modals)>0:
             self._process_walkthrough()
 
     def pyglet_draw(self): #game.draw
