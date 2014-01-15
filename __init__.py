@@ -1354,24 +1354,24 @@ class Portal(Actor, metaclass=use_on_events):
     def exit_here(self, actor=None):
         """ exit the scene via the portal """
         if actor == None: actor = self.game.player
-        actor.goto((self.sx, self.sy)) 
+        actor.goto((self.x + self.sx, self.y + self.sy)) 
         self._pre_leave(self, actor)
-        actor.goto((self.ox, self.oy)) 
+        actor.goto((self.x + self.ox, self.y + self.oy)) 
 
     def relocate_here(self, actor=None):
         """ Relocate actor to this portal's out point """
         if actor == None: actor = self.game.player
-        actor.relocate(self.scene, (self.ox, self.oy)) #moves player to scene        
+        actor.relocate(self.scene, (self.x + self.ox, self.y + self.oy)) #moves player to scene        
 
     def relocate_link(self, actor=None):
         """ Relocate actor to this portal's link's out point """
         if actor == None: actor = self.game.player
-        actor.relocate(self.link.scene, (self.link.ox, self.link.oy)) #moves player to scene            
+        actor.relocate(self.link.scene, (self.link.x + self.link.ox, self.link.y + self.link.oy)) #moves player to scene            
 
     def enter_link(self, actor=None):
         """ exit the portal's link """
         if actor == None: actor = self.game.player
-        actor.goto((self.link.sx, self.link.sy), ignore=True) #walk into scene        
+        actor.goto((self.link.x + self.link.sx, self.link.y + self.link.sy), ignore=True) #walk into scene        
         self._post_arrive(self.link, actor)           
 
     def travel(self, actor=None):
