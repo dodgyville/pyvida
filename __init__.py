@@ -440,10 +440,11 @@ class Action(object):
         self.name = name
         self.actor = None
         self.game = None
-        self._sprite = None
+#        self._sprite = None
         self.speed = 10 #speed if used in pathplanning
         self.angle_start = 0 #arc zone this action can be used for in pathplanning
         self.angle_end = 0
+        self.num_of_frames = 0
 
     def draw(self):
         self._sprite.draw()
@@ -467,6 +468,7 @@ class Action(object):
 
         image_seq = pyglet.image.ImageGrid(image, 1, num)
         frames = []
+        self.num_of_frames = num
         for frame in image_seq: #TODO: generate ping poing, reverse effects here
             frames.append(pyglet.image.AnimationFrame(frame, 1/game.default_actor_fps))
         self._animation = pyglet.image.Animation(frames)
@@ -665,7 +667,8 @@ class Actor(metaclass=use_on_events):
         self.facts = []
         self.inventory = {}
 
-        self._directory = None
+        self._directory = None #directory this is smart loaded from (if any)
+        self._images = [] #image filenames that the actions are based on
         self._busy = False #don't process any more events for this actor until busy is False, will block all events if game._waiting = True
         self._sprite = None
         self._events = []
@@ -707,7 +710,7 @@ class Actor(metaclass=use_on_events):
         return int(self._ax * self._scale)
     def set_ax(self, v):
         self._ax = v // self._scale
-        if self._sprite: self._sprite.anchor_x = self._ax  - self.x
+       # if self._sprite: self._sprite.anchor_x = self._ax  - self.x
         return
     ax = property(get_ax, set_ax)
 
@@ -715,7 +718,7 @@ class Actor(metaclass=use_on_events):
         return int(self._ay * self._scale)
     def set_ay(self, v):
         self._ay = v // self._scale
-        if self._sprite: self._sprite.anchor_y = self._ay - self.y
+       # if self._sprite: self._sprite.anchor_y = self._ay - self.y
         return
     ay = property(get_ay, set_ay)
 
@@ -748,6 +751,13 @@ class Actor(metaclass=use_on_events):
         self._scale = v
     scale = property(get_scale, set_scale)
 
+    def get_rotate(self): return self._rotate
+    def set_rotate(self, v): 
+        if self._rotate: self._sprite.rotation = v
+#        if self._clickable_area: self._clickable_area.scale = v
+        if self._clickable_mask: self._clickable_mask.rotation = v
+        self._rotate = v
+    rotate = property(get_rotate, set_rotate)
 
     def set_interact(self, v):
         self._interact = v
@@ -788,18 +798,24 @@ class Actor(metaclass=use_on_events):
             kwargs["size"] = self.game.font_speech_size
         return kwargs
 
+    def _finished_goto(self):
+        """ Called when goto finishes """
+        pass
 
     def _update(self, dt): #actor._update
         if self._goto_x != None:
             self.x += self._goto_dx 
             self.y += self._goto_dy
             speed = self.action.speed
-            target = Rect(self._goto_x, self._goto_y, speed+1, speed+1).move(-speed//2,-speed//2)
+            target = Rect(self._goto_x, self._goto_y, int(speed*1.2), int(speed*1.2)).move(-int(speed*0.6),-int(speed*0.6))
             if target.collidepoint(self.x, self.y):
-                print("ARRIVED")
+               # print(self.name,"arrived")
+                self._finished_goto()
                 self._busy = False
                 self._goto_x, self._goto_y = None, None
                 self._goto_dx, self._goto_dy = 0, 0
+         #   else:
+          #      print("missed",target,self.x, self.y)
                 
 
     @property
@@ -894,7 +910,24 @@ class Actor(metaclass=use_on_events):
         if self.game.player: self.game.player.says(choice(c))
 
 
+    def _smart_actions(self, game): 
+        """ smart load the actions """
 
+        #smart actions for pathplanning and which arcs they cover (in degrees)
+        PATHPLANNING = {"left": (225, 315),
+            "right": (45, 135),
+            "up": (-45, 45),
+            "down": (135, 225)
+            }
+
+        for action_file in self._images:
+            action_name = os.path.splitext(os.path.basename(action_file))[0]
+            action = Action(action_name).smart(game, actor=self, filename=action_file)
+            self._actions[action_name] = action
+            if action_name in PATHPLANNING:
+                p = PATHPLANNING[action_name]
+                action.angle_start = p[0]
+                action.angle_end = p[1]
 
     def smart(self, game, image=None, using=None, idle="idle", action_prefix = ""): #actor.smart
         """ 
@@ -939,21 +972,9 @@ class Actor(metaclass=use_on_events):
                 f = open(os.path.join(d, "%s/placeholder.txt"%name),"a")
                 f.close()
 
-        #smart actions for pathplanning and which arcs they cover (in degrees)
-        PATHPLANNING = {"left": (225, 315),
-            "right": (45, 135),
-            "up": (-45, 45),
-            "down": (135, 225)
-            }
+        self._images = images
+        self._smart_actions(game) #load the actions
 
-        for action_file in images:
-            action_name = os.path.splitext(os.path.basename(action_file))[0]
-            action = Action(action_name).smart(game, actor=self, filename=action_file)
-            self._actions[action_name] = action
-            if action_name in PATHPLANNING:
-                p = PATHPLANNING[action_name]
-                action.angle_start = p[0]
-                action.angle_end = p[1]
         if len(self._actions)>0: #do an action by default
             self._do("idle" if "idle" in self._actions else list(self._actions.keys())[0])
 
@@ -1171,19 +1192,24 @@ class Actor(metaclass=use_on_events):
         
 
 
-    def _do(self, action, callback=None):
+    def _do(self, action, callback=None, frame=None):
         callback = self.on_animation_end if callback == None else callback
         if self._sprite:
             self._sprite.delete()
         self.action = self._actions[action]
-        self._sprite = pyglet.sprite.Sprite(self.action._animation)
+        
+        #TODO: group sprites in batches and OrderedGroups
+        kwargs = {}
+        if self.game and self.game._pyglet_batch: kwargs["batch"] = self.game._pyglet_batch
+        
+        self._sprite = pyglet.sprite.Sprite(self.action._animation, **kwargs)
         if self._tint: self._sprite.color = self._tint
         if self._scale: self._sprite.scale = self.scale 
         self._sprite.on_animation_end = callback
 
-    def on_do(self, action):
+    def on_do(self, action, frame=None):
         self.busy = False
-        self._do(action)
+        self._do(action, frame=frame)
         
     def on_do_once(self, action):
         self._do(action, self.on_animation_end_once)
@@ -1292,6 +1318,9 @@ class Actor(metaclass=use_on_events):
 
 
     def on_goto(self, destination, ignore=False):
+        self._goto(destination, ignore=ignore)
+    
+    def _goto(self, destination, ignore=False):
         point = get_point(self.game, destination)
         way_points = [(self.x, self.y), point]
         current_point = way_points[0]
@@ -1943,6 +1972,34 @@ class MenuFactory(object):
         self.padding = padding
         self.anchor = anchor
     
+    
+class Factory(object):
+    """ Create multiple objects from a single template """
+    def __init__(self, game, template):
+        self.game = game
+        self.template = template
+        
+    def _create_object(self, name):
+        obj = copy.copy(self.template)
+        obj._sprite = None #clear the pyglet Sprite from the copy 
+        obj._smart_actions(self.game) #reload the pyglet actions for this object
+        obj.name = name
+        obj._do(self.template.action.name)
+        return obj
+        
+    def create(self, objects=[], num_of_objects=None):
+        """
+           objects : use the names in objects as the names of the new objects
+           num_of_objects : create a number of objects using the template's name as the base name 
+        """    
+        new_objects = []
+        if len(objects)>0:
+            pass
+        elif num_of_objects:
+            for i in range(0, num_of_objects):
+                name = "{}{}".format(self.template.name, i)
+                new_objects.append(self._create_object(name))
+        return new_objects
 
 """
 Game class
@@ -1993,6 +2050,7 @@ class Game(metaclass=use_on_events):
         if w<resolution[0]:
             ratio = w/resolution[0]
             resolution = w, int(resolution[1] * ratio)
+        print("RESOLUTION",resolution)
         self.resolution = resolution
         self._window = pyglet.window.Window(*resolution)
         self._window.on_draw = self.pyglet_draw
@@ -2001,6 +2059,7 @@ class Game(metaclass=use_on_events):
         self._window.on_mouse_press = self.on_mouse_press
         self._window.on_mouse_release = self.on_mouse_release
         self._window.on_mouse_drag = self.on_mouse_drag
+        self._pyglet_batch = pyglet.graphics.Batch()
 
         #event handling
         self._waiting = False #If true, don't process any new events until the existing ones are no longer busy
@@ -2141,7 +2200,7 @@ class Game(metaclass=use_on_events):
 
     def on_mouse_press(self, x, y, button, modifiers):
         """ If the mouse is over an object with a down action, switch to that action """
-        pass
+        print('    (%s, %s), '%(x-self.player.x, self.resolution[1] - y - self.player.y))
 
     def on_mouse_release(self, x, y, button, modifiers):
         """ Call the correct function depending on what the mouse has clicked on """
@@ -2518,7 +2577,7 @@ class Game(metaclass=use_on_events):
                 self._event = e
 #                print("Start",e[0], e[1][0].name, datetime.now(), e[1][0]._busy)
                 done_events += 1
-                print("DOING",e)
+                #print("DOING",e)
                 e[0](*e[1], **e[2]) #call the function with the args and kwargs
                 self._event_index += 1
 
