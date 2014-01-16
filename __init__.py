@@ -684,7 +684,6 @@ class Actor(metaclass=use_on_events):
     def get_busy(self, x):
         return self._busy
     def set_busy(self, x):
-        print("Set %s busy to %s"%(self.name, x))
         self._busy = x
     busy = property(get_busy, set_busy)
 
@@ -753,7 +752,7 @@ class Actor(metaclass=use_on_events):
 
     def get_rotate(self): return self._rotate
     def set_rotate(self, v): 
-        if self._rotate: self._sprite.rotation = v
+        if self._sprite: self._sprite.rotation = v
 #        if self._clickable_area: self._clickable_area.scale = v
         if self._clickable_mask: self._clickable_mask.rotation = v
         self._rotate = v
@@ -814,6 +813,7 @@ class Actor(metaclass=use_on_events):
                 self._busy = False
                 self._goto_x, self._goto_y = None, None
                 self._goto_dx, self._goto_dy = 0, 0
+                self._do("idle")
          #   else:
           #      print("missed",target,self.x, self.y)
                 
@@ -1205,6 +1205,7 @@ class Actor(metaclass=use_on_events):
         self._sprite = pyglet.sprite.Sprite(self.action._animation, **kwargs)
         if self._tint: self._sprite.color = self._tint
         if self._scale: self._sprite.scale = self.scale 
+        if self.rotate: self._sprite.rotation = self.rotate
         self._sprite.on_animation_end = callback
 
     def on_do(self, action, frame=None):
@@ -1335,8 +1336,7 @@ class Actor(metaclass=use_on_events):
         self._goto_dy = y * d
         angle = math.degrees(math.atan(-x/distance))
         self._busy = True
-
-        print("GOTO", angle, self._goto_x, self._goto_y, self._goto_dx, self._goto_dy, math.degrees(math.atan(100/10)))
+#        print("GOTO", angle, self._goto_x, self._goto_y, self._goto_dx, self._goto_dy, math.degrees(math.atan(100/10)))
 
         
 
@@ -2167,6 +2167,7 @@ class Game(metaclass=use_on_events):
 
     def on_mouse_motion(self,x, y, dx, dy):
         """ Change mouse cursor depending on what the mouse is hovering over """
+        y = self.game.resolution[1] - y #invert y-axis if needed
         if not self.scene: return
         if len(self._modals)>0: return
         for obj in self._menu:
@@ -2207,7 +2208,7 @@ class Game(metaclass=use_on_events):
         y = self.game.resolution[1] - y #invert y-axis if needed
         for obj in self._modals:
             if obj.collide(x,y):
-                print("collide with",obj.name)
+                print("collide with modal",obj.name)
                 obj.trigger_interact()
                 return
         #don't process other objects while there are modals
@@ -2216,6 +2217,7 @@ class Game(metaclass=use_on_events):
         #try menu events
         for obj in self._menu:
             if obj.collide(x,y):
+                print("collide with menu",obj.name)
                 obj.trigger_interact()
                 return
 
@@ -2224,11 +2226,13 @@ class Game(metaclass=use_on_events):
             if obj.collide(x,y):
                 if self.mouse_mode != MOUSE_LOOK or GOTO_LOOK: 
                     if self.player in self.scene._objects.values() and self.player != obj: self.player.goto(obj)
+                print("collide with scene item",obj.name)
                 obj.trigger_interact()
                 return
 
         #no objects to interact with, so just go to the point
         if self.player and self.scene and self.player.scene == self.scene:
+            print("Just going there")
             self.player.goto((x,y))
 
 
@@ -2601,6 +2605,7 @@ class Game(metaclass=use_on_events):
         scene_objects = self.scene._objects.values() if self.scene else []
         for items in [scene_objects, self._menu, self._modals]:
             for item in items:
+                if "uttefly" in item.name: import pdb; pdb.set_trace()
                 if hasattr(item, "_update"): item._update(dt)
 
         if single_event:
