@@ -290,6 +290,7 @@ class EventTest(unittest.TestCase):
         self.actor.says("Hello World", ok=False)
         self.game.load_state(self.scene, "initial")
         self.actor.relocate(self.scene, (200,200))
+        self.menuItem = Item("menu_item")
 
         self.assertEqual([x[0].__name__ for x in self.game._events], ['on_relocate', 'on_says',  'on_clean', 'on_relocate', 'on_relocate'])
         self.game.update(0, single_event=True) #do relocate, probably starts on_says
@@ -300,6 +301,34 @@ class EventTest(unittest.TestCase):
         self.game.update(0, single_event=True) #finish the on_says and start and fininsh on_relocate
 
         self.assertEqual([x[0].__name__ for x in self.game._events], ['on_clean', 'on_relocate', 'on_relocate'])
+
+    def test_splash(self):
+        self.game.hello = False
+
+        def initial(d, game):
+            """ Splash callback """
+            game.hello = True
+            game.camera.scene(self.scene)
+            game.load_state(self.scene, "initial")    
+            game.camera.scene(self.scene)
+            game.set_menu("menu_item")
+            game.menu.show()
+
+        self.game.splash(None, initial)
+        self.assertFalse(self.game._waiting) #nothing has happened yet
+        self.assertFalse(self.game._busy)
+
+        self.assertEqual([x[0].__name__ for x in self.game._events], ['on_splash'])
+
+        self.game.update(0, single_event=True) #start on_splash, callback called instantly
+
+        self.assertTrue(self.game.hello) #callback was successful
+
+        self.game.update(0, single_event=True)
+
+        self.assertEqual([x[0].__name__ for x in self.game._events], ['on_scene', 'on_clean', 'on_relocate', 'on_scene', 'on_set_menu', "on_show"])
+
+
 
 class WalkthroughTest(unittest.TestCase):
     def setUp(self):
@@ -338,13 +367,13 @@ class WalkthroughTest(unittest.TestCase):
         self.assertEqual([x[0].__name__ for x in self.game._walkthrough], ['description', 'location', 'interact', 'interact'])
 
         self.game._walkthrough_index = 0 #our location in the walkthrough
-        self.game._walkthrough_target = 3  #our target
+        self.game._walkthrough_target = 4  #our target
 
         self.game.update(0, single_event=True) #do the description step
         self.assertEqual(len(self.game._events), 0) #no events, so walkthrough could keep going
 
         self.game.update(0, single_event=True) #do the location test
-        self.game.update(0, single_event=True) #do the interact that triggers the on_asks
+#        self.game.update(0, single_event=True) #do the interact that triggers the on_asks
 
         self.assertEqual([x[0].__name__ for x in self.game._events], ['on_asks'])
 
@@ -354,6 +383,33 @@ class WalkthroughTest(unittest.TestCase):
 
         self.assertEqual([x[0].__name__ for x in self.game._events], [])
         
+
+class CameraEventTest(unittest.TestCase):
+    def setUp(self):
+        self.game = Game("Unit Tests", fps=60, afps=16, resolution=RESOLUTION)
+        self.game.settings = Settings()
+        self.actor = Actor("_test_actor").smart(self.game)
+        self.msgbox = Item("msgbox").smart(self.game, using="data/items/_test_item")
+        self.ok = Item("ok").smart(self.game, using="data/items/_test_item")
+        self.scene = Scene("_test_scene")
+        self.game._headless = True
+        self.game.add([self.scene, self.actor, self.msgbox, self.ok])
+
+    def test_events(self):
+        self.actor.says("Hello World", ok=False)
+        self.game.camera.scene(self.scene)
+        self.actor.says("Goodbye World", ok=False)
+
+        self.assertEqual([x[0].__name__ for x in self.game._events], ['on_says', "on_scene", "on_says"])
+
+        self.game.update(0, single_event=True) #do the says step
+        self.game.update(0, single_event=True) #remove the says step
+
+        self.assertEqual([x[0].__name__ for x in self.game._events], ["on_scene", "on_says"])
+
+        self.game.update(0, single_event=True) #do the camera step
+
+        self.assertEqual([x[0].__name__ for x in self.game._events], ["on_says"])
 
 
 if __name__ == '__main__':

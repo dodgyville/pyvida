@@ -307,7 +307,7 @@ def get_function(game, basic):
     if hasattr(basic, "__call__"): basic = basic.__name__
     script = None
     module = "main" if android else "__main__" #which module to search for functions
-    extra_modules = game._modules if __name__ == "pyvida" and game else []
+    extra_modules = game._modules if __name__ == "pyvida" and game else {}
     modules = [module]
     modules.extend(extra_modules.keys())
     for m in modules:
@@ -2505,11 +2505,10 @@ class Game(metaclass=use_on_events):
         if options.target_step: #switch on test runner to step through walkthrough
             if options.target_step.isdigit():
                 self._walkthrough_target = int(options.target_step) #automatically run to <step> in walkthrough
-            else:
-                pass
-                log.error("TODO: take step labels are walkthrough targets")
-#                for step in self._walkthrough:                      
-                    #self.jump_to_step = options.step
+            else: #use a label
+                for i, x in enumerate(self._walkthrough):
+                    if x[-1] == options.target_step:
+                        self._walkthrough_target = i + 1
         if options.exit_step:
             self.exit_step = True                
         if options.headless: 
@@ -2532,20 +2531,27 @@ class Game(metaclass=use_on_events):
         walkthrough = self._walkthrough[self._walkthrough_index]
         function_name = walkthrough[0].__name__ 
         self._walkthrough_index += 1    
-        print("AUTO WALKTHROUGH", walkthrough)
+        s = "Walkthrough:",list(walkthrough)
+        log.info(s)
+#        print("AUTO WALKTHROUGH", walkthrough)
         if function_name == "interact":
             print("trigger interact", self._walkthrough_target, self._walkthrough_index, walkthrough[1])
             button = pyglet.window.mouse.LEFT
             modifiers = 0
             obj = get_object(self, walkthrough[1])
+            if not obj:
+                print("UNABLE TO FIND",walkthrough[1])
+                self._walkthrough_target = 0
+                self._headless = False
+                return
             x, y = obj.clickable_area.center
             obj.trigger_interact()
 #                self._window.dispatch_event('on_mouse_release', x, self.resolution[1] - y, button, modifiers)
         elif function_name == "description":
             pass
-        if self._walkthrough_index > self._walkthrough_target:
+        if self._walkthrough_index > self._walkthrough_target or self._walkthrough_index > len(self._walkthrough):
             if self._headless: self._headless = False
-            print("FINISHED WALKTHROUGH")
+            log.info("FINISHED WALKTHROUGH")
             self.player.says(gettext("Let's play."))
 
     def _handle_events(self):
@@ -2605,7 +2611,6 @@ class Game(metaclass=use_on_events):
         scene_objects = self.scene._objects.values() if self.scene else []
         for items in [scene_objects, self._menu, self._modals]:
             for item in items:
-                if "uttefly" in item.name: import pdb; pdb.set_trace()
                 if hasattr(item, "_update"): item._update(dt)
 
         if single_event:
@@ -2614,6 +2619,9 @@ class Game(metaclass=use_on_events):
             while self._handle_events(): #loop while there are events safe to process
                 pass
 
+#        print("game update", self._headless, self._walkthrough_target>self._walkthrough_index, len(self._modals)>0, len(self._events))
+
+        #if waiting for user input, assume the event to trigger the modal is in the walkthrough        
         if self._headless and self._walkthrough_target > self._walkthrough_index and len(self._modals)>0:
             self._process_walkthrough()
 
@@ -2795,7 +2803,6 @@ class Game(metaclass=use_on_events):
     def load_state(self, scene, state):
         self._load_state(scene, state)
 
-
     def _load_state(self, scene, state):
 
         """ a queuing function, not a queued function (ie it adds events but is not one """
@@ -2832,10 +2839,10 @@ class Game(metaclass=use_on_events):
         """ show a splash screen then pass to callback after duration 
         """
         if logging: log.warning("game.splash ignores duration and clicks")
-        if self._allow_editing: duration = 0.1 #skip delay on splash when editing
+        if self._allow_editing and duration: duration = 0.1 #skip delay on splash when editing
         scene = Scene(image, game=self)
         scene._set_background(image)
-        self._busy = True #set Game object to busy
+        self._busy = True #set Game object to busy (only time this happens?)
         self._waiting = True #make game wait until splash is finished
         #add scene to game, change over to that scene
         self.add(scene)
@@ -2851,6 +2858,7 @@ class Game(metaclass=use_on_events):
                 splash_finish(0, self)
             else:
                 pyglet.clock.schedule_once(splash_finish, duration, self)
+
 
     def on_relocate(self, obj, scene, destination): #game.relocate
         obj = get_object(self.game, obj)
