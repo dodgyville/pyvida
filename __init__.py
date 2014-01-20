@@ -441,9 +441,10 @@ class Action(object):
         self.actor = None
         self.game = None
 #        self._sprite = None
-        self.speed = 10 #speed if used in pathplanning
+        self.speed = 5 #speed if used in pathplanning
         self.angle_start = 0 #arc zone this action can be used for in pathplanning
         self.angle_end = 0
+        self.available_for_pathplanning = False
         self.num_of_frames = 0
 
     def draw(self):
@@ -514,7 +515,7 @@ def crosshair(game, point, colour):
         pyglet.gl.glColor4f(*fcolour)       
 
         #y is inverted for pyglet
-        x,y=point[0], game.resolution[1]-point[1]                               
+        x,y=int(point[0]), int(game.resolution[1]-point[1])
         pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x, y-5, x, y+5))) 
         pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x-5, y, x+5, y))) 
         pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0) # undo alpha for pyglet drawing
@@ -532,8 +533,8 @@ def crosshair(game, point, colour):
 def rectangle(game, rect, colour=(255, 255, 255, 255)):
         fcolour = fColour(colour)
         pyglet.gl.glColor4f(*fcolour)               
-        x,y=rect.x,rect.y
-        w,h=rect.w,rect.h
+        x,y=int(rect.x),int(rect.y)
+        w,h=int(rect.w),int(rect.h)
 
         #y is inverted for pyglet
         gy = game.resolution[1]-y
@@ -628,14 +629,16 @@ class Actor(metaclass=use_on_events):
         self.action = None
         self.game = None
         self.scene = None
-        self._x, self._y = 0, 0
+        self._x, self._y = 0.0, 0.0
         self._goto_x, self._goto_y = None, None
         self._goto_dx, self._goto_dy = 0, 0
+        self._goto_points = [] #list of points Actor is walking through
         self._sx, self._sy = 0, 0 #stand points
         self._ax, self._ay = 0, 0 #anchor points
         self._nx, self._ny = 0, 0 # displacement point for name
         self._tx, self._tx = 0, 0 # displacement point for text
         self._parent = None
+        self.idle_stand = None #when an actor stands at this actor's stand point, request an idle
 
         self.z = 1000 #where in the z layer is this actor (< 1000 further away, >1000 closer to player)
         self._scale = 1.0
@@ -676,9 +679,12 @@ class Actor(metaclass=use_on_events):
         self._tint = None
         self._editable = [ #(human readable, get variable names, set variable names, widget types)
             ("position", (self.get_x, self.get_y), (self.set_x, self.set_y),  (int, int)),
+            ("stand point", (self.get_sx, self.get_sy), (self.set_sx, self.set_sy),  (int, int)),
+            ("name point", (self.get_nx, self.get_ny), (self.set_nx, self.set_ny),  (int, int)),
             ("anchor", (self.get_ax, self.get_ay), (self.set_ax, self.set_ay), (int, int)),
             ("interact", self.get_interact, self.set_interact, str),
-            ("allow_draw", self.get_allow_draw, self.set_allow_draw, bool), # ( "allow_update", "allow_use", "allow_interact", "allow_look"]        
+            ("allow_draw", self.get_allow_draw, self.set_allow_draw, bool), # ( "allow_update", "allow_use", "allow_interact", "allow_look"]    
+            ("allow_interact", self.get_allow_interact, self.set_allow_interact, bool), # ( "allow_update", "allow_use", "allow_interact", "allow_look"]            
             ]
 
     def get_busy(self, x):
@@ -706,7 +712,7 @@ class Actor(metaclass=use_on_events):
     y = property(get_y, set_y)
 
     def get_ax(self):
-        return int(self._ax * self._scale)
+        return self._ax * self._scale
     def set_ax(self, v):
         self._ax = v // self._scale
        # if self._sprite: self._sprite.anchor_x = self._ax  - self.x
@@ -714,7 +720,7 @@ class Actor(metaclass=use_on_events):
     ax = property(get_ax, set_ax)
 
     def get_ay(self):
-        return int(self._ay * self._scale)
+        return self._ay * self._scale
     def set_ay(self, v):
         self._ay = v // self._scale
        # if self._sprite: self._sprite.anchor_y = self._ay - self.y
@@ -770,6 +776,13 @@ class Actor(metaclass=use_on_events):
         return self._allow_draw
     allow_draw = property(get_allow_draw, set_allow_draw)
 
+    def set_allow_interact(self, v):
+        self._allow_interact = v
+    def get_allow_interact(self):
+        return self._allow_interact
+    allow_interact = property(get_allow_interact, set_allow_interact)
+
+
     @property
     def w(self):
         return self._sprite.width
@@ -803,17 +816,24 @@ class Actor(metaclass=use_on_events):
 
     def _update(self, dt): #actor._update
         if self._goto_x != None:
-            self.x += self._goto_dx 
-            self.y += self._goto_dy
+            self.x = self.x + self._goto_dx
+            self.y = self.y + self._goto_dy
             speed = self.action.speed
             target = Rect(self._goto_x, self._goto_y, int(speed*1.2), int(speed*1.2)).move(-int(speed*0.6),-int(speed*0.6))
+#            target = Rect(self._goto_x, self._goto_y, speed, speed).move(-int(speed*0.5),-int(speed*0.5))
+#            target = Rect(self._goto_x, self._goto_y, 3, 3).move(-1, -1)
             if target.collidepoint(self.x, self.y):
-               # print(self.name,"arrived")
-                self._finished_goto()
-                self._busy = False
-                self._goto_x, self._goto_y = None, None
-                self._goto_dx, self._goto_dy = 0, 0
-                self._do("idle")
+                print(self.name,"arrived",self.x, self.y, target)
+                if len(self._goto_points)>0: #continue to follow the path
+                    destination = self._goto_points.pop()
+                    point = get_point(self.game, destination)
+                    self._calculate_goto(self, point)
+                else:
+                    self._finished_goto()
+                    self._busy = False
+                    self._goto_x, self._goto_y = None, None
+                    self._goto_dx, self._goto_dy = 0, 0
+                    self._do("idle")
          #   else:
           #      print("missed",target,self.x, self.y)
                 
@@ -923,6 +943,7 @@ class Actor(metaclass=use_on_events):
         for action_file in self._images:
             action_name = os.path.splitext(os.path.basename(action_file))[0]
             action = Action(action_name).smart(game, actor=self, filename=action_file)
+            action.available_for_pathplanning = True
             self._actions[action_name] = action
             if action_name in PATHPLANNING:
                 p = PATHPLANNING[action_name]
@@ -1017,7 +1038,7 @@ class Actor(metaclass=use_on_events):
 
     def pyglet_draw(self): #actor.draw
         if self._sprite and self._allow_draw:
-            self._sprite.position = (self.x + self.ax, self.game.resolution[1] - self.y - self.ay - self._sprite.height)
+            self._sprite.position = (int(self.x + self.ax), int(self.game.resolution[1] - self.y - self.ay - self._sprite.height))
             self._sprite.draw()
         if self.show_debug:
             self.debug_pyglet_draw()
@@ -1193,10 +1214,11 @@ class Actor(metaclass=use_on_events):
 
 
     def _do(self, action, callback=None, frame=None):
+        action = action if isinstance(action, Action) else self._actions[action]
         callback = self.on_animation_end if callback == None else callback
         if self._sprite:
             self._sprite.delete()
-        self.action = self._actions[action]
+        self.action = action
         
         #TODO: group sprites in batches and OrderedGroups
         kwargs = {}
@@ -1318,24 +1340,43 @@ class Actor(metaclass=use_on_events):
                             if scene_item.allow_use: log.warning("%s default use script missing: def %s(game, %s, %s)"%(scene.name, basic, actee.lower(), actor.lower()))
 
 
+    def _calculate_goto(self, destination):
+        self._goto_x, self._goto_y = destination
+        x,y = self._goto_x - self.x, self._goto_y - self.y
+        distance = math.hypot(x, y)
+        if distance == 0: return #already there
+        d = self.action.speed/distance #how far we can travel along the distance in one update
+        angle = math.atan2(y,x)
+
+        self._goto_dx = x * d #how far we can travel in one update, broken down into the x-component
+        self._goto_dy = y * d
+
+#        self._goto_dx = self.action.speed * round(math.cos(angle), 6)
+#        self._goto_dy = self.action.speed * round(math.sin(angle), 6)
+
+        angle = math.degrees(angle) + 90  #0 degrees is towards the top of the screen
+        if angle < -45: angle += 360 
+#        if  90 < angle < 270: self._goto_dy = -self._goto_dy
+#        if  180 < angle < 360: self._goto_dx = -self._goto_dx
+#        if y > 0: self._goto_dy = -self._goto_dy
+#        print((x,y), (x * d, y*d), (self._goto_dx, self._goto_dy), angle)
+        for action in self._actions.values():
+            if action.available_for_pathplanning and angle > action.angle_start and angle <= action.angle_end:
+                self._do(action)
+        self._busy = True
+
+    def on_move(self, displacement, ignore=False):
+        """ Move Actor relative to its current position """
+        self._goto((self.x + displacement[0], self.y + displacement[1]), ignore)
+
     def on_goto(self, destination, ignore=False):
         self._goto(destination, ignore=ignore)
     
     def _goto(self, destination, ignore=False):
+        """ Get a path to the destination and then start walking """
         point = get_point(self.game, destination)
-        way_points = [(self.x, self.y), point]
-        current_point = way_points[0]
-        next_point = way_points[1]
-        self._goto_x, self._goto_y = next_point
-
-        x,y = self._goto_x - current_point[0], self._goto_y - current_point[1]
-        distance = math.hypot(x, y)
-        if distance == 0: return #already there
-        d = self.action.speed/distance
-        self._goto_dx = x * d
-        self._goto_dy = y * d
-        angle = math.degrees(math.atan(-x/distance))
-        self._busy = True
+        self._goto_points = []
+        self._calculate_goto(point)
 #        print("GOTO", angle, self._goto_x, self._goto_y, self._goto_dx, self._goto_dy, math.degrees(math.atan(100/10)))
 
         
@@ -1657,7 +1698,7 @@ class Text(Item):
             log.warning("Unable to draw Text %s without a self.game object"%self.name)
             return
         x, y = self.x - self.ax, self.game.resolution[1] - self.y + self.ay 
-        self._label.x, self._label.y = x,y
+        self._label.x, self._label.y = int(x), int(y)
         self._label.draw()
         if self.show_debug:
             self.debug_pyglet_draw()
@@ -1686,7 +1727,7 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         self.dimensions = (self.clickable_area.w, self.clickable_area.h)
         return self
 
-    def on_add(self, obj, callback=None):
+    def on_add(self, obj, callback=None): #collection.add
         """ Add an object to this collection and set up an event handler for it in the event it gets selected """
         obj = get_object(self.game, obj)
 #        obj.push_handlers(self) #TODO 
@@ -1703,7 +1744,7 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         w = self.clickable_area.w
         for obj in self._objects.values():
             if obj._sprite:
-                obj._sprite.position = (self.x + x, self.game.resolution[1] - self.y - y)
+                obj._sprite.position = (int(self.x + x), int(self.game.resolution[1] - self.y - y))
                 obj._sprite.draw()
             if x + self.tile_size > self.dimensions[0]:
                 x = self.padding[0]
@@ -2045,11 +2086,15 @@ class Game(metaclass=use_on_events):
         self._scenes = {}
         self._gui = []
         #scale the game if the screen is too small
+
+
         display = pyglet.window.get_platform().get_default_display()
         w = display.get_default_screen().width        
-        if w<resolution[0]:
-            ratio = w/resolution[0]
-            resolution = w, int(resolution[1] * ratio)
+        h = display.get_default_screen().height
+        if resolution[0]>w or resolution[1]>h: #scale
+            print("SCALING")
+            scale = min(w/resolution[0], h/resolution[1])
+            resolution = int(resolution[0] * scale), int(resolution[1] * scale)
         print("RESOLUTION",resolution)
         self.resolution = resolution
         self._window = pyglet.window.Window(*resolution)
@@ -2513,6 +2558,9 @@ class Game(metaclass=use_on_events):
             self.exit_step = True                
         if options.headless: 
             self.on_set_headless(True)
+        if options.fullscreen: 
+            self.fullscreen = True
+            self._window.set_fullscreen(True)
 
         if splash:
             scene = Scene(splash, self)
@@ -2632,7 +2680,7 @@ class Game(metaclass=use_on_events):
         if self.scene.background:
             self._window.clear()
             pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0) # undo alpha for pyglet drawing            
-            self.scene.background.blit(self.scene.x, self.scene.y)
+            self.scene.background.blit(int(self.scene.x), int(self.scene.y))
         else:
             print("no background")
 
@@ -2901,6 +2949,7 @@ class Navigator(tk.Toplevel):
         self.game = game
         self.title("Navigator")
         self.scene = tk.StringVar(self.parent)
+        self.rows = 0
         self.createWidgets()
 
     def createWidgets(self):
@@ -2952,6 +3001,8 @@ class Navigator(tk.Toplevel):
                 self.game.load_state(self.game.scene, state_name)
         self.state_save_button = tk.Button(frame, text='save state', command=save_state).grid(column=0, row=row)
         self.state_load_button = tk.Button(frame, text='load state', command=load_state).grid(column=1, row=row)
+        self.rows = row
+
 
     def _navigate(self, delta):
         obj = self.app.objects[self.app.index]
@@ -2976,15 +3027,17 @@ class Navigator(tk.Toplevel):
     
 
 class Editor(tk.Toplevel):
-    def __init__(self, app, parent, game, obj):
+    def __init__(self, app, parent, game, obj, start_row= 0 ):
         tk.Toplevel.__init__(self, parent)
         self.title(obj.name)
+        self.parent = parent
         self.frame = tk.Frame(parent)
         self.app = app
         self.obj = obj
         self.game = game
         self._editing = tk.StringVar()
         self._editing.set("Nothing")
+        self.rows = start_row
         self.createWidgets()
         self.lift(aboveThis=parent)
         parent.attributes("-topmost", 1)
@@ -3023,10 +3076,12 @@ class Editor(tk.Toplevel):
         
 
     def createWidgets(self):
-        frame = self.parent
+        frame = self
+        row = self.rows
         for i, editable in enumerate(self.obj._editable):
             label, get_attrs, set_attrs, types = editable
-            tk.Radiobutton(frame, text=label, variable=self._editing, value=label, indicatoron=0, command=self.selected).grid(row=i, column=0)
+            tk.Radiobutton(frame, text=label, variable=self._editing, value=label, indicatoron=0, command=self.selected).grid(row=row, column=0)
+            row += 1
             if type(types) == tuple: #assume two ints
                 e = tk.Entry(frame)
                 e.grid(row=i, column=1)
@@ -3041,15 +3096,16 @@ class Editor(tk.Toplevel):
             elif types == bool:
                 tk.Checkbutton(frame, variable=get_attrs()).grid(row=i, column=1, columnspan=2)
 
-        i += 1
+        row += 1
         self.edit_script = tk.Button(frame, text="Edit", command=self.edit_btn).grid(row=i, column=0)
 
         self.QUIT = tk.Button(frame)
         self.QUIT["text"] = "Close"
         self.QUIT["fg"]   = "red"
         self.QUIT["command"] =  self.close_editor
-        i += 1
+        row += 1
         self.QUIT.grid(row=i)
+        self.rows = row
 
 
 class MyTkApp(threading.Thread):
@@ -3063,18 +3119,19 @@ class MyTkApp(threading.Thread):
         self.start()
 
     def create_editor(self, obj):
-        self._editors.append(Editor(self, self.parent, self.game, obj))
+        self._editors.append(Editor(self, self.parent, self.game, obj, start_row=self.navigator.rows))
     def run(self):
         self.parent=tk.Tk()
         self.parent.protocol("WM_DELETE_WINDOW", self.callback)
         self.navigator = Navigator(self, self.parent, self.game)
         self.navigator.geometry('400x100+{}+{}'.format(self.game.resolution[0]-400, 0))
 #        self.create_editor(self.objects[self.index])
+
         #create close all button
-        self.close = tk.Button(self.parent)
-        self.close["text"] = "Close Editor"
-        self.close["command"] =  self.callback
-        self.close.grid()
+#        self.close = tk.Button(self.parent)
+#        self.close["text"] = "Close Editor"
+#        self.close["command"] =  self.callback
+#        self.close.grid()
 
         self.parent.mainloop()
 

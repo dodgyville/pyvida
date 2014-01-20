@@ -401,7 +401,6 @@ class CameraEventTest(unittest.TestCase):
         self.actor.says("Goodbye World", ok=False)
 
         self.assertEqual([x[0].__name__ for x in self.game._events], ['on_says', "on_scene", "on_says"])
-
         self.game.update(0, single_event=True) #do the says step
         self.game.update(0, single_event=True) #remove the says step
 
@@ -410,6 +409,105 @@ class CameraEventTest(unittest.TestCase):
         self.game.update(0, single_event=True) #do the camera step
 
         self.assertEqual([x[0].__name__ for x in self.game._events], ["on_says"])
+
+
+class GotoTest(unittest.TestCase):
+    def setUp(self):
+        self.game = Game("Unit Tests", fps=60, afps=16, resolution=RESOLUTION)
+        self.game.settings = Settings()
+        self.actor = Actor("_test_actor").smart(self.game)
+        self.msgbox = Item("msgbox").smart(self.game, using="data/items/_test_item")
+        self.ok = Item("ok").smart(self.game, using="data/items/_test_item")
+        self.scene = Scene("_test_scene")
+        self.game._headless = True
+        self.game.add([self.scene, self.actor, self.msgbox, self.ok])
+        self.scene._add(self.actor)
+        self.game.camera._scene(self.scene)
+
+    def goto(self):
+        self.actor.x, self.actor.y = 100,100
+        self.actor._calculate_goto((200,100)) #left
+        self.actor._calculate_goto((100,200)) #down
+        self.actor._calculate_goto((0,100)) #right
+        self.actor._calculate_goto((100, 0)) #up
+        self.actor._calculate_goto((0,92))
+#        self.actor._calculate_goto(self, (200,100))
+
+    def test_goto(self):
+        dt = 0
+        self.actor.x, self.actor.y = 100,100
+        self.actor.goto((200,100))
+        self.assertEqual([x[0].__name__ for x in self.game._events], ['on_goto'])
+        self.game.update(0, single_event=True) #do the goto event
+
+        #should be walking to the right at angle 90, speed 10
+        self.assertEqual(self.actor.action.name, "right")
+        self.assertEqual(self.actor._goto_x, 200)
+        self.assertEqual(self.actor._goto_y, 100)
+        self.assertEqual(self.actor._goto_dx, 10)
+        self.assertEqual(self.actor._goto_dy, 0)
+
+        #walk until we arrive
+        for i in range(0,10):
+            self.game.update(0, single_event=True)
+            self.assertEqual(self.actor.x, 110+i*10)
+            self.assertEqual(self.actor.y, 100)
+        self.assertEqual(self.actor._goto_x, None)
+        self.assertEqual(self.actor._goto_y, None)
+        self.assertAlmostEqual(self.actor._goto_dx, 0)
+        self.assertAlmostEqual(self.actor._goto_dy, 0)
+
+        
+        # walk down
+        self.actor.move((0,100))
+        self.assertEqual([x[0].__name__ for x in self.game._events], ['on_move'])
+        self.game.update(0, single_event=True) #do the goto event
+        self.assertEqual(self.actor.action.name, "down")
+        self.assertEqual(self.actor._goto_x, 200)
+        self.assertEqual(self.actor._goto_y, 200)
+        self.assertAlmostEqual(self.actor._goto_dx, 0)
+        self.assertEqual(self.actor._goto_dy, 10)
+        for i in range(0,10):
+            self.game.update(0, single_event=True)
+            self.assertEqual(self.actor.y, 110+i*10)
+        self.game.update(0, single_event=True)
+        self.assertEqual(self.actor._goto_x, None)
+        self.assertEqual(self.actor.x, 200)
+        self.assertEqual(self.actor.y, 200)
+
+
+        # walk left and up, using "left"
+        self.actor.move((-100, -8)) #(100, 192)
+        self.assertEqual([x[0].__name__ for x in self.game._events], ['on_move'])
+        self.game.update(0, single_event=True) #do the goto event
+        self.assertEqual(self.actor.action.name, "left")
+        self.assertEqual(self.actor._goto_x, 100)
+        self.assertEqual(self.actor._goto_y, 192)
+
+        self.assertTrue(9 > self.actor._goto_dx < 10) #slight under 10
+        self.assertTrue(-1 < self.actor._goto_dy < 0) #slightly under -1
+        for i in range(0,9): #takes 10 loops but  
+            self.game.update(0, single_event=True)
+            self.assertAlmostEqual(self.actor.y, 200+(i+1)*self.actor._goto_dy)
+        self.game.update(0, single_event=True) #arrive
+        self.assertEqual(self.actor._goto_x, None)
+
+
+        #walk up and right, using "up"
+        self.actor.move((20, -100)) #(120, 92)
+        self.game.update(0, single_event=True) #do the goto event
+        self.assertAlmostEqual(self.actor._goto_dx, 1.9611613513818404)
+        self.assertAlmostEqual(self.actor._goto_dy,-9.80580675690920)
+        self.assertEqual(self.actor.action.name, "up")
+
+
+    def test_goto_queue(self):
+        """ Test event queue """
+        self.actor.x, self.actor.y = 100,100
+        self.actor.says("Hello World")
+        self.actor.goto(200,100)
+        self.actor.says("Goodbye World")
+
 
 
 if __name__ == '__main__':
