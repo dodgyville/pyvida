@@ -918,6 +918,31 @@ class Actor(metaclass=use_on_events):
             if isinstance(self, sender): 
                 receiver(self.game, self, self.game.player)
 
+    def trigger_use(self, actor):
+         #user actor on this actee
+         actor = get_object(self.game, actor)
+       
+         slug_actor = slugify(actor.name)
+         slug_actee = slugify(self.name)
+         basic = "%s_use_%s"%(slug_actee, slug_actor)
+         override_name = actor.name if actor.name in self.uses else "all"
+         if override_name in self.uses: #use a specially defined use method
+            basic = self.uses[override_name]
+            if logging: log.info("Using custom use script %s for actor %s"%(basic, override_name))
+         script = get_function(self.game, basic)
+
+         if script:
+                script(self.game, self, actor)
+         else:
+             #warn if using default vida look
+            if self.allow_use: log.error("no use script for using %s with %s (write a def %s(game, %s, %s): function)"%(actor.name, self.name, basic, slug_actee.lower(), slug_actor.lower()))
+#            if self.game.editor_infill_methods: edit_script(self.game, self, basic, script, mode="use")
+            self._use_default(self.game, self, actor)
+
+         for receiver, sender in post_use.receivers: #do the signals for post_use
+            if isinstance(self, sender): 
+                receiver(self.game, self, self.game.player)
+
 
     def _interact_default(self, game, actor, player):
         """ default queuing interact smethod """
@@ -930,6 +955,16 @@ class Actor(metaclass=use_on_events):
             "Perhaps they need a good poking.",
             "They don't want to talk to me."]
         if self.game.player: self.game.player.says(choice(c))
+
+    def _use_default(self, game, actor, actee):
+        """ default queuing use method """
+        c = [
+            "I don't think that will work.",
+            "It's not designed to do that.",
+            "It won't fit, trust me, I know.",
+        ]
+        if self.game.player: self.game.player.says(choice(c))
+
 
 
     def _smart_actions(self, game): 
@@ -1248,7 +1283,7 @@ class Actor(metaclass=use_on_events):
             log.error("Item %s not in inventory"%item.name)
 
     def on_loses(self, item):
-        self._loses(i)
+        self._loses(item)
         
     def on_collection_select(self, collection, obj):
         """ Called when this object is selected in a collection """
@@ -1492,6 +1527,13 @@ class Portal(Actor, metaclass=use_on_events):
         if actor == None: actor = self.game.player
         actor.goto((self.link.x + self.link.sx, self.link.y + self.link.sy), ignore=True) #walk into scene        
         self._post_arrive(self.link, actor)           
+
+    def enter_here(self, actor=None):
+        """ exit the portal's link """
+        if actor == None: actor = self.game.player
+        actor.relocate(self.scene, (self.x + self.ox, self.y + self.oy)) #moves player here
+        actor.goto((self.x + self.sx, self.y + self.sy), ignore=True) #walk into scene        
+        self._post_arrive(self, actor)   
 
     def travel(self, actor=None):
         """ default interact method for a portal, march player through portal and change scene """
@@ -2656,15 +2698,29 @@ class Game(metaclass=use_on_events):
             modifiers = 0
             obj = get_object(self, walkthrough[1])
             if not obj:
-                print("UNABLE TO FIND",walkthrough[1])
+                log.error("Unable to find %s in game"%walkthrough[1])
                 self._walkthrough_target = 0
                 self._headless = False
                 return
+            if self.scene and self.scene != obj.scene:
+                log.error("{} not in scene {}, it's on {}".format(walkthrough[1], self.scene.name, obj.scene.name if obj.scene else "no scene"))
             x, y = obj.clickable_area.center
             obj.trigger_interact()
 #                self._window.dispatch_event('on_mouse_release', x, self.resolution[1] - y, button, modifiers)
+        elif function_name == "use":
+            obj = get_object(self, walkthrough[2])
+            subject = get_object(self, walkthrough[1])
+            subject.trigger_use(obj)
+
         elif function_name == "description":
             pass
+        elif function_name == "location":
+            scene = get_object(self, walkthrough[1])
+            if not scene:
+                log.error("Unable to find scene %s"%walkthrough[1])
+            elif self.scene != scene:
+                log.error("Location check: Should be on scene {}, instead camera is on {}".format(scene.name, self.scene.name))
+            
 
     def _handle_events(self):
         """ Handle game events """
