@@ -236,7 +236,7 @@ def get_point(game, destination):
         if destination in game._actors: 
             obj = game._actors[destination]
         elif destination in game._items: 
-            obj = game._items[destiantion]
+            obj = game._items[destination]
     elif isinstance(destination, Actor):
         obj = destination
 
@@ -289,6 +289,8 @@ def get_smart_directory(game, obj):
 #        d = game.emitter_dir
     if isinstance(obj, Portal):
         d = game.directory_portals
+    elif isinstance(obj, Collection):
+        d = game.directory_items
     elif isinstance(obj, Emitter):
         d = game.directory_emitters
     elif isinstance(obj, Item):
@@ -1206,6 +1208,48 @@ class Actor(metaclass=use_on_events):
         return True if fact in self.facts else False       
     
 
+    def has(self, item):
+        """ Does this actor have this item in their inventory?"""
+        item = get_object(self.game, item)
+        return True if item in self.inventory.keys() else False
+
+
+    def _gets(self, item, remove=True):
+        item = get_object(self.game, item)
+        if item: log.info("Actor %s gets: %s"%(self.name, item.name))
+        self.inventory[item.name] = item
+        if remove == True and item.scene: item.scene._remove(item)
+        return item
+
+    def on_gets(self, item, remove=True):
+        """ add item to inventory, remove from scene if remove == True """
+        item = self._gets(item, remove)
+        if item == None: return
+
+  #      name = self.display_text if self.display_text else self.name
+ #       item_name = item.display_text if item.display_text else item.name
+#        if self.game and self.game.output_walkthrough and self.game.trunk_step: print("%s gets %s."%(name, item_name))
+
+        name = item.display_text if item.display_text else item.name
+        if self.game and self == self.game.player:
+            text = "%s added to your inventory!"%name
+        else:
+            text = "%s gets %s!"%(self.name, name)
+
+        item._says(text, action="portrait")
+        return
+        
+    def _loses(self, item):
+        """ remove item from inventory """
+        item = get_object(self.game, item)
+        if item in self.inventory.values():
+            del self.inventory[item.name]
+        else:
+            log.error("Item %s not in inventory"%item.name)
+
+    def on_loses(self, item):
+        self._loses(i)
+        
     def on_collection_select(self, collection, obj):
         """ Called when this object is selected in a collection """
         print("handling object selection")
@@ -1307,6 +1351,7 @@ class Actor(metaclass=use_on_events):
 
     def on_usage(self, draw=None, update=None, look=None, interact=None, use=None):
         """ Set the player->object interact flags on this object """
+        self._usage(draw, update, look, interact, use)
 
     def _usage(self, draw=None, update=None, look=None, interact=None, use=None):
         if draw != None: self._allow_draw = draw 
@@ -1740,6 +1785,7 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         self.dispatch_events('on_collection_select', self, obj)
 
     def pyglet_draw(self): #collection.draw
+        super().pyglet_draw() #actor.draw
         x,y = self.padding[0], self.padding[1]
         w = self.clickable_area.w
         for obj in self._objects.values():
@@ -2089,15 +2135,29 @@ class Game(metaclass=use_on_events):
 
 
         display = pyglet.window.get_platform().get_default_display()
+        scale = 1.0
+
+        """
         w = display.get_default_screen().width        
         h = display.get_default_screen().height
-        if resolution[0]>w or resolution[1]>h: #scale
-            print("SCALING")
-            scale = min(w/resolution[0], h/resolution[1])
-            resolution = int(resolution[0] * scale), int(resolution[1] * scale)
-        print("RESOLUTION",resolution)
+        print(w,h)
+        scale = 1.0
+#        scale = min(w/resolution[0], h/resolution[1])
+        scale = max(w/resolution[0], resolution[0]/w)
+        scale_x = max(w/resolution[0], resolution[0]/w)
+        scale_y = max(h/resolution[1], resolution[1]/h)
+
+#        if resolution[0]>w or resolution[1]>h: #scale down
+#            print("SCALING")
+#            scale = min(w/resolution[0], h/resolution[1])
+#            resolution = int(resolution[0] * scale), int(resolution[1] * scale)
+        print("RESOLUTION",resolution, scale)
+        """
         self.resolution = resolution
         self._window = pyglet.window.Window(*resolution)
+        print(self._window.width, self._window.height, resolution)
+        pyglet.gl.glScalef(scale, scale, scale)
+
         self._window.on_draw = self.pyglet_draw
         self._window.on_key_press = self.on_key_press
         self._window.on_mouse_motion = self.on_mouse_motion
@@ -2579,6 +2639,14 @@ class Game(metaclass=use_on_events):
         walkthrough = self._walkthrough[self._walkthrough_index]
         function_name = walkthrough[0].__name__ 
         self._walkthrough_index += 1    
+
+        if self._walkthrough_index > self._walkthrough_target or self._walkthrough_index > len(self._walkthrough):
+            if self._headless: self._headless = False
+            log.info("FINISHED WALKTHROUGH")
+            self.player.says(gettext("Let's play."))
+            return
+
+
         s = "Walkthrough:",list(walkthrough)
         log.info(s)
 #        print("AUTO WALKTHROUGH", walkthrough)
@@ -2597,10 +2665,6 @@ class Game(metaclass=use_on_events):
 #                self._window.dispatch_event('on_mouse_release', x, self.resolution[1] - y, button, modifiers)
         elif function_name == "description":
             pass
-        if self._walkthrough_index > self._walkthrough_target or self._walkthrough_index > len(self._walkthrough):
-            if self._headless: self._headless = False
-            log.info("FINISHED WALKTHROUGH")
-            self.player.says(gettext("Let's play."))
 
     def _handle_events(self):
         """ Handle game events """
@@ -2648,7 +2712,7 @@ class Game(metaclass=use_on_events):
             #if self._event_index<len(self._events)-1: self._event_index += 1
 
         #auto trigger an event from the walkthrough if needed and nothing else is happening
-        if done_events == 0 and del_events == 0 and self._walkthrough_target > self._walkthrough_index: 
+        if done_events == 0 and del_events == 0 and self._walkthrough_target >= self._walkthrough_index: 
             self._process_walkthrough()
         return safe_to_call_again
 #        print("Done %s, deleted %s"%(done_events, del_events))  
@@ -2670,7 +2734,7 @@ class Game(metaclass=use_on_events):
 #        print("game update", self._headless, self._walkthrough_target>self._walkthrough_index, len(self._modals)>0, len(self._events))
 
         #if waiting for user input, assume the event to trigger the modal is in the walkthrough        
-        if self._headless and self._walkthrough_target > self._walkthrough_index and len(self._modals)>0:
+        if self._headless and self._walkthrough_target >= self._walkthrough_index and len(self._modals)>0:
             self._process_walkthrough()
 
     def pyglet_draw(self): #game.draw
@@ -2918,7 +2982,8 @@ class Game(metaclass=use_on_events):
         self._headless = v
 
     def on_set_menu(self, *args):
-        """ add the items in args to the menu """
+        """ add the items in args to the menu
+         """
         args = list(args)
         args.reverse()
         for i in args:
