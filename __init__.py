@@ -248,15 +248,23 @@ def get_object(game, obj):
     """ get an object from a name or object """
     if type(obj) != str: return obj
     robj = None #return object
-    if obj in game._scenes: 
+    if obj in game._scenes:  #a scene
         robj = game._scenes[obj]
     elif obj in game._items.keys(): 
         robj = game._items[obj]
     elif obj in game._actors.keys(): 
         robj = game._actors[obj]
-    else: #look for the display names in _items in case obj is the name of an on_ask option
+    else: 
+        #look for the display names in _items in case obj is the name of an on_ask option
         for i in game._items.values():
-            if obj == i.display_text: robj = i
+            if obj in [i.name, i.display_text]: 
+                robj = i
+                return i
+        #last resort, check the menu for items added to the menu but not the game
+        for i in game._menu:
+            if obj in [i.name, i.display_text]:
+                robj = i
+                return i
     return robj
 
 
@@ -875,7 +883,6 @@ class Actor(metaclass=use_on_events):
 
 
     def trigger_interact(self):
-        print("Interact with",self.name)
         if self.interact: #if user has supplied an interact override
             if type(self.interact) in [str]: 
                 interact = get_function(self.game, self.interact)
@@ -1073,9 +1080,17 @@ class Actor(metaclass=use_on_events):
 
         return self
 
-    def pyglet_draw(self): #actor.draw
+    def pyglet_draw(self, absolute=False): #actor.draw
         if self._sprite and self._allow_draw:
-            self._sprite.position = (int(self.x + self.ax), int(self.game.resolution[1] - self.y - self.ay - self._sprite.height))
+            x = self.x + self.ax
+            y = self.game.resolution[1] - self.y - self.ay - self._sprite.height
+
+            #displace for camera
+            if not absolute and self.game.scene:
+                x += self.game.scene.x
+                y -= self.game.scene.y
+
+            self._sprite.position = (int(x), int(y))
             self._sprite.draw()
         if self.show_debug:
             self.debug_pyglet_draw()
@@ -1131,7 +1146,6 @@ class Actor(metaclass=use_on_events):
             def collide_never(x,y): #for asks, most modals can't be clicked, only the txt modelitam options can.
                 return False
             item.collide = collide_never
-
         #add the options
         for i, option in enumerate(args):
             text, callback = option
@@ -1151,7 +1165,7 @@ class Actor(metaclass=use_on_events):
             def answer_callback(game, btn, player):
                 self._busy = False #no longer busy, so game can stop waiting
                 self.game._modals = [] #empty modals
-                print("ANSWER CALLBACK",i,btn.response_callback)
+#                print("ANSWER CALLBACK",i,btn.response_callback)
                 btn.response_callback(game, btn, player)
             opt.interact = answer_callback
             opt.response_callback = callback
@@ -1162,7 +1176,6 @@ class Actor(metaclass=use_on_events):
         items = self._says(text, *args, **kwargs)
         if self.game._headless:  #headless mode skips sound and visuals
             items[0].trigger_interact() #auto-close the on_says
-
 
     def _says(self, text, action="portrait", font=None, size=None, using=None, position=None, delay=0.01, step=3, ok=True):
         #do high contrast if requested and available
@@ -1271,8 +1284,10 @@ class Actor(metaclass=use_on_events):
         else:
             text = "%s gets %s!"%(self.name, name)
 
-        item._says(text, action="portrait")
-        return
+        items = item._says(text, action="portrait")
+        if self.game._headless:  #headless mode skips sound and visuals
+            items[0].trigger_interact() #auto-close the on_says
+
         
     def _loses(self, item):
         """ remove item from inventory """
@@ -1320,7 +1335,6 @@ class Actor(metaclass=use_on_events):
 
     def on_tint(self, rgb):
         self._tint = rgb
-        print("Finished tint",rgb, datetime.now())
         if self._sprite: self._sprite.color = self._tint 
 
     def on_idle(self, seconds):
@@ -1431,15 +1445,8 @@ class Actor(metaclass=use_on_events):
         self._goto_dx = x * d #how far we can travel in one update, broken down into the x-component
         self._goto_dy = y * d
 
-#        self._goto_dx = self.action.speed * round(math.cos(angle), 6)
-#        self._goto_dy = self.action.speed * round(math.sin(angle), 6)
-
         angle = math.degrees(angle) + 90  #0 degrees is towards the top of the screen
         if angle < -45: angle += 360 
-#        if  90 < angle < 270: self._goto_dy = -self._goto_dy
-#        if  180 < angle < 360: self._goto_dx = -self._goto_dx
-#        if y > 0: self._goto_dy = -self._goto_dy
-#        print((x,y), (x * d, y*d), (self._goto_dx, self._goto_dy), angle)
         for action in self._actions.values():
             if action.available_for_pathplanning and angle > action.angle_start and angle <= action.angle_end:
                 self._do(action)
@@ -1455,6 +1462,11 @@ class Actor(metaclass=use_on_events):
     def _goto(self, destination, ignore=False):
         """ Get a path to the destination and then start walking """
         point = get_point(self.game, destination)
+
+        if self.game._headless:  #skip pathplanning if in headless mode
+            self.x, self.y = point
+            return
+
         self._goto_points = []
         self._calculate_goto(point)
 #        print("GOTO", angle, self._goto_x, self._goto_y, self._goto_dx, self._goto_dy, math.degrees(math.atan(100/10)))
@@ -1595,13 +1607,33 @@ class Scene(metaclass=use_on_events):
         self._music_filename = None
         self._ambient_filename = None        
 
-        self.x = 0
-        self.y = 0
+        #used by camera
+        self._x, self._y = 0.0, 0.0
+        self._w, self._h = 0, 0
+        self.scale = 1.0 #TODO not implemented yet
+
         self.display_text = None #used on portals if not None
         self.description = None #text for blind users
         self.scales = {}
 
         self.walkareas = WalkareaManager(self, game) #pyvida4 compatability
+
+    def get_x(self): return self._x
+    def set_x(self, v): self._x = v
+    x = property(get_x, set_x)
+
+    def get_y(self): return self._y
+    def set_y(self, v): self._y = v
+    y = property(get_y, set_y)
+
+    def get_w(self): return int(self._w * self.scale)
+    def set_w(self, v): self._w = v
+    w = property(get_w, set_w)
+
+    def get_h(self): return int(self._h * self.scale)
+    def set_h(self, v): self._h = v
+    h = property(get_h, set_h)
+
 
 
     @property
@@ -1613,6 +1645,8 @@ class Scene(metaclass=use_on_events):
         if self._background: return self._background
         if self._background_fname:
             self._background = load_image(self._background_fname)
+        if self._background:
+            self._w, self._h = self._background.width, self._background.height
         return self._background
 
     def smart(self, game): #scene.smart
@@ -1652,6 +1686,8 @@ class Scene(metaclass=use_on_events):
                 f.x, f.y = x,y
                 self._foreground.append(f) #add foreground items as items
 
+    def on_camera(self, point):
+        self.x, self.y = point
 
     def on_add(self, objects): #scene.add
         self._add(objects)
@@ -1659,7 +1695,10 @@ class Scene(metaclass=use_on_events):
     def _add(self, objects): 
         if not isinstance(objects, Iterable): objects = [objects]
         for obj in objects:
-            obj = get_object(self.game, obj)
+            obj = get_object(self.game, obj) 
+            if obj in self._objects.values(): #already on scene, don't resize
+                return
+
             if obj.name in self.scales.keys():
                 obj.scale = self.scales[obj.name]
             elif "actors" in self.scales.keys() and not isinstance(obj, Item): #use auto scaling for actor if available
@@ -1704,15 +1743,8 @@ class Scene(metaclass=use_on_events):
         if fname:
             self._background_fname = fname
 
-    def pyglet_draw(self): #scene.draw (not used)
+    def pyglet_draw(self, absolute=False): #scene.draw (not used)
         pass
-#        if self._background:
-#            print("Draw2!", len(self._objects), self._background)
-#            self._background.blit(self.x, self.y)
-
-        for obj in self._objects:
-            print("drawing ",obj.name)
-            obj.pyglet_draw()
 
 
 class Text(Item):
@@ -1780,7 +1812,7 @@ class Text(Item):
             self.__text = self.display_text[:self._text_index]
             self._label.text = self.__text
 
-    def pyglet_draw(self):
+    def pyglet_draw(self, absolute=False):
         if not self.game:
             log.warning("Unable to draw Text %s without a self.game object"%self.name)
             return
@@ -1826,13 +1858,14 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         obj = None #the object selected in the collection
         self.dispatch_events('on_collection_select', self, obj)
 
-    def pyglet_draw(self): #collection.draw
+    def pyglet_draw(self, absolute=False): #collection.draw
         super().pyglet_draw() #actor.draw
-        x,y = self.padding[0], self.padding[1]
+        x,y = self.padding[0], self.padding[1] #item padding
         w = self.clickable_area.w
         for obj in self._objects.values():
             if obj._sprite:
-                obj._sprite.position = (int(self.x + x), int(self.game.resolution[1] - self.y - y))
+#                obj._sprite.position = (int(self.x + x), int(self.game.resolution[1] - self.y - y))
+                obj._sprite.position = (int(self.x + self.ax + x), int(self.game.resolution[1] - self.y - self.ay - self._sprite.height - y))
                 obj._sprite.draw()
             if x + self.tile_size > self.dimensions[0]:
                 x = self.padding[0]
@@ -1902,11 +1935,28 @@ class MenuManager(metaclass=use_on_events):
 
 class Camera(metaclass=use_on_events): #the view manager
     def __init__(self, game):
+#        self._x, self._y = game.resolution[0]/2, game.resolution[1]/2
+        self._goto_x, self._goto_y = None, None
+        self._goto_dx, self._goto_dy = 0, 0
+        self.speed = 2 #default camera speed
+        self._speed = self.speed #current camera speed
+
         self.name = "Default Camera"
         self.game = game
         self._busy = False
         self._ambient_sound = None
         
+    def _update(self, dt):
+        if self._goto_x != None:
+            self.game.scene.x = self.game.scene.x + self._goto_dx
+            self.game.scene.y = self.game.scene.y + self._goto_dy
+            speed = self._speed
+            target = Rect(self._goto_x, self._goto_y, int(speed*1.2), int(speed*1.2)).move(-int(speed*0.6),-int(speed*0.6))
+            if target.collidepoint(self.game.scene.x, self.game.scene.y):
+                self._busy = False
+                self._goto_x, self._goto_y = None, None
+                self._goto_dx, self._goto_dy = 0, 0
+
 
     def _scene(self, scene, camera_point=None):
         """ change the current scene """
@@ -1932,6 +1982,11 @@ class Camera(metaclass=use_on_events): #the view manager
 #            for i in scene.objects.values():
 #                print(i.display_text)
         self.game.scene = scene
+
+        #reset camera
+        self._goto_x, self._goto_y = None, None
+        self._goto_dx, self._goto_dy = 0, 0
+
         if camera_point: scene.dx, scene.dy = camera_point
         if scene.name not in self.game.visited: self.game.visited.append(scene.name) #remember scenes visited
         if logging: log.debug("changing scene to %s"%scene.name)
@@ -1971,6 +2026,43 @@ class Camera(metaclass=use_on_events): #the view manager
             postcamera_fn = get_function(self.game, "postcamera_%s"%slugify(scene.name))
             if postcamera_fn: postcamera_fn(self.game, scene, self.game.player)
         
+
+    def on_pan(self, left=False, right=False, top=False, bottom=False, speed=None):
+        """ Convenience method for panning camera to left, right, top and/or bottom of scene, left OR right OR Neither AND top OR bottom Or Neither """
+        x = 0 if left else self.game.scene.x
+        x = self.game.resolution[0] - self.game.scene.w if right else x
+        self._goto((x,0), speed)
+        
+
+    def on_move(self, displacement, speed=None):
+        """ Move Camera relative to its current position """
+        self._goto((self.game.scene.x + displacement[0], self.game.scene.y + displacement[1]), speed)
+
+    def on_goto(self, destination, speed=None):
+        self._goto(destination, speed)
+
+    def _goto(self, destination, speed=None):
+        speed = speed if speed else self.speed
+        self._speed = speed
+
+        point = get_point(self.game, destination)
+
+        if self.game._headless:  #skip pathplanning if in headless mode
+            self.game.scene.x, self.game.scene.y = point
+            return
+
+        self._goto_x, self._goto_y = destination
+        x,y = self._goto_x - self.game.scene.x, self._goto_y - self.game.scene.y
+        distance = math.hypot(x, y)
+        if distance == 0: return #already there
+        d = speed/distance #how far we can travel along the distance in one update
+        angle = math.atan2(y,x)
+
+        self._goto_dx = x * d #how far we can travel in one update, broken down into the x-component
+        self._goto_dy = y * d
+        self._busy = True
+        self.game._waiting = True
+
 
 class Mixer(metaclass=use_on_events): #the sound manager 
     def __init__(self, game):
@@ -2197,7 +2289,7 @@ class Game(metaclass=use_on_events):
         """
         self.resolution = resolution
         self._window = pyglet.window.Window(*resolution)
-        print(self._window.width, self._window.height, resolution)
+#        print(self._window.width, self._window.height, resolution)
         pyglet.gl.glScalef(scale, scale, scale)
 
         self._window.on_draw = self.pyglet_draw
@@ -2233,7 +2325,8 @@ class Game(metaclass=use_on_events):
 
         self._allow_editing = ENABLE_EDITOR
         self._editing = None
-        self._editing_point = None #the set fns to pump in new x,y coords
+        self._editing_point_set = None #the set fns to pump in new x,y coords
+        self._editing_point_get = None #the get fns to pump in new x,y coords
 
         self._progress_bar_count = 0 #how many event steps in this progress block
         self._progress_bar_index = 0 #how far along the event list are we for this progress block
@@ -2348,14 +2441,17 @@ class Game(metaclass=use_on_events):
 
     def on_mouse_press(self, x, y, button, modifiers):
         """ If the mouse is over an object with a down action, switch to that action """
-        print('    (%s, %s), '%(x-self.player.x, self.resolution[1] - y - self.player.y))
+#        print('    (%s, %s), '%(x-self.player.x, self.resolution[1] - y - self.player.y))
+        pass
 
     def on_mouse_release(self, x, y, button, modifiers):
         """ Call the correct function depending on what the mouse has clicked on """
+        if self._editing and self._editing_point_set: #we are editing something, so don't interact with objects
+            return
+
         y = self.game.resolution[1] - y #invert y-axis if needed
         for obj in self._modals:
             if obj.collide(x,y):
-                print("collide with modal",obj.name)
                 obj.trigger_interact()
                 return
         #don't process other objects while there are modals
@@ -2364,7 +2460,6 @@ class Game(metaclass=use_on_events):
         #try menu events
         for obj in self._menu:
             if obj.collide(x,y):
-                print("collide with menu",obj.name)
                 obj.trigger_interact()
                 return
 
@@ -2373,25 +2468,26 @@ class Game(metaclass=use_on_events):
             if obj.collide(x,y):
                 if self.mouse_mode != MOUSE_LOOK or GOTO_LOOK: 
                     if self.player in self.scene._objects.values() and self.player != obj: self.player.goto(obj)
-                print("collide with scene item",obj.name)
                 obj.trigger_interact()
                 return
 
         #no objects to interact with, so just go to the point
         if self.player and self.scene and self.player.scene == self.scene:
-            print("Just going there")
             self.player.goto((x,y))
 
 
     def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
-        if self._editing and self._editing_point: #we are editing something so send through the new x,y in pyvida format
-            x,y = x, self.resolution[1] - y #invert for pyglet to pyvida
-            if self._editing_point == self._editing.set_x: #set x, so use raw
-                self._editing_point[0](x)
-                self._editing_point[1](y)
+        if self._editing and self._editing_point_set: #we are editing something so send through the new x,y in pyvida format
+#               x,y = x, self.resolution[1] - y #invert for pyglet to pyvida
+            x, y = self._editing_point_get[0](), self._editing_point_get[1]()
+            x += dx
+            y -= dy
+            if self._editing_point_set[0] == self._editing.set_x: #set x, so use raw
+                self._editing_point_set[0](x)
+                self._editing_point_set[1](y)
             else: #displace the point by the object's x,y so the point is relative to the obj
-                self._editing_point[0](x - self._editing.x)
-                self._editing_point[1](y - self._editing.y)
+                self._editing_point_set[0](x - self._editing.x)
+                self._editing_point_set[1](y - self._editing.y)
 
 
     def add_arguments(self):
@@ -2685,7 +2781,7 @@ class Game(metaclass=use_on_events):
         if self._walkthrough_index > self._walkthrough_target or self._walkthrough_index > len(self._walkthrough):
             if self._headless: self._headless = False
             log.info("FINISHED WALKTHROUGH")
-            self.player.says(gettext("Let's play."))
+#            self.player.says(gettext("Let's play."))
             return
 
 
@@ -2693,7 +2789,7 @@ class Game(metaclass=use_on_events):
         log.info(s)
 #        print("AUTO WALKTHROUGH", walkthrough)
         if function_name == "interact":
-            print("trigger interact", self._walkthrough_target, self._walkthrough_index, walkthrough[1])
+#            print("trigger interact", self._walkthrough_target, self._walkthrough_index, walkthrough[1])
             button = pyglet.window.mouse.LEFT
             modifiers = 0
             obj = get_object(self, walkthrough[1])
@@ -2702,7 +2798,8 @@ class Game(metaclass=use_on_events):
                 self._walkthrough_target = 0
                 self._headless = False
                 return
-            if self.scene and self.scene != obj.scene:
+            #if not in same scene as camera, and not in modals or menu, log the error
+            if self.scene and self.scene != obj.scene and obj not in self._modals and obj not in self._menu:
                 log.error("{} not in scene {}, it's on {}".format(walkthrough[1], self.scene.name, obj.scene.name if obj.scene else "no scene"))
             x, y = obj.clickable_area.center
             obj.trigger_interact()
@@ -2725,6 +2822,7 @@ class Game(metaclass=use_on_events):
     def _handle_events(self):
         """ Handle game events """
         safe_to_call_again = False #is it safe to call _handle_events immediately after this?
+        waiting_for_user = True
         if self._waiting: 
             """ check all the Objects with existing events, if any of them are busy, don't process the next event """
             none_busy = True
@@ -2777,7 +2875,7 @@ class Game(metaclass=use_on_events):
     def update(self, dt, single_event=False): #game.update
         """ Run update on scene objects """
         scene_objects = self.scene._objects.values() if self.scene else []
-        for items in [scene_objects, self._menu, self._modals]:
+        for items in [scene_objects, self._menu, self._modals, [self.camera]]:
             for item in items:
                 if hasattr(item, "_update"): item._update(dt)
 
@@ -2800,25 +2898,25 @@ class Game(metaclass=use_on_events):
         if self.scene.background:
             self._window.clear()
             pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0) # undo alpha for pyglet drawing            
-            self.scene.background.blit(int(self.scene.x), int(self.scene.y))
+            self.scene.background.blit(int(self.scene.x), int(self.resolution[1]-self.scene.y)) #inverted for pyglet coords
         else:
             print("no background")
 
         objects = sorted(self.scene._objects.values(), key=lambda x: x.y, reverse=False)
         for item in objects:
-            item.pyglet_draw()
+            item.pyglet_draw(absolute=False)
         #draw scene foregrounds
         for item in self.scene._foreground:
-            item.pyglet_draw()
+            item.pyglet_draw(absolute=False)
 
         if self._info_object:
-            self._info_object.pyglet_draw()
+            self._info_object.pyglet_draw(absolute=False)
 
         for item in self._menu:
-            item.pyglet_draw()
+            item.pyglet_draw(absolute=True)
 
         for modal in self._modals:
-            modal.pyglet_draw()
+            modal.pyglet_draw(absolute=True)
 
     def _add(self, objects, replace=False): #game.add
         objects_iterable = [objects] if not isinstance(objects, Iterable) else objects
@@ -2910,6 +3008,7 @@ class Game(metaclass=use_on_events):
                 f.write('    from pyvida import Emitter\n')
 #                        f.write('    game.stuff_events(True)\n')
             f.write('    scene.clean(["%s"])\n'%objects) #remove old actors and items
+            f.write('    scene.camera((%s, %s))\n'%(game.scene.x, game.scene.y))
             if game.scene._music_filename:
                 f.write('    scene.music("%s")\n'%game.scene._music_filename)
             if game.scene._ambient_filename:
@@ -2923,12 +3022,14 @@ class Game(metaclass=use_on_events):
                 slug = slugify(name).lower()
                 if obj != game.player and obj._editing_save == True:
                     txt = "items" if isinstance(obj, Item) else "actors"
+                    txt = "items" if isinstance(obj, Portal) else txt
                     if isinstance(obj, Emitter):
                         em = str(obj.summary)
                         f.write("    em = %s\n"%em)
                         f.write('    %s = Emitter(**em).smart(game)\n'%slug)
                     else:
                         f.write('    %s = game._%s["%s"]\n'%(slug, txt, name))
+                    f.write('    %s.relocate(scene, (%i, %i))\n'%(slug, obj.x, obj.y))
                     r = obj._clickable_area
                     f.write('    %s.reclickable(Rect(%s, %s, %s, %s))\n'%(slug, r.x, r.y, r.w, r.h))
                     r = obj._solid_area
@@ -2940,7 +3041,6 @@ class Game(metaclass=use_on_events):
                     f.write('    %s.restand((%i, %i))\n'%(slug, obj._sx, obj._sy))
                     f.write('    %s.rename((%i, %i))\n'%(slug, obj._nx, obj._ny))
                     f.write('    %s.retext((%i, %i))\n'%(slug, obj._tx, obj._ty))
-                    f.write('    %s.relocate(scene, (%i, %i))\n'%(slug, obj.x, obj.y))
                     if obj._parent:
                         f.write('    %s.reparent(\"%s\")\n'%(slug, obj._parent.name))
                     if obj.action and obj.action.name != "idle":
@@ -3073,9 +3173,14 @@ class Navigator(tk.Toplevel):
         self.rows = 0
         self.createWidgets()
 
+    def edit_camera(self):
+        self.game._editing = self.game.scene
+        self.game._editing_point_set = (self.game.scene.set_x, self.game.scene.set_y)
+        self.game._editing_point_get = (self.game.scene.get_x, self.game.scene.get_y)
+
     def createWidgets(self):
         row = 0
-        frame = self.parent #self for new window, parent for one window
+        frame = self #self for new window, parent for one window
         def change_scene(*args, **kwargs):
             if self.game._editing.show_debug:
                 self.game._editing.show_debug = False
@@ -3087,7 +3192,20 @@ class Navigator(tk.Toplevel):
                 self.game._editing = objects[self.app.index]
                 self.game._editing.show_debug = True
             self.game.player.relocate(scene)
-        option = tk.OptionMenu(frame, self.scene, *[x.name for x in self.game._scenes.values()], command=change_scene).grid(column=0,row=row)
+        tk.Label(frame, text="Current scene:").grid(column=0, row=row)
+        scenes = [x.name for x in self.game._scenes.values()]
+        scenes.sort()
+        option = tk.OptionMenu(frame, self.scene, *scenes, command=change_scene).grid(column=1,row=row)
+        row += 1
+        tk.Radiobutton(frame, text="Camera", command=self.edit_camera, indicatoron=0, value=1).grid(row=row, column=0)
+        """
+        e = tk.Entry(frame)
+        e.grid(row=i, column=1)
+        e.insert(0, get_attrs[0]())
+        e = tk.Entry(frame)
+        e.grid(row=i, column=2)
+        e.insert(0, get_attrs[1]())
+        """
 
         row += 1
         self.prev_button = tk.Button(frame, text='<-', command=self.prev).grid(column=0, row=row)
@@ -3174,7 +3292,8 @@ class Editor(tk.Toplevel):
             if self._editing.get() == editable[0]: #this is what we want to edit now.
                 label, get_attrs, set_attrs, types = editable
                 self.game._editing = self.obj
-                self.game._editing_point = set_attrs
+                self.game._editing_point_set = set_attrs
+                self.game._editing_point_get = get_attrs
 
     def edit_btn(self):
         """ Open the script for this object for editing """
@@ -3194,7 +3313,15 @@ class Editor(tk.Toplevel):
         module_name = os.path.splitext(os.path.basename(fname))[0]
         open_editor(self.game, fname)
         __import__(module_name)
-        
+
+    def reset_btn(self):
+        """ Reset the main editable variables for this object """
+        obj = self.obj
+        obj.x, obj.y = self.game.resolution[0]/2, self.game.resolution[1]/2
+        obj.ax, obj.ay = 0, 0
+        obj.sx, obj.sy = obj.w, 0
+        obj.nx, obj.ny = obj.w, -obj.h
+
 
     def createWidgets(self):
         frame = self
@@ -3202,30 +3329,32 @@ class Editor(tk.Toplevel):
         for i, editable in enumerate(self.obj._editable):
             label, get_attrs, set_attrs, types = editable
             tk.Radiobutton(frame, text=label, variable=self._editing, value=label, indicatoron=0, command=self.selected).grid(row=row, column=0)
-            row += 1
             if type(types) == tuple: #assume two ints
                 e = tk.Entry(frame)
-                e.grid(row=i, column=1)
+                e.grid(row=row, column=1)
                 e.insert(0, get_attrs[0]())
                 e = tk.Entry(frame)
-                e.grid(row=i, column=2)
+                e.grid(row=row, column=2)
                 e.insert(0, get_attrs[1]())
             elif types == str:
                 e = tk.Entry(frame)
-                e.grid(row=i, column=1, columnspan=2)
+                e.grid(row=row, column=1, columnspan=2)
 #                if get_attrs: e.insert(0, get_attrs())
             elif types == bool:
-                tk.Checkbutton(frame, variable=get_attrs()).grid(row=i, column=1, columnspan=2)
+                tk.Checkbutton(frame, variable=get_attrs()).grid(row=row, column=1, columnspan=2)
+            row += 1
 
         row += 1
-        self.edit_script = tk.Button(frame, text="Edit", command=self.edit_btn).grid(row=i, column=0)
+        self.edit_script = tk.Button(frame, text="Edit Script", command=self.edit_btn).grid(row=row, column=0)
+        row += 1
+        self.edit_script = tk.Button(frame, text="Reset", command=self.reset_btn).grid(row=row, column=0)
 
         self.QUIT = tk.Button(frame)
         self.QUIT["text"] = "Close"
         self.QUIT["fg"]   = "red"
         self.QUIT["command"] =  self.close_editor
         row += 1
-        self.QUIT.grid(row=i)
+        self.QUIT.grid(row=row)
         self.rows = row
 
 
@@ -3240,12 +3369,14 @@ class MyTkApp(threading.Thread):
         self.start()
 
     def create_editor(self, obj):
-        self._editors.append(Editor(self, self.parent, self.game, obj, start_row=self.navigator.rows))
+        editor = Editor(self, self.parent, self.game, obj, start_row=0)
+        self._editors.append(editor)
+        editor.geometry('400x700+{}+{}'.format(self.game.resolution[0]-400, 200))
     def run(self):
         self.parent=tk.Tk()
         self.parent.protocol("WM_DELETE_WINDOW", self.callback)
         self.navigator = Navigator(self, self.parent, self.game)
-        self.navigator.geometry('400x100+{}+{}'.format(self.game.resolution[0]-400, 0))
+        self.navigator.geometry('400x200+{}+{}'.format(self.game.resolution[0]-400, 0))
 #        self.create_editor(self.objects[self.index])
 
         #create close all button
