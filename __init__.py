@@ -158,11 +158,13 @@ Logging
 def create_log(logname, fname, log_level):
     log = logging.getLogger(logname)
     if logging: log.setLevel(log_level)
-
-    handler = logging.handlers.RotatingFileHandler(fname, maxBytes=2000000, backupCount=5)
-    handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
-    log.addHandler(handler)
-    if DEBUG_STDOUT:
+    try:
+        handler = logging.handlers.RotatingFileHandler(fname, maxBytes=2000000, backupCount=5)
+        handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+        log.addHandler(handler)
+    except FileNotFoundError:
+        handler = None
+    if DEBUG_STDOUT or not handler:
         handler = logging.StreamHandler(stream=sys.stdout)
         handler.setLevel(logging.ERROR)
         log.addHandler(handler)
@@ -519,13 +521,17 @@ class Rect(object):
 
 
 
-def crosshair(game, point, colour):
+def crosshair(game, point, colour, absolute=False):
 
         fcolour = fColour(colour)
         pyglet.gl.glColor4f(*fcolour)       
 
         #y is inverted for pyglet
         x,y=int(point[0]), int(game.resolution[1]-point[1])
+        if not absolute and game.scene:
+            x += game.scene.x
+            y -= game.scene.y
+
         pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x, y-5, x, y+5))) 
         pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x-5, y, x+5, y))) 
         pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0) # undo alpha for pyglet drawing
@@ -540,7 +546,7 @@ def crosshair(game, point, colour):
         return point
 
 
-def rectangle(game, rect, colour=(255, 255, 255, 255)):
+def rectangle(game, rect, colour=(255, 255, 255, 255), absolute=False):
         fcolour = fColour(colour)
         pyglet.gl.glColor4f(*fcolour)               
         x,y=int(rect.x),int(rect.y)
@@ -548,6 +554,11 @@ def rectangle(game, rect, colour=(255, 255, 255, 255)):
 
         #y is inverted for pyglet
         gy = game.resolution[1]-y
+
+        if not absolute and game.scene:
+            x += game.scene.x
+            gy -= game.scene.y
+
         p1 = (x, gy)
         p2 = (x + w, gy)
         p3 = (x + w, gy - h)
@@ -632,7 +643,7 @@ Classes
 """
 
 class Actor(metaclass=use_on_events):
-    def __init__(self, name, interact=None):
+    def __init__(self, name, interact=None, display_text=None):
         super().__init__()
         self.name = name
         self._actions = {}
@@ -640,6 +651,11 @@ class Actor(metaclass=use_on_events):
         self.game = None
         self.scene = None
         self._x, self._y = 0.0, 0.0
+        self.z = 1.0 #used for parallax 
+        self.scroll = (0.0, 0.0) #scrolling speeds (x,y) for texture
+        self._scroll_dx = 0.0 #when scrolling, what is our displacement?
+        self._scroll_dy = 0.0
+
         self._goto_x, self._goto_y = None, None
         self._goto_dx, self._goto_dy = 0, 0
         self._goto_points = [] #list of points Actor is walking through
@@ -650,11 +666,10 @@ class Actor(metaclass=use_on_events):
         self._parent = None
         self.idle_stand = None #when an actor stands at this actor's stand point, request an idle
 
-        self.z = 1000 #where in the z layer is this actor (< 1000 further away, >1000 closer to player)
         self._scale = 1.0
         self._rotate = 0
 
-        self.display_text = None #can override name for game.info display text
+        self.display_text = display_text #can override name for game.info display text
         self.display_text_align = LEFT
         self.font_speech = None #use default font (from game)
         self.font_speech_size = None #use default font size (from game)
@@ -702,7 +717,6 @@ class Actor(metaclass=use_on_events):
     def set_busy(self, x):
         self._busy = x
     busy = property(get_busy, set_busy)
-
 
     def update_anchor(self):
         if isinstance(self._sprite._animation, pyglet.image.Animation):
@@ -825,6 +839,9 @@ class Actor(metaclass=use_on_events):
         pass
 
     def _update(self, dt): #actor._update
+        self._scroll_dx += self.scroll[0]
+        self._scroll_dy += self.scroll[1]
+
         if self._goto_x != None:
             self.x = self.x + self._goto_dx
             self.y = self.y + self._goto_dy
@@ -843,7 +860,8 @@ class Actor(metaclass=use_on_events):
                     self._busy = False
                     self._goto_x, self._goto_y = None, None
                     self._goto_dx, self._goto_dy = 0, 0
-                    self._do("idle")
+                    if "idle" in self._actions.keys():
+                        self._do("idle")
          #   else:
           #      print("missed",target,self.x, self.y)
                 
@@ -1087,23 +1105,26 @@ class Actor(metaclass=use_on_events):
 
             #displace for camera
             if not absolute and self.game.scene:
-                x += self.game.scene.x
-                y -= self.game.scene.y
+                x += self.game.scene.x * self.z
+                y -= self.game.scene.y * self.z
 
+            pyglet.gl.glTranslatef(self._scroll_dx, 0.0, 0.0);
             self._sprite.position = (int(x), int(y))
             self._sprite.draw()
-        if self.show_debug:
-            self.debug_pyglet_draw()
+            pyglet.gl.glTranslatef(-self._scroll_dx, 0.0, 0.0);
 
-    def debug_pyglet_draw(self):
+        if self.show_debug:
+            self.debug_pyglet_draw(absolute=absolute)
+
+    def debug_pyglet_draw(self, absolute=False):
         """ Draw some debug info (store it for the unittests) """
         self._debugs = []
         #position = green
-        self._debugs.append(crosshair(self.game, (self.x, self.y), (0, 255, 0, 255)))
+        self._debugs.append(crosshair(self.game, (self.x, self.y), (0, 255, 0, 255), absolute=absolute))
         #anchor - blue
-        self._debugs.append(crosshair(self.game, (self.x + self.ax, self.y + self.ay ), (0, 0, 255, 255)))
+        self._debugs.append(crosshair(self.game, (self.x + self.ax, self.y + self.ay ), (0, 0, 255, 255), absolute=absolute))
         #clickable area
-        self._debugs.append(rectangle(self.game, self.clickable_area, (0, 255, 100, 255)))
+        self._debugs.append(rectangle(self.game, self.clickable_area, (0, 255, 100, 255), absolute=absolute))
 
     def on_animation_end(self):
 #        self.busy = False
@@ -1333,9 +1354,14 @@ class Actor(metaclass=use_on_events):
 #        if follow: self.do(follow)
         self.busy = True
 
+    def on_speed(self, speed):
+        print("set speed for %s"%self.action.name)
+        self.action.speed = speed
+
     def on_tint(self, rgb):
         self._tint = rgb
-        if self._sprite: self._sprite.color = self._tint 
+        if rgb == None: rgb = (0,0,0) #(255, 255, 255)
+        if self._sprite: self._sprite.color = rgb 
 
     def on_idle(self, seconds):
         """ delay processing the next event for this actor """
@@ -1594,15 +1620,12 @@ class WalkArea(object):
         return self
 
 
-
 class Scene(metaclass=use_on_events):
     def __init__(self, name, game=None):
         self._objects = {}
         self.name = name
         self.game = game
-        self._background = None
-        self._background_fname = None
-        self._foreground = []
+        self._layer = []
         self._busy = False
         self._music_filename = None
         self._ambient_filename = None        
@@ -1640,6 +1663,7 @@ class Scene(metaclass=use_on_events):
     def directory(self):
         return os.path.join(os.getcwd(),os.path.join(self.game.directory_scenes, self.name))    
 
+    """
     @property
     def background(self):
         if self._background: return self._background
@@ -1648,15 +1672,13 @@ class Scene(metaclass=use_on_events):
         if self._background:
             self._w, self._h = self._background.width, self._background.height
         return self._background
+    """
 
     def smart(self, game): #scene.smart
         self.game = game
-        sdir = os.path.join(os.getcwd(),os.path.join(game.directory_scenes, self.name))
-        bname = os.path.join(sdir, "background.png")
-        self.game = game
-        if os.path.isfile(bname):
-            self.set_background(bname)
-        self._load_foreground(game)
+        self._load_layer(game)
+
+        sdir = os.path.join(os.getcwd(),os.path.join(game.directory_scenes, self.name))    
 
         # if there is an initial state, load that automatically
         state_name = os.path.join(sdir, "initial.py")
@@ -1672,19 +1694,32 @@ class Scene(metaclass=use_on_events):
                 self.__dict__[key] = val
         return self
 
-    def _load_foreground(self, game):
-        sdir = os.path.join(os.getcwd(),os.path.join(game.directory_scenes, self.name))    
-        for element in glob.glob(os.path.join(sdir,"*.png")): #add foreground elments
-            x,y = 0,0
-            fname = os.path.splitext(os.path.basename(element))[0]
+    def _unload_layer(self):
+        log.error("TODO: Actor unload not done yet")
+#        for l in self._layer:
+#            l.unload()
 
-            if os.path.isfile(os.path.join(sdir, fname+".details")): #find a details file for each element
-                with open(os.path.join(sdir, fname+".details"), "r") as f:
-                    x, y  = [int(i) for i in f.readlines()]
-#                a = Item(fname, x=x, y=y).createAction("idle", bname+fname)
+    def _load_layer(self, game, wildcard=None):
+        sdir = os.path.join(os.getcwd(),os.path.join(game.directory_scenes, self.name))    
+        wildcard = wildcard if wildcard else os.path.join(sdir, "*.png")
+
+        for element in glob.glob(wildcard): #add layers
+            fname = os.path.splitext(os.path.basename(element))[0]
+            details_filename = os.path.join(sdir, fname+".details")
+            if os.path.isfile(details_filename): #find a details file for each element
                 f = self.game._add(Item("%s_%s"%(self.name, fname)).smart(game, image=element))
-                f.x, f.y = x,y
-                self._foreground.append(f) #add foreground items as items
+                self._layer.append(f) #add layer items as items
+                try:
+                    layer_defaults = json.loads(open(details_filename).read())
+                    for key, val in layer_defaults.items():
+                        f.__dict__[key] = val
+                except ValueError:
+                    log.error("Unable to load details from %s"%details_filename)
+
+        self._layer.sort(key = lambda x: x.z) #sort by z-value
+        if len(self._layer)>0: #use the lowest layer as the scene size
+            self._w, self._h = self._layer[0].w, self._layer[0].h
+
 
     def on_camera(self, point):
         self.x, self.y = point
@@ -1737,11 +1772,15 @@ class Scene(metaclass=use_on_events):
         self._set_background(fname)
 
     def _set_background(self, fname=None):
+#        self._background = [Layer(fname)]
+        for i in self._layer:
+            if i.z < 1.0: self._layer.remove(i)
+        self._load_layer(self.game, fname)
         if fname: log.debug("Set background for scene %s to %s"%(self.name, fname))
-        if fname == None and self._background == None and self._background_fname: #load image
-            fname = self._background_fname
-        if fname:
-            self._background_fname = fname
+#        if fname == None and self._background == None and self._background_fname: #load image
+#            fname = self._background_fname
+#        if fname:
+#            self._background_fname = fname
 
     def pyglet_draw(self, absolute=False): #scene.draw (not used)
         pass
@@ -1812,7 +1851,7 @@ class Text(Item):
             self.__text = self.display_text[:self._text_index]
             self._label.text = self.__text
 
-    def pyglet_draw(self, absolute=False):
+    def pyglet_draw(self, absolute=False): #text draw
         if not self.game:
             log.warning("Unable to draw Text %s without a self.game object"%self.name)
             return
@@ -1961,7 +2000,7 @@ class Camera(metaclass=use_on_events): #the view manager
     def _scene(self, scene, camera_point=None):
         """ change the current scene """
         if self.game.scene: #unload background when not in use
-            self.game.scene._background = None
+            self.game.scene._unload_layer()
         game = self.game
         if scene == None:
             if logging: log.error("Can't change to non-existent scene, staying on current scene")
@@ -2031,7 +2070,11 @@ class Camera(metaclass=use_on_events): #the view manager
         """ Convenience method for panning camera to left, right, top and/or bottom of scene, left OR right OR Neither AND top OR bottom Or Neither """
         x = 0 if left else self.game.scene.x
         x = self.game.resolution[0] - self.game.scene.w if right else x
-        self._goto((x,0), speed)
+
+        y = 0 if top else self.game.scene.y
+        y = self.game.resolution[1] - self.game.scene.h if bottom else y
+
+        self._goto((x,y), speed)
         
 
     def on_move(self, displacement, speed=None):
@@ -2228,7 +2271,7 @@ Game class
 
 
 class Game(metaclass=use_on_events):
-    def __init__(self, name="Untitled Game", version="v1.0", engine=VERSION_MAJOR, fullscreen=DEFAULT_FULLSCREEN, resolution=DEFAULT_RESOLUTION, fps=DEFAULT_FPS, afps=DEFAULT_ACTOR_FPS, projectsettings=None):
+    def __init__(self, name="Untitled Game", version="v1.0", engine=VERSION_MAJOR, fullscreen=DEFAULT_FULLSCREEN, resolution=DEFAULT_RESOLUTION, fps=DEFAULT_FPS, afps=DEFAULT_ACTOR_FPS, projectsettings=None, scale=1.0):
 
         self.name = name
         self.fps = fps
@@ -2237,6 +2280,7 @@ class Game(metaclass=use_on_events):
         self.player = None
         self.scene = None
         self._info_object = None
+        self._scale = scale
 
         self.camera = Camera(self) #the camera object
         self.mixer = Mixer(self) #the sound mixer object
@@ -2269,7 +2313,6 @@ class Game(metaclass=use_on_events):
 
 
         display = pyglet.window.get_platform().get_default_display()
-        scale = 1.0
 
         """
         w = display.get_default_screen().width        
@@ -2288,6 +2331,9 @@ class Game(metaclass=use_on_events):
         print("RESOLUTION",resolution, scale)
         """
         self.resolution = resolution
+        if scale != 1.0:
+            resolution = int(resolution[0] * scale), int(resolution[1] * scale)
+#        config = pyglet.gl.Config(double_buffer=True, vsync=True)
         self._window = pyglet.window.Window(*resolution)
 #        print(self._window.width, self._window.height, resolution)
         pyglet.gl.glScalef(scale, scale, scale)
@@ -2371,7 +2417,6 @@ class Game(metaclass=use_on_events):
 #        return self.__getattribute__(self, a)
 
 
-
     @property
     def w(self):
         return self._window.get_size()[0]
@@ -2407,11 +2452,20 @@ class Game(metaclass=use_on_events):
 
     def on_mouse_motion(self,x, y, dx, dy):
         """ Change mouse cursor depending on what the mouse is hovering over """
+        ox, oy = x,y
+        x -= self.scene.x #displaced by camera
+        y += self.scene.y
+
+        x, y = x / self._scale, y / self._scale #if window is being scaled
         y = self.game.resolution[1] - y #invert y-axis if needed
+
+        ox, oy = ox / self._scale, oy / self._scale #if window is being scaled
+        oy = self.game.resolution[1] - y
+
         if not self.scene: return
         if len(self._modals)>0: return
         for obj in self._menu:
-            if obj.collide(x,y):
+            if obj.collide(ox,oy): #absolute screen values
                  self.mouse_cursor = MOUSE_CROSSHAIR
                  return
 
@@ -2446,6 +2500,8 @@ class Game(metaclass=use_on_events):
 
     def on_mouse_release(self, x, y, button, modifiers):
         """ Call the correct function depending on what the mouse has clicked on """
+        x, y = x / self._scale, y / self._scale #if window is being scaled
+
         if self._editing and self._editing_point_set: #we are editing something, so don't interact with objects
             return
 
@@ -2477,6 +2533,8 @@ class Game(metaclass=use_on_events):
 
 
     def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
+        x, y = x / self._scale, y / self._scale #if window is being scaled
+
         if self._editing and self._editing_point_set: #we are editing something so send through the new x,y in pyvida format
 #               x,y = x, self.resolution[1] - y #invert for pyglet to pyvida
             x, y = self._editing_point_get[0](), self._editing_point_get[1]()
@@ -2769,11 +2827,15 @@ class Game(metaclass=use_on_events):
         if callback: callback(0, self)
         pyglet.app.run()
 
+    def quit(self):
+        pyglet.app.exit()         
+
     def queue_event(self, event, *args, **kwargs):
         self._events.append((event, args, kwargs))
 
     def _process_walkthrough(self):
         """ Do a step in the walkthrough """
+        if len(self._walkthrough) == 0: return #no walkthrough
         walkthrough = self._walkthrough[self._walkthrough_index]
         function_name = walkthrough[0].__name__ 
         self._walkthrough_index += 1    
@@ -2875,7 +2937,8 @@ class Game(metaclass=use_on_events):
     def update(self, dt, single_event=False): #game.update
         """ Run update on scene objects """
         scene_objects = self.scene._objects.values() if self.scene else []
-        for items in [scene_objects, self._menu, self._modals, [self.camera]]:
+        layer_objects = self.scene._layer if self.scene else []
+        for items in [layer_objects, scene_objects, self._menu, self._modals, [self.camera]]:
             for item in items:
                 if hasattr(item, "_update"): item._update(dt)
 
@@ -2895,19 +2958,25 @@ class Game(metaclass=use_on_events):
         """ Draw the scene """
         if not self.scene: return
 #        self.scene.pyglet_draw()
-        if self.scene.background:
-            self._window.clear()
-            pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0) # undo alpha for pyglet drawing            
-            self.scene.background.blit(int(self.scene.x), int(self.resolution[1]-self.scene.y)) #inverted for pyglet coords
-        else:
-            print("no background")
+
+        #draw scene backgroundsgrounds (layers with z equal or less than 1.0)
+        self._window.clear()
+        pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0) # undo alpha for pyglet drawing            
+        for item in self.scene._layer:
+            if item.z <= 1.0:
+                item.pyglet_draw(absolute=False)
+            else:
+                break
+        
 
         objects = sorted(self.scene._objects.values(), key=lambda x: x.y, reverse=False)
         for item in objects:
             item.pyglet_draw(absolute=False)
-        #draw scene foregrounds
-        for item in self.scene._foreground:
-            item.pyglet_draw(absolute=False)
+
+        #draw scene foregrounds (layers with z greater than 1.0)
+        for item in self.scene._layer:
+            if item.z > 1.0:
+                item.pyglet_draw(absolute=False)
 
         if self._info_object:
             self._info_object.pyglet_draw(absolute=False)
@@ -3115,8 +3184,8 @@ class Game(metaclass=use_on_events):
         #add scene to game, change over to that scene
         self.add(scene)
         self.camera._scene(scene)
-        if scene._background:
-            self._background.blit(0,0)
+#        if scene._background:
+#            self._background.blit(0,0)
 
         def splash_finish(d, game):
             self._busy = False #finish the event
@@ -3198,6 +3267,10 @@ class Navigator(tk.Toplevel):
         option = tk.OptionMenu(frame, self.scene, *scenes, command=change_scene).grid(column=1,row=row)
         row += 1
         tk.Radiobutton(frame, text="Camera", command=self.edit_camera, indicatoron=0, value=1).grid(row=row, column=0)
+        def close_editor(*args, **kwargs):
+            self.game._editing = None #switch off editor
+
+        self.close_button = tk.Button(frame, text='close', command=close_editor).grid(column=1, row=row)
         """
         e = tk.Entry(frame)
         e.grid(row=i, column=1)
