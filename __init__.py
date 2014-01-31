@@ -334,7 +334,10 @@ def get_function(game, basic):
 
 
 def create_event(q):
-    return lambda self, *args, **kwargs: self.game.queue_event(q, self, *args, **kwargs)
+    try:
+        return lambda self, *args, **kwargs: self.game.queue_event(q, self, *args, **kwargs)
+    except:
+        import pdb; pdb.set_trace()
 
 def use_on_events(name, bases, dic):
     """ create a small method for each "on_<x>" queue function """
@@ -529,8 +532,8 @@ def crosshair(game, point, colour, absolute=False):
         #y is inverted for pyglet
         x,y=int(point[0]), int(game.resolution[1]-point[1])
         if not absolute and game.scene:
-            x += game.scene.x
-            y -= game.scene.y
+            x += int(game.scene.x)
+            y -= int(game.scene.y)
 
         pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x, y-5, x, y+5))) 
         pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x-5, y, x+5, y))) 
@@ -546,7 +549,7 @@ def crosshair(game, point, colour, absolute=False):
         return point
 
 
-def rectangle(game, rect, colour=(255, 255, 255, 255), absolute=False):
+def rectangle(game, rect, colour=(255, 255, 255, 255), fill=False, label=True, absolute=False):
         fcolour = fColour(colour)
         pyglet.gl.glColor4f(*fcolour)               
         x,y=int(rect.x),int(rect.y)
@@ -556,26 +559,32 @@ def rectangle(game, rect, colour=(255, 255, 255, 255), absolute=False):
         gy = game.resolution[1]-y
 
         if not absolute and game.scene:
-            x += game.scene.x
-            gy -= game.scene.y
+            x += int(game.scene.x)
+            gy -= int(game.scene.y)
 
         p1 = (x, gy)
         p2 = (x + w, gy)
         p3 = (x + w, gy - h)
         p4 = (x, gy - h)
-        pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (p1[0], p1[1], p2[0], p2[1]))) 
-        pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (p2[0],p2[1], p3[0], p3[1]))) 
-        pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (p3[0],p3[1], p4[0], p4[1]))) 
-        pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (p4[0],p4[1], p1[0], p1[1]))) 
+        if not fill:
+            pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (p1[0], p1[1], p2[0], p2[1]))) 
+            pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (p2[0],p2[1], p3[0], p3[1]))) 
+            pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (p3[0],p3[1], p4[0], p4[1]))) 
+            pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (p4[0],p4[1], p1[0], p1[1]))) 
+        else:
+            points = [item for sublist in [p1, p2, p3, p4] for item in sublist]
+            pyglet.graphics.draw(4, pyglet.gl.GL_QUADS, ('v2i', points))
+
         pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0) # undo alpha for pyglet drawing
 
-        label = pyglet.text.Label("{0}, {1}".format(x,game.resolution[1]-y),
-                          font_name='Arial',
-                          font_size=10,
-                          color=colour,
-                          x=x+w+6, y=gy-h,
-                          anchor_x='left', anchor_y='top')
-        label.draw()
+        if label:
+            label = pyglet.text.Label("{0}, {1}".format(x,game.resolution[1]-y),
+                              font_name='Arial',
+                              font_size=10,
+                              color=colour,
+                              x=x+w+6, y=gy-h,
+                              anchor_x='left', anchor_y='top')
+            label.draw()
         return [p1, p2, p3, p4]
 
 def fColour(colour):
@@ -643,7 +652,7 @@ Classes
 """
 
 class Actor(metaclass=use_on_events):
-    def __init__(self, name, interact=None, display_text=None):
+    def __init__(self, name, interact=None, display_text=None, look=None, drag=None):
         super().__init__()
         self.name = name
         self._actions = {}
@@ -690,7 +699,8 @@ class Actor(metaclass=use_on_events):
         self.show_debug = False 
 
         self._interact = interact #special queuing function for interacts
-        self.look = None #override queuing function for look
+        self._look = look #override queuing function for look
+        self._drag = drag #allow drag if not None, function will be called when item is released after being dragged
         self.uses = {} #override use functions (actor is key name)
         self.facts = []
         self.inventory = {}
@@ -717,6 +727,11 @@ class Actor(metaclass=use_on_events):
     def set_busy(self, x):
         self._busy = x
     busy = property(get_busy, set_busy)
+
+    @property
+    def viewable(self):
+        if self._sprite: return True
+        return False
 
     def update_anchor(self):
         if isinstance(self._sprite._animation, pyglet.image.Animation):
@@ -809,10 +824,12 @@ class Actor(metaclass=use_on_events):
 
     @property
     def w(self):
+        if not self._sprite: return None
         return self._sprite.width
 
     @property
     def h(self):
+        if not self._sprite: return None
         return self._sprite.height
 
     def _get_text_details(self, font=None, size=None, wrap=None):
@@ -839,8 +856,11 @@ class Actor(metaclass=use_on_events):
         pass
 
     def _update(self, dt): #actor._update
-        self._scroll_dx += self.scroll[0]
-        self._scroll_dy += self.scroll[1]
+        self._scroll_dx += self.scroll[0] #
+        if self.w and self._scroll_dx < -self.w: self._scroll_dx += self.w
+        if self.w and self._scroll_dx > self.w: self._scroll_dx -= self.w
+
+        self._scroll_dy += self.scroll[1] #%self.h
 
         if self._goto_x != None:
             self.x = self.x + self._goto_dx
@@ -888,11 +908,12 @@ class Actor(metaclass=use_on_events):
         """ collide with actor's clickable 
             if image is true, ignore clickable and collide with image.
         """
+        if self._parent:
+            x = x - self._parent.x
+            y = y - self._parent.y
+            #print(self.name, (x,y), (nx,ny), self.clickable_area, (self._parent.x, self._parent.y))
         if self._clickable_fullscreen: return True
-        if not self.clickable_area.collidepoint(x,y): return
-#        x = x - self.x 
-#        y = y - self.y - self.clickable_area.y
-#        if self.name == "New Game": import pdb; pdb.set_trace()
+        if not self.clickable_area.collidepoint(x,y): return False
         data = get_pixel_from_image(self.clickable_mask, x - self.clickable_area.x , y - self.clickable_area.y)
         if data[:2] == (0,0,0) or data[3] == 255: return False #clicked on black or transparent, so not a collide
         return True
@@ -943,6 +964,7 @@ class Actor(metaclass=use_on_events):
             if isinstance(self, sender): 
                 receiver(self.game, self, self.game.player)
 
+
     def trigger_use(self, actor):
          #user actor on this actee
          actor = get_object(self.game, actor)
@@ -968,6 +990,22 @@ class Actor(metaclass=use_on_events):
             if isinstance(self, sender): 
                 receiver(self.game, self, self.game.player)
 
+    def trigger_look(self):
+        if logging: log.debug("Player looks at %s"%self.name)
+        self.game.mouse_mode = MOUSE_INTERACT #reset mouse mode
+        if self._look: #if user has supplied a look override
+            self._look(self.game, self, self.game.player)
+        else: #else, search several namespaces or use a default
+            basic = "look_%s"%slugify(self.name)
+            script = get_function(self.game, basic)
+            function_name =  "def %s(game, %s, player):"%(basic, slugify(self.name).lower())
+            if script:
+                script(self.game, self, self.game.player)
+            else:
+                 #warn if using default vida look
+                if logging: log.warning("no look script for %s (write a %s function)"%(self.name, function_name))
+                self._look_default(self.game, self, self.game.player)
+
 
     def _interact_default(self, game, actor, player):
         """ default queuing interact smethod """
@@ -990,6 +1028,17 @@ class Actor(metaclass=use_on_events):
         ]
         if self.game.player: self.game.player.says(choice(c))
 
+    def _look_default(self, game, actor, player):
+        """ default queuing look method """
+        if isinstance(self, Item): #very generic
+            c = ["It's not very interesting.",
+            "There's nothing cool about that.",
+            "It looks unremarkable to me."]
+        else: #probably an Actor object
+            c = ["They're not very interesting.",
+            "I prefer to look at the good looking.",
+            ]
+        if self.game.player: self.game.player.says(choice(c))
 
 
     def _smart_actions(self, game): 
@@ -1100,8 +1149,14 @@ class Actor(metaclass=use_on_events):
 
     def pyglet_draw(self, absolute=False): #actor.draw
         if self._sprite and self._allow_draw:
-            x = self.x + self.ax
-            y = self.game.resolution[1] - self.y - self.ay - self._sprite.height
+            x, y = self.x, self.y
+            if self._parent:
+                x += self._parent.x
+                y += self._parent.y
+
+            x = x + self.ax
+            y = self.game.resolution[1] - y - self.ay - self._sprite.height
+            
 
             #displace for camera
             if not absolute and self.game.scene:
@@ -1111,6 +1166,12 @@ class Actor(metaclass=use_on_events):
             pyglet.gl.glTranslatef(self._scroll_dx, 0.0, 0.0);
             self._sprite.position = (int(x), int(y))
             self._sprite.draw()
+            if self._scroll_dx != 0 and self._scroll_dx + self.w < self.game.resolution[0]:
+                self._sprite.position = (int(x+self.w), int(y))
+                self._sprite.draw()
+            if self._scroll_dx != 0 and x > 0:
+                self._sprite.position = (int(x-self.w), int(y))
+                self._sprite.draw()
             pyglet.gl.glTranslatef(-self._scroll_dx, 0.0, 0.0);
 
         if self.show_debug:
@@ -1219,11 +1280,8 @@ class Actor(metaclass=use_on_events):
         label.game = self.game
         label.fullscreen(True)
         label.x,label.y = x+10,y+10
-        if ok:
-            try:
-                ok.x, ok.y = x + msgbox.w - ok.w//2, y + msgbox.h - ok.h//2
-            except:
-                import pdb; pdb.set_trace()
+        if ok and ok.viewable:
+            ok.x, ok.y = x + msgbox.w - ok.w//2, y + msgbox.h - ok.h//2
         msgbox.x, msgbox.y = x,y
 
         #make the game wait until the user closes the modal
@@ -1344,6 +1402,8 @@ class Actor(metaclass=use_on_events):
         if self._scale: self._sprite.scale = self.scale 
         if self.rotate: self._sprite.rotation = self.rotate
         self._sprite.on_animation_end = callback
+        if self.game and self.game._headless and callback and isinstance(self._sprite.image, pyglet.image.Animation): #jump to end
+            self._sprite._frame_index = len(self._sprite.image.frames)
 
     def on_do(self, action, frame=None):
         self.busy = False
@@ -1351,6 +1411,7 @@ class Actor(metaclass=use_on_events):
         
     def on_do_once(self, action):
         self._do(action, self.on_animation_end_once)
+
 #        if follow: self.do(follow)
         self.busy = True
 
@@ -1649,11 +1710,13 @@ class Scene(metaclass=use_on_events):
     def set_y(self, v): self._y = v
     y = property(get_y, set_y)
 
-    def get_w(self): return int(self._w * self.scale)
+    def get_w(self): 
+        return int(self._w * self.scale)
     def set_w(self, v): self._w = v
     w = property(get_w, set_w)
 
-    def get_h(self): return int(self._h * self.scale)
+    def get_h(self):
+        return int(self._h * self.scale)
     def set_h(self, v): self._h = v
     h = property(get_h, set_h)
 
@@ -1787,17 +1850,20 @@ class Scene(metaclass=use_on_events):
 
 
 class Text(Item):
-    def __init__(self, name, pos=(0,0), display_text=None, colour=(255, 255, 255, 255), font=None, size=26, wrap=800, offset=0, interact=None, delay=0, step=2):
+    def __init__(self, name, pos=(0,0), display_text=None, colour=(255, 255, 255, 255), font=None, size=26, wrap=800, offset=0, interact=None, look=None,delay=0, step=2):
         """
         delay : How fast to display chunks of the text
         step : How many characters to advance during delayed display
         """
         self._label = None
-        super().__init__(name, interact)
+        self._label_offset = None
+        super().__init__(name, interact=interact, look=look)
 
         self._display_text = display_text if display_text else name
         self.x, self.y = pos
         self.step = step
+        self.offset = offset
+
 
         #animate the text
         if delay>0:
@@ -1823,6 +1889,16 @@ class Text(Item):
                                   width=wrap,
                                   x=self.x, y=self.y,
                                   anchor_x='left', anchor_y='top')
+        if self.offset > 0:
+            self._label_offset = pyglet.text.Label(self.__text,
+                                  font_name=font_name,
+                                  font_size=size,
+                                  color=(0,0,0, 255),
+                                  multiline=True,
+                                  width=wrap,
+                                  x=self.x+offset, y=self.y+offset,
+                                  anchor_x='left', anchor_y='top')
+            
         self._clickable_area = Rect(0, 0, self._label.content_width, self._label.content_height)
         
     def get_display_text(self):
@@ -1831,6 +1907,9 @@ class Text(Item):
     def set_display_text(self, v):
         self._display_text = v
         if self._label: self._label.text = v
+        if self._label_offset:
+            self._label_offset.text = v
+
     display_text = property(get_display_text, set_display_text)
 
     @property
@@ -1850,12 +1929,24 @@ class Text(Item):
             self._text_index += self.step
             self.__text = self.display_text[:self._text_index]
             self._label.text = self.__text
+            if self._label_offset:
+                self._label_offset.text = self.__text
 
     def pyglet_draw(self, absolute=False): #text draw
         if not self.game:
             log.warning("Unable to draw Text %s without a self.game object"%self.name)
             return
-        x, y = self.x - self.ax, self.game.resolution[1] - self.y + self.ay 
+
+        x,y = self.x, self.y
+        if self._parent:
+            x += self._parent.x
+            y += self._parent.y
+
+        x, y = x - self.ax, self.game.resolution[1] - y + self.ay 
+        if self._label_offset: #draw offset first
+            self._label_offset.x, self._label_offset.y = int(x+self.offset), int(y+self.offset)
+            self._label_offset.draw()
+
         self._label.x, self._label.y = int(x), int(y)
         self._label.draw()
         if self.show_debug:
@@ -2352,6 +2443,7 @@ class Game(metaclass=use_on_events):
         self._events = []
         self._event = None
         self._event_index = 0
+        self._drag = None #is mouse dragging an object
 
         self._selected_options = [] #keep track of convo trees
         self.visited = [] #list of scene names visited
@@ -2496,7 +2588,13 @@ class Game(metaclass=use_on_events):
     def on_mouse_press(self, x, y, button, modifiers):
         """ If the mouse is over an object with a down action, switch to that action """
 #        print('    (%s, %s), '%(x-self.player.x, self.resolution[1] - y - self.player.y))
-        pass
+        x, y = x / self._scale, y / self._scale #if window is being scaled
+
+        y = self.game.resolution[1] - y #invert y-axis if needed
+
+        for obj in self.scene._objects.values():
+            if obj.collide(x,y) and obj._drag:
+                self._drag = obj
 
     def on_mouse_release(self, x, y, button, modifiers):
         """ Call the correct function depending on what the mouse has clicked on """
@@ -2504,6 +2602,10 @@ class Game(metaclass=use_on_events):
 
         if self._editing and self._editing_point_set: #we are editing something, so don't interact with objects
             return
+
+        if self._drag: 
+            self._drag._drag(self, self._drag, self.player)
+            self._drag = None
 
         y = self.game.resolution[1] - y #invert y-axis if needed
         for obj in self._modals:
@@ -2524,7 +2626,10 @@ class Game(metaclass=use_on_events):
             if obj.collide(x,y):
                 if self.mouse_mode != MOUSE_LOOK or GOTO_LOOK: 
                     if self.player in self.scene._objects.values() and self.player != obj: self.player.goto(obj)
-                obj.trigger_interact()
+                if button & pyglet.window.mouse.RIGHT:
+                    if obj.allow_look: obj.trigger_look()
+                else:
+                    if obj.allow_interact: obj.trigger_interact()
                 return
 
         #no objects to interact with, so just go to the point
@@ -2534,6 +2639,10 @@ class Game(metaclass=use_on_events):
 
     def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
         x, y = x / self._scale, y / self._scale #if window is being scaled
+        if self._drag:
+            obj = self._drag
+            obj.x += dx
+            obj.y -= dy
 
         if self._editing and self._editing_point_set: #we are editing something so send through the new x,y in pyvida format
 #               x,y = x, self.resolution[1] - y #invert for pyglet to pyvida
@@ -2790,10 +2899,10 @@ class Game(metaclass=use_on_events):
                     new_fn = get_function(self.game, i.interact.__name__)
                     if new_fn: i.interact = new_fn #only replace if function found, else rely on existing fn
             if i.name == "Brutus Ship": import pdb; pdb.set_trace()
-            if i.look: 
-                if type(i.look) != str:
-                    new_fn = get_function(self.game, i.look.__name__)
-                    if new_fn: i.look = new_fn #only replace if function found, else rely on existing fn
+            if i._look: 
+                if type(i._look) != str:
+                    new_fn = get_function(self.game, i._look.__name__)
+                    if new_fn: i._look = new_fn #only replace if function found, else rely on existing fn
 
         log.info("Editor has done a module reload")
 
@@ -2837,7 +2946,10 @@ class Game(metaclass=use_on_events):
         """ Do a step in the walkthrough """
         if len(self._walkthrough) == 0: return #no walkthrough
         walkthrough = self._walkthrough[self._walkthrough_index]
-        function_name = walkthrough[0].__name__ 
+        try:
+            function_name = walkthrough[0].__name__ 
+        except:
+            import pdb; pdb.set_trace()
         self._walkthrough_index += 1    
 
         if self._walkthrough_index > self._walkthrough_target or self._walkthrough_index > len(self._walkthrough):
@@ -2957,6 +3069,7 @@ class Game(metaclass=use_on_events):
     def pyglet_draw(self): #game.draw
         """ Draw the scene """
         if not self.scene: return
+#        if self._headless: return
 #        self.scene.pyglet_draw()
 
         #draw scene backgroundsgrounds (layers with z equal or less than 1.0)
@@ -3317,12 +3430,14 @@ class Navigator(tk.Toplevel):
 
 
     def _navigate(self, delta):
+        if len(self.app.objects) == 0:
+            print("No objects in scene")
+            return
         obj = self.app.objects[self.app.index]
         obj.show_debug = False
         self.app.index += delta
         if self.app.index < 0: self.app.index = len(self.app.objects)-1
         if self.app.index >= len(self.app.objects): self.app.index = 0
-        print(self.app.index, [(i,x.name) for i,x in enumerate(self.app.objects)])
         obj = self.app.objects[self.app.index]
         obj.show_debug = True
         self.edit_button["text"] = obj.name
@@ -3457,6 +3572,8 @@ class MyTkApp(threading.Thread):
 #        self.close["text"] = "Close Editor"
 #        self.close["command"] =  self.callback
 #        self.close.grid()
+        self.parent.wm_attributes("-topmost", 1)
+        self.navigator.wm_attributes("-topmost", 1)
 
         self.parent.mainloop()
 

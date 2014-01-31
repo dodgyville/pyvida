@@ -13,6 +13,7 @@ class ActorTest(unittest.TestCase):
         self.game = Game("Unit Tests", fps=60, afps=16, resolution=RESOLUTION)
         self.game.settings = Settings()
         self.actor = Actor("_test_actor").smart(self.game)
+        self.parent = Actor("_test_actor_parent").smart(self.game, using="data/actors/_test_actor")
         self.game.add(self.actor)
 
     def test_initial_xy(self):
@@ -97,6 +98,14 @@ class ActorTest(unittest.TestCase):
         self.assertEqual(msgbox.name, "msgbox")
         self.assertEqual(msgbox.action.name, "idle")
         self.assertEqual(msgbox.w, 100)
+
+    def test_parent(self):
+        self.actor._parent = self.parent
+        self.actor.x, self.actor.y = 0,0
+        self.parent.x, self.parent.y = 100,100
+        position = (self.actor.x, self.actor.y)
+        self.assertEqual(self.actor.collide(100,100), True)
+        self.assertEqual(self.actor.collide(150,150), True)
 
 
 class ActorScaleTest(unittest.TestCase):
