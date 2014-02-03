@@ -8,7 +8,7 @@ from datetime import datetime
 from gettext import gettext
 from random import choice
 import tkinter as tk
-import tkinter.filedialog
+import tkinter.filedialog, tkinter.simpledialog
 import threading, traceback
 
 from pyglet.image.codecs.png import PNGImageDecoder
@@ -717,6 +717,7 @@ class Actor(metaclass=use_on_events):
             ("stand point", (self.get_sx, self.get_sy), (self.set_sx, self.set_sy),  (int, int)),
             ("name point", (self.get_nx, self.get_ny), (self.set_nx, self.set_ny),  (int, int)),
             ("anchor", (self.get_ax, self.get_ay), (self.set_ax, self.set_ay), (int, int)),
+            ("scale", (self.get_scale, self.get_scale), (self.adjust_scale_x, self.adjust_scale_y), (float, float)),
             ("interact", self.get_interact, self.set_interact, str),
             ("allow_draw", self.get_allow_draw, self.set_allow_draw, bool), # ( "allow_update", "allow_use", "allow_interact", "allow_look"]    
             ("allow_interact", self.get_allow_interact, self.set_allow_interact, bool), # ( "allow_update", "allow_use", "allow_interact", "allow_look"]            
@@ -794,6 +795,20 @@ class Actor(metaclass=use_on_events):
         if self._clickable_mask: self._clickable_mask.scale = v
         self._scale = v
     scale = property(get_scale, set_scale)
+
+    def adjust_scale_y(self, y):
+        """ adjust scale of actor based on mouse displacement """
+        if not self.game: return
+        my = self.game.mouse_down[1]
+        y = self.game.resolution[1] - y #invert for pyglet
+        if (y-my+100) < 20: return
+        sf = (100.0/(y - my + 100))
+        if sf > 0.95 and sf < 1.05: sf = 1.0 #snap to full size
+        print("setting scale for %s to %f"%(self.name, sf))
+        self.scale = sf
+
+    def adjust_scale_x(self,x):
+        pass
 
     def get_rotate(self): return self._rotate
     def set_rotate(self, v): 
@@ -1511,7 +1526,7 @@ class Actor(metaclass=use_on_events):
 
         if self.game and scene and self == self.game.player and self.game.test_inventory: #test player's inventory against scene        
             for inventory_item in self.inventory.values():
-                for scene_item in scene.objects.values():
+                for scene_item in scene._objects.values():
                     if type(scene_item) != Portal:
                         actee, actor = slugify(scene_item.name), slugify(inventory_item.name)
                         basic = "%s_use_%s"%(actee, actor)
@@ -1569,7 +1584,7 @@ class Portal(Actor, metaclass=use_on_events):
         super().__init__(*args, **kwargs)
         self._ox, self._oy = 0,0 #out point for this portal
         self.interact = self._interact_default
-        self.link = None
+        self.link = None #the connecting Portal
 
     def get_oy(self): return self._oy
     def set_oy(self, oy): self._oy = oy
@@ -2485,6 +2500,7 @@ class Game(metaclass=use_on_events):
         self.mouse_mode = MOUSE_INTERACT #what activity does a mouse click trigger?
         self.mouse_cursor = self._mouse_cursor = MOUSE_POINTER #which image to use
         self.hide_cursor = HIDE_MOUSE
+        self.mouse_down = (0,0) #last press
 
         pyglet.clock.schedule(self.update) #the pyvida game scripting event loop
 
@@ -2594,7 +2610,9 @@ class Game(metaclass=use_on_events):
 #        print('    (%s, %s), '%(x-self.player.x, self.resolution[1] - y - self.player.y))
         x, y = x / self._scale, y / self._scale #if window is being scaled
 
-        y = self.game.resolution[1] - y #invert y-axis if needed
+        y = self.w - y #invert y-axis if needed
+
+        self.mouse_down = (x,y)
 
         for obj in self.scene._objects.values():
             if obj.collide(x,y) and obj._drag:
@@ -2650,16 +2668,17 @@ class Game(metaclass=use_on_events):
 
         if self._editing and self._editing_point_set: #we are editing something so send through the new x,y in pyvida format
 #               x,y = x, self.resolution[1] - y #invert for pyglet to pyvida
-            x, y = self._editing_point_get[0](), self._editing_point_get[1]()
-            x += dx
-            y -= dy
-            if self._editing_point_set[0] == self._editing.set_x: #set x, so use raw
-                self._editing_point_set[0](x)
-                self._editing_point_set[1](y)
-            else: #displace the point by the object's x,y so the point is relative to the obj
-                self._editing_point_set[0](x - self._editing.x)
-                self._editing_point_set[1](y - self._editing.y)
-
+            if len(self._editing_point_get) == 2:
+                x, y = self._editing_point_get[0](), self._editing_point_get[1]()
+                x += dx
+                y -= dy
+                if self._editing_point_set[0] == self._editing.set_x: #set x, so use raw
+                    self._editing_point_set[0](x)
+                    self._editing_point_set[1](y)
+                else: #displace the point by the object's x,y so the point is relative to the obj
+                    self._editing_point_set[0](x - self._editing.x)
+                    self._editing_point_set[1](y - self._editing.y)
+                
 
     def add_arguments(self):
         """ Add allowable commandline arguments """
@@ -3446,18 +3465,21 @@ class NavigatorOld(tk.Toplevel):
 
 # pyqt4 editor
 
-class Dialog(object):
-    def __init__(self, app, caption):
-        self.top = top = tk.Toplevel(app)
-        tk.Label(top, text=caption).pack(side=tk.LEFT)
-        self.value = StringVar()
-        options = {}
-        entry = tk.Entry(top, textvariable=self.value)
-        entry.pack(side=tk.LEFT)
-        def callback():
-            
-        b = Button(master, text="Go", width=10, command=callback)
-        b.pack()
+class SceneSelectDialog(tk.simpledialog.Dialog):
+    def __init__(self, game, title, *args, **kwargs):
+        parent = tkinter._default_root
+        self.game = game
+        super().__init__(parent, title)
+
+    def body(self, master):
+        self.listbox = tk.Listbox(master)
+        self.listbox.pack()
+        for item in self.game._scenes.values():
+            self.listbox.insert(tk.END, item.name)
+        return self.listbox # initial focus
+
+    def apply(self):
+        self.result = self.listbox.selection_get()
 
 
 class MyTkApp(threading.Thread):
@@ -3499,19 +3521,26 @@ class MyTkApp(threading.Thread):
 
         def _new_object(obj):
             obj.smart(self.game)
-            obj.x, obj.y = (self.game.w/2, self.game.h/2)
+            obj.x, obj.y = (self.game.resolution[0]/2, self.game.resolution[1]/2)
             self.game.add(obj)
             self.game.scene.add(obj)
         def add_object():
             pass
         def new_actor():
-            d = Dialog(self.app, "Name?")
-            self.app.wait_window(d.top)            
+            d = tk.simpledialog.askstring("New Actor", "Name:")
+            if not d: return
+            _new_object(Actor(d))
         def new_item():
-            d = Dialog(self.app, "Name?")
-            self.app.wait_window(d.top)            
+            d = tk.simpledialog.askstring("New Item", "Name:")
+            if not d: return
+            _new_object(Item(d))
         def new_portal():
-            pass
+            d = SceneSelectDialog(self.game, "Exit Scene")
+#            d = tk.simpledialog.askstring("New Portal", "Name:")
+            if not d: return
+            name = "{}_to_{}".format(self.game.scene.name, d.result)
+            print(name)
+            _new_object(Portal(name))
 
         self.add_object = tk.Button(group, text='Add', command=add_object).grid(column=2, row=row)
 
@@ -3567,9 +3596,12 @@ class MyTkApp(threading.Thread):
             self.index += delta
             if self.index < 0: self.index = num_objects-1
             if self.index >= num_objects: self.index = 0
-            obj = objects[self.index]
+            self.obj = obj = objects[self.index]
             obj.show_debug = True
-            self.editor_label["text"] = obj.name
+            self.editor_label.grid_forget()
+            self.editor_label.destroy()
+#            self.editor_label["text"] = obj.name
+            self.create_editor_widgets()
 #            self.edit_button["text"] = obj.name
 
         def prev():
@@ -3584,7 +3616,6 @@ class MyTkApp(threading.Thread):
         self.next_button = tk.Button(group, text='->', command=next).grid(column=2, row=row)
 
         self.rows = row
-
 
     def create_editor_widgets(self):
         row = 0
@@ -3632,10 +3663,10 @@ class MyTkApp(threading.Thread):
             if type(types) == tuple: #assume two ints
                 e = tk.Entry(frame)
                 e.grid(row=row, column=1)
-                e.insert(0, get_attrs[0]())
+                e.insert(0, int(get_attrs[0]()))
                 e = tk.Entry(frame)
                 e.grid(row=row, column=2)
-                e.insert(0, get_attrs[1]())
+                e.insert(0, int(get_attrs[1]()))
             elif types == str:
                 e = tk.Entry(frame)
                 e.grid(row=row, column=1, columnspan=2)
@@ -3653,7 +3684,7 @@ class MyTkApp(threading.Thread):
         def remove_btn():
             self.obj.show_debug = False
             self.game.scene.remove(self.obj)
-            objects = list(self.game.scene.objects.values())
+            objects = list(self.game.scene._objects.values())
             if len(objects)> 0:
                 self.obj = objects[0]
         self.remove_btn = tk.Button(frame, text="Remove", command=remove_btn).grid(row=row, column=1)
@@ -3661,7 +3692,6 @@ class MyTkApp(threading.Thread):
 
         row += 1
         self.rows = row
-
 
     def create_widgets(self):
 
@@ -3673,9 +3703,6 @@ class MyTkApp(threading.Thread):
         frame = self #self for new window, parent for one window
         self.create_navigator_widgets()
         self.create_editor_widgets()
-
-
-        
 
     def run(self):
         self.app=tk.Tk()
