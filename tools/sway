@@ -1,0 +1,38 @@
+#!/usr/bin/python3
+
+from PIL import Image
+from math import sin, pi
+
+import sys
+
+if len(sys.argv)<3:
+    print("sway <infile> <outfile>")
+
+inname = sys.argv[1]
+outname = sys.argv[2]
+
+im = Image.open(iname)
+png_info = im.info
+w,h = im.size
+num_of_frames = 20
+new_image = Image.new(im.mode, (w*num_of_frames, h))
+delta = 2*pi/num_of_frames
+for i in range(0, num_of_frames):
+    sway = sin(i*delta)*0.01
+#    sway = .1
+    top_left = (sway,0)
+    bottom_left = (0,h)
+    bottom_right = (w,h)
+    top_right = (w + sway,0)
+#    data = [element for tupl in [top_left, bottom_left, bottom_right, top_right] for element in tupl]
+    data = [1,-sway,0,0,1,0]
+    frame = im.transpose(Image.FLIP_TOP_BOTTOM) #flip
+    frame = frame.transform((w,h), Image.AFFINE, data) #shear from new top
+    frame = frame.transpose(Image.FLIP_TOP_BOTTOM) #flip back
+    new_image.paste(frame, (i*w, 0))
+new_image.show()
+new_image.save(outname, **png_info)
+details = "%s.montage"%os.path.splitext(outname)[0]
+with open(details, mode='w', encoding='utf-8') as f:
+    f.write('{}\n{}\n{}\n'.format(num_of_frames, w, h)) 
+print("done.")

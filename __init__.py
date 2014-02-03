@@ -1850,7 +1850,7 @@ class Scene(metaclass=use_on_events):
 
 
 class Text(Item):
-    def __init__(self, name, pos=(0,0), display_text=None, colour=(255, 255, 255, 255), font=None, size=26, wrap=800, offset=0, interact=None, look=None,delay=0, step=2):
+    def __init__(self, name, pos=(0,0), display_text=None, colour=(255, 255, 255, 255), font=None, size=26, wrap=800, offset=None, interact=None, look=None,delay=0, step=2):
         """
         delay : How fast to display chunks of the text
         step : How many characters to advance during delayed display
@@ -1889,7 +1889,7 @@ class Text(Item):
                                   width=wrap,
                                   x=self.x, y=self.y,
                                   anchor_x='left', anchor_y='top')
-        if self.offset > 0:
+        if self.offset:
             self._label_offset = pyglet.text.Label(self.__text,
                                   font_name=font_name,
                                   font_size=size,
@@ -2370,7 +2370,7 @@ class Game(metaclass=use_on_events):
         self.game = self
         self.player = None
         self.scene = None
-        self._info_object = None
+
         self._scale = scale
 
         self.camera = Camera(self) #the camera object
@@ -2392,6 +2392,9 @@ class Game(metaclass=use_on_events):
         self.font_info = FONT_VERA
         self.font_info_size = 16
         self.font_info_colour = (255, 220, 0) #off yellow
+
+        self._info_object = None
+        self.reset_info_object()
 
         self._actors = {}
         self._items = {}
@@ -2536,8 +2539,9 @@ class Game(metaclass=use_on_events):
     def on_key_press(self, symbol, modifiers):
         global use_effect
         if symbol == pyglet.window.key.F1:
-            edit_object(self, list(self.scene._objects.values()), 0)
-            self.menu_from_factory("editor", MENU_EDITOR)
+#            edit_object(self, list(self.scene._objects.values()), 0)
+#            self.menu_from_factory("editor", MENU_EDITOR)
+            editor(self)
         if symbol == pyglet.window.key.F2:
             game = self
             import pdb; pdb.set_trace()
@@ -2581,7 +2585,7 @@ class Game(metaclass=use_on_events):
                 return
 
         #Not over any thing of importance
-        self._info_object = None #clear info 
+        self._info_object.display_text = "" #clear info 
         self.mouse_cursor = MOUSE_POINTER #reset mouse pointer
 
 
@@ -2688,6 +2692,15 @@ class Game(metaclass=use_on_events):
         """ use test suites to enable jumping forward """
         self._walkthrough = [i for sublist in suites for i in sublist]  #all tests, flattened in order
 
+    def reset_info_object(self):
+        """ Create a new info object for display overlay texts """
+        #set up info object
+        colour = self.font_info_colour
+        font = self.font_info
+        size = self.font_info_size
+        self._info_object = Text("_info_text", display_text="", font=font, colour=colour, size=size, offset=1)
+        self._info_object.game = self
+
     def reset(self):
         """ reset all game state information, perfect for loading new games """
         self.scene = None
@@ -2766,11 +2779,8 @@ class Game(metaclass=use_on_events):
         """
 #        colour = (250,250,40) #yellow
 #        colour = (170, 222, 135) #pale green
-        colour = self.font_info_colour
-        font = self.font_info
-        size = self.font_info_size
-        self._info_object = Text("_info_text", display_text=text, font=font, colour=colour, size=size, offset=1)
-        self._info_object.game = self
+        self._info_object.display_text = text # = Text("_info_text", display_text=text, font=font, colour=colour, size=size, offset=1)
+#        self._info_object.game = self
         if text and len(text) == 0: return
         w = self._info_object.w
         if align == RIGHT: x -= w
@@ -3091,7 +3101,7 @@ class Game(metaclass=use_on_events):
             if item.z > 1.0:
                 item.pyglet_draw(absolute=False)
 
-        if self._info_object:
+        if self._info_object.display_text != "":
             self._info_object.pyglet_draw(absolute=False)
 
         for item in self._menu:
@@ -3344,7 +3354,7 @@ Editor stuff
 """
 
 
-class Navigator(tk.Toplevel):
+class NavigatorOld(tk.Toplevel):
     def __init__(self, app, parent, game):
         tk.Toplevel.__init__(self, parent)
         self.parent = parent
@@ -3369,9 +3379,9 @@ class Navigator(tk.Toplevel):
             scene = self.game._scenes[self.scene.get()]
             self.app.objects = objects = list(scene._objects.values())
             self.game.camera.scene(scene)
-            self.app.index = 0
+            self.index = 0
             if len(objects)>0:
-                self.game._editing = objects[self.app.index]
+                self.game._editing = objects[self.index]
                 self.game._editing.show_debug = True
             self.game.player.relocate(scene)
         tk.Label(frame, text="Current scene:").grid(column=0, row=row)
@@ -3379,7 +3389,12 @@ class Navigator(tk.Toplevel):
         scenes.sort()
         option = tk.OptionMenu(frame, self.scene, *scenes, command=change_scene).grid(column=1,row=row)
         row += 1
-        tk.Radiobutton(frame, text="Camera", command=self.edit_camera, indicatoron=0, value=1).grid(row=row, column=0)
+        def edit_camera():
+            self.game._editing = self.game.scene
+            self.game._editing_point_set = (self.game.scene.set_x, self.game.scene.set_y)
+            self.game._editing_point_get = (self.game.scene.get_x, self.game.scene.get_y)
+
+        tk.Radiobutton(frame, text="Camera", command=edit_camera, indicatoron=0, value=1).grid(row=row, column=0)
         def close_editor(*args, **kwargs):
             self.game._editing = None #switch off editor
 
@@ -3429,94 +3444,191 @@ class Navigator(tk.Toplevel):
         self.rows = row
 
 
-    def _navigate(self, delta):
-        if len(self.app.objects) == 0:
-            print("No objects in scene")
-            return
-        obj = self.app.objects[self.app.index]
-        obj.show_debug = False
-        self.app.index += delta
-        if self.app.index < 0: self.app.index = len(self.app.objects)-1
-        if self.app.index >= len(self.app.objects): self.app.index = 0
-        obj = self.app.objects[self.app.index]
-        obj.show_debug = True
-        self.edit_button["text"] = obj.name
+# pyqt4 editor
 
-    def prev(self):
-        self._navigate(-1) #decrement navigation
+class Dialog(object):
+    def __init__(self, app, caption):
+        self.top = top = tk.Toplevel(app)
+        tk.Label(top, text=caption).pack(side=tk.LEFT)
+        self.value = StringVar()
+        options = {}
+        entry = tk.Entry(top, textvariable=self.value)
+        entry.pack(side=tk.LEFT)
+        def callback():
+            
+        b = Button(master, text="Go", width=10, command=callback)
+        b.pack()
 
-    def next(self):
-        self._navigate(1) #increment navigation
 
-    def create_editor(self):
-        obj = self.app.objects[self.app.index]
-        self.app.create_editor(obj)
-    
-
-class Editor(tk.Toplevel):
-    def __init__(self, app, parent, game, obj, start_row= 0 ):
-        tk.Toplevel.__init__(self, parent)
-        self.title(obj.name)
-        self.parent = parent
-        self.frame = tk.Frame(parent)
-        self.app = app
-        self.obj = obj
+class MyTkApp(threading.Thread):
+    def __init__(self, game):
+        threading.Thread.__init__(self)
         self.game = game
-        self._editing = tk.StringVar()
-        self._editing.set("Nothing")
-        self.rows = start_row
-        self.createWidgets()
-        self.lift(aboveThis=parent)
-        parent.attributes("-topmost", 1)
-
-    def close_editor(self):
-        obj = self.app.objects[self.app.index]
-        obj.show_debug = False
-        self.destroy()
-
-    def selected(self):
-        print(self._editing.get())
-        for editable in self.obj._editable:
-            if self._editing.get() == editable[0]: #this is what we want to edit now.
-                label, get_attrs, set_attrs, types = editable
-                self.game._editing = self.obj
-                self.game._editing_point_set = set_attrs
-                self.game._editing_point_get = get_attrs
-
-    def edit_btn(self):
-        """ Open the script for this object for editing """
-        obj = self.obj
-        directory = obj._directory
-        fname = os.path.join(directory, "%s.py"%slugify(obj.name).lower())
-        if not os.path.isfile(fname): #create a new module for this actor
-            with open(fname, "a") as f:
-                f.write("from pyvida import gettext as _\n\n")
-
-        #add the function            
-#        with open(fname, "a") as f:
-#            f.write("\ndef %s(game, obj, player):\n    pass\n"%basic)
-#        print("EDIT DEFAULT %s SCRIPT %s"%(mode, fname) )
-#        import importlib
-#        importlib.import_module('matplotlib.text')
-        module_name = os.path.splitext(os.path.basename(fname))[0]
-        open_editor(self.game, fname)
-        __import__(module_name)
-
-    def reset_btn(self):
-        """ Reset the main editable variables for this object """
-        obj = self.obj
-        obj.x, obj.y = self.game.resolution[0]/2, self.game.resolution[1]/2
-        obj.ax, obj.ay = 0, 0
-        obj.sx, obj.sy = obj.w, 0
-        obj.nx, obj.ny = obj.w, -obj.h
+        self.obj = list(self.game.scene._objects.values())[0]
+        self.obj.show_debug = True
+        self.rows = 0
+        self.index = 0
+        self.start()
 
 
-    def createWidgets(self):
-        frame = self
+    def create_navigator_widgets(self):
         row = self.rows
+        group = tk.LabelFrame(self.app, text="Navigator", padx=5, pady=5)
+        group.grid(padx=10, pady=10)
+
+        def change_scene(*args, **kwargs):
+            if self.game._editing.show_debug:
+                self.game._editing.show_debug = False
+            scene = self.game._scenes[self.scene.get()]
+            self.app.objects = objects = list(scene._objects.values())
+            self.game.camera.scene(scene)
+            self.index = 0
+            if len(objects)>0:
+                self.game._editing = objects[self.index]
+                self.game._editing.show_debug = True
+            self.game.player.relocate(scene)
+        tk.Label(group, text="Current scene:").grid(column=0, row=row)
+        scenes = [x.name for x in self.game._scenes.values()]
+        scenes.sort()
+        option = tk.OptionMenu(group, self.game.scene, *scenes, command=change_scene).grid(column=1,row=row)
+
+#        actors = [x.name for x in self.game._actors.values()]
+#        actors.sort()
+#        option = tk.OptionMenu(group, self.game.scene, *scenes, command=change_scene).grid(column=1,row=row)
+
+
+        def _new_object(obj):
+            obj.smart(self.game)
+            obj.x, obj.y = (self.game.w/2, self.game.h/2)
+            self.game.add(obj)
+            self.game.scene.add(obj)
+        def add_object():
+            pass
+        def new_actor():
+            d = Dialog(self.app, "Name?")
+            self.app.wait_window(d.top)            
+        def new_item():
+            d = Dialog(self.app, "Name?")
+            self.app.wait_window(d.top)            
+        def new_portal():
+            pass
+
+        self.add_object = tk.Button(group, text='Add', command=add_object).grid(column=2, row=row)
+
+        self.new_actor = tk.Button(group, text='New Actor', command=new_actor).grid(column=3, row=row)
+        self.new_item = tk.Button(group, text='New Item', command=new_item).grid(column=4, row=row)
+        self.new_portal = tk.Button(group, text='New Portal', command=new_portal).grid(column=5, row=row)
+
+        row += 1
+        def edit_camera(self):
+            self.game._editing = self.game.scene
+            self.game._editing_point_set = (self.game.scene.set_x, self.game.scene.set_y)
+            self.game._editing_point_get = (self.game.scene.get_x, self.game.scene.get_y)
+
+        tk.Radiobutton(group, text="Camera", command=edit_camera, indicatoron=0, value=1).grid(row=row, column=0)
+        def close_editor(*args, **kwargs):
+            self.game._editing = None #switch off editor
+
+        self.close_button = tk.Button(group, text='close', command=close_editor).grid(column=1, row=row)
+
+        row += 1
+        def save_state(*args, **kwargs):
+            d = tk.filedialog.SaveFileDialog(self.parent)
+            pattern, default, key = "*.py", "", None
+            fname = d.go(self.game.scene.directory, pattern, default, key)
+            if fname is None:
+                return
+            else:
+                print("SAVE STATE")
+                state_name = os.path.splitext(os.path.basename(fname))[0]
+                self.game._save_state(state_name)
+        def load_state(*args, **kwargs):
+            d = tk.filedialog.LoadFileDialog(self.parent)
+            pattern, default, key = "*.py", "", None
+            fname = d.go(self.game.scene.directory, pattern, default, key)
+            if fname is None:
+                return
+            else:
+                state_name = os.path.splitext(os.path.basename(fname))[0]
+                print("STATE_NAME",state_name)
+                self.game.load_state(self.game.scene, state_name)
+        self.state_save_button = tk.Button(group, text='save state', command=save_state).grid(column=0, row=row)
+        self.state_load_button = tk.Button(group, text='load state', command=load_state).grid(column=1, row=row)
+
+        row += 1
+        def _navigate(delta):
+            objects = list(self.game.scene._objects.values())
+            num_objects = len(objects)
+            if num_objects == 0:
+                print("No objects in scene")
+                return
+            obj = objects[self.index]
+            obj.show_debug = False
+            self.index += delta
+            if self.index < 0: self.index = num_objects-1
+            if self.index >= num_objects: self.index = 0
+            obj = objects[self.index]
+            obj.show_debug = True
+            self.editor_label["text"] = obj.name
+#            self.edit_button["text"] = obj.name
+
+        def prev():
+            _navigate(-1) #decrement navigation
+
+        def next():
+            _navigate(1) #increment navigation
+
+        self.prev_button = tk.Button(group, text='<-', command=prev).grid(column=0, row=row)
+#        self.edit_button = tk.Button(group, text='Edit', command=self.create_editor)
+#        self.edit_button.grid(column=1, row=row)
+        self.next_button = tk.Button(group, text='->', command=next).grid(column=2, row=row)
+
+        self.rows = row
+
+
+    def create_editor_widgets(self):
+        row = 0
+        self.editor_label = group = tk.LabelFrame(self.app, text=self.obj.name, padx=5, pady=5)
+        group.grid(padx=10, pady=10)
+
+        self._editing = tk.StringVar(self.app)
+        self._editing.set("Nothing")
+
+        frame = group
+        row = self.rows
+        def selected():
+            print(self._editing.get())
+            for editable in self.obj._editable:
+                if self._editing.get() == editable[0]: #this is what we want to edit now.
+                    label, get_attrs, set_attrs, types = editable
+                    self.game._editing = self.obj
+                    self.game._editing_point_set = set_attrs
+                    self.game._editing_point_get = get_attrs
+
+        def edit_btn():
+            """ Open the script for this object for editing """
+            obj = self.obj
+            directory = obj._directory
+            fname = os.path.join(directory, "%s.py"%slugify(obj.name).lower())
+            if not os.path.isfile(fname): #create a new module for this actor
+                with open(fname, "a") as f:
+                    f.write("from pyvida import gettext as _\n\n")
+            module_name = os.path.splitext(os.path.basename(fname))[0]
+            open_editor(self.game, fname)
+            __import__(module_name)
+
+        def reset_btn():
+            """ Reset the main editable variables for this object """
+            obj = self.obj
+            obj.x, obj.y = self.game.resolution[0]/2, self.game.resolution[1]/2
+            obj.ax, obj.ay = 0, 0
+            obj.sx, obj.sy = obj.w, 0
+            obj.nx, obj.ny = obj.w, -obj.h
+
+
         for i, editable in enumerate(self.obj._editable):
             label, get_attrs, set_attrs, types = editable
-            tk.Radiobutton(frame, text=label, variable=self._editing, value=label, indicatoron=0, command=self.selected).grid(row=row, column=0)
+            tk.Radiobutton(frame, text=label, variable=self._editing, value=label, indicatoron=0, command=selected).grid(row=row, column=0)
             if type(types) == tuple: #assume two ints
                 e = tk.Entry(frame)
                 e.grid(row=row, column=1)
@@ -3533,55 +3645,43 @@ class Editor(tk.Toplevel):
             row += 1
 
         row += 1
-        self.edit_script = tk.Button(frame, text="Edit Script", command=self.edit_btn).grid(row=row, column=0)
-        row += 1
-        self.edit_script = tk.Button(frame, text="Reset", command=self.reset_btn).grid(row=row, column=0)
 
-        self.QUIT = tk.Button(frame)
-        self.QUIT["text"] = "Close"
-        self.QUIT["fg"]   = "red"
-        self.QUIT["command"] =  self.close_editor
+        group = tk.LabelFrame(group, text="Tools", padx=5, pady=5)
+        group.grid(padx=10, pady=10)
+
+        self.edit_script = tk.Button(frame, text="Edit Script", command=edit_btn).grid(row=row, column=0)
+        def remove_btn():
+            self.obj.show_debug = False
+            self.game.scene.remove(self.obj)
+            objects = list(self.game.scene.objects.values())
+            if len(objects)> 0:
+                self.obj = objects[0]
+        self.remove_btn = tk.Button(frame, text="Remove", command=remove_btn).grid(row=row, column=1)
+        self.reset_btn = tk.Button(frame, text="Reset", command=reset_btn).grid(row=row, column=4)
+
         row += 1
-        self.QUIT.grid(row=row)
         self.rows = row
 
 
-class MyTkApp(threading.Thread):
-    def __init__(self, game, objects, index, callback=None):
-        threading.Thread.__init__(self)
-        self.game = game
-        self.objects = objects
-        self.index = index
-        self.callback = callback
-        self._editors = []
-        self.start()
+    def create_widgets(self):
 
-    def create_editor(self, obj):
-        editor = Editor(self, self.parent, self.game, obj, start_row=0)
-        self._editors.append(editor)
-        editor.geometry('400x700+{}+{}'.format(self.game.resolution[0]-400, 200))
+        """
+        Top level game navigator: scene select, add actor, remove actor, cycle actors, save|load state
+        """
+#        group = self.app
+
+        frame = self #self for new window, parent for one window
+        self.create_navigator_widgets()
+        self.create_editor_widgets()
+
+
+        
+
     def run(self):
-        self.parent=tk.Tk()
-        self.parent.protocol("WM_DELETE_WINDOW", self.callback)
-        self.navigator = Navigator(self, self.parent, self.game)
-        self.navigator.geometry('400x200+{}+{}'.format(self.game.resolution[0]-400, 0))
-#        self.create_editor(self.objects[self.index])
+        self.app=tk.Tk()
+#        self.app.wm_attributes("-topmost", 1)
+        self.create_widgets()
+        self.app.mainloop()
 
-        #create close all button
-#        self.close = tk.Button(self.parent)
-#        self.close["text"] = "Close Editor"
-#        self.close["command"] =  self.callback
-#        self.close.grid()
-        self.parent.wm_attributes("-topmost", 1)
-        self.navigator.wm_attributes("-topmost", 1)
-
-        self.parent.mainloop()
-
-def edit_object(game, objects, index):
-    """ Open a tk editor for this object and import the values back into the project when done """
-    if index < len(objects):
-        obj = game._editing = objects[index]
-        obj.show_debug = True
-    def close_editor():
-        app.parent.destroy()
-    app = MyTkApp(game, objects, index, close_editor)
+def editor(game):
+    app = MyTkApp(game)
