@@ -6,7 +6,7 @@ from argparse import ArgumentParser
 from collections import Iterable
 from datetime import datetime
 from gettext import gettext
-from random import choice
+from random import choice, randint
 import tkinter as tk
 import tkinter.filedialog, tkinter.simpledialog
 import threading, traceback
@@ -527,7 +527,6 @@ class Rect(object):
 def crosshair(game, point, colour, absolute=False):
 
         fcolour = fColour(colour)
-        pyglet.gl.glColor4f(*fcolour)       
 
         #y is inverted for pyglet
         x,y=int(point[0]), int(game.resolution[1]-point[1])
@@ -535,8 +534,14 @@ def crosshair(game, point, colour, absolute=False):
             x += int(game.scene.x)
             y -= int(game.scene.y)
 
+        pyglet.gl.glColor4f(0, 0, 0, 1.0) # undo alpha for pyglet drawing, draw black
+        pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x+1, y-6, x+1, y+4))) 
+        pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x-4, y-1, x+6, y-1))) 
+
+        pyglet.gl.glColor4f(*fcolour)       
         pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x, y-5, x, y+5))) 
         pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x-5, y, x+5, y))) 
+
         pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0) # undo alpha for pyglet drawing
 
         label = pyglet.text.Label("{0}, {1}".format(x,y),
@@ -671,7 +676,7 @@ class Actor(metaclass=use_on_events):
         self._sx, self._sy = 0, 0 #stand points
         self._ax, self._ay = 0, 0 #anchor points
         self._nx, self._ny = 0, 0 # displacement point for name
-        self._tx, self._tx = 0, 0 # displacement point for text
+        self._tx, self._ty = 0, 0 # displacement point for text
         self._parent = None
         self.idle_stand = None #when an actor stands at this actor's stand point, request an idle
 
@@ -701,6 +706,8 @@ class Actor(metaclass=use_on_events):
         self._interact = interact #special queuing function for interacts
         self._look = look #override queuing function for look
         self._drag = drag #allow drag if not None, function will be called when item is released after being dragged
+        self._mouse_motion = None #called when mouse is hovering over object
+        self._mouse_none = None #called when mouse is not hovering over object
         self.uses = {} #override use functions (actor is key name)
         self.facts = []
         self.inventory = {}
@@ -717,7 +724,7 @@ class Actor(metaclass=use_on_events):
             ("stand point", (self.get_sx, self.get_sy), (self.set_sx, self.set_sy),  (int, int)),
             ("name point", (self.get_nx, self.get_ny), (self.set_nx, self.set_ny),  (int, int)),
             ("anchor", (self.get_ax, self.get_ay), (self.set_ax, self.set_ay), (int, int)),
-            ("scale", (self.get_scale, self.get_scale), (self.adjust_scale_x, self.adjust_scale_y), (float, float)),
+            ("scale", self.get_scale, self.adjust_scale_x, float),
             ("interact", self.get_interact, self.set_interact, str),
             ("allow_draw", self.get_allow_draw, self.set_allow_draw, bool), # ( "allow_update", "allow_use", "allow_interact", "allow_look"]    
             ("allow_interact", self.get_allow_interact, self.set_allow_interact, bool), # ( "allow_update", "allow_use", "allow_interact", "allow_look"]            
@@ -796,18 +803,19 @@ class Actor(metaclass=use_on_events):
         self._scale = v
     scale = property(get_scale, set_scale)
 
-    def adjust_scale_y(self, y):
+    def adjust_scale_x(self, x):
         """ adjust scale of actor based on mouse displacement """
         if not self.game: return
-        my = self.game.mouse_down[1]
-        y = self.game.resolution[1] - y #invert for pyglet
-        if (y-my+100) < 20: return
-        sf = (100.0/(y - my + 100))
+        mx = self.game.mouse_down[0]
+#        y = self.game.resolution[1] - y #invert for pyglet
+        print(mx, x, x-mx+100,  self.game.resolution[0] )
+        if (x-mx+100) < 20: return
+        sf = (100.0/(x - mx + 100))
         if sf > 0.95 and sf < 1.05: sf = 1.0 #snap to full size
         print("setting scale for %s to %f"%(self.name, sf))
         self.scale = sf
 
-    def adjust_scale_x(self,x):
+    def adjust_scale_y(self,x):
         pass
 
     def get_rotate(self): return self._rotate
@@ -1056,7 +1064,7 @@ class Actor(metaclass=use_on_events):
         if self.game.player: self.game.player.says(choice(c))
 
 
-    def _smart_actions(self, game): 
+    def _smart_actions(self, game, exclude=[]): 
         """ smart load the actions """
 
         #smart actions for pathplanning and which arcs they cover (in degrees)
@@ -1065,9 +1073,10 @@ class Actor(metaclass=use_on_events):
             "up": (-45, 45),
             "down": (135, 225)
             }
-
+        self._actions = {}
         for action_file in self._images:
             action_name = os.path.splitext(os.path.basename(action_file))[0]
+            if action_name in exclude: continue
             action = Action(action_name).smart(game, actor=self, filename=action_file)
             action.available_for_pathplanning = True
             self._actions[action_name] = action
@@ -1199,6 +1208,8 @@ class Actor(metaclass=use_on_events):
         self._debugs.append(crosshair(self.game, (self.x, self.y), (0, 255, 0, 255), absolute=absolute))
         #anchor - blue
         self._debugs.append(crosshair(self.game, (self.x + self.ax, self.y + self.ay ), (0, 0, 255, 255), absolute=absolute))
+        #stand point - pink
+        self._debugs.append(crosshair(self.game, (self.x + self.sx, self.y + self.sy ), (255, 200, 200, 255), absolute=absolute))
         #clickable area
         self._debugs.append(rectangle(self.game, self.clickable_area, (0, 255, 100, 255), absolute=absolute))
 
@@ -1256,15 +1267,24 @@ class Actor(metaclass=use_on_events):
             if remember in self.game._selected_options and "colour" in kwargs:
                 r,g,b= kwargs["colour"]
                 kwargs["colour"] = (r/2, g/2, b/2)
-
+#            def over_option
+#            kwargs["over"] = over_option
             opt = Text("option{}".format(i), display_text=text, **kwargs)
             opt.x, opt.y = label.x + 10, label.y + (i+1)*opt.h + 5
+            def _mouse_none(game, btn, player,*args, **kwargs):
+                btn._label.color = opt._label.color
+
+            def _mouse_motion(game, btn, player, *args, **kwargs):
+                btn._label.color = (255,255,255,255)
+                
             def answer_callback(game, btn, player):
                 self._busy = False #no longer busy, so game can stop waiting
                 self.game._modals = [] #empty modals
 #                print("ANSWER CALLBACK",i,btn.response_callback)
                 btn.response_callback(game, btn, player)
             opt.interact = answer_callback
+            opt._mouse_none = _mouse_none
+            opt._mouse_motion = _mouse_motion
             opt.response_callback = callback
             self.game.add(opt)
             self.game._modals.append(opt)
@@ -1669,14 +1689,152 @@ class Portal(Actor, metaclass=use_on_events):
         self.enter_link(actor)
 
 
+class Particle(object):
+    def __init__(self, x, y, ax, ay, speed, direction):
+        self.index = 0
+        self.action_index = 0
+        self.x = x
+        self.y = y
+        self.ax, self.ay = ax, ay
+        self.speed = speed
+        self.direction = direction
+        self.hidden = True #hide for first run
+        self.terminate = False #don't renew this particle if True
 
 class Emitter(Item):
-    def __init__(self, name, *args, **kwargs):
-#    def __init__(self, name, number=10, frames=10, direction=0, fov=0, speed=1, acceleration=(0,0), size_start=1, size_end=1, alpha_start=1.0, alpha_end=0,random_index=0):
+#    def __init__(self, name, *args, **kwargs):
+    def __init__(self, name, number=10, frames=10, direction=0, fov=0, speed=1, acceleration=(0,0), size_start=1, size_end=1, alpha_start=1.0, alpha_end=0,random_index=0):
+        """ This object's clickable_mask|clickable_area is used for spawning """
         super().__init__(name)
+        self.name = name
+        self.number = number
+        self.frames = frames
+        self.direction = direction
+        self.fov = fov #field of view (how wide is the nozzle?)
+        self.speed = speed
+        self.acceleration = acceleration #in the x,y directions
+        self.size_start = size_start
+        self.size_end = size_end
+        self.alpha_start, self.alpha_end = alpha_start, alpha_end
+        self.random_index = random_index #should each particle start mid-action?
+        self.particles = []
+        #self._solid_area = Rect(0,0,0,0) #used for the spawn area        
 
-        log.warning("Emitters not implemented yet")
+    @property
+    def summary(self):
+        fields = ["name", "number", "frames", "direction", "fov", "speed", "acceleration", "size_start", "size_end", "alpha_start", "alpha_end", "random_index"]
+        d = {}
+        for i in fields:
+            d[i] = getattr(self, i, None)  
+        return d
 
+    def smart(self, game, *args, **kwargs): #emitter.smart
+        super().smart(game, *args, **kwargs)
+        self._smart_actions(game, exclude=["mask"]) #reload the actions but without the mask
+        self._clickable_mask = load_image(os.path.join(self._directory, "mask.png"))
+        self._reset()        
+        return self
+
+    def _update_particle(self, dt, p):
+        r = math.radians(p.direction)
+        a = p.speed * math.cos(r)
+        o = p.speed * math.sin(r)
+        p.y -= a 
+        p.x += o
+        p.x -= self.acceleration[0] * p.index
+        p.y -= self.acceleration[1] * p.index
+        p.index +=  1
+        p.action_index += 1
+        if p.index >= self.frames: #reset
+            p.x, p.y = self.x+ randint(0, self._solid_area.w), self.y + randint(0, self._solid_area.h)
+            p.index = 0
+            p.hidden = False
+            if p.terminate == True:
+                self.particles.remove(p)
+    
+    def _update(self, dt): #emitter.update
+        Item._update(self, dt)
+        for p in self.particles:
+            self._update_particle(dt, p)
+                    
+    def pyglet_draw(self, absolute=False): #emitter.draw
+#        if self._sprite and self._allow_draw: return
+        if not self.action: 
+            if logging: log.error("Emitter %s has no actions"%(self.name))
+            return
+        if not self.allow_draw: return
+            
+        self._rect = Rect(self.x, self.y, 0, 0)            
+        for p in self.particles:
+            x, y = p.x, p.y
+            if self._parent:
+                x += self._parent.x
+                y += self._parent.y
+
+            x = x + self.ax
+            y = self.game.resolution[1] - y - self.ay - self._sprite.height
+            
+
+            #displace for camera
+            if not absolute and self.game.scene:
+                x += self.game.scene.x * self.z
+                y -= self.game.scene.y * self.z
+
+            self._sprite.position = (int(x), int(y))
+            self._sprite.draw()
+
+
+            """
+            img = self.action.image(p.action_index)
+            alpha = self.alpha_start - (abs(float(self.alpha_end - self.alpha_start)/self.frames) * p.index)
+            if img and not p.hidden: 
+                try:
+                    self._rect.union_ip(self._draw_image(img, (p.x-p.ax, p.y-p.ay), self._tint, alpha, screen=screen))
+                except:
+                    import pdb; pdb.set_trace()
+            """
+
+    def on_reanchor(self, pt):
+        """ queue event for changing the anchor points """
+        self._ax, self._ay = pt[0], pt[1]
+        for p in self.particles:
+            p.ax, p.ay = self._ax, self._ay
+        self._event_finish(block=False)
+
+
+    def _add_particles(self, num=1):
+        for x in range(0,num):
+            d = randint(self.direction-float(self.fov/2), self.direction+float(self.fov/2))
+            self.particles.append(Particle(self.x + randint(0, self._solid_area.w), self.y + randint(0, self._solid_area.h), self._ax, self._ay, self.speed, d))
+            p = self.particles[-1]
+            p.index = randint(0, self.frames)
+            if self.random_index and self.action:
+                p.action_index = randint(0, self.action.count)
+            for j in range(0, self.frames): #fast forward particle to mid position
+                self._update_particle(0, p)
+            p.hidden = True
+
+    def on_add_particles(self, num):
+        self._add_particles(num=num)
+        self._event_finish(block=False)
+    
+    def on_limit_particles(self, num):
+        """ restrict the number of particles to num through attrition """
+        for p in self.particles[num:]:
+            p.terminate = True
+        self._event_finish(block=False)
+        
+    
+    def _reset(self):
+        """ rebuild emitter """
+        self.particles = []
+        self._add_particles(self.number)
+    
+    def on_reset(self):
+        self._reset()
+        self._event_finish(block=False)
+    
+        
 
 class WalkareaManager(object):
     """ Comptability layer with pyvida4 walkareas """
@@ -1806,12 +1964,12 @@ class Scene(metaclass=use_on_events):
         self._add(objects)
 
     def _add(self, objects): 
+        if type(objects) == str: objects = [objects]
         if not isinstance(objects, Iterable): objects = [objects]
         for obj in objects:
             obj = get_object(self.game, obj) 
             if obj in self._objects.values(): #already on scene, don't resize
                 return
-
             if obj.name in self.scales.keys():
                 obj.scale = self.scales[obj.name]
             elif "actors" in self.scales.keys() and not isinstance(obj, Item): #use auto scaling for actor if available
@@ -1865,7 +2023,7 @@ class Scene(metaclass=use_on_events):
 
 
 class Text(Item):
-    def __init__(self, name, pos=(0,0), display_text=None, colour=(255, 255, 255, 255), font=None, size=26, wrap=800, offset=None, interact=None, look=None,delay=0, step=2):
+    def __init__(self, name, pos=(0,0), display_text=None, colour=(255, 255, 255, 255), font=None, size=26, wrap=800, offset=None, interact=None, look=None, delay=0, step=2):
         """
         delay : How fast to display chunks of the text
         step : How many characters to advance during delayed display
@@ -1911,7 +2069,7 @@ class Text(Item):
                                   color=(0,0,0, 255),
                                   multiline=True,
                                   width=wrap,
-                                  x=self.x+offset, y=self.y+offset,
+                                  x=self.x+offset, y=self.y-offset,
                                   anchor_x='left', anchor_y='top')
             
         self._clickable_area = Rect(0, 0, self._label.content_width, self._label.content_height)
@@ -2565,40 +2723,49 @@ class Game(metaclass=use_on_events):
     def on_mouse_motion(self,x, y, dx, dy):
         """ Change mouse cursor depending on what the mouse is hovering over """
         ox, oy = x,y
-        x -= self.scene.x #displaced by camera
-        y += self.scene.y
+        if self.scene:
+            x -= self.scene.x #displaced by camera
+            y += self.scene.y
 
         x, y = x / self._scale, y / self._scale #if window is being scaled
         y = self.game.resolution[1] - y #invert y-axis if needed
 
         ox, oy = ox / self._scale, oy / self._scale #if window is being scaled
-        oy = self.game.resolution[1] - y
+        oy = self.game.resolution[1] - oy
 
         if not self.scene: return
-        if len(self._modals)>0: return
-        for obj in self._menu:
+        for obj in self._modals:
             if obj.collide(ox,oy): #absolute screen values
-                 self.mouse_cursor = MOUSE_CROSSHAIR
-                 return
-
-        for obj in self.scene._objects.values():
-            if obj.collide(x,y) and obj.allow_draw:
-                t = obj.name if obj.display_text == None else obj.display_text
-                if isinstance(obj, Portal):
-                    if self.settings.portal_exploration and obj.link and obj.link.scene:
-                        if obj.link.scene.name not in self.visited:
-                            t = "To the unknown."
-                        else:
-                            t = "To %s"%(obj.link.scene.name) if obj.link.scene.display_text in [None, ""] else "To %s"%(obj.link.scene.display_text)
-                    if not self.settings.show_portal_text: t = ""                        
-
-                if isinstance(obj, Portal) and self.mouse_mode != MOUSE_USE: #hover over portal
-                    self.mouse_cursor = MOUSE_LEFT if obj._x<self.resolution[0]/2 else MOUSE_RIGHT
-                else:
-                    self.mouse_cursor = MOUSE_CROSSHAIR
-
-                self.info(t, obj.x + obj.nx, obj.y + obj.ny, obj.display_text_align)
+                self.mouse_cursor = MOUSE_CROSSHAIR
+                if obj._mouse_motion: obj._mouse_motion(self.game, obj, self.game.player,x,y,dx,dy)
                 return
+            else:
+                if obj._mouse_none: obj._mouse_none(self.game, obj, self.game.player,x,y,dx,dy)
+
+        if len(self._modals) == 0: 
+            for obj in self._menu:
+                if obj.collide(ox,oy): #absolute screen values
+                     self.mouse_cursor = MOUSE_CROSSHAIR
+                     return
+
+            for obj in self.scene._objects.values():
+                if obj.collide(x,y) and obj.allow_draw:
+                    t = obj.name if obj.display_text == None else obj.display_text
+                    if isinstance(obj, Portal):
+                        if self.settings.portal_exploration and obj.link and obj.link.scene:
+                            if obj.link.scene.name not in self.visited:
+                                t = "To the unknown."
+                            else:
+                                t = "To %s"%(obj.link.scene.name) if obj.link.scene.display_text in [None, ""] else "To %s"%(obj.link.scene.display_text)
+                        if not self.settings.show_portal_text: t = ""                        
+
+                    if isinstance(obj, Portal) and self.mouse_mode != MOUSE_USE: #hover over portal
+                        self.mouse_cursor = MOUSE_LEFT if obj._x<self.resolution[0]/2 else MOUSE_RIGHT
+                    else:
+                        self.mouse_cursor = MOUSE_CROSSHAIR
+
+                    self.info(t, obj.x + obj.nx, obj.y + obj.ny, obj.display_text_align)
+                    return
 
         #Not over any thing of importance
         self._info_object.display_text = "" #clear info 
@@ -2610,7 +2777,7 @@ class Game(metaclass=use_on_events):
 #        print('    (%s, %s), '%(x-self.player.x, self.resolution[1] - y - self.player.y))
         x, y = x / self._scale, y / self._scale #if window is being scaled
 
-        y = self.w - y #invert y-axis if needed
+        y = self.resolution[1] - y #invert y-axis if needed
 
         self.mouse_down = (x,y)
 
@@ -2668,17 +2835,20 @@ class Game(metaclass=use_on_events):
 
         if self._editing and self._editing_point_set: #we are editing something so send through the new x,y in pyvida format
 #               x,y = x, self.resolution[1] - y #invert for pyglet to pyvida
-            if len(self._editing_point_get) == 2:
+            if hasattr(self._editing_point_get, "__len__") and len(self._editing_point_get) == 2:
                 x, y = self._editing_point_get[0](), self._editing_point_get[1]()
                 x += dx
                 y -= dy
-                if self._editing_point_set[0] == self._editing.set_x: #set x, so use raw
-                    self._editing_point_set[0](x)
-                    self._editing_point_set[1](y)
-                else: #displace the point by the object's x,y so the point is relative to the obj
-                    self._editing_point_set[0](x - self._editing.x)
-                    self._editing_point_set[1](y - self._editing.y)
-                
+                self._editing_point_set[0](x)
+                self._editing_point_set[1](y)
+
+#                if self._editing_point_set[0] == self._editing.set_x: #set x, so use raw
+#                else: #displace the point by the object's x,y so the point is relative to the obj
+#                    import pdb; pdb.set_trace()
+#                    self._editing_point_set[0](x - self._editing.x)
+#                    self._editing_point_set[1](y - self._editing.y)
+            else:
+                self._editing_point_set(x)
 
     def add_arguments(self):
         """ Add allowable commandline arguments """
@@ -3254,7 +3424,7 @@ class Game(metaclass=use_on_events):
                     f.write('    %s.retext((%i, %i))\n'%(slug, obj._tx, obj._ty))
                     if obj._parent:
                         f.write('    %s.reparent(\"%s\")\n'%(slug, obj._parent.name))
-                    if obj.action and obj.action.name != "idle":
+                    if obj.action:
                         f.write('    %s.do("%s")\n'%(slug, obj.action.name))
                     if isinstance(obj, Portal): #special portal details
                         ox,oy = obj._ox, obj._oy
@@ -3372,114 +3542,35 @@ Editor stuff
             ]
 """
 
-
-class NavigatorOld(tk.Toplevel):
-    def __init__(self, app, parent, game):
-        tk.Toplevel.__init__(self, parent)
-        self.parent = parent
-        self.app = app
-        self.game = game
-        self.title("Navigator")
-        self.scene = tk.StringVar(self.parent)
-        self.rows = 0
-        self.createWidgets()
-
-    def edit_camera(self):
-        self.game._editing = self.game.scene
-        self.game._editing_point_set = (self.game.scene.set_x, self.game.scene.set_y)
-        self.game._editing_point_get = (self.game.scene.get_x, self.game.scene.get_y)
-
-    def createWidgets(self):
-        row = 0
-        frame = self #self for new window, parent for one window
-        def change_scene(*args, **kwargs):
-            if self.game._editing.show_debug:
-                self.game._editing.show_debug = False
-            scene = self.game._scenes[self.scene.get()]
-            self.app.objects = objects = list(scene._objects.values())
-            self.game.camera.scene(scene)
-            self.index = 0
-            if len(objects)>0:
-                self.game._editing = objects[self.index]
-                self.game._editing.show_debug = True
-            self.game.player.relocate(scene)
-        tk.Label(frame, text="Current scene:").grid(column=0, row=row)
-        scenes = [x.name for x in self.game._scenes.values()]
-        scenes.sort()
-        option = tk.OptionMenu(frame, self.scene, *scenes, command=change_scene).grid(column=1,row=row)
-        row += 1
-        def edit_camera():
-            self.game._editing = self.game.scene
-            self.game._editing_point_set = (self.game.scene.set_x, self.game.scene.set_y)
-            self.game._editing_point_get = (self.game.scene.get_x, self.game.scene.get_y)
-
-        tk.Radiobutton(frame, text="Camera", command=edit_camera, indicatoron=0, value=1).grid(row=row, column=0)
-        def close_editor(*args, **kwargs):
-            self.game._editing = None #switch off editor
-
-        self.close_button = tk.Button(frame, text='close', command=close_editor).grid(column=1, row=row)
-        """
-        e = tk.Entry(frame)
-        e.grid(row=i, column=1)
-        e.insert(0, get_attrs[0]())
-        e = tk.Entry(frame)
-        e.grid(row=i, column=2)
-        e.insert(0, get_attrs[1]())
-        """
-
-        row += 1
-        self.prev_button = tk.Button(frame, text='<-', command=self.prev).grid(column=0, row=row)
-        self.edit_button = tk.Button(frame, text='Edit', command=self.create_editor)
-        self.edit_button.grid(column=1, row=row)
-        self.next_button = tk.Button(frame, text='->', command=self.next).grid(column=2, row=row)
-
-        row += 1
-        def save_state(*args, **kwargs):
-            d = tk.filedialog.SaveFileDialog(self.parent)
-            pattern, default, key = "*.py", "", None
-            fname = d.go(self.game.scene.directory, pattern, default, key)
-            if fname is None:
-                return
-            else:
-                print("SAVE STATE")
-                state_name = os.path.splitext(os.path.basename(fname))[0]
-                self.game._save_state(state_name)
-#            game.user_input("What is the name of this %s state to save (no directory or .py)?"%self.scene.name, e_save_state)
-#            print(args, kwargs)
-        def load_state(*args, **kwargs):
-            print(args, kwargs)
-#            self.game._load_state()
-            d = tk.filedialog.LoadFileDialog(self.parent)
-            pattern, default, key = "*.py", "", None
-            fname = d.go(self.game.scene.directory, pattern, default, key)
-            if fname is None:
-                return
-            else:
-                state_name = os.path.splitext(os.path.basename(fname))[0]
-                print("STATE_NAME",state_name)
-                self.game.load_state(self.game.scene, state_name)
-        self.state_save_button = tk.Button(frame, text='save state', command=save_state).grid(column=0, row=row)
-        self.state_load_button = tk.Button(frame, text='load state', command=load_state).grid(column=1, row=row)
-        self.rows = row
-
-
 # pyqt4 editor
-
-class SceneSelectDialog(tk.simpledialog.Dialog):
-    def __init__(self, game, title, *args, **kwargs):
+class SelectDialog(tk.simpledialog.Dialog):
+    def __init__(self, game, title, objects, *args, **kwargs):
         parent = tkinter._default_root
         self.game = game
+        self.objects = objects
         super().__init__(parent, title)
 
     def body(self, master):
         self.listbox = tk.Listbox(master)
         self.listbox.pack()
-        for item in self.game._scenes.values():
+        for item in self.objects:
             self.listbox.insert(tk.END, item.name)
         return self.listbox # initial focus
 
     def apply(self):
         self.result = self.listbox.selection_get()
+
+
+class SceneSelectDialog(SelectDialog):
+    def __init__(self, game, title, *args, **kwargs):
+        objects = game._scenes.values()
+        super().__init__(game, title, objects)
+
+
+class ObjectSelectDialog(SelectDialog):
+    def __init__(self, game, title, *args, **kwargs):
+        objects = list(game._actors.values()) + list(game._items.values())
+        super().__init__(game, title, objects)
 
 
 class MyTkApp(threading.Thread):
@@ -3491,28 +3582,30 @@ class MyTkApp(threading.Thread):
         self.rows = 0
         self.index = 0
         self.start()
-
+        self.scene = None #self.game.scene
 
     def create_navigator_widgets(self):
         row = self.rows
         group = tk.LabelFrame(self.app, text="Navigator", padx=5, pady=5)
         group.grid(padx=10, pady=10)
 
+        scene = tk.StringVar(group)
         def change_scene(*args, **kwargs):
-            if self.game._editing.show_debug:
+            if self.game._editing and self.game._editing.show_debug:
                 self.game._editing.show_debug = False
-            scene = self.game._scenes[self.scene.get()]
-            self.app.objects = objects = list(scene._objects.values())
-            self.game.camera.scene(scene)
+            new_scene = self.game._scenes[scene.get()]
+            self.app.objects = objects = list(new_scene._objects.values())
+            self.game.camera.scene(new_scene)
             self.index = 0
             if len(objects)>0:
                 self.game._editing = objects[self.index]
                 self.game._editing.show_debug = True
-            self.game.player.relocate(scene)
+            self.game.player.relocate(new_scene)
         tk.Label(group, text="Current scene:").grid(column=0, row=row)
         scenes = [x.name for x in self.game._scenes.values()]
         scenes.sort()
-        option = tk.OptionMenu(group, self.game.scene, *scenes, command=change_scene).grid(column=1,row=row)
+
+        option = tk.OptionMenu(group, scene, *scenes, command=change_scene).grid(column=1,row=row)
 
 #        actors = [x.name for x in self.game._actors.values()]
 #        actors.sort()
@@ -3525,7 +3618,9 @@ class MyTkApp(threading.Thread):
             self.game.add(obj)
             self.game.scene.add(obj)
         def add_object():
-            pass
+            d = ObjectSelectDialog(self.game, "Add to scene")
+            if not d: return
+            self.game.scene._add(d.result)
         def new_actor():
             d = tk.simpledialog.askstring("New Actor", "Name:")
             if not d: return
@@ -3536,20 +3631,19 @@ class MyTkApp(threading.Thread):
             _new_object(Item(d))
         def new_portal():
             d = SceneSelectDialog(self.game, "Exit Scene")
-#            d = tk.simpledialog.askstring("New Portal", "Name:")
             if not d: return
             name = "{}_to_{}".format(self.game.scene.name, d.result)
             print(name)
             _new_object(Portal(name))
 
-        self.add_object = tk.Button(group, text='Add', command=add_object).grid(column=2, row=row)
+        self.add_object = tk.Button(group, text='Add Object', command=add_object).grid(column=2, row=row)
 
         self.new_actor = tk.Button(group, text='New Actor', command=new_actor).grid(column=3, row=row)
         self.new_item = tk.Button(group, text='New Item', command=new_item).grid(column=4, row=row)
         self.new_portal = tk.Button(group, text='New Portal', command=new_portal).grid(column=5, row=row)
 
         row += 1
-        def edit_camera(self):
+        def edit_camera():
             self.game._editing = self.game.scene
             self.game._editing_point_set = (self.game.scene.set_x, self.game.scene.set_y)
             self.game._editing_point_get = (self.game.scene.get_x, self.game.scene.get_y)
@@ -3562,7 +3656,7 @@ class MyTkApp(threading.Thread):
 
         row += 1
         def save_state(*args, **kwargs):
-            d = tk.filedialog.SaveFileDialog(self.parent)
+            d = tk.filedialog.SaveFileDialog(self.app)
             pattern, default, key = "*.py", "", None
             fname = d.go(self.game.scene.directory, pattern, default, key)
             if fname is None:
@@ -3572,7 +3666,7 @@ class MyTkApp(threading.Thread):
                 state_name = os.path.splitext(os.path.basename(fname))[0]
                 self.game._save_state(state_name)
         def load_state(*args, **kwargs):
-            d = tk.filedialog.LoadFileDialog(self.parent)
+            d = tk.filedialog.LoadFileDialog(self.app)
             pattern, default, key = "*.py", "", None
             fname = d.go(self.game.scene.directory, pattern, default, key)
             if fname is None:
@@ -3653,8 +3747,9 @@ class MyTkApp(threading.Thread):
             obj = self.obj
             obj.x, obj.y = self.game.resolution[0]/2, self.game.resolution[1]/2
             obj.ax, obj.ay = 0, 0
-            obj.sx, obj.sy = obj.w, 0
-            obj.nx, obj.ny = obj.w, -obj.h
+            w = obj.w if obj.w else 0
+            obj.sx, obj.sy = w, 0
+            obj.nx, obj.ny = w, -obj.h
 
 
         for i, editable in enumerate(self.obj._editable):
@@ -3673,9 +3768,21 @@ class MyTkApp(threading.Thread):
 #                if get_attrs: e.insert(0, get_attrs())
             elif types == bool:
                 tk.Checkbutton(frame, variable=get_attrs()).grid(row=row, column=1, columnspan=2)
+            elif types == float:
+                e = tk.Entry(frame)
+                e.grid(row=row, column=1)
+                e.insert(0, int(get_attrs()))
+
             row += 1
 
-        row += 1
+        action = tk.StringVar(group)
+        def change_action(*args, **kwargs):
+            self.obj.do(action.get())
+        actions = [x.name for x in self.obj._actions.values()]
+        actions.sort()
+        if len(actions)>0:
+            option = tk.OptionMenu(group, action, *actions, command=change_action).grid(column=1,row=row)
+            row += 1
 
         group = tk.LabelFrame(group, text="Tools", padx=5, pady=5)
         group.grid(padx=10, pady=10)
