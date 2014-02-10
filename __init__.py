@@ -110,6 +110,9 @@ HINT = "hint"
 
 #EDITOR CONSTANTS
 MENU_EDITOR = "e_load", "e_save", "e_add", "e_delete", "e_prev", "e_next", "e_walk", "e_portal", "e_scene", "e_step", "e_reload", "e_jump", "e_state_save", "e_state_load"
+EDIT_CLICKABLE = "clickable_area"
+EDIT_SOLID = "solid_area"
+
 
 #KEYS
 K_ESCAPE = "X"
@@ -508,6 +511,18 @@ class Rect(object):
     def set_h(self, v): self._h = v
     h = property(get_h, set_h)
 
+    @property
+    def left(self): return self.x
+
+    @property
+    def right(self): return self.x+self.w
+
+    @property
+    def top(self): return self.y
+
+    @property
+    def bottom(self): return self.y + self.h
+
 
     def collidepoint(self, x, y):
         return collide((self.x, self.y, self.w, self.h), x,y)
@@ -614,6 +629,9 @@ def get_pixel_from_image(image, x, y):
             import pdb; pdb.set_trace()
 
 
+def get_pixel_from_data(data, x, y):
+    start = (int(x)*int(y)+int(x))*4
+    return (data[start], data[start+1], data[start+2], data[start+3])
 
 #signal dispatching, based on django.dispatch
 class Signal(object):
@@ -656,7 +674,7 @@ def receiver(signal, **kwargs):
 Classes
 """
 
-class Actor(metaclass=use_on_events):
+class Actor(object, metaclass=use_on_events):
     def __init__(self, name, interact=None, display_text=None, look=None, drag=None):
         super().__init__()
         self.name = name
@@ -690,7 +708,7 @@ class Actor(metaclass=use_on_events):
         self.font_colour = None #use default
 
         self._solid_area = Rect(0,0,60,100)
-        self._clickable_area = Rect(0, 0, 0, 0)
+        self._clickable_area = Rect(0, 0, 0, 0) #always used for x,y and also w,h if clickable_mask if one is available
         self._clickable_mask = None
         self._clickable_fullscreen = False #override clickable to make it cover all the screen
 
@@ -726,6 +744,7 @@ class Actor(metaclass=use_on_events):
             ("anchor", (self.get_ax, self.get_ay), (self.set_ax, self.set_ay), (int, int)),
             ("scale", self.get_scale, self.adjust_scale_x, float),
             ("interact", self.get_interact, self.set_interact, str),
+            ("clickable area", "_clickable_area", "_clickable_area", Rect),
             ("allow_draw", self.get_allow_draw, self.set_allow_draw, bool), # ( "allow_update", "allow_use", "allow_interact", "allow_look"]    
             ("allow_interact", self.get_allow_interact, self.set_allow_interact, bool), # ( "allow_update", "allow_use", "allow_interact", "allow_look"]            
             ]
@@ -799,7 +818,7 @@ class Actor(metaclass=use_on_events):
     def set_scale(self, v): 
         if self._sprite: self._sprite.scale = v
         if self._clickable_area: self._clickable_area.scale = v
-        if self._clickable_mask: self._clickable_mask.scale = v
+#        if self._clickable_mask: self._clickable_mask.scale = v
         self._scale = v
     scale = property(get_scale, set_scale)
 
@@ -921,7 +940,11 @@ class Actor(metaclass=use_on_events):
 #            r.width *= self.scale
 #            r.height *= self.scale
         mask = pyglet.image.SolidColorImagePattern((255, 255, 255, 255))
-        self._clickable_mask = mask.create_image(self.clickable_area.w, self.clickable_area.h)
+        mask = mask.create_image(self.clickable_area.w, self.clickable_area.h)
+        channel = 'RGBA'
+        s = mask.width*len(channel)
+#        self._clickable_mask = mask.get_image_data(channel, s)
+        self._clickable_mask = mask.get_data(channel, s)
         return self._clickable_mask
 
     def fullscreen(self, v=True): #make the clickable_area cover the whole screen, useful for some modals
@@ -937,7 +960,9 @@ class Actor(metaclass=use_on_events):
             #print(self.name, (x,y), (nx,ny), self.clickable_area, (self._parent.x, self._parent.y))
         if self._clickable_fullscreen: return True
         if not self.clickable_area.collidepoint(x,y): return False
-        data = get_pixel_from_image(self.clickable_mask, x - self.clickable_area.x , y - self.clickable_area.y)
+#        data = get_pixel_from_image(self.clickable_mask, x - self.clickable_area.x , y - self.clickable_area.y)
+#        if data[:2] == (0,0,0) or data[3] == 255: return False #clicked on black or transparent, so not a collide
+        data = get_pixel_from_data(self.clickable_mask, x - self.clickable_area.x , y - self.clickable_area.y)
         if data[:2] == (0,0,0) or data[3] == 255: return False #clicked on black or transparent, so not a collide
         return True
 #        else:
@@ -2847,6 +2872,28 @@ class Game(metaclass=use_on_events):
 #                    import pdb; pdb.set_trace()
 #                    self._editing_point_set[0](x - self._editing.x)
 #                    self._editing_point_set[1](y - self._editing.y)
+            elif type(self._editing_point_set) == str: #editing a Rect
+                print("Editing rect")
+                #calculate are we editing the x,y or the w,h
+                closest_distance = 10000.0
+                r = getattr(self._editing, self._editing_point_get, None)
+                editing_index = None
+                for i,pt in enumerate([(r.left, r.top), (r.right, r.bottom)]): #possible select new point
+                    dist = math.sqrt( (pt[0] - x)**2 + (pt[1] - y)**2 )
+                    if dist<closest_distance:
+                        editing_index = i
+                        closest_distance = dist
+                if editing_index == None: return
+                r2 = getattr(self._editing, self._editing_point_set, None)
+                if editing_index == 0:
+                    r2.x += dx
+                    r2.y -= dy
+                else:
+                    r2.w += dx
+                    r2.h -= dy
+                if self._editing_point_set == "_clickable_area": self._editing._clickable_mask = None #clear mask
+                setattr(self._editing, self._editing_point_set, r2)
+                
             else:
                 self._editing_point_set(x)
 
@@ -3722,7 +3769,6 @@ class MyTkApp(threading.Thread):
         frame = group
         row = self.rows
         def selected():
-            print(self._editing.get())
             for editable in self.obj._editable:
                 if self._editing.get() == editable[0]: #this is what we want to edit now.
                     label, get_attrs, set_attrs, types = editable
