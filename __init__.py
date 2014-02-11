@@ -745,8 +745,9 @@ class Actor(object, metaclass=use_on_events):
             ("scale", self.get_scale, self.adjust_scale_x, float),
             ("interact", self.get_interact, self.set_interact, str),
             ("clickable area", "_clickable_area", "_clickable_area", Rect),
-            ("allow_draw", self.get_allow_draw, self.set_allow_draw, bool), # ( "allow_update", "allow_use", "allow_interact", "allow_look"]    
-            ("allow_interact", self.get_allow_interact, self.set_allow_interact, bool), # ( "allow_update", "allow_use", "allow_interact", "allow_look"]            
+            ("allow draw", self.get_allow_draw, self.set_allow_draw, bool), # ( "allow_update", "allow_use", "allow_interact", "allow_look"]    
+            ("allow interact", self.get_allow_interact, self.set_allow_interact, bool), # ( "allow_update", "allow_use", "allow_interact", "allow_look"]            
+            ("allow look", self.get_allow_look, self.set_allow_look, bool),
             ]
 
     def get_busy(self, x):
@@ -863,6 +864,11 @@ class Actor(object, metaclass=use_on_events):
         return self._allow_interact
     allow_interact = property(get_allow_interact, set_allow_interact)
 
+    def set_allow_look(self, v):
+        self._allow_look = v
+    def get_allow_look(self):
+        return self._allow_look
+    allow_look = property(get_allow_look, set_allow_look)
 
     @property
     def w(self):
@@ -1197,7 +1203,7 @@ class Actor(object, metaclass=use_on_events):
         return self
 
     def pyglet_draw(self, absolute=False): #actor.draw
-        if self._sprite and self._allow_draw:
+        if self._sprite and self.allow_draw:
             x, y = self.x, self.y
             if self._parent:
                 x += self._parent.x
@@ -1315,6 +1321,7 @@ class Actor(object, metaclass=use_on_events):
             self.game._modals.append(opt)
 
     def on_says(self, text, *args, **kwargs):
+        print("%s on says %s"%(self.name, text))
         items = self._says(text, *args, **kwargs)
         if self.game._headless:  #headless mode skips sound and visuals
             items[0].trigger_interact() #auto-close the on_says
@@ -2774,7 +2781,7 @@ class Game(metaclass=use_on_events):
                      return
 
             for obj in self.scene._objects.values():
-                if obj.collide(x,y) and obj.allow_draw:
+                if obj.collide(x,y) and (obj.allow_interact or obj.allow_use or obj.allow_look):
                     t = obj.name if obj.display_text == None else obj.display_text
                     if isinstance(obj, Portal):
                         if self.settings.portal_exploration and obj.link and obj.link.scene:
@@ -3600,8 +3607,10 @@ class SelectDialog(tk.simpledialog.Dialog):
     def body(self, master):
         self.listbox = tk.Listbox(master)
         self.listbox.pack()
-        for item in self.objects:
-            self.listbox.insert(tk.END, item.name)
+        objects = [i.name for i in self.objects]
+        objects.sort()
+        for item in objects:
+            self.listbox.insert(tk.END, item)
         return self.listbox # initial focus
 
     def apply(self):
@@ -3697,7 +3706,10 @@ class MyTkApp(threading.Thread):
 
         tk.Radiobutton(group, text="Camera", command=edit_camera, indicatoron=0, value=1).grid(row=row, column=0)
         def close_editor(*args, **kwargs):
-            self.game._editing = None #switch off editor
+            if self.game._editing:
+                self.game._editing.show_debug = False
+                self.game._editing = None #switch off editor
+            self.app.destroy()
 
         self.close_button = tk.Button(group, text='close', command=close_editor).grid(column=1, row=row)
 
@@ -3766,6 +3778,8 @@ class MyTkApp(threading.Thread):
         self._editing = tk.StringVar(self.app)
         self._editing.set("Nothing")
 
+        self._editing_bool = {} 
+
         frame = group
         row = self.rows
         def selected():
@@ -3797,6 +3811,23 @@ class MyTkApp(threading.Thread):
             obj.sx, obj.sy = w, 0
             obj.nx, obj.ny = w, -obj.h
 
+        def toggle_bools(*args, **kwargs):
+            """ Updates all bools that are being tracked """
+            for editing, v in self._editing_bool.items():
+                print(editing, v.get())
+                for editable in self.obj._editable:
+                    if editing == editable[0]: #this is what we want to edit now.
+                        label, get_attr, set_attr, types = editable
+                        v = True if v.get() == 1 else False
+                        set_attr(v)
+                
+#            editing = self._editing_bool.get()[:-2]
+#            val = True if self._editing_bool.get()[-1:] == "t" else False
+#            print("Set %s to %s"%(editing, val))
+#            import pdb; pdb.set_trace()
+#                    self.game._editing = self.obj
+#                    self.game._editing_point_set = set_attrs
+#                    self.game._editing_point_get = get_attrs
 
         for i, editable in enumerate(self.obj._editable):
             label, get_attrs, set_attrs, types = editable
@@ -3813,7 +3844,10 @@ class MyTkApp(threading.Thread):
                 e.grid(row=row, column=1, columnspan=2)
 #                if get_attrs: e.insert(0, get_attrs())
             elif types == bool:
-                tk.Checkbutton(frame, variable=get_attrs()).grid(row=row, column=1, columnspan=2)
+                #value="%s%s"%(label, val)
+                self._editing_bool[label] = tk.IntVar(self.app)
+                self._editing_bool[label].set(get_attrs())
+                tk.Checkbutton(frame, variable=self._editing_bool[label], command=toggle_bools, onvalue=True, offvalue=False).grid(row=row, column=1, columnspan=2)
             elif types == float:
                 e = tk.Entry(frame)
                 e.grid(row=row, column=1)
