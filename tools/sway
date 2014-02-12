@@ -6,7 +6,7 @@ from math import sin, pi
 import sys
 
 if len(sys.argv)<3:
-    print("sway <infile> <outfile>")
+    sys.exit('Usage: sway <infile> <outfile>')
 
 inname = sys.argv[1]
 outname = sys.argv[2]

@@ -744,7 +744,7 @@ class Actor(object, metaclass=use_on_events):
             ("anchor", (self.get_ax, self.get_ay), (self.set_ax, self.set_ay), (int, int)),
             ("scale", self.get_scale, self.adjust_scale_x, float),
             ("interact", self.get_interact, self.set_interact, str),
-            ("clickable area", "_clickable_area", "_clickable_area", Rect),
+            ("clickable area", "clickable_area", "_clickable_area", Rect),
             ("allow draw", self.get_allow_draw, self.set_allow_draw, bool), # ( "allow_update", "allow_use", "allow_interact", "allow_look"]    
             ("allow interact", self.get_allow_interact, self.set_allow_interact, bool), # ( "allow_update", "allow_use", "allow_interact", "allow_look"]            
             ("allow look", self.get_allow_look, self.set_allow_look, bool),
@@ -1261,7 +1261,8 @@ class Actor(object, metaclass=use_on_events):
 
     def on_animation_end(self):
 #        self.busy = False
-        frame = self._sprite._animation.frames[self._sprite._frame_index]
+        if self._sprite._animation:
+            frame = self._sprite._animation.frames[self._sprite._frame_index]
 
     def on_animation_end_once(self):
         """ When an animation has been called once only """
@@ -1627,12 +1628,15 @@ class Actor(object, metaclass=use_on_events):
         self._goto_x, self._goto_y = destination
         x,y = self._goto_x - self.x, self._goto_y - self.y
         distance = math.hypot(x, y)
-        if -5 < distance < 5: return #already there
+        if -5 < distance < 5: 
+            self._goto_x, self._goto_y = None, None
+            self._goto_dx, self._goto_dy = 0, 0
+            return #already there
         d = self.action.speed/distance #how far we can travel along the distance in one update
         angle = math.atan2(y,x)
         self._goto_dx = x * d #how far we can travel in one update, broken down into the x-component
         self._goto_dy = y * d
-        print("calc", (x, y),(self._x, self._y), self.action.speed, distance, d, (self._goto_dx, self._goto_dy), destination)
+#        print("calc", (x, y),(self._x, self._y), self.action.speed, distance, d, (self._goto_dx, self._goto_dy), destination)
 
         angle = math.degrees(angle) + 90  #0 degrees is towards the top of the screen
         if angle < -45: angle += 360 
@@ -1672,7 +1676,7 @@ class Portal(Actor, metaclass=use_on_events):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._ox, self._oy = 0,0 #out point for this portal
-        self.interact = self._interact_default
+#        self.interact = self._interact_default
         self.link = None #the connecting Portal
 
     def get_oy(self): return self._oy
@@ -2889,8 +2893,9 @@ class Game(metaclass=use_on_events):
 
         #finally, try scene objects
         for obj in self.scene._objects.values():
-            if obj.collide(x,y):
-                if self.mouse_mode != MOUSE_LOOK or GOTO_LOOK: 
+            if obj.collide(x,y) and (obj.allow_interact or obj.allow_use or obj.allow_look):
+                #if wanting to interact or use an object go to it. If engine says to go to object for look, do that too.
+                if (self.mouse_mode != MOUSE_LOOK or GOTO_LOOK) and (obj.allow_interact or obj.allow_use or obj.allow_look): 
                     if self.player in self.scene._objects.values() and self.player != obj: self.player.goto(obj, block=True)
                 if button & pyglet.window.mouse.RIGHT:
                     if obj.allow_look: obj.trigger_look()
@@ -2925,7 +2930,6 @@ class Game(metaclass=use_on_events):
 #                    self._editing_point_set[0](x - self._editing.x)
 #                    self._editing_point_set[1](y - self._editing.y)
             elif type(self._editing_point_set) == str: #editing a Rect
-                print("Editing rect")
                 #calculate are we editing the x,y or the w,h
                 closest_distance = 10000.0
                 r = getattr(self._editing, self._editing_point_get, None)
@@ -2942,8 +2946,8 @@ class Game(metaclass=use_on_events):
                     r2.x += dx
                     r2.y -= dy
                 else:
-                    r2.w += dx
-                    r2.h -= dy
+                    r2._w += dx
+                    r2._h -= dy
                 if self._editing_point_set == "_clickable_area": self._editing._clickable_mask = None #clear mask
                 setattr(self._editing, self._editing_point_set, r2)
                 
@@ -3409,7 +3413,6 @@ class Game(metaclass=use_on_events):
                     continue
                 elif replace == True:
                     print("REPLACING",obj.name)
-
             try:
                 obj.game = self
             except:
