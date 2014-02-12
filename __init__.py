@@ -713,10 +713,10 @@ class Actor(object, metaclass=use_on_events):
         self._clickable_fullscreen = False #override clickable to make it cover all the screen
 
         self._allow_draw = True
-        self.allow_update = True
-        self.allow_use = True
-        self.allow_interact = True
-        self.allow_look = True
+        self._allow_update = True
+        self._allow_use = True
+        self._allow_interact = True
+        self._allow_look = True
         self._editing = None #what attribute of this Actor are we editing
         self._editing_save = True #allow saving via the editor
         self.show_debug = False 
@@ -748,6 +748,8 @@ class Actor(object, metaclass=use_on_events):
             ("allow draw", self.get_allow_draw, self.set_allow_draw, bool), # ( "allow_update", "allow_use", "allow_interact", "allow_look"]    
             ("allow interact", self.get_allow_interact, self.set_allow_interact, bool), # ( "allow_update", "allow_use", "allow_interact", "allow_look"]            
             ("allow look", self.get_allow_look, self.set_allow_look, bool),
+            ("allow use", self.get_allow_use, self.set_allow_use, bool),
+            ("allow update", self.get_allow_update, self.set_allow_update, bool),
             ]
 
     def get_busy(self, x):
@@ -869,6 +871,19 @@ class Actor(object, metaclass=use_on_events):
     def get_allow_look(self):
         return self._allow_look
     allow_look = property(get_allow_look, set_allow_look)
+
+    def set_allow_use(self, v):
+        self._allow_use = v
+    def get_allow_use(self):
+        return self._allow_use
+    allow_use = property(get_allow_use, set_allow_use)
+
+    def set_allow_update(self, v):
+        self._allow_update = v
+    def get_allow_update(self):
+        return self._allow_update
+    allow_update = property(get_allow_update, set_allow_update)
+
 
     @property
     def w(self):
@@ -1344,9 +1359,27 @@ class Actor(object, metaclass=use_on_events):
         #position 10% off the bottom
         x, y = self.game.resolution[0]//2 - msgbox.w//2, self.game.resolution[1]*0.9 - msgbox.h
 
+        dx, dy = 10, 10 #padding
+
+        #get a portrait for this speech if one hasn't been passed in
+        portrait = None
+        if type(action) == str: action = self._actions.get(action, -1)
+        if action == -1: action = self._actions.get("portrait", self._actions.get("idle", None))
+       
+        if action != None:
+            portrait = Item("_portrait")
+            portrait._actions["idle"] = portrait.action = action
+            portrait._do("idle")
+            portrait = self.game.add(portrait)
+#            portrait_x, portrait_y = 5, 5 #top corner for portrait offset
+ #           portrait_w, portrait_h = portrait.w, portrait.h
+            portrait.x, portrait.y = 6,6
+            portrait._parent = msgbox
+            dx += portrait.w
+
         label.game = self.game
         label.fullscreen(True)
-        label.x,label.y = x+10,y+10
+        label.x,label.y = x+dx,y+dy
         if ok and ok.viewable:
             ok.x, ok.y = x + msgbox.w - ok.w//2, y + msgbox.h - ok.h//2
         msgbox.x, msgbox.y = x,y
@@ -1357,9 +1390,11 @@ class Actor(object, metaclass=use_on_events):
 
         items = [msgbox, label]
         if ok: items.append(ok)
+        if portrait: items.append(portrait)
 
         def close_on_says(game, obj, player):
             if ok: self.game._modals.remove(ok)
+            if portrait: self.game._modals.remove(portrait)
             self.game._modals.remove(label)
             self.game._modals.remove(msgbox)
             self._busy = False
@@ -1588,16 +1623,16 @@ class Actor(object, metaclass=use_on_events):
                             if scene_item.allow_use: log.warning("%s default use script missing: def %s(game, %s, %s)"%(scene.name, basic, actee.lower(), actor.lower()))
 
 
-    def _calculate_goto(self, destination):
+    def _calculate_goto(self, destination, block=False):
         self._goto_x, self._goto_y = destination
         x,y = self._goto_x - self.x, self._goto_y - self.y
         distance = math.hypot(x, y)
-        if distance == 0: return #already there
+        if -5 < distance < 5: return #already there
         d = self.action.speed/distance #how far we can travel along the distance in one update
         angle = math.atan2(y,x)
-
         self._goto_dx = x * d #how far we can travel in one update, broken down into the x-component
         self._goto_dy = y * d
+        print("calc", (x, y),(self._x, self._y), self.action.speed, distance, d, (self._goto_dx, self._goto_dy), destination)
 
         angle = math.degrees(angle) + 90  #0 degrees is towards the top of the screen
         if angle < -45: angle += 360 
@@ -1605,15 +1640,17 @@ class Actor(object, metaclass=use_on_events):
             if action.available_for_pathplanning and angle > action.angle_start and angle <= action.angle_end:
                 self._do(action)
         self._busy = True
+        if block:
+            self.game._waiting = True
 
     def on_move(self, displacement, ignore=False):
         """ Move Actor relative to its current position """
         self._goto((self.x + displacement[0], self.y + displacement[1]), ignore)
 
-    def on_goto(self, destination, ignore=False):
-        self._goto(destination, ignore=ignore)
+    def on_goto(self, destination, ignore=False, block=False):
+        self._goto(destination, ignore=ignore, block=block)
     
-    def _goto(self, destination, ignore=False):
+    def _goto(self, destination, ignore=False, block=False):
         """ Get a path to the destination and then start walking """
         point = get_point(self.game, destination)
 
@@ -1622,7 +1659,7 @@ class Actor(object, metaclass=use_on_events):
             return
 
         self._goto_points = []
-        self._calculate_goto(point)
+        self._calculate_goto(point, block)
 #        print("GOTO", angle, self._goto_x, self._goto_y, self._goto_dx, self._goto_dy, math.degrees(math.atan(100/10)))
 
         
@@ -2692,7 +2729,15 @@ class Game(metaclass=use_on_events):
         self.hide_cursor = HIDE_MOUSE
         self.mouse_down = (0,0) #last press
 
+        pyglet.clock.schedule_interval(self._monitor_scripts, 2) #keep reloading scripts
+
         pyglet.clock.schedule(self.update) #the pyvida game scripting event loop
+
+    def _monitor_scripts(self, dt):
+        modified_modules = self.check_modules()
+        if modified_modules:
+            print("game loop mod")
+            self.reload_modules()
 
     def __getattr__(self, a): #game.__getattr__
         #only called as a last resort, so possibly set up a queue function
@@ -2846,7 +2891,7 @@ class Game(metaclass=use_on_events):
         for obj in self.scene._objects.values():
             if obj.collide(x,y):
                 if self.mouse_mode != MOUSE_LOOK or GOTO_LOOK: 
-                    if self.player in self.scene._objects.values() and self.player != obj: self.player.goto(obj)
+                    if self.player in self.scene._objects.values() and self.player != obj: self.player.goto(obj, block=True)
                 if button & pyglet.window.mouse.RIGHT:
                     if obj.allow_look: obj.trigger_look()
                 else:
@@ -2885,6 +2930,7 @@ class Game(metaclass=use_on_events):
                 closest_distance = 10000.0
                 r = getattr(self._editing, self._editing_point_get, None)
                 editing_index = None
+                y =  self.h - y
                 for i,pt in enumerate([(r.left, r.top), (r.right, r.bottom)]): #possible select new point
                     dist = math.sqrt( (pt[0] - x)**2 + (pt[1] - y)**2 )
                     if dist<closest_distance:
@@ -3214,6 +3260,7 @@ class Game(metaclass=use_on_events):
 
         s = "Walkthrough:",list(walkthrough)
         log.info(s)
+        print(s)
 #        print("AUTO WALKTHROUGH", walkthrough)
         if function_name == "interact":
 #            print("trigger interact", self._walkthrough_target, self._walkthrough_index, walkthrough[1])
@@ -3306,7 +3353,6 @@ class Game(metaclass=use_on_events):
         for items in [layer_objects, scene_objects, self._menu, self._modals, [self.camera]]:
             for item in items:
                 if hasattr(item, "_update"): item._update(dt)
-
         if single_event:
             self._handle_events() #run the event handler only once
         else:
@@ -3543,7 +3589,8 @@ class Game(metaclass=use_on_events):
         """
         if logging: log.warning("game.splash ignores duration and clicks")
         if self._allow_editing and duration: duration = 0.1 #skip delay on splash when editing
-        scene = Scene(image, game=self)
+        name = "Untitled scene" if not image else image
+        scene = Scene(name, game=self)
         scene._set_background(image)
         self._busy = True #set Game object to busy (only time this happens?)
         self._waiting = True #make game wait until splash is finished
