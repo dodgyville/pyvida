@@ -86,11 +86,15 @@ POSITION_TOP = 1
 POSITION_LOW = 2
 POSITION_TEXT = 3 #play at text point of actor
 
+#collection sorting
+ALPHABETICAL = 0
 
 #ANCHORS FOR MENUS and MENU FACTORIES
 LEFT = 0
 RIGHT = 1
 CENTER = 2
+TOP = 3
+BOTTOM = 4
 
 MOUSE_USE = 1
 MOUSE_LOOK = 2  #SUBALTERN
@@ -503,6 +507,9 @@ class Rect(object):
     def __str__(self):
         return "{}, {}, {}, {}".format(self.x, self.y, self.w, self.h)
 
+    def __getitem__(self, key):
+        return [self.x, self.y, self.w, self.h][key]
+
     def get_w(self): return int(self._w * self.scale)
     def set_w(self, v): self._w = v
     w = property(get_w, set_w)
@@ -726,13 +733,14 @@ class Actor(object, metaclass=use_on_events):
         self._drag = drag #allow drag if not None, function will be called when item is released after being dragged
         self._mouse_motion = None #called when mouse is hovering over object
         self._mouse_none = None #called when mouse is not hovering over object
+        self._collection_select = None #called when item is selected in a collection
         self.uses = {} #override use functions (actor is key name)
         self.facts = []
         self.inventory = {}
 
         self._directory = None #directory this is smart loaded from (if any)
         self._images = [] #image filenames that the actions are based on
-        self._busy = False #don't process any more events for this actor until busy is False, will block all events if game._waiting = True
+        self._busy = 0 #don't process any more events for this actor until busy is False, will block all events if game._waiting = True
         self._sprite = None
         self._events = []
 
@@ -752,10 +760,10 @@ class Actor(object, metaclass=use_on_events):
             ("allow update", self.get_allow_update, self.set_allow_update, bool),
             ]
 
-    def get_busy(self, x):
+    def get_busy(self):
         return self._busy
-    def set_busy(self, x):
-        self._busy = x
+    def set_busy(self, v):
+        self._busy = v
     busy = property(get_busy, set_busy)
 
     @property
@@ -940,7 +948,7 @@ class Actor(object, metaclass=use_on_events):
                     self._calculate_goto(self, point)
                 else:
                     self._finished_goto()
-                    self._busy = False
+                    self._busy -= 1
                     self._goto_x, self._goto_y = None, None
                     self._goto_dx, self._goto_dy = 0, 0
                     if "idle" in self._actions.keys():
@@ -1266,7 +1274,7 @@ class Actor(object, metaclass=use_on_events):
 
     def on_animation_end_once(self):
         """ When an animation has been called once only """
-        self.busy = False
+        self.busy -= 1
         self._do("idle")
 
     def on_asks(self, statement, *args, **kwargs):
@@ -1325,7 +1333,7 @@ class Actor(object, metaclass=use_on_events):
                 btn._label.color = (255,255,255,255)
                 
             def answer_callback(game, btn, player):
-                self._busy = False #no longer busy, so game can stop waiting
+                self._busy -= 1 #no longer busy, so game can stop waiting
                 self.game._modals = [] #empty modals
 #                print("ANSWER CALLBACK",i,btn.response_callback)
                 btn.response_callback(game, btn, player)
@@ -1354,9 +1362,6 @@ class Actor(object, metaclass=use_on_events):
         if ok: ok = self.game.add(Item("ok").smart(self.game))
 
         kwargs =  self._get_text_details(font=font, size=size)
-        if "wrap" not in kwargs:
-            kwargs["wrap"] = msgbox.w*0.9
-        label = Text(text, delay=delay, step=step, **kwargs)
         #position 10% off the bottom
         x, y = self.game.resolution[0]//2 - msgbox.w//2, self.game.resolution[1]*0.9 - msgbox.h
 
@@ -1378,6 +1383,12 @@ class Actor(object, metaclass=use_on_events):
             portrait._parent = msgbox
             dx += portrait.w
 
+        if "wrap" not in kwargs:
+            mw = msgbox.w
+            if portrait: mw -= portrait.w
+            kwargs["wrap"] = mw*0.9
+        label = Text(text, delay=delay, step=step, **kwargs)
+
         label.game = self.game
         label.fullscreen(True)
         label.x,label.y = x+dx,y+dy
@@ -1386,7 +1397,7 @@ class Actor(object, metaclass=use_on_events):
         msgbox.x, msgbox.y = x,y
 
         #make the game wait until the user closes the modal
-        self._busy = True 
+        self._busy += 1
         self.game._waiting = True
 
         items = [msgbox, label]
@@ -1398,7 +1409,7 @@ class Actor(object, metaclass=use_on_events):
             if portrait: self.game._modals.remove(portrait)
             self.game._modals.remove(label)
             self.game._modals.remove(msgbox)
-            self._busy = False
+            self._busy -= 1
         for obj in items:
             obj.interact = close_on_says
         self.game._modals.extend(items)
@@ -1482,12 +1493,10 @@ class Actor(object, metaclass=use_on_events):
     def on_loses(self, item):
         self._loses(item)
         
-    def on_collection_select(self, collection, obj):
-        """ Called when this object is selected in a collection """
-        print("handling object selection")
-        import pdb; pdb.set_trace()
-        
-
+#    def _collection_select(self, collection, obj):
+#        """ Called when this object is selected in a collection """
+#        print("handling object selection")
+#        import pdb; pdb.set_trace()
 
     def _do(self, action, callback=None, frame=None):
         action = action if isinstance(action, Action) else self._actions[action]
@@ -1509,14 +1518,14 @@ class Actor(object, metaclass=use_on_events):
             self._sprite._frame_index = len(self._sprite.image.frames)
 
     def on_do(self, action, frame=None):
-        self.busy = False
+#        self.busy -= False
         self._do(action, frame=frame)
         
     def on_do_once(self, action):
         self._do(action, self.on_animation_end_once)
 
 #        if follow: self.do(follow)
-        self.busy = True
+        self.busy += 1
 
     def on_speed(self, speed):
         print("set speed for %s"%self.action.name)
@@ -1529,10 +1538,10 @@ class Actor(object, metaclass=use_on_events):
 
     def on_idle(self, seconds):
         """ delay processing the next event for this actor """
-        self.busy = True
+        self.busy += 1
         def finish_idle(dt, start):
             print("Finished idling",dt, start, datetime.now())
-            self.busy = False
+            self.busy -= 1
         pyglet.clock.schedule_once(finish_idle, seconds, datetime.now())
 
 
@@ -1643,7 +1652,7 @@ class Actor(object, metaclass=use_on_events):
         for action in self._actions.values():
             if action.available_for_pathplanning and angle > action.angle_start and angle <= action.angle_end:
                 self._do(action)
-        self._busy = True
+        self._busy += 1
         if block:
             self.game._waiting = True
 
@@ -1933,7 +1942,7 @@ class Scene(metaclass=use_on_events):
         self.name = name
         self.game = game
         self._layer = []
-        self._busy = False
+        self._busy = 0
         self._music_filename = None
         self._ambient_filename = None        
 
@@ -2200,11 +2209,16 @@ class Text(Item):
 
 
 class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
-    def __init__(self, name, callback, padding=(10,10), dimensions=(300,300), tile_size=50):
+    def __init__(self, name, callback, padding=(10,10), dimensions=(300,300), tile_size=(50,50)):
         super().__init__(name)
         self._objects = {}
         self._sorted_objects = None
+        self.sort_by = ALPHABETICAL
+        self.reverse_sort = False
         self.index = 0 #where in the index to start showing
+        self.selected = None
+        self._mouse_motion = self._mouse_motion_collection
+        self.mx, self.my = 0,0
 
         self.callback = callback
         self.padding = padding
@@ -2228,33 +2242,65 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
 #        obj.push_handlers(self) #TODO 
         self._objects[obj.name] = obj
         if callback:
-            obj.on_collection_select = callback
+            obj._collection_select = callback
 
-    def something(self):
-        obj = None #the object selected in the collection
-        self.dispatch_events('on_collection_select', self, obj)
+    def _get_sorted(self):
+        if self._sorted_objects == None:
+            show = self._objects.values()
+            self._sorted_objects = sorted(show, key=lambda x: x.name.lower(), reverse=self.reverse_sort)
+        return self._sorted_objects      
+
+    def get_object(self, pos):
+        """ Return the object at this spot on the screen in the collection """
+        mx,my = pos
+        show = self._get_sorted()[self.index:]
+        for i in show:
+            print(i.name, pos, "rect",i._cr)
+            if hasattr(i, "_cr") and collide(i._cr, mx, my): 
+                if logging: log.debug("On %s in collection %s"%(i.name, self.name))
+                self.selected = i
+                return i
+        if logging: log.debug("On collection %s, but no object at that point"%(self.name))
+        self.selected = None
+        return None
+
+
+    def _mouse_motion_collection(self, game, collection, player,x,y,dx,dy):
+        self.mx, self.my = x, y #mouse coords are in universal format
+
+    def _interact_default(self, game, collection, player):
+        #XXX should use game.mouse_press or whatever it's calleed
+        obj = self.get_object((self.mx, self.my)) #the object selected in the collection
+        if obj and obj._collection_select:
+            obj._collection_select(self.game, obj, self)
+        if self.callback:
+            self.callback(self.game, self, self.game.player)
 
     def pyglet_draw(self, absolute=False): #collection.draw
         super().pyglet_draw() #actor.draw
-        x,y = self.padding[0], self.padding[1] #item padding
+        x,y = self.x + self.ax, self.y #self.padding[0], self.padding[1] #item padding
         w = self.clickable_area.w
         for obj in self._objects.values():
-            if obj._sprite:
-#                obj._sprite.position = (int(self.x + x), int(self.game.resolution[1] - self.y - y))
-                obj._sprite.position = (int(self.x + self.ax + x), int(self.game.resolution[1] - self.y - self.ay - self._sprite.height - y))
-                obj._sprite.draw()
-            if x + self.tile_size > self.dimensions[0]:
+            sprite = obj._sprite if obj._sprite else getattr(obj, "_label", None)
+            if sprite:
+                sprite.x, sprite.y = int(x + self.ax), int(self.game.resolution[1] - y - self.ay)
+                sprite.draw()
+                sw,sh = sprite.content_width, sprite.content_height
+                obj._cr = Rect(x, y, sw, sh) #temporary collection values
+
+            if x + self.tile_size[0] > self.dimensions[0]:
                 x = self.padding[0]
+                y += self.tile_size[1]
             else:    
-                x += self.tile_size + self.padding[0]
-Collection.register_event_type('on_collection_select')
+                x += self.tile_size[0] + self.padding[0]
+
 
 class MenuManager(metaclass=use_on_events):
     def __init__(self, game):
         super().__init__()
         self.name = "Default Menu Manager"
         self.game = game
-        self._busy = False
+        self._busy = 0
 
     def on_show(self):
         self._show()
@@ -2319,7 +2365,7 @@ class Camera(metaclass=use_on_events): #the view manager
 
         self.name = "Default Camera"
         self.game = game
-        self._busy = False
+        self._busy = 0
         self._ambient_sound = None
         
     def _update(self, dt):
@@ -2329,7 +2375,7 @@ class Camera(metaclass=use_on_events): #the view manager
             speed = self._speed
             target = Rect(self._goto_x, self._goto_y, int(speed*1.2), int(speed*1.2)).move(-int(speed*0.6),-int(speed*0.6))
             if target.collidepoint(self.game.scene.x, self.game.scene.y):
-                self._busy = False
+                self._busy -= 1
                 self._goto_x, self._goto_y = None, None
                 self._goto_dx, self._goto_dy = 0, 0
 
@@ -2363,7 +2409,7 @@ class Camera(metaclass=use_on_events): #the view manager
         self._goto_x, self._goto_y = None, None
         self._goto_dx, self._goto_dy = 0, 0
 
-        if camera_point: scene.dx, scene.dy = camera_point
+        if camera_point: scene.x, scene.y = camera_point
         if scene.name not in self.game.visited: self.game.visited.append(scene.name) #remember scenes visited
         if logging: log.debug("changing scene to %s"%scene.name)
         if self.game and self.game._headless: return #headless mode skips sound and visuals
@@ -2381,8 +2427,8 @@ class Camera(metaclass=use_on_events): #the view manager
 #            self._ambient_sound = self.game.mixer._sfx_play(game.scene._ambient_filename, loops=-1)
 
 
-    def on_scene(self, scene):
-        """ change the scene """
+    def on_scene(self, scene, camera_point=None):
+        """ change the scene """          
         if type(scene) in [str]:
             if scene in self.game._scenes:
                 scene = self.game._scenes[scene]
@@ -2395,7 +2441,17 @@ class Camera(metaclass=use_on_events): #the view manager
             precamera_fn = get_function(self.game, "precamera_%s"%slugify(scene.name))
             if precamera_fn: precamera_fn(self.game, scene, self.game.player)
         
-        self._scene(scene)
+            if camera_point == LEFT:
+                camera_point = (0, scene.y) 
+            elif camera_point == RIGHT:
+                camera_point = (game.resolution[1] - scene.w, scene.y) 
+            elif camera_point == CENTER:
+                camera_point = ((scene.w-game.resolution[0])/2, (scene.h-game.resolution[1])/2) 
+            elif camera_point == BOTTOM:
+                camera_point = (scene.x, scene.h) 
+            elif camera_point == TOP:
+                camera_point = (scene.x, 0) 
+        self._scene(scene, camera_point)
 
         #check for a postcamera script to run
         if scene:
@@ -2440,7 +2496,7 @@ class Camera(metaclass=use_on_events): #the view manager
 
         self._goto_dx = x * d #how far we can travel in one update, broken down into the x-component
         self._goto_dy = y * d
-        self._busy = True
+        self._busy += 1
         self.game._waiting = True
 
 
@@ -2448,7 +2504,7 @@ class Mixer(metaclass=use_on_events): #the sound manager
     def __init__(self, game):
         self.game = game
         self.name = "Default Mixer"
-        self._busy = False
+        self._busy = 0
 
         self.music_break = 200000 #fade the music out every x milliseconds
         self.music_break_length = 15000 #keep it quiet for y milliseconds
@@ -2688,7 +2744,7 @@ class Game(metaclass=use_on_events):
 
         #event handling
         self._waiting = False #If true, don't process any new events until the existing ones are no longer busy
-        self._busy = False #game is never busy
+        self._busy = 0 #game is never busy
         self._events = []
         self._event = None
         self._event_index = 0
@@ -2730,8 +2786,10 @@ class Game(metaclass=use_on_events):
         self._load_mouse_cursors()
         self.mouse_mode = MOUSE_INTERACT #what activity does a mouse click trigger?
         self.mouse_cursor = self._mouse_cursor = MOUSE_POINTER #which image to use
+        self._mouse_object = None #if using an Item or Actor as mouse image
         self.hide_cursor = HIDE_MOUSE
         self.mouse_down = (0,0) #last press
+        self.mouse_pos = (0,0) #last known position of mouse
 
         pyglet.clock.schedule_interval(self._monitor_scripts, 2) #keep reloading scripts
 
@@ -2803,6 +2861,7 @@ class Game(metaclass=use_on_events):
 
     def on_mouse_motion(self,x, y, dx, dy):
         """ Change mouse cursor depending on what the mouse is hovering over """
+        self.mouse_pos = x,y
         ox, oy = x,y
         if self.scene:
             x -= self.scene.x #displaced by camera
@@ -2830,6 +2889,9 @@ class Game(metaclass=use_on_events):
                      return
 
             for obj in self.scene._objects.values():
+                if obj.collide(x,y) and obj._mouse_motion: 
+                    if obj._mouse_motion: obj._mouse_motion(self.game, obj, self.game.player,x,y,dx,dy)
+
                 if obj.collide(x,y) and (obj.allow_interact or obj.allow_use or obj.allow_look):
                     t = obj.name if obj.display_text == None else obj.display_text
                     if isinstance(obj, Portal):
@@ -3306,7 +3368,7 @@ class Game(metaclass=use_on_events):
             none_busy = True
             for event in self._events[:self._event_index]: #event_index is point to the game.wait event at the moment
                 obj = event[1][0] #first arg is always the object that called the event
-                if obj._busy == True: 
+                if obj._busy > 0: 
                     none_busy = False
             if none_busy == True: 
                 self._waiting = False #no prior events are busy, so stop waiting
@@ -3318,7 +3380,7 @@ class Game(metaclass=use_on_events):
         if len(self._events)>0: 
             if self._event_index>0:
                 for event in self._events[:self._event_index]: #check the previous events' objects, delete if not busy
-                    if event[1][0]._busy == False:
+                    if event[1][0]._busy == 0:
                         del_events += 1
                         self._events.remove(event)
                         self._event_index -= 1
@@ -3402,6 +3464,12 @@ class Game(metaclass=use_on_events):
 
         for modal in self._modals:
             modal.pyglet_draw(absolute=True)
+
+        if self._mouse_object: # and hasattr(self._mouse_object, "pyglet_draw"):
+            print("MOUSE", self.mouse_pos)
+            self._mouse_object.x, self._mouse_object.y = self.mouse_pos
+            self._mouse_object.pyglet_draw()
+
 
     def _add(self, objects, replace=False): #game.add
         objects_iterable = [objects] if not isinstance(objects, Iterable) else objects
@@ -3595,7 +3663,7 @@ class Game(metaclass=use_on_events):
         name = "Untitled scene" if not image else image
         scene = Scene(name, game=self)
         scene._set_background(image)
-        self._busy = True #set Game object to busy (only time this happens?)
+        self._busy += 1 #set Game object to busy (only time this happens?)
         self._waiting = True #make game wait until splash is finished
         #add scene to game, change over to that scene
         self.add(scene)
@@ -3604,7 +3672,7 @@ class Game(metaclass=use_on_events):
 #            self._background.blit(0,0)
 
         def splash_finish(d, game):
-            self._busy = False #finish the event
+            self._busy -= 1 #finish the event
             callback(d, game)
         if callback:
             if not duration:
@@ -3697,6 +3765,7 @@ class MyTkApp(threading.Thread):
 
         scene = tk.StringVar(group)
         def change_scene(*args, **kwargs):
+            import pdb; pdb.set_trace()
             if self.game._editing and self.game._editing.show_debug:
                 self.game._editing.show_debug = False
             new_scene = self.game._scenes[scene.get()]

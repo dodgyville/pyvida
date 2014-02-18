@@ -520,7 +520,52 @@ class GotoTest(unittest.TestCase):
         self.actor.goto(200,100)
         self.actor.says("Goodbye World")
 
+class PortalTest(unittest.TestCase):
+    def setUp(self):
+        self.game = Game("Unit Tests", fps=60, afps=16, resolution=RESOLUTION)
+        self.game.settings = Settings()
+        self.actor = Actor("_test_actor").smart(self.game)
+        speed = 10
+        for i in self.actor._actions.values(): i.speed = speed
 
+        self.scene = Scene("_test_scene")
+        self.scene2 = Scene("_test_scene2")
+        self.portal1 = Portal("_test_portal1")
+        self.portal2 = Portal("_test_portal2")
+        self.portal1.link = self.portal2
+        self.portal2.link = self.portal1
+
+        self.portal1.x, self.portal1.y = 100,0
+        self.portal1.sx, self.portal1.sy = 0,0
+        self.portal1.ox, self.portal1.oy = 100,0
+
+        self.portal2.x, self.portal2.y = 1100,0
+        self.portal1.sx, self.portal1.sy = 0,0
+        self.portal1.ox, self.portal1.oy = -100,0
+
+        self.game._headless = False
+        self.game.player = self.actor
+        self.game.add([self.scene, self.actor, self.portal1, self.portal2])
+        self.scene._add([self.actor, self.portal1])
+        self.scene2._add([self.portal2])
+        self.game.camera._scene(self.scene)
+
+    def test_events(self):
+        portal = self.portal1
+        game = self.game
+
+        #queue the events
+        portal.exit_here() 
+        game.camera.scene("aqueue", RIGHT)
+        game.camera.pan(left=True)
+        portal.relocate_link() #move player to new scene
+        portal.enter_link() #enter scene
+        self.assertEqual([x[0].__name__ for x in self.game._events],['on_goto', 'on_goto', 'on_scene', 'on_pan', 'on_relocate', 'on_goto'])
+        for i in range(0,11): #finish first goto
+            self.game.update(0, single_event=True)
+#            self.assertAlmostEqual(self.actor.y, 200+(i+1)*self.actor._goto_dy)
+        import pdb; pdb.set_trace()
+        self.assertEqual([x[0].__name__ for x in self.game._events],['on_goto', 'on_scene', 'on_pan', 'on_relocate', 'on_goto'])
 
 if __name__ == '__main__':
     unittest.main()
