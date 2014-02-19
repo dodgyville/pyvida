@@ -79,6 +79,8 @@ DEFAULT_MENU_COLOUR = (42, 127, 255)
 #LAYOUTS FOR MENUS and MENU FACTORIES
 HORIZONTAL = 0
 VERTICAL = 1    
+SPACEOUT = 2 #for making "spaceout" style games
+LUCASARTS = 3
 
 #on says position
 POSITION_BOTTOM = 0
@@ -1356,14 +1358,19 @@ class Actor(object, metaclass=use_on_events):
         high_contrast = "%s_high_contrast"%("msgbox" if not using else using)
         myd = os.path.join(self.game.directory_items, high_contrast)
         using = high_contrast if self.game.settings.high_contrast and os.path.isdir(myd) else background
-        msgbox = get_object(self.game, "msgbox")
-        if not msgbox:            
+        msgbox = get_object(self.game, using)
+        if not msgbox: #assume using is a file        
             msgbox = self.game.add(Item("msgbox").smart(self.game, using=using))
         if ok: ok = self.game.add(Item("ok").smart(self.game))
 
         kwargs =  self._get_text_details(font=font, size=size)
         #position 10% off the bottom
-        x, y = self.game.resolution[0]//2 - msgbox.w//2, self.game.resolution[1]*0.9 - msgbox.h
+        if position == None:
+            x, y = self.game.resolution[0]//2 - msgbox.w//2, self.game.resolution[1]*0.9 - msgbox.h
+        elif position == TOP:
+            x, y = self.game.resolution[0]//2 - msgbox.w//2, self.game.resolution[1]*0.1
+        elif type(position) in [tuple, list]: #assume coords
+            x, y = position
 
         dx, dy = 10, 10 #padding
 
@@ -1994,7 +2001,7 @@ class Scene(metaclass=use_on_events):
 
     def smart(self, game): #scene.smart
         self.game = game
-        self._load_layer(game)
+        self._load_layers(game)
 
         sdir = os.path.join(os.getcwd(),os.path.join(game.directory_scenes, self.name))    
 
@@ -2017,7 +2024,15 @@ class Scene(metaclass=use_on_events):
 #        for l in self._layer:
 #            l.unload()
 
-    def _load_layer(self, game, wildcard=None):
+    def _load_layer(self, element):
+        fname = os.path.splitext(os.path.basename(element))[0]
+        sdir = os.path.dirname(element)
+        f = self.game._add(Item("%s_%s"%(self.name, fname)).smart(self.game, image=element))
+        self._layer.append(f) #add layer items as items
+        return f
+
+
+    def _load_layers(self, game, wildcard=None):
         sdir = os.path.join(os.getcwd(),os.path.join(game.directory_scenes, self.name))    
         wildcard = wildcard if wildcard else os.path.join(sdir, "*.png")
 
@@ -2025,14 +2040,14 @@ class Scene(metaclass=use_on_events):
             fname = os.path.splitext(os.path.basename(element))[0]
             details_filename = os.path.join(sdir, fname+".details")
             if os.path.isfile(details_filename): #find a details file for each element
-                f = self.game._add(Item("%s_%s"%(self.name, fname)).smart(game, image=element))
-                self._layer.append(f) #add layer items as items
+                f = self._load_layer(element)
                 try:
                     layer_defaults = json.loads(open(details_filename).read())
                     for key, val in layer_defaults.items():
                         f.__dict__[key] = val
                 except ValueError:
                     log.error("Unable to load details from %s"%details_filename)
+
 
         self._layer.sort(key = lambda x: x.z) #sort by z-value
         if len(self._layer)>0: #use the lowest layer as the scene size
@@ -2093,7 +2108,7 @@ class Scene(metaclass=use_on_events):
 #        self._background = [Layer(fname)]
         for i in self._layer:
             if i.z < 1.0: self._layer.remove(i)
-        self._load_layer(self.game, fname)
+        self._load_layer(fname)
         if fname: log.debug("Set background for scene %s to %s"%(self.name, fname))
 #        if fname == None and self._background == None and self._background_fname: #load image
 #            fname = self._background_fname
@@ -2199,7 +2214,7 @@ class Text(Item):
 
         x, y = x - self.ax, self.game.resolution[1] - y + self.ay 
         if self._label_offset: #draw offset first
-            self._label_offset.x, self._label_offset.y = int(x+self.offset), int(y+self.offset)
+            self._label_offset.x, self._label_offset.y = int(x+self.offset), int(y-self.offset)
             self._label_offset.draw()
 
         self._label.x, self._label.y = int(x), int(y)
@@ -2285,7 +2300,7 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
             if sprite:
                 sprite.x, sprite.y = int(x + self.ax), int(self.game.resolution[1] - y - self.ay)
                 sprite.draw()
-                sw,sh = sprite.content_width, sprite.content_height
+                sw,sh = getattr(sprite, "content_width", sprite.width), getattr(sprite, "content_height", sprite.height)
                 obj._cr = Rect(x, y, sw, sh) #temporary collection values
 
             if x + self.tile_size[0] > self.dimensions[0]:
@@ -2619,7 +2634,7 @@ Factories
 
 class MenuFactory(object):
     """ define some defaults for a menu so that it is faster to add new items """
-    def __init__(self, name, pos=(0,0), size=26, font=DEFAULT_MENU_FONT, colour=DEFAULT_MENU_COLOUR, layout=VERTICAL, anchor = LEFT, padding = 0):
+    def __init__(self, name, pos=(0,0), size=26, font=DEFAULT_MENU_FONT, colour=DEFAULT_MENU_COLOUR, layout=VERTICAL, anchor = LEFT, padding = 0, offset=None):
         self.name = name
         self.position = pos
         self.size = size
@@ -2628,6 +2643,7 @@ class MenuFactory(object):
         self.layout = layout
         self.padding = padding
         self.anchor = anchor
+        self.offset = offset
     
     
 class Factory(object):
@@ -2657,6 +2673,28 @@ class Factory(object):
                 name = "{}{}".format(self.template.name, i)
                 new_objects.append(self._create_object(name))
         return new_objects
+
+
+"""
+Wrapper functions that allow game to track user's progress against the walkthrough
+"""
+def advance_help_index(game):
+    """ Move the help index forward one step and then skip any static commands such as 'description' and 'location' """
+    game._help_index += 1
+    for step in game._walkthrough[game._help_index:]:
+        function_name = step[0].__name__ 
+        if function_name in ["description", "location", "has", "goto"]: game._help_index += 1
+    print("Waiting for user to trigger", game._walkthrough[game._help_index])
+
+def user_trigger_interact(game, obj):
+    obj.trigger_interact()
+    function_name = game._walkthrough[game._help_index][0].__name__ 
+    if game._walkthrough and function_name == "interact":
+        advance_help_index(game)
+
+def user_trigger_look(game, obj):
+    obj.trigger_look()
+
 
 """
 Game class
@@ -2759,6 +2797,7 @@ class Game(metaclass=use_on_events):
         self._walkthrough_index = 0 #our location in the walkthrough
         self._walkthrough_target = 0  #our target
         self._walkthrough_stored_state = None #TODO: for jumping back to a previous state in the game (WIP)
+        self._help_index = 0 #this tracks the walkthrough as the player plays
         self._headless = False #no user input or graphics
 
         self._output_walkthrough = False
@@ -2942,7 +2981,7 @@ class Game(metaclass=use_on_events):
         y = self.game.resolution[1] - y #invert y-axis if needed
         for obj in self._modals:
             if obj.collide(x,y):
-                obj.trigger_interact()
+                user_trigger_interact(self, obj)
                 return
         #don't process other objects while there are modals
         if len(self._modals)>0: return 
@@ -2950,7 +2989,7 @@ class Game(metaclass=use_on_events):
         #try menu events
         for obj in self._menu:
             if obj.collide(x,y):
-                obj.trigger_interact()
+                user_trigger_interact(self, obj)
                 return
 
         #finally, try scene objects
@@ -2960,9 +2999,9 @@ class Game(metaclass=use_on_events):
                 if (self.mouse_mode != MOUSE_LOOK or GOTO_LOOK) and (obj.allow_interact or obj.allow_use or obj.allow_look): 
                     if self.player in self.scene._objects.values() and self.player != obj: self.player.goto(obj, block=True)
                 if button & pyglet.window.mouse.RIGHT:
-                    if obj.allow_look: obj.trigger_look()
+                    if obj.allow_look: user_trigger_look(self, obj)
                 else:
-                    if obj.allow_interact: obj.trigger_interact()
+                    if obj.allow_interact: user_trigger_interact(self, obj)
                 return
 
         #no objects to interact with, so just go to the point
@@ -3082,12 +3121,25 @@ class Game(metaclass=use_on_events):
         min_x = 0
         total_w = 0
         total_h = 0
+        positions = []
+        if factory.layout == SPACEOUT:
+            y = self.resolution[1] - 130
+            x = 10
+            dx = 130
+            positions = [(x,x), 
+                (x, y),
+                (x+dx, y),
+                (x+dx*2, y),
+                (x+dx*3, y),
+                (x+dx*4, y),
+                (x+dx*5, y),
+                ]
         for i, item in enumerate(items):
             if item[0] in self._items.keys():
                 obj = get_object(self.game, item[0])
                 obj.interact = item[1]
             else:
-                obj = Text(item[0], font=factory.font, colour=factory.colour, size=factory.size)
+                obj = Text(item[0], font=factory.font, colour=factory.colour, size=factory.size, offset=factory.offset)
                 obj.game = self
                 obj.interact = item[1] #set callback
             kwargs = item[2] if len(item)>2 else {}
@@ -3114,13 +3166,17 @@ class Game(metaclass=use_on_events):
         elif factory.anchor == CENTER:
             x,y = factory.position[0]-(total_w/2), factory.position[1]
         
-        for obj in new_menu:
+        for i, obj in enumerate(new_menu):
             w,h = obj.clickable_area.w, obj.clickable_area.h
-            if factory.layout == HORIZONTAL:
+            if i<len(positions): #use custom positions if available
+                x,y = positions[i]
+                dx,dy =0,0
+            elif factory.layout == HORIZONTAL: 
                 dx, dy = w + factory.padding, 0
             elif factory.layout == VERTICAL:
                 dx, dy = 0, h + factory.padding
             obj.x, obj.y = x, y
+            print('MENU', obj.name, obj.x, obj.y)
             x += dx
             y += dy
 
@@ -3342,7 +3398,7 @@ class Game(metaclass=use_on_events):
             if self.scene and self.scene != obj.scene and obj not in self._modals and obj not in self._menu:
                 log.error("{} not in scene {}, it's on {}".format(walkthrough[1], self.scene.name, obj.scene.name if obj.scene else "no scene"))
             x, y = obj.clickable_area.center
-            obj.trigger_interact()
+            user_trigger_interact(self, obj)
 #                self._window.dispatch_event('on_mouse_release', x, self.resolution[1] - y, button, modifiers)
         elif function_name == "use":
             obj = get_object(self, walkthrough[2])
@@ -3655,6 +3711,13 @@ class Game(metaclass=use_on_events):
         self._waiting = True
         return  
 
+    def on_pause(self, duration):
+        self._busy += 1
+        self._waiting = True
+        def pause_finish(d, game):
+            self._busy -= 1
+        pyglet.clock.schedule_once(pause_finish, duration, self)
+
     def on_splash(self, image, callback, duration=None, immediately=False):
         """ show a splash screen then pass to callback after duration 
         """
@@ -3663,6 +3726,7 @@ class Game(metaclass=use_on_events):
         name = "Untitled scene" if not image else image
         scene = Scene(name, game=self)
         scene._set_background(image)
+        for i in scene._layer: i.z = 1.0
         self._busy += 1 #set Game object to busy (only time this happens?)
         self._waiting = True #make game wait until splash is finished
         #add scene to game, change over to that scene
