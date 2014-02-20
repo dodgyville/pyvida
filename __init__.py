@@ -2203,6 +2203,8 @@ class Text(Item):
                 self._label_offset.text = self.__text
 
     def pyglet_draw(self, absolute=False): #text draw
+        if not self._label or not self.allow_draw: return
+            
         if not self.game:
             log.warning("Unable to draw Text %s without a self.game object"%self.name)
             return
@@ -2322,7 +2324,7 @@ class MenuManager(metaclass=use_on_events):
 
     def _show(self):
         for obj in self.game._menu: 
-            obj.visible = True
+            obj._usage(draw=True, interact=True)
         if logging: log.debug("show menu using place %s"%[x.name for x in self.game._menu])
         
     def _hide(self, menu_items = None):
@@ -2332,7 +2334,7 @@ class MenuManager(metaclass=use_on_events):
         if type(menu_items) not in [tuple, list]: menu_items = [menu_items]
         for i in menu_items:
             if type(i) in [str]: i = self.game.items[i]
-            i.visible = False
+            i._usage(draw=False, interact=False)
         if logging: log.debug("hide menu using place %s"%[x.name for x in self.game._menu])
 
     def on_hide(self, menu_items = None):
