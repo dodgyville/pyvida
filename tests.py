@@ -173,7 +173,8 @@ class EventTest(unittest.TestCase):
         self.msgbox = Item("msgbox").smart(self.game, using="data/items/_test_item")
         self.ok = Item("ok").smart(self.game, using="data/items/_test_item")
         self.scene = Scene("_test_scene")
-        self.game.add([self.scene, self.actor, self.msgbox, self.ok])
+        self.item = Item("test_item")
+        self.game.add([self.scene, self.actor, self.msgbox, self.ok, self.item])
 
     def test_relocate(self):
         self.actor.relocate(self.scene)
@@ -184,7 +185,7 @@ class EventTest(unittest.TestCase):
         self.assertEqual(event[1][1], self.scene)
 
     def test_on_says_using(self):
-        self.actor.says("Hello World", using="data/items/_test_item", ok=False)
+        self.actor.says("Hello World", using="data/items/_test_item", ok=None)
         self.assertEqual(len(self.game._events), 1)
         event = self.game._events[0]
         self.assertEqual(self.game._event, None)
@@ -196,16 +197,16 @@ class EventTest(unittest.TestCase):
 
 
     def test_event_ordering(self):
-        self.actor.says("Hello World", ok=False)
-        self.actor.says("Goodbye World", ok=False)
+        self.actor.says("Hello World", ok=None)
+        self.actor.says("Goodbye World", ok=None)
         events = self.game._events
         self.assertEqual(events[0][1][1], "Hello World")
         self.assertEqual(events[1][1][1], "Goodbye World")
 
 
     def test_on_says_events(self):
-        self.actor.says("Hello World", using="data/items/_test_item", ok=False)
-        self.actor.says("Goodbye World", using="data/items/_test_item", ok=False)
+        self.actor.says("Hello World", using="data/items/_test_item", ok=None)
+        self.actor.says("Goodbye World", using="data/items/_test_item", ok=None)
 
         self.game.update(0, single_event=True) #start the first on_says
         self.assertEqual(self.game._event_index, 1)
@@ -247,7 +248,7 @@ class EventTest(unittest.TestCase):
 
     def test_relocate_says_events(self):
         self.actor.relocate(self.scene, (100,100))
-        self.actor.says("Hello World", ok=False)
+        self.actor.says("Hello World", ok=None)
         self.actor.relocate(self.scene, (200,200))
         self.assertEqual([x[0].__name__ for x in self.game._events], ['on_relocate', 'on_says', 'on_relocate'])
 
@@ -270,12 +271,12 @@ class EventTest(unittest.TestCase):
     def test_on_asks(self):
         @answer("Hello World")
         def answer0(game, btn, player):
-            self.actor.says("Hello World", ok=False)
+            self.actor.says("Hello World", ok=None)
 
         @answer("Goodbye World")
         def answer1(game, btn, player):
-            self.actor.says("Goodbye World", ok=False)
-        self.actor.asks("What should we do?", answer0, answer1, ok=False)
+            self.actor.says("Goodbye World", ok=None)
+        self.actor.asks("What should we do?", answer0, answer1, ok=None)
 
         self.assertEqual(len(self.game._modals), 0)
 
@@ -296,7 +297,7 @@ class EventTest(unittest.TestCase):
 
     def test_load_state(self):
         self.actor.relocate(self.scene, (100,100))
-        self.actor.says("Hello World", ok=False)
+        self.actor.says("Hello World", ok=None)
         self.game.load_state(self.scene, "initial")
         self.actor.relocate(self.scene, (200,200))
         self.menuItem = Item("menu_item")
@@ -338,6 +339,14 @@ class EventTest(unittest.TestCase):
         self.assertEqual([x[0].__name__ for x in self.game._events], ['on_scene', 'on_clean', 'on_relocate', 'on_scene', 'on_set_menu', "on_show"])
 
 
+    def test_gets(self):
+        self.actor.gets("test_item", ok=None, action=None)
+        self.actor.says("Hello World", ok=None, action=None)
+        self.assertEqual([x[0].__name__ for x in self.game._events], ['on_gets', 'on_says',])
+        self.game.update(0, single_event=True) #do the says step part of the on_gets
+        self.game.update(0, single_event=True) #remove the says step
+        self.assertEqual([x[0].__name__ for x in self.game._events], ['on_says',])
+
 
 class WalkthroughTest(unittest.TestCase):
     def setUp(self):
@@ -353,14 +362,14 @@ class WalkthroughTest(unittest.TestCase):
 
         @answer("Hello World")
         def answer0(game, btn, player):
-            self.actor.says("Hello World", ok=False)
+            self.actor.says("Hello World", ok=None)
 
         @answer("Goodbye World")
         def answer1(game, btn, player):
-            self.actor.says("Goodbye World", ok=False)
+            self.actor.says("Goodbye World", ok=None)
 
         def interact__test_actor(game, actor, player):
-            self.actor.asks("What should we do?", answer0, answer1, ok=False)
+            self.actor.asks("What should we do?", answer0, answer1, ok=None)
         self.actor.interact = interact__test_actor
         suites = [[
             (description, "Test Test Suite"),
@@ -401,14 +410,15 @@ class CameraEventTest(unittest.TestCase):
         self.actor = Actor("_test_actor").smart(self.game)
         self.msgbox = Item("msgbox").smart(self.game, using="data/items/_test_item")
         self.ok = Item("ok").smart(self.game, using="data/items/_test_item")
-        self.scene = Scene("_test_scene")
+        self.scene = Scene("_test_scene_large")
+        self.scene._set_background(fname="data/scenes/_test_scene_large/background.png")
         self.game._headless = True
         self.game.add([self.scene, self.actor, self.msgbox, self.ok])
 
     def test_events(self):
-        self.actor.says("Hello World", ok=False)
+        self.actor.says("Hello World", ok=None)
         self.game.camera.scene(self.scene)
-        self.actor.says("Goodbye World", ok=False)
+        self.actor.says("Goodbye World", ok=None)
 
         self.assertEqual([x[0].__name__ for x in self.game._events], ['on_says', "on_scene", "on_says"])
         self.game.update(0, single_event=True) #do the says step
@@ -419,6 +429,10 @@ class CameraEventTest(unittest.TestCase):
         self.game.update(0, single_event=True) #do the camera step
 
         self.assertEqual([x[0].__name__ for x in self.game._events], ["on_says"])
+
+    def test_pans(self):
+        self.game.camera.pan(right=True)
+        self.game.update(0, single_event=True) #do the says step
 
 
 class GotoTest(unittest.TestCase):

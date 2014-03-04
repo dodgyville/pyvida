@@ -25,7 +25,6 @@ def sway(inname, outname, factor=1.0, fn=sin):
     print("Swaying %s over %i frames"%(inname, num_of_frames))
     for i in range(0, num_of_frames):
         sway = fn(i*delta)*factor
-        print(i, sway)
     #    sway = .1
         data = [1.0,-sway,0.0,0.0,1.0,0.0]
         frame = im.transpose(Image.FLIP_TOP_BOTTOM) #flip

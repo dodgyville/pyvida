@@ -546,6 +546,8 @@ class Rect(object):
     def center(self):
         return (self.x + self.w//2, self.y + self.h//2)
 
+    def random_point(self):
+        return (randint(self.x, self.x + self.w), randint(self.y, self.y + self.h))
 
 
 def crosshair(game, point, colour, absolute=False):
@@ -706,6 +708,7 @@ class Actor(object, metaclass=use_on_events):
         self._tx, self._ty = 0, 0 # displacement point for text
         self._parent = None
         self.idle_stand = None #when an actor stands at this actor's stand point, request an idle
+        self._idle = "idle" #the default idle action for this actor
 
         self._scale = 1.0
         self._rotate = 0
@@ -742,7 +745,7 @@ class Actor(object, metaclass=use_on_events):
 
         self._directory = None #directory this is smart loaded from (if any)
         self._images = [] #image filenames that the actions are based on
-        self._busy = 0 #don't process any more events for this actor until busy is False, will block all events if game._waiting = True
+        self.busy = False #don't process any more events for this actor until busy is False, will block all events if game._waiting = True
         self._sprite = None
         self._events = []
 
@@ -950,7 +953,8 @@ class Actor(object, metaclass=use_on_events):
                     self._calculate_goto(self, point)
                 else:
                     self._finished_goto()
-                    self._busy -= 1
+                    if logging: log.info("%s has finished on_goto by arriving at point, so busy to False."%(self.name))
+                    self.busy = False
                     self._goto_x, self._goto_y = None, None
                     self._goto_dx, self._goto_dy = 0, 0
                     if "idle" in self._actions.keys():
@@ -1188,7 +1192,16 @@ class Actor(object, metaclass=use_on_events):
         self._smart_actions(game) #load the actions
 
         if len(self._actions)>0: #do an action by default
-            self._do("idle" if "idle" in self._actions else list(self._actions.keys())[0])
+            self._do(idle if idle in self._actions else list(self._actions.keys())[0])
+
+        if isinstance(self, Actor) and not isinstance(self, Item) and self.action and self.action.name==idle:
+            self._ax = -int(self.w/2)
+            self._ay = -int(self.h * 0.85)
+            self._sx, self._sy = self._ax - 50, 0  # stand point
+            self._nx, self._ny = self._ax * 0.5, self._ay #name point
+            self._cx, self._cy = int(self.w + 10), int(self.h)  # text when using POSITION_TEXT
+#                self._tx, self._ty = 0,0    # target for when this actor is mid-movement
+
 
         #guessestimate the clickable mask for this actor
         if self._sprite:
@@ -1279,6 +1292,11 @@ class Actor(object, metaclass=use_on_events):
         self.busy -= 1
         self._do("idle")
 
+    def on_frames(self, num_frames):
+        """ Advance the current action <num_frames> frames """
+        if not self._sprite: return
+        self._sprite._frame_index = (self._sprite._frame_index + num_frames)%len(self._sprite._animation.frames)
+
     def on_asks(self, statement, *args, **kwargs):
         """ A queuing function. Display a speech bubble with text and several replies, and wait for player to pick one.
 
@@ -1335,7 +1353,8 @@ class Actor(object, metaclass=use_on_events):
                 btn._label.color = (255,255,255,255)
                 
             def answer_callback(game, btn, player):
-                self._busy -= 1 #no longer busy, so game can stop waiting
+                if logging: log.info("%s has finished on_asks by selecting %s, so self.busy to False."%(self.name, btn.display_text))
+                self.busy = False #no longer busy, so game can stop waiting
                 self.game._modals = [] #empty modals
 #                print("ANSWER CALLBACK",i,btn.response_callback)
                 btn.response_callback(game, btn, player)
@@ -1347,13 +1366,14 @@ class Actor(object, metaclass=use_on_events):
             self.game._modals.append(opt)
 
     def on_says(self, text, *args, **kwargs):
-        print("%s on says %s"%(self.name, text))
+        print("AK",args, kwargs)
         items = self._says(text, *args, **kwargs)
         if self.game._headless:  #headless mode skips sound and visuals
             items[0].trigger_interact() #auto-close the on_says
 
-    def _says(self, text, action="portrait", font=None, size=None, using=None, position=None, delay=0.01, step=3, ok=True):
+    def _says(self, text, action="portrait", font=None, size=None, using=None, position=None, delay=0.01, step=3, ok="ok"):
         #do high contrast if requested and available
+        print("%s on says %s"%(self.name, text))
         background = using if using else None
         high_contrast = "%s_high_contrast"%("msgbox" if not using else using)
         myd = os.path.join(self.game.directory_items, high_contrast)
@@ -1361,7 +1381,7 @@ class Actor(object, metaclass=use_on_events):
         msgbox = get_object(self.game, using)
         if not msgbox: #assume using is a file        
             msgbox = self.game.add(Item("msgbox").smart(self.game, using=using))
-        if ok: ok = self.game.add(Item("ok").smart(self.game))
+        if ok: ok = self.game.add(Item(ok).smart(self.game))
 
         kwargs =  self._get_text_details(font=font, size=size)
         #position 10% off the bottom
@@ -1404,7 +1424,8 @@ class Actor(object, metaclass=use_on_events):
         msgbox.x, msgbox.y = x,y
 
         #make the game wait until the user closes the modal
-        self._busy += 1
+        if logging: log.info("%s has started on_says (%s), so self.busy to True."%(self.name, text))
+        self.busy = True
         self.game._waiting = True
 
         items = [msgbox, label]
@@ -1416,7 +1437,9 @@ class Actor(object, metaclass=use_on_events):
             if portrait: self.game._modals.remove(portrait)
             self.game._modals.remove(label)
             self.game._modals.remove(msgbox)
-            self._busy -= 1
+            self.busy = False
+            if logging: log.info("%s has finished on_says (%s), so self.busy to False."%(self.name, text))
+
         for obj in items:
             obj.interact = close_on_says
         self.game._modals.extend(items)
@@ -1469,7 +1492,7 @@ class Actor(object, metaclass=use_on_events):
         if remove == True and item.scene: item.scene._remove(item)
         return item
 
-    def on_gets(self, item, remove=True):
+    def on_gets(self, item, remove=True, ok="ok", action="portrait"):
         """ add item to inventory, remove from scene if remove == True """
         item = self._gets(item, remove)
         if item == None: return
@@ -1484,7 +1507,10 @@ class Actor(object, metaclass=use_on_events):
         else:
             text = "%s gets %s!"%(self.name, name)
 
-        items = item._says(text, action="portrait")
+        items = self._says(text, action="portrait", ok=ok) #Actor can only spawn events belonging to it.
+#        if logging: log.info("%s has requested game to wait for on_gets to finish, so game.waiting to True."%(self.name))
+#        self.game._waiting = True
+
         if self.game._headless:  #headless mode skips sound and visuals
             items[0].trigger_interact() #auto-close the on_says
 
@@ -1659,8 +1685,10 @@ class Actor(object, metaclass=use_on_events):
         for action in self._actions.values():
             if action.available_for_pathplanning and angle > action.angle_start and angle <= action.angle_end:
                 self._do(action)
-        self._busy += 1
+        if logging: log.info("%s has started _calculate_goto, so self.busy to True."%(self.name))
+        self.busy = True
         if block:
+            if logging: log.info("%s has request game to wait for goto to finish, so game.waiting to True."%(self.name))
             self.game._waiting = True
 
     def on_move(self, displacement, ignore=False):
@@ -1949,7 +1977,7 @@ class Scene(metaclass=use_on_events):
         self.name = name
         self.game = game
         self._layer = []
-        self._busy = 0
+        self.busy = False
         self._music_filename = None
         self._ambient_filename = None        
 
@@ -2151,14 +2179,17 @@ class Text(Item):
                 log.error("Unable to find %s in fonts, use game.add_font"%font)
             else:
                 font_name = _pyglet_fonts[font]
-        self._label = pyglet.text.Label(self.__text,
-                                  font_name=font_name,
-                                  font_size=size,
-                                  color=colour,
-                                  multiline=True,
-                                  width=wrap,
-                                  x=self.x, y=self.y,
-                                  anchor_x='left', anchor_y='top')
+        try:
+            self._label = pyglet.text.Label(self.__text,
+                                      font_name=font_name,
+                                      font_size=size,
+                                      color=colour,
+                                      multiline=True,
+                                      width=wrap,
+                                      x=self.x, y=self.y,
+                                      anchor_x='left', anchor_y='top')
+        except:
+            import pdb; pdb.set_trace()
         if self.offset:
             self._label_offset = pyglet.text.Label(self.__text,
                                   font_name=font_name,
@@ -2317,7 +2348,7 @@ class MenuManager(metaclass=use_on_events):
         super().__init__()
         self.name = "Default Menu Manager"
         self.game = game
-        self._busy = 0
+        self.busy = False
 
     def on_show(self):
         self._show()
@@ -2382,7 +2413,7 @@ class Camera(metaclass=use_on_events): #the view manager
 
         self.name = "Default Camera"
         self.game = game
-        self._busy = 0
+        self.busy = False
         self._ambient_sound = None
         
     def _update(self, dt):
@@ -2392,10 +2423,10 @@ class Camera(metaclass=use_on_events): #the view manager
             speed = self._speed
             target = Rect(self._goto_x, self._goto_y, int(speed*1.2), int(speed*1.2)).move(-int(speed*0.6),-int(speed*0.6))
             if target.collidepoint(self.game.scene.x, self.game.scene.y):
-                self._busy -= 1
+                if logging: log.info("Camera %s has finished on_goto by arriving at point, so self.busy to False."%(self.name))
+                self.busy = False
                 self._goto_x, self._goto_y = None, None
                 self._goto_dx, self._goto_dy = 0, 0
-
 
     def _scene(self, scene, camera_point=None):
         """ change the current scene """
@@ -2513,7 +2544,9 @@ class Camera(metaclass=use_on_events): #the view manager
 
         self._goto_dx = x * d #how far we can travel in one update, broken down into the x-component
         self._goto_dy = y * d
-        self._busy += 1
+        if logging: log.info("Camera %s has started _goto, so self.busy to True and game.waiting to True."%(self.name))
+
+        self.busy = True
         self.game._waiting = True
 
 
@@ -2521,7 +2554,7 @@ class Mixer(metaclass=use_on_events): #the sound manager
     def __init__(self, game):
         self.game = game
         self.name = "Default Mixer"
-        self._busy = 0
+        self.busy = False
 
         self.music_break = 200000 #fade the music out every x milliseconds
         self.music_break_length = 15000 #keep it quiet for y milliseconds
@@ -2784,7 +2817,7 @@ class Game(metaclass=use_on_events):
 
         #event handling
         self._waiting = False #If true, don't process any new events until the existing ones are no longer busy
-        self._busy = 0 #game is never busy
+        self.busy = False #game is never busy
         self._events = []
         self._event = None
         self._event_index = 0
@@ -2960,6 +2993,9 @@ class Game(metaclass=use_on_events):
         """ If the mouse is over an object with a down action, switch to that action """
 #        print('    (%s, %s), '%(x-self.player.x, self.resolution[1] - y - self.player.y))
         x, y = x / self._scale, y / self._scale #if window is being scaled
+        if self.scene:
+            x -= self.scene.x #displaced by camera
+            y += self.scene.y
 
         y = self.resolution[1] - y #invert y-axis if needed
 
@@ -2972,6 +3008,9 @@ class Game(metaclass=use_on_events):
     def on_mouse_release(self, x, y, button, modifiers):
         """ Call the correct function depending on what the mouse has clicked on """
         x, y = x / self._scale, y / self._scale #if window is being scaled
+        if self.scene:
+            x -= self.scene.x #displaced by camera
+            y += self.scene.y
 
         if self._editing and self._editing_point_set: #we are editing something, so don't interact with objects
             return
@@ -3426,9 +3465,11 @@ class Game(metaclass=use_on_events):
             none_busy = True
             for event in self._events[:self._event_index]: #event_index is point to the game.wait event at the moment
                 obj = event[1][0] #first arg is always the object that called the event
-                if obj._busy > 0: 
+                if obj.busy == True: 
                     none_busy = False
             if none_busy == True: 
+                if logging: log.info("Game has no busy events, so setting game.waiting to False.")
+#                if not self._headless: import pdb; pdb.set_trace()
                 self._waiting = False #no prior events are busy, so stop waiting
             else:
                 return safe_to_call_again #game is waiting on an actor, so leave
@@ -3438,7 +3479,8 @@ class Game(metaclass=use_on_events):
         if len(self._events)>0: 
             if self._event_index>0:
                 for event in self._events[:self._event_index]: #check the previous events' objects, delete if not busy
-                    if event[1][0]._busy == 0:
+                    if event[1][0].busy == False:
+                        if logging: log.info("%s is no longer busy, so deleting event %s."%(event[1][0].name, event))
                         del_events += 1
                         self._events.remove(event)
                         self._event_index -= 1
@@ -3447,16 +3489,16 @@ class Game(metaclass=use_on_events):
                 #possibly start the current event
                 e = self._events[self._event_index] #stored as [(function, args))]
                 obj = e[1][0]
-                if obj._busy: return safe_to_call_again#don't do this event yet if the owner is busy
+                if obj.busy: return safe_to_call_again#don't do this event yet if the owner is busy
                 self._event = e
-#                print("Start",e[0], e[1][0].name, datetime.now(), e[1][0]._busy)
+#                print("Start",e[0], e[1][0].name, datetime.now(), e[1][0].busy)
                 done_events += 1
                 #print("DOING",e)
                 e[0](*e[1], **e[2]) #call the function with the args and kwargs
                 self._event_index += 1
 
                 #if, after running the event, the obj is not busy, then it's OK to do the next event immediately.
-                if not obj._busy:
+                if not obj.busy:
                     safe_to_call_again = True
                     return safe_to_call_again
                     print("Game not busy, events not busy, and the current object is not busy, so do another event", len(self._events),depth)
@@ -3641,9 +3683,9 @@ class Game(metaclass=use_on_events):
                         f.write('    %s = game._%s["%s"]\n'%(slug, txt, name))
                     f.write('    %s.relocate(scene, (%i, %i))\n'%(slug, obj.x, obj.y))
                     r = obj._clickable_area
-                    f.write('    %s.reclickable(Rect(%s, %s, %s, %s))\n'%(slug, r.x, r.y, r.w, r.h))
+                    f.write('    %s.reclickable(Rect(%s, %s, %s, %s))\n'%(slug, r.x, r.y, r._w, r._h))
                     r = obj._solid_area
-                    f.write('    %s.resolid(Rect(%s, %s, %s, %s))\n'%(slug, r.x, r.y, r.w, r.h))
+                    f.write('    %s.resolid(Rect(%s, %s, %s, %s))\n'%(slug, r.x, r.y, r._w, r._h))
                     #if not (obj.allow_draw and obj.allow_update and obj.allow_interact and obj.allow_use and obj.allow_look):
                     f.write('    %s.usage(%s, %s, %s, %s, %s)\n'%(slug, obj.allow_draw, obj.allow_update, obj.allow_look, obj.allow_interact, obj.allow_use))
                     f.write('    %s.rescale(%0.2f)\n'%(slug, obj.scale))
@@ -3673,7 +3715,7 @@ class Game(metaclass=use_on_events):
                         if key in self._actors:
                             val = self._actors[key]
                             f.write('    scene.scales["%s"] = %0.2f\n'%(val.name, val.scale))
-                    f.write('    scene.scales["actors"] = %0.2f\n'%(obj.scale))
+                f.write('    scene.scales["actors"] = %0.2f\n'%(obj.scale))
 
 
 
@@ -3714,10 +3756,10 @@ class Game(metaclass=use_on_events):
         return  
 
     def on_pause(self, duration):
-        self._busy += 1
+        self.busy = True
         self._waiting = True
         def pause_finish(d, game):
-            self._busy -= 1
+            self.busy = False
         pyglet.clock.schedule_once(pause_finish, duration, self)
 
     def on_splash(self, image, callback, duration=None, immediately=False):
@@ -3729,7 +3771,7 @@ class Game(metaclass=use_on_events):
         scene = Scene(name, game=self)
         scene._set_background(image)
         for i in scene._layer: i.z = 1.0
-        self._busy += 1 #set Game object to busy (only time this happens?)
+        self.busy = True #set Game object to busy (only time this happens?)
         self._waiting = True #make game wait until splash is finished
         #add scene to game, change over to that scene
         self.add(scene)
@@ -3738,7 +3780,7 @@ class Game(metaclass=use_on_events):
 #            self._background.blit(0,0)
 
         def splash_finish(d, game):
-            self._busy -= 1 #finish the event
+            self.busy = False #finish the event
             callback(d, game)
         if callback:
             if not duration:
@@ -3858,10 +3900,16 @@ class MyTkApp(threading.Thread):
             obj.x, obj.y = (self.game.resolution[0]/2, self.game.resolution[1]/2)
             self.game.add(obj)
             self.game.scene.add(obj)
+            import pdb; pdb.set_trace()
+            if not os.path.exists(directory):
+                os.makedirs(directory)
+            _set_edit_object(obj)
+
         def add_object():
             d = ObjectSelectDialog(self.game, "Add to scene")
             if not d: return
             self.game.scene._add(d.result)
+            _set_edit_object(d.result)
         def new_actor():
             d = tk.simpledialog.askstring("New Actor", "Name:")
             if not d: return
@@ -3923,6 +3971,16 @@ class MyTkApp(threading.Thread):
         self.state_load_button = tk.Button(group, text='load state', command=load_state).grid(column=1, row=row)
 
         row += 1
+
+        def _set_edit_object(obj):
+            self.obj = obj
+            obj.show_debug = True
+            self.editor_label.grid_forget()
+            self.editor_label.destroy()
+#            self.editor_label["text"] = obj.name
+            self.create_editor_widgets()
+#            self.edit_button["text"] = obj.name
+        
         def _navigate(delta):
             objects = list(self.game.scene._objects.values())
             num_objects = len(objects)
@@ -3935,12 +3993,7 @@ class MyTkApp(threading.Thread):
             if self.index < 0: self.index = num_objects-1
             if self.index >= num_objects: self.index = 0
             self.obj = obj = objects[self.index]
-            obj.show_debug = True
-            self.editor_label.grid_forget()
-            self.editor_label.destroy()
-#            self.editor_label["text"] = obj.name
-            self.create_editor_widgets()
-#            self.edit_button["text"] = obj.name
+            _set_edit_object(obj)
 
         def prev():
             _navigate(-1) #decrement navigation
@@ -3981,7 +4034,7 @@ class MyTkApp(threading.Thread):
             directory = obj._directory
             fname = os.path.join(directory, "%s.py"%slugify(obj.name).lower())
             if not os.path.isfile(fname): #create a new module for this actor
-                with open(fname, "a") as f:
+                with open(fname, "w") as f:
                     f.write("from pyvida import gettext as _\n\n")
             module_name = os.path.splitext(os.path.basename(fname))[0]
             open_editor(self.game, fname)
