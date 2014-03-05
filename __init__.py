@@ -160,6 +160,24 @@ def location(): pass #stub #XXX deprecated
 
 def description(): pass #used by walkthrough output
 
+scene_path = []
+def scene_search(scene, target): #are scenes connected via portals?
+    global scene_path
+    if not scene or not scene.name:
+        if logging: log.warning("Strange scene search %s"%scene_path)
+        return False
+    scene_path.append(scene)
+    if scene.name.upper() == target:
+        return scene
+    for i in scene._objects.values():
+        if isinstance(i, Portal): #if portal and has link, follow that portal
+            if i.link and i.link.scene not in scene_path:
+                found_target = scene_search(i.link.scene, target)
+                if found_target != False: 
+                    return found_target
+    scene_path.pop(-1)
+    return False
+
 """
 Logging
 """
@@ -2331,7 +2349,8 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         for obj in self._objects.values():
             sprite = obj._sprite if obj._sprite else getattr(obj, "_label", None)
             if sprite:
-                sprite.x, sprite.y = int(x + self.ax), int(self.game.resolution[1] - y - self.ay)
+                sh = sprite.h if hasattr(sprite, "h") else 0
+                sprite.x, sprite.y = int(x + self.ax), int(self.game.resolution[1] - y - self.ay + sh - (sh/self.h)/2)
                 sprite.draw()
                 sw,sh = getattr(sprite, "content_width", sprite.width), getattr(sprite, "content_height", sprite.height)
                 obj._cr = Rect(x, y, sw, sh) #temporary collection values
@@ -2492,7 +2511,7 @@ class Camera(metaclass=use_on_events): #the view manager
             if camera_point == LEFT:
                 camera_point = (0, scene.y) 
             elif camera_point == RIGHT:
-                camera_point = (game.resolution[1] - scene.w, scene.y) 
+                camera_point = (self.game.resolution[0] - scene.w, scene.y) 
             elif camera_point == CENTER:
                 camera_point = ((scene.w-game.resolution[0])/2, (scene.h-game.resolution[1])/2) 
             elif camera_point == BOTTOM:
@@ -3419,8 +3438,6 @@ class Game(metaclass=use_on_events):
             log.info("FINISHED WALKTHROUGH")
 #            self.player.says(gettext("Let's play."))
             return
-
-
         s = "Walkthrough:",list(walkthrough)
         log.info(s)
         print(s)
@@ -3445,7 +3462,24 @@ class Game(metaclass=use_on_events):
             obj = get_object(self, walkthrough[2])
             subject = get_object(self, walkthrough[1])
             subject.trigger_use(obj)
-
+        elif function_name == "goto": 
+            #expand the goto request into a sequence of portal requests
+            global scene_path    
+            scene_path = []
+            obj = get_object(self, walkthrough[1])
+            if self.scene:
+                scene = scene_search(self.scene, obj.name.upper())
+                if scene != False:
+                    scene._add(self.player)
+                    if logging: log.info("TEST SUITE: Player goes %s"%([x.name for x in scene_path]))
+                    name = scene.display_text if scene.display_text else scene.name
+                    #if game.trunk_step and game.output_walkthrough: print("Go to %s."%(name))
+                    self.camera.scene(scene)
+                else:
+                    if logging: log.error("Unable to get player from scene %s to scene %s"%(self.scene.name, obj.name))
+            else:
+                if logging: log.error("Going from no scene to scene %s"%obj.name)
+            return
         elif function_name == "description":
             pass
         elif function_name == "location":
@@ -3516,8 +3550,15 @@ class Game(metaclass=use_on_events):
         """ Run update on scene objects """
         scene_objects = self.scene._objects.values() if self.scene else []
         layer_objects = self.scene._layer if self.scene else []
-        for items in [layer_objects, scene_objects, self._menu, self._modals, [self.camera]]:
-            for item in items:
+
+        #update all the objects in the scene or the event queue.
+        items_list = [layer_objects, scene_objects, self._menu, self._modals, [self.camera]] #, [obj[1][0] for obj in self._events]]
+        items_to_update = []
+        for items in items_list:
+            for item in items: #_to_update:
+                if item not in items_to_update: items_to_update.append(item)
+        for items in items_list:
+            for item in items: #_to_update:
                 if hasattr(item, "_update"): item._update(dt)
         if single_event:
             self._handle_events() #run the event handler only once
@@ -3873,12 +3914,11 @@ class MyTkApp(threading.Thread):
 
         scene = tk.StringVar(group)
         def change_scene(*args, **kwargs):
-            import pdb; pdb.set_trace()
             if self.game._editing and self.game._editing.show_debug:
                 self.game._editing.show_debug = False
             new_scene = self.game._scenes[scene.get()]
             self.app.objects = objects = list(new_scene._objects.values())
-            self.game.camera.scene(new_scene)
+            self.game.camera._scene(new_scene)
             self.index = 0
             if len(objects)>0:
                 self.game._editing = objects[self.index]
