@@ -2031,7 +2031,9 @@ class Scene(metaclass=use_on_events):
     def set_h(self, v): self._h = v
     h = property(get_h, set_h)
 
-
+    def has(self, obj):
+        obj = get_object(self.game, obj) 
+        return True if obj in self._objects.values() else False
 
     @property
     def directory(self):
@@ -2118,7 +2120,7 @@ class Scene(metaclass=use_on_events):
                 return
             if obj.name in self.scales.keys():
                 obj.scale = self.scales[obj.name]
-            elif "actors" in self.scales.keys() and not isinstance(obj, Item): #use auto scaling for actor if available
+            elif "actors" in self.scales.keys() and not isinstance(obj, Item) and not isinstance(obj, Portal): #use auto scaling for actor if available
                 obj.scale = self.scales["actors"]
             self._objects[obj.name] = obj
             obj.scene = self
@@ -2353,6 +2355,7 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
             sprite = obj._sprite if obj._sprite else getattr(obj, "_label", None)
             if sprite:
                 sh = sprite.h if hasattr(sprite, "h") else 0
+                if self.game._headless == False: import pdb; pdb.set_trace()
                 sprite.x, sprite.y = int(x + self.ax), int(self.game.resolution[1] - y - self.ay + sh - (sh/self.h)/2)
                 sprite.draw()
                 sw,sh = getattr(sprite, "content_width", sprite.width), getattr(sprite, "content_height", sprite.height)
@@ -3717,7 +3720,8 @@ class Game(metaclass=use_on_events):
 #            f.write(']\n')
             for name, obj in game.scene._objects.items():
                 slug = slugify(name).lower()
-                if obj != game.player and obj._editing_save == True:
+                if obj._editing_save == False: continue
+                if obj != game.player:
                     txt = "items" if isinstance(obj, Item) else "actors"
                     txt = "items" if isinstance(obj, Portal) else txt
                     if isinstance(obj, Emitter):
@@ -3952,8 +3956,9 @@ class MyTkApp(threading.Thread):
         def add_object():
             d = ObjectSelectDialog(self.game, "Add to scene")
             if not d: return
-            self.game.scene._add(d.result)
-            _set_edit_object(d.result)
+            obj = get_object(self.game, d.result)
+            self.game.scene._add(obj)
+            _set_edit_object(obj)
         def new_actor():
             d = tk.simpledialog.askstring("New Actor", "Name:")
             if not d: return
