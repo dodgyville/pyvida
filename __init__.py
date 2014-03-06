@@ -2280,7 +2280,7 @@ class Text(Item):
 
 
 class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
-    def __init__(self, name, callback, padding=(10,10), dimensions=(300,300), tile_size=(50,50)):
+    def __init__(self, name, callback, padding=(10,10), dimensions=(300,300), tile_size=(80,80)):
         super().__init__(name)
         self._objects = {}
         self._sorted_objects = None
@@ -2351,14 +2351,27 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         super().pyglet_draw() #actor.draw
         x,y = self.x + self.ax, self.y #self.padding[0], self.padding[1] #item padding
         w = self.clickable_area.w
+        dx,dy = self.tile_size
         for obj in self._objects.values():
             sprite = obj._sprite if obj._sprite else getattr(obj, "_label", None)
             if sprite:
-                sh = sprite.h if hasattr(sprite, "h") else 0
-                if self.game._headless == False: import pdb; pdb.set_trace()
-                sprite.x, sprite.y = int(x + self.ax), int(self.game.resolution[1] - y - self.ay + sh - (sh/self.h)/2)
-                sprite.draw()
                 sw,sh = getattr(sprite, "content_width", sprite.width), getattr(sprite, "content_height", sprite.height)
+                ratio_w = float(dx)/sw
+                ratio_h = float(dy)/sh
+                nw1, nh1 = int(sw*ratio_w), int(sh*ratio_w)
+                nw2, nh2 = int(sw*ratio_h), int(sh*ratio_h)
+                if nh1>dy:
+                    scale = ratio_w
+                    sh *= ratio_w
+                else:
+                    scale = ratio_h
+                    sh *= ratio_h
+                if hasattr(sprite, "scale"):
+                    old_scale = sprite.scale
+                    sprite.scale = scale
+                sprite.x, sprite.y = int(x + self.ax), int(self._sprite.y + self._sprite.height/2 - sh/2)
+                sprite.draw()
+                if hasattr(sprite, "scale"): sprite.scale = old_scale
                 obj._cr = Rect(x, y, sw, sh) #temporary collection values
 
             if x + self.tile_size[0] > self.dimensions[0]:
