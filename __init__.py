@@ -1,7 +1,7 @@
 """
 Python3 
 """
-import glob, imp, json, math, pyglet, os, subprocess, sys, copy
+import copy, glob, imp, json, math, pyglet, os, subprocess, sys, time
 from argparse import ArgumentParser
 from collections import Iterable
 from datetime import datetime
@@ -2797,6 +2797,7 @@ class Game(metaclass=use_on_events):
         self.directory_actors = DIRECTORY_ACTORS
         self.directory_emitters = DIRECTORY_EMITTERS
         self.directory_interface = DIRECTORY_INTERFACE
+        self.directory_screencast = None #if not none, save screenshots
 
         #defaults
         self.font_speech = None
@@ -2969,6 +2970,16 @@ class Game(metaclass=use_on_events):
         if symbol == pyglet.window.key.F2:
             game = self
             import pdb; pdb.set_trace()
+        if symbol == pyglet.window.key.F7: #start recording
+            #ffmpeg -r 16 -pattern_type glob -i '*.png' -c:v libx264 out.mp4
+            d = "screencast %s"%datetime.now()
+            d = os.path.join(DIRECTORY_SAVES, d)
+            os.mkdir(d)
+            print("saving to",d)
+            self.directory_screencast = d
+        if symbol == pyglet.window.key.F8: #stop recording
+            self.directory_screencast = None 
+            print("finished casting")
 
     def on_mouse_motion(self,x, y, dx, dy):
         """ Change mouse cursor depending on what the mouse is hovering over """
@@ -3609,6 +3620,7 @@ class Game(metaclass=use_on_events):
         
 
         objects = sorted(self.scene._objects.values(), key=lambda x: x.y, reverse=False)
+        objects = sorted(objects, key=lambda x: x.z, reverse=False)
         for item in objects:
             item.pyglet_draw(absolute=False)
 
@@ -3631,6 +3643,10 @@ class Game(metaclass=use_on_events):
             self._mouse_object.x, self._mouse_object.y = self.mouse_pos
             self._mouse_object.pyglet_draw()
 
+        if self.directory_screencast: #save to directory
+            now = round(time.time() * 100) #max 100 fps
+            d = os.path.join(self.directory_screencast, "%s.png"%now)
+            pyglet.image.get_buffer_manager().get_color_buffer().save(d)
 
     def _add(self, objects, replace=False): #game.add
         objects_iterable = [objects] if not isinstance(objects, Iterable) else objects
@@ -3961,9 +3977,8 @@ class MyTkApp(threading.Thread):
             obj.x, obj.y = (self.game.resolution[0]/2, self.game.resolution[1]/2)
             self.game.add(obj)
             self.game.scene.add(obj)
-            import pdb; pdb.set_trace()
-            if not os.path.exists(directory):
-                os.makedirs(directory)
+            if not os.path.exists(obj._directory):
+                os.makedirs(obj._directory)
             _set_edit_object(obj)
 
         def add_object():
@@ -4035,6 +4050,7 @@ class MyTkApp(threading.Thread):
         row += 1
 
         def _set_edit_object(obj):
+            if self.obj: obj.show_debug = False
             self.obj = obj
             obj.show_debug = True
             self.editor_label.grid_forget()
