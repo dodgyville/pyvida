@@ -1288,7 +1288,7 @@ class Actor(object, metaclass=use_on_events):
         if self.show_debug:
             self.debug_pyglet_draw(absolute=absolute)
 
-    def debug_pyglet_draw(self, absolute=False):
+    def debug_pyglet_draw(self, absolute=False): #actor.debug_pyglet_draw
         """ Draw some debug info (store it for the unittests) """
         self._debugs = []
         #position = green
@@ -1552,6 +1552,9 @@ class Actor(object, metaclass=use_on_events):
 #        import pdb; pdb.set_trace()
 
     def _do(self, action, callback=None, frame=None):
+        if type(action) == str and action not in self._actions.keys():
+            log.error("Unable to find action %s in object %s"%(action, self.name))
+            return
         action = action if isinstance(action, Action) else self._actions[action]
         callback = self.on_animation_end if callback == None else callback
         if self._sprite:
@@ -1742,6 +1745,22 @@ class Portal(Actor, metaclass=use_on_events):
         self._ox, self._oy = 0,0 #out point for this portal
 #        self.interact = self._interact_default
         self.link = None #the connecting Portal
+        self._editable.append(("out point", (self.get_ox, self.get_oy), (self.set_ox, self.set_oy),  (int, int)))
+
+    def debug_pyglet_draw(self, absolute=False):
+        super().debug_pyglet_draw(absolute=absolute)
+        #outpoint - red
+        self._debugs.append(crosshair(self.game, (self.x + self.ox, self.y + self.oy ), (255, 10, 10, 255), absolute=absolute))
+
+    def guess_link(self):
+        links = self.name.split("_to_")
+        guess_link = None
+        if len(links)>1: #name format matches guess
+            guess_link = "%s_to_%s"%(links[1].lower(), links[0].lower())
+        if guess_link and guess_link in self.game._items:
+            self.link = self.game._items[guess_link]
+        else:
+            if logging: log.warning("game.smart unable to guess link for %s"%self.name)
 
     def get_oy(self): return self._oy
     def set_oy(self, oy): self._oy = oy
@@ -3334,14 +3353,7 @@ class Game(metaclass=use_on_events):
                     if isinstance(a, Portal): portals.append(a.name)   
         for pname in portals: #try and guess portal links
             if draw_progress_bar: self._progress_bar_count += 1
-            links = pname.split("_to_")
-            guess_link = None
-            if len(links)>1: #name format matches guess
-                guess_link = "%s_to_%s"%(links[1].lower(), links[0].lower())
-            if guess_link and guess_link in self._items:
-                self._items[pname].link = self._items[guess_link]
-            else:
-                if logging: log.warning("game.smart unable to guess link for %s"%pname)
+            self._items[pname].guess_link()
             self._items[pname].auto_align() #auto align portal text
         if type(player) in [str]: player = self._actors[player]
         if player: self.player = player
@@ -3973,12 +3985,13 @@ class MyTkApp(threading.Thread):
 
 
         def _new_object(obj):
+            d = os.path.join(get_smart_directory(self.game, obj), obj.name)
+            if not os.path.exists(d):
+                os.makedirs(d)
             obj.smart(self.game)
             obj.x, obj.y = (self.game.resolution[0]/2, self.game.resolution[1]/2)
             self.game.add(obj)
             self.game.scene.add(obj)
-            if not os.path.exists(obj._directory):
-                os.makedirs(obj._directory)
             _set_edit_object(obj)
 
         def add_object():
@@ -3999,8 +4012,8 @@ class MyTkApp(threading.Thread):
             d = SceneSelectDialog(self.game, "Exit Scene")
             if not d: return
             name = "{}_to_{}".format(self.game.scene.name, d.result)
-#            print(name)
             _new_object(Portal(name))
+            self.obj.guess_link()
 
         self.add_object = tk.Button(group, text='Add Object', command=add_object).grid(column=2, row=row)
 
@@ -4070,7 +4083,7 @@ class MyTkApp(threading.Thread):
             self.index += delta
             if self.index < 0: self.index = num_objects-1
             if self.index >= num_objects: self.index = 0
-            self.obj = obj = objects[self.index]
+            obj = objects[self.index]
             _set_edit_object(obj)
 
         def prev():
@@ -4113,8 +4126,22 @@ class MyTkApp(threading.Thread):
             fname = os.path.join(directory, "%s.py"%slugify(obj.name).lower())
             if not os.path.isfile(fname): #create a new module for this actor
                 with open(fname, "w") as f:
-                    f.write("from pyvida import gettext as _\n\n")
+                    f.write("from pyvida import gettext as _\nfrom pyvida import answer\n\n")
             module_name = os.path.splitext(os.path.basename(fname))[0]
+
+            #find and suggest some missing functions (interact, look, use functions)
+            with open(fname, "r") as f:
+                script = f.read()
+            slug = slugify(obj.name).lower()
+            search_fns = ["def interact_%s(game, %s, player):"%(slug, slug), "def look_%s(game, %s, player):"%(slug, slug)]
+            for i in list(self.game.player.inventory.keys()):
+                slug2 = slugify(i).lower()
+                search_fns.append("def %s_use_%s(game, %s, %s)"%(slug, slug2, slug, slug2))
+            new_fns = []
+            with open(fname, "a") as f:
+                for fn in search_fns:
+                    if fn not in script:
+                        f.write("#%s\n#    pass\n\n"%fn)
             open_editor(self.game, fname)
             __import__(module_name)
 
