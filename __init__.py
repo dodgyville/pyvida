@@ -1480,13 +1480,18 @@ class Actor(object, metaclass=use_on_events):
             
         #self._event_finish()
 
+
+
+    def _remember(self, fact):
+        if fact not in self.facts: self.facts.append(fact)
+
     def on_remember(self, fact):
         """ A queuing function. Remember a fact to the list of facts
             
             Example::
                 player.remember("spoken to everyone")            
         """
-        if fact not in self.facts: self.facts.append(fact)
+        self._remember(fact)
 
     def remembers(self, fact):
         """ A pseudo-queuing function. Return true if fact in the list of facts 
@@ -2414,6 +2419,15 @@ class MenuManager(metaclass=use_on_events):
         for obj in self.game._menu: 
             obj._usage(draw=True, interact=True)
         if logging: log.debug("show menu using place %s"%[x.name for x in self.game._menu])
+
+    def on_remove(self, menu_items = None):
+        if not menu_items:
+            menu_items = self.game._menu
+        if type(menu_items) not in [tuple, list]: menu_items = [menu_items]
+        for i in menu_items:
+            if type(i) in [str]: i = self.game.items[i]
+            if i in self.game._menu: 
+                self.game._menu.remove(i)
         
     def _hide(self, menu_items = None):
         """ hide the menu (all or partial)"""
@@ -2426,7 +2440,7 @@ class MenuManager(metaclass=use_on_events):
         if logging: log.debug("hide menu using place %s"%[x.name for x in self.game._menu])
 
     def on_hide(self, menu_items = None):
-        self._hide()
+        self._hide(menu_items=menu_items)
 
     def on_fade_out(self):
         log.warning("menumanager.fade_out does not fade")
@@ -3949,8 +3963,8 @@ class MyTkApp(threading.Thread):
     def __init__(self, game):
         threading.Thread.__init__(self)
         self.game = game
-        self.obj = list(self.game.scene._objects.values())[0]
-        self.obj.show_debug = True
+        self.obj = list(self.game.scene._objects.values())[0] if len(self.game.scene._objects.values())>0 else None
+        if self.obj: self.obj.show_debug = True
         self.rows = 0
         self.index = 0
         self.start()
@@ -4100,6 +4114,7 @@ class MyTkApp(threading.Thread):
         self.rows = row
 
     def create_editor_widgets(self):
+        if not self.obj: return
         row = 0
         self.editor_label = group = tk.LabelFrame(self.app, text=self.obj.name, padx=5, pady=5)
         group.grid(padx=10, pady=10)
