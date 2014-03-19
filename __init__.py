@@ -45,7 +45,7 @@ VERSION_SAVE = 5  #save/load version, only change on incompatible changes
 PYGAME19 = 0
 PYGAME19GL = 1
 PYGLET12 = 2
-BACKEND = PYGAME19
+BACKEND = PYGLET12
 
 COORDINATE_MODIFIER = -1 #pyglet has (0,0) in bottom left, we want it in the bottom right
 
@@ -55,7 +55,6 @@ DEFAULT_EXPLORATION = True #show "unknown" on portal links before first visit th
 DEFAULT_PORTAL_TEXT = True #show portal text
 #GOTO_LOOK = True  #should player walk to object when looking at it
 GOTO_LOOK = False
-
 
 DEFAULT_RESOLUTION = (1920, 1080)
 DEFAULT_FPS = 60
@@ -73,8 +72,6 @@ DIRECTORY_INTERFACE = "data/interface"
 FONT_VERA = DEFAULT_MENU_FONT = os.path.join(DIRECTORY_FONTS, "vera.ttf")
 DEFAULT_MENU_SIZE = 26
 DEFAULT_MENU_COLOUR = (42, 127, 255)
-
-
 
 #LAYOUTS FOR MENUS and MENU FACTORIES
 HORIZONTAL = 0
@@ -1465,6 +1462,14 @@ class Actor(object, metaclass=use_on_events):
         self.game._modals.extend(items)
         return items
 
+    def _forget(self, fact):
+        if fact in self.facts:
+            self.facts.remove(fact)
+            if logging: log.debug("Forgetting fact '%s' for player %s"%(fact, self.name))
+        else:
+            if logging: log.warning("Can't forget fact '%s' ... was not in memory."%(fact))
+
+
     def on_forget(self, fact):
         """ A queuing function. Forget a fact from the list of facts 
             
@@ -1472,14 +1477,7 @@ class Actor(object, metaclass=use_on_events):
             
                 player.forget("spoken to everyone")
         """
-        if fact in self.facts:
-            self.facts.remove(fact)
-            if logging: log.debug("Forgetting fact '%s' for player %s"%(fact, self.name))
-        else:
-            if logging: log.warning("Can't forget fact '%s' ... was not in memory."%(fact))
-            
-        #self._event_finish()
-
+        self._forget(fact)
 
 
     def _remember(self, fact):
@@ -2789,6 +2787,8 @@ def advance_help_index(game):
     for step in game._walkthrough[game._help_index:]:
         function_name = step[0].__name__ 
         if function_name in ["description", "location", "has", "goto"]: game._help_index += 1
+    if game._help_index >= len(game._walkthrough): 
+        game._help_index = len(game._walkthrough) -1
     print("Waiting for user to trigger", game._walkthrough[game._help_index])
 
 def user_trigger_interact(game, obj):
@@ -3480,7 +3480,7 @@ class Game(metaclass=use_on_events):
 
     def _process_walkthrough(self):
         """ Do a step in the walkthrough """
-        if len(self._walkthrough) == 0: return #no walkthrough
+        if len(self._walkthrough) == 0 or self._walkthrough_index >= len(self._walkthrough): return #no walkthrough
         walkthrough = self._walkthrough[self._walkthrough_index]
         try:
             function_name = walkthrough[0].__name__ 
@@ -3488,7 +3488,7 @@ class Game(metaclass=use_on_events):
             import pdb; pdb.set_trace()
         self._walkthrough_index += 1    
 
-        if self._walkthrough_index > self._walkthrough_target or self._walkthrough_index > len(self._walkthrough):
+        if self._walkthrough_index > self._walkthrough_target or self._walkthrough_index >= len(self._walkthrough):
             if self._headless: self._headless = False
             log.info("FINISHED WALKTHROUGH")
 #            self.player.says(gettext("Let's play."))
@@ -3501,7 +3501,15 @@ class Game(metaclass=use_on_events):
 #            print("trigger interact", self._walkthrough_target, self._walkthrough_index, walkthrough[1])
             button = pyglet.window.mouse.LEFT
             modifiers = 0
-            obj = get_object(self, walkthrough[1])
+            #check modals and menu first for text options
+            obj = None
+            for o in self._modals:
+                if o.display_text == walkthrough[1]: obj = o
+            if not obj:
+                for o in self._menu:
+                    if walkthrough[1] in [o.display_text, o.name]: 
+                        obj = o
+            obj = get_object(self, walkthrough[1]) if not obj else obj
             if not obj:
                 log.error("Unable to find %s in game"%walkthrough[1])
                 self._walkthrough_target = 0
@@ -3509,6 +3517,7 @@ class Game(metaclass=use_on_events):
                 return
             #if not in same scene as camera, and not in modals or menu, log the error
             if self.scene and self.scene != obj.scene and obj not in self._modals and obj not in self._menu:
+                import pdb; pdb.set_trace()
                 log.error("{} not in scene {}, it's on {}".format(walkthrough[1], self.scene.name, obj.scene.name if obj.scene else "no scene"))
             x, y = obj.clickable_area.center
             user_trigger_interact(self, obj)
