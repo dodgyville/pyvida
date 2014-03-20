@@ -506,6 +506,11 @@ class Action(object):
                     if logging: log.error("Can't read values in %s (%s)"%(self.name, montage_fname))
                     num,w,h = 0,0,0
 
+        log.warning("MONTAGE IMPORT ONLY DOES A SINGLE STRIP")
+#        MAX_WIDTH = 16384
+#        ncols = num%(MAX_WIDTH/mwidth)
+#        nrows = int(ceil(float(len(files))/float(MAX_WIDTH/mwidth)))
+
         image_seq = pyglet.image.ImageGrid(image, 1, num)
         frames = []
         self.num_of_frames = num
@@ -2348,7 +2353,6 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         mx,my = pos
         show = self._get_sorted()[self.index:]
         for i in show:
-#            print(i.name, pos, "rect",i._cr)
             if hasattr(i, "_cr") and collide(i._cr, mx, my): 
                 if logging: log.debug("On %s in collection %s"%(i.name, self.name))
                 self.selected = i
@@ -2364,8 +2368,9 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
     def _interact_default(self, game, collection, player):
         #XXX should use game.mouse_press or whatever it's calleed
         obj = self.get_object((self.mx, self.my)) #the object selected in the collection
-        if obj and obj._collection_select:
+        if obj and obj._collection_select: #does this object have a special inventory function?
             obj._collection_select(self.game, obj, self)
+        self.selected = obj
         if self.callback:
             self.callback(self.game, self, self.game.player)
 
@@ -2391,10 +2396,11 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
                 if hasattr(sprite, "scale"):
                     old_scale = sprite.scale
                     sprite.scale = scale
-                sprite.x, sprite.y = int(x + self.ax), int(self._sprite.y + self._sprite.height/2 - sh/2)
+                final_x, final_y = int(x + self.ax), int(self._sprite.y + self._sprite.height/2 - sh/2)
+                sprite.x, sprite.y = final_x, final_y
                 sprite.draw()
                 if hasattr(sprite, "scale"): sprite.scale = old_scale
-                obj._cr = Rect(x, y, sw, sh) #temporary collection values
+                obj._cr = Rect(final_x, self.game.resolution[1] - final_y - sprite.height, sw, sh) #temporary collection values, stored for collection
 
             if x + self.tile_size[0] > self.dimensions[0]:
                 x = self.padding[0]
@@ -2797,6 +2803,10 @@ def user_trigger_interact(game, obj):
     if game._walkthrough and function_name == "interact":
         advance_help_index(game)
 
+def user_trigger_use(game, subject, obj):
+    """ use obj on subject """
+    subject.trigger_use(obj)
+
 def user_trigger_look(game, obj):
     obj.trigger_look()
 
@@ -2934,7 +2944,8 @@ class Game(metaclass=use_on_events):
         self._mouse_object = None #if using an Item or Actor as mouse image
         self.hide_cursor = HIDE_MOUSE
         self.mouse_down = (0,0) #last press
-        self.mouse_pos = (0,0) #last known position of mouse
+        self.mouse_position_raw = (0,0) #last known position of mouse
+        self.mouse_position = (0,0) #last known position of mouse
 
         pyglet.clock.schedule_interval(self._monitor_scripts, 2) #keep reloading scripts
 
@@ -3016,7 +3027,8 @@ class Game(metaclass=use_on_events):
 
     def on_mouse_motion(self,x, y, dx, dy):
         """ Change mouse cursor depending on what the mouse is hovering over """
-        self.mouse_pos = x,y
+        self.mouse_position_raw = x,y
+        self.mouse_position = x, self.game.resolution[1] - y #adjusted for pyglet
         ox, oy = x,y
         if self.scene:
             x -= self.scene.x #displaced by camera
@@ -3041,6 +3053,7 @@ class Game(metaclass=use_on_events):
             for obj in self._menu:
                 if obj.collide(ox,oy): #absolute screen values
                      self.mouse_cursor = MOUSE_CROSSHAIR
+                     if obj._mouse_motion: obj._mouse_motion(self.game, obj, self.game.player,x,y,dx,dy)
                      return
 
             for obj in self.scene._objects.values():
@@ -3123,7 +3136,10 @@ class Game(metaclass=use_on_events):
                 if button & pyglet.window.mouse.RIGHT:
                     if obj.allow_look: user_trigger_look(self, obj)
                 else:
-                    if obj.allow_interact: user_trigger_interact(self, obj)
+                    if self.mouse_mode == MOUSE_USE and self._mouse_object and obj.allow_use:
+                        user_trigger_use(self, obj, self._mouse_object)
+                        self._mouse_object = None
+                    elif obj.allow_interact: user_trigger_interact(self, obj)
                 return
 
         #no objects to interact with, so just go to the point
@@ -3674,8 +3690,7 @@ class Game(metaclass=use_on_events):
             modal.pyglet_draw(absolute=True)
 
         if self._mouse_object: # and hasattr(self._mouse_object, "pyglet_draw"):
-#            print("MOUSE", self.mouse_pos)
-            self._mouse_object.x, self._mouse_object.y = self.mouse_pos
+            self._mouse_object.x, self._mouse_object.y = self.mouse_position
             self._mouse_object.pyglet_draw()
 
         if self.directory_screencast: #save to directory
@@ -4052,6 +4067,7 @@ class MyTkApp(threading.Thread):
 
         tk.Radiobutton(group, text="Camera", command=edit_camera, indicatoron=0, value=1).grid(row=row, column=0)
         def close_editor(*args, **kwargs):
+            if self.obj: self.obj.show_debug = False
             if self.game._editing:
                 self.game._editing.show_debug = False
                 self.game._editing = None #switch off editor
@@ -4086,7 +4102,7 @@ class MyTkApp(threading.Thread):
         row += 1
 
         def _set_edit_object(obj):
-            if self.obj: obj.show_debug = False
+            if self.obj: self.obj.show_debug = False
             self.obj = obj
             obj.show_debug = True
             self.editor_label.grid_forget()

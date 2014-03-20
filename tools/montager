@@ -1,0 +1,150 @@
+#!/usr/bin/python
+#NOTE: Provided AS IS, no warranty for use!
+
+#montager
+#cobbled together from websites and gpl stuff by Luke Miller 2005
+#NOTE: Provided AS IS, no warranty for use!
+#v1.0
+#initial release
+
+from PIL import *
+import Image
+import sys, os
+from math import ceil
+from optparse import OptionParser
+
+
+MAX_WIDTH = 16384
+
+
+
+def make_contact_sheet(fnames,(ncols,nrows), (photow,photoh),
+                       (marl,mart,marr,marb),
+                       padding, reverse):
+    """\
+    Make a contact sheet from a group of filenames:
+
+    fnames       A list of names of the image files
+    
+    ncols        Number of columns in the contact sheet
+    nrows        Number of rows in the contact sheet
+    photow       The width of the photo thumbs in pixels
+    photoh       The height of the photo thumbs in pixels
+
+    marl         The left margin in pixels
+    mart         The top margin in pixels
+    marr         The right margin in pixels
+    marl         The left margin in pixels
+
+    padding      The padding between images in pixels
+
+    returns a PIL image object.
+    """
+
+
+    # Calculate the size of the output image, based on the
+    #  photo thumb sizes, margins, and padding
+    marw = marl+marr
+    marh = mart+ marb
+
+    padw = (ncols-1)*padding
+    padh = (nrows-1)*padding
+    if nrows == 1:
+        isize = (ncols*photow+marw+padw,nrows*photoh+marh+padh)
+    else:
+        isize = (MAX_WIDTH+marw+padw,nrows*photoh+marh+padh)
+
+    # Create the new image. The background doesn't have to be white
+    white = (255,255,255)
+    inew = Image.new('RGBA',isize,white)
+
+    # Read in all images and resize appropriately
+    irow = 0
+    icol = 0
+    print "new image",inew.size
+    if reverse==True:
+       print "Using reverse on list of images"
+       fnames.reverse()
+    for f in fnames:
+        img = Image.open(f)
+    # Insert each thumb:
+        w,h = img.size
+        left = marl + icol*(photow+padding)+((photow-w)/2)
+        right = left + w
+        upper = mart + irow*(photoh+padding)+photoh-h #(margin+row+displacement)
+        lower = upper + h
+#        print "tiling",f,"at",left,upper
+#        print "\f.",f
+        bbox = (left,upper,right,lower)
+        inew.paste(img,bbox)
+        if right >= MAX_WIDTH - photow:
+            irow += 1
+            icol = 0
+        else:
+            icol += 1
+    print "done tile! Now saving..."
+    return inew
+
+
+def super_montage():
+    print "montager v1.1 - by Luke Miller - 22/10/2011"
+    usage = "usage: montager out_file file_list\nAlso outputs a small .montage file describing the images.\nFor use with vidaG, to compile animations into single file.";
+    print "NOTE: Provided AS IS, no warranty for use!";
+    parser = OptionParser()
+    parser.add_option("-r", "--reverse", action="store_true", dest="reverse", help="Reverse file list", default=False)
+    (options, args) = parser.parse_args()
+    if len(args) < 2:
+     	print usage
+     	return
+    ofname = args[0]
+    if os.path.isfile(ofname):
+        print "\n",ofname,"already exists.\n"
+        print usage
+        return
+#    files = glob.glob(sys.argv[2])
+    ncols,nrows = 7,14
+    files = args[1:]
+    mwidth=0
+    mheight=0
+    for fname in files:
+	m = Image.open(fname) #get info from first image.
+        if m.size[0] > mwidth: mwidth=m.size[0] #store the widest image value
+        if m.size[1] > mheight: mheight=m.size[1] #store the tallest image value
+    ncols = len(files)%(MAX_WIDTH/mwidth)
+    nrows = int(ceil(float(len(files))/float(MAX_WIDTH/mwidth)))
+    print ncols, nrows, mwidth, mheight
+#    return
+    
+
+    # Don't bother reading in files we aren't going to use
+#    if len(files) > ncols*nrows: files = files[:ncols*nrows]
+
+    # These are all in terms of pixels:
+#    photow,photoh = 200,150
+    photo = (mwidth, mheight) #m.size #(photow,photoh)
+
+    margins = [0,0,0,0]
+
+    padding = 0
+    
+    inew = make_contact_sheet(files,(ncols,nrows),photo,margins,padding,options.reverse)
+    inew.save(ofname)
+
+    name, ext = os.path.splitext(ofname)
+    mname = name+".montage"
+    f = open(mname,"w")
+    #print num of cells, w, h
+    print >> f, len(files)
+    print >> f, mwidth
+    print >> f, mheight
+    f.close()
+    """
+    echo $i > $fname.montage
+    echo $g | awk -Fx '{ print $1 }' >> $fname.montage
+    echo $g | awk -Fx '{ print $2 }' >> $fname.montage
+    """
+    #os.system('display bs.png')
+#    os.system('open bs.png')
+
+if __name__ == '__main__':
+    super_montage()
