@@ -1035,7 +1035,14 @@ class Actor(object, metaclass=use_on_events):
             n = self.interact.__name__ if self.interact else "self.interact is None"
             if logging: log.debug("Player interact (%s (%s)) with %s"%(n, self.interact if self.interact else "none", self.name))
             script = self.interact
-            script(self.game, self, self.game.player)
+            try:
+                script(self.game, self, self.game.player)
+            except:
+                log.error("Exception in %s"%script.__name__)
+                print("\nError running %s\n"%script.__name__)
+                if traceback: traceback.print_exc(file=sys.stdout)
+                print("\n\n")
+
         else: #else, search several namespaces or use a default
             basic = "interact_%s"%slugify(self.name)
             script = get_function(self.game, basic)
@@ -1275,6 +1282,9 @@ class Actor(object, metaclass=use_on_events):
             if not absolute and self.game.scene:
                 x += self.game.scene.x * self.z
                 y -= self.game.scene.y * self.z
+                if self.game.camera:
+                    x += randint(-self.game.camera._shake_x, self.game.camera._shake_x)
+                    y += randint(-self.game.camera._shake_y, self.game.camera._shake_y)
 
             pyglet.gl.glTranslatef(self._scroll_dx, 0.0, 0.0);
             self._sprite.position = (int(x), int(y))
@@ -1289,6 +1299,8 @@ class Actor(object, metaclass=use_on_events):
 
         if self.show_debug:
             self.debug_pyglet_draw(absolute=absolute)
+
+
 
     def debug_pyglet_draw(self, absolute=False): #actor.debug_pyglet_draw
         """ Draw some debug info (store it for the unittests) """
@@ -1510,12 +1522,13 @@ class Actor(object, metaclass=use_on_events):
     def has(self, item):
         """ Does this actor have this item in their inventory?"""
         item = get_object(self.game, item)
-        return True if item in self.inventory.keys() else False
+        return True if item in self.inventory.values() else False
 
 
     def _gets(self, item, remove=True):
         item = get_object(self.game, item)
         if item: log.info("Actor %s gets: %s"%(self.name, item.name))
+        if hasattr(item, "_actions") and "collection" in item._actions.keys(): item.do("collection")
         self.inventory[item.name] = item
         if remove == True and item.scene: item.scene._remove(item)
         return item
@@ -1943,6 +1956,10 @@ class Emitter(Item):
             if not absolute and self.game.scene:
                 x += self.game.scene.x * self.z
                 y -= self.game.scene.y * self.z
+                if self.game.camera:
+                    x += randint(-self.game.camera._shake_x, self.game.camera._shake_x)
+                    y += randint(-self.game.camera._shake_y, self.game.camera._shake_y)
+
 
             self._sprite.position = (int(x), int(y))
             self._sprite.draw()
@@ -2485,6 +2502,8 @@ class Camera(metaclass=use_on_events): #the view manager
         self._goto_dx, self._goto_dy = 0, 0
         self.speed = 2 #default camera speed
         self._speed = self.speed #current camera speed
+        self._shake_x = 0
+        self._shake_y = 0
 
         self.name = "Default Camera"
         self.game = game
@@ -2580,7 +2599,14 @@ class Camera(metaclass=use_on_events): #the view manager
         if scene:
             postcamera_fn = get_function(self.game, "postcamera_%s"%slugify(scene.name))
             if postcamera_fn: postcamera_fn(self.game, scene, self.game.player)
-        
+
+
+    def on_shake(self, xy=0,x=None, y=None):
+        self._shake_x = x if x else xy        
+        self._shake_y = y if y else xy        
+
+    def on_shake_stop(self):
+        self._shake_x, self._shake_y = 0, 0
 
     def on_pan(self, left=False, right=False, top=False, bottom=False, speed=None):
         """ Convenience method for panning camera to left, right, top and/or bottom of scene, left OR right OR Neither AND top OR bottom Or Neither """
@@ -4024,12 +4050,14 @@ class MyTkApp(threading.Thread):
 
         def _new_object(obj):
             d = os.path.join(get_smart_directory(self.game, obj), obj.name)
+            import pdb; pdb.set_trace()
             if not os.path.exists(d):
                 os.makedirs(d)
             obj.smart(self.game)
             obj.x, obj.y = (self.game.resolution[0]/2, self.game.resolution[1]/2)
             self.game.add(obj)
             self.game.scene.add(obj)
+            self.app.objects = list(self.game.scene._objects.values())
             _set_edit_object(obj)
 
         def add_object():
@@ -4176,7 +4204,7 @@ class MyTkApp(threading.Thread):
             search_fns = ["def interact_%s(game, %s, player):"%(slug, slug), "def look_%s(game, %s, player):"%(slug, slug)]
             for i in list(self.game.player.inventory.keys()):
                 slug2 = slugify(i).lower()
-                search_fns.append("def %s_use_%s(game, %s, %s)"%(slug, slug2, slug, slug2))
+                search_fns.append("def %s_use_%s(game, %s, %s):"%(slug, slug2, slug, slug2))
             new_fns = []
             with open(fname, "a") as f:
                 for fn in search_fns:
