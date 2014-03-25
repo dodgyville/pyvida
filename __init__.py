@@ -117,6 +117,10 @@ EDIT_CLICKABLE = "clickable_area"
 EDIT_SOLID = "solid_area"
 
 
+#CAMERA FX
+FX_FADE_OUT = 0
+FX_FADE_IN = 1
+
 #KEYS
 K_ESCAPE = "X"
 K_s = "s"
@@ -2504,6 +2508,10 @@ class Camera(metaclass=use_on_events): #the view manager
         self._speed = self.speed #current camera speed
         self._shake_x = 0
         self._shake_y = 0
+        self._overlay = None #image to overlay
+        self._overlay_opacity_delta = 0 
+        self._overlay_counter = 0
+
 
         self.name = "Default Camera"
         self.game = game
@@ -2521,6 +2529,17 @@ class Camera(metaclass=use_on_events): #the view manager
                 if logging: log.info("Camera %s has finished on_goto by arriving at point, so decrementing self.busy to %s."%(self.name, self.busy))
                 self._goto_x, self._goto_y = None, None
                 self._goto_dx, self._goto_dy = 0, 0
+        if self._overlay:
+            duration = self._overlay_end - self._overlay_start 
+            complete = (time.time() - self._overlay_start) / duration  
+            if complete>1: complete = 1
+            if self._overlay_fx == FX_FADE_OUT:
+                self._overlay.opacity = round(255 * complete)
+            elif self._overlay_fx == FX_FADE_IN:
+                self._overlay.opacity = round(255 * (1 - complete))
+#            if complete>1: self._overlay = None #finish FX
+
+
 
     def _scene(self, scene, camera_point=None):
         """ change the current scene """
@@ -2607,6 +2626,32 @@ class Camera(metaclass=use_on_events): #the view manager
 
     def on_shake_stop(self):
         self._shake_x, self._shake_y = 0, 0
+
+    def on_fade_out(self, seconds=3):
+        self.game.player._says("FADE OUT", None)
+        return
+        d = pyglet.resource.get_script_home()
+        mask = pyglet.image.load(os.path.join(d, 'data/special/black.png'))
+#        mask = pyglet.image.codecs.gdkpixbuf2.GdkPixbuf2ImageDecoder().decode(open("data/special/black.png", "rb"), "data/special/black.png")
+#        bugs in pyglet 1.2 is killing me on this kind of stuff gah
+#        mask = pyglet.image.SolidColorImagePattern((0, 0, 0, 255))
+#        mask = mask.create_image(self.game.resolution[0], self.game.resolution[1])
+        self._overlay = pyglet.sprite.Sprite(mask, 0, 0)
+        self._overlay.opacity = 0
+        self._overlay_start = time.time()
+        self._overlay_end = time.time() + seconds
+        self._overlay_fx = FX_FADE_OUT
+
+    def on_fade_in(self, seconds=3):
+        self.game.player._says("FADE IN", None)
+        return
+        d = pyglet.resource.get_script_home()
+        mask = pyglet.image.load(os.path.join(d, 'data/special/black.png'))
+        self._overlay = pyglet.sprite.Sprite(mask, 0, 0)
+        self._overlay.opacity = 255
+        self._overlay_start = time.time()
+        self._overlay_end = time.time() + seconds
+        self._overlay_fx = FX_FADE_IN
 
     def on_pan(self, left=False, right=False, top=False, bottom=False, speed=None):
         """ Convenience method for panning camera to left, right, top and/or bottom of scene, left OR right OR Neither AND top OR bottom Or Neither """
@@ -3040,6 +3085,12 @@ class Game(metaclass=use_on_events):
         if symbol == pyglet.window.key.F2:
             game = self
             import pdb; pdb.set_trace()
+
+        if symbol == pyglet.window.key.F5: 
+            self.camera.fade_out()
+        if symbol == pyglet.window.key.F6:
+            self.camera.fade_in()
+
         if symbol == pyglet.window.key.F7: #start recording
             #ffmpeg -r 16 -pattern_type glob -i '*.png' -c:v libx264 out.mp4
             d = "screencast %s"%datetime.now()
@@ -3718,6 +3769,8 @@ class Game(metaclass=use_on_events):
         if self._mouse_object: # and hasattr(self._mouse_object, "pyglet_draw"):
             self._mouse_object.x, self._mouse_object.y = self.mouse_position
             self._mouse_object.pyglet_draw()
+
+        if self.game.camera._overlay: self.game.camera._overlay.draw()
 
         if self.directory_screencast: #save to directory
             now = round(time.time() * 100) #max 100 fps
