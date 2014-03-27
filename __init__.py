@@ -992,6 +992,10 @@ class Actor(object, metaclass=use_on_events):
         return self._clickable_area.move(self.x + self.ax, self.y + self.ay)
 
     @property
+    def solid_area(self):
+        return self._solid_area.move(self.x + self.ax, self.y + self.ay)
+
+    @property
     def clickable_mask(self):
         if self._clickable_mask: return self._clickable_mask
 #        r = self._clickable_area.move(self.ax, self.ay)
@@ -1319,6 +1323,8 @@ class Actor(object, metaclass=use_on_events):
         self._debugs.append(crosshair(self.game, (self.x + self.nx, self.y + self.ny ), (255, 220, 80, 255), absolute=absolute))
         #clickable area
         self._debugs.append(rectangle(self.game, self.clickable_area, (0, 255, 100, 255), absolute=absolute))
+        #solid area
+        self._debugs.append(rectangle(self.game, self.solid_area, (255, 15, 30, 255), absolute=absolute))
 
     def on_animation_end(self):
 #        self.busy -= 1
@@ -1899,6 +1905,8 @@ class Emitter(Item):
         self.alpha_start, self.alpha_end = alpha_start, alpha_end
         self.random_index = random_index #should each particle start mid-action?
         self.particles = []
+        self._editable.append(("emitter area", "solid_area", "_solid_area", Rect),)
+
         #self._solid_area = Rect(0,0,0,0) #used for the spawn area        
 
     @property
@@ -1978,6 +1986,9 @@ class Emitter(Item):
                 except:
                     import pdb; pdb.set_trace()
             """
+        if self.show_debug:
+            self.debug_pyglet_draw(absolute=absolute)
+
 
     def on_reanchor(self, pt):
         """ queue event for changing the anchor points """
@@ -3581,7 +3592,7 @@ class Game(metaclass=use_on_events):
             import pdb; pdb.set_trace()
         self._walkthrough_index += 1    
 
-        if self._walkthrough_index > self._walkthrough_target or self._walkthrough_index >= len(self._walkthrough):
+        if self._walkthrough_index > self._walkthrough_target or self._walkthrough_index > len(self._walkthrough):
             if self._headless: self._headless = False
             log.info("FINISHED WALKTHROUGH")
 #            self.player.says(gettext("Let's play."))
@@ -3963,6 +3974,7 @@ class Game(metaclass=use_on_events):
         return  
 
     def on_pause(self, duration):
+        if self._headless: return
         self.busy += 1
         self._waiting = True
         def pause_finish(d, game):
