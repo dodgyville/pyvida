@@ -232,6 +232,12 @@ def slugify(txt):
     txt = txt.replace("\\", "_")
     return txt.replace("'", "")
 
+def set_interacts(game, objects, short=None):
+    """ Set the interacts using the extension in <short> as a shortcut """
+    for obj in objects:
+        o = get_object(game, obj)
+        o.set_interact("interact_%s_%s"%(slugify(o.name), short))
+
 def get_available_languages():
     """ Return a list of available locale names """
     languages = glob.glob("data/locale/*")
@@ -789,6 +795,17 @@ class Actor(object, metaclass=use_on_events):
             ("allow update", self.get_allow_update, self.set_allow_update, bool),
             ]
 
+    def __getstate__(self):
+        """ Prepare the object for pickling """
+        log.warning("Actor.__getstate__ discards essential information")
+        for fn_name in ["_interact", "_look", "_drag", "_mouse_motion", "_mouse_none", "_collection_select"]:
+            fn = getattr(self, fn_name)
+            if hasattr(fn, "__name__"): setattr(self, fn_name, fn.__name__)                
+        self._sprite.delete()
+        self._sprite = None
+        self.uses = {}
+        self._editable = []
+
     def get_busy(self):
         return self._busy
     def set_busy(self, v):
@@ -1040,6 +1057,7 @@ class Actor(object, metaclass=use_on_events):
                     self.interact = interact
                 else:
                     if logging: log.error("Unable to find interact fn %s"%self.interact)
+                    return
             n = self.interact.__name__ if self.interact else "self.interact is None"
             if logging: log.debug("Player interact (%s (%s)) with %s"%(n, self.interact if self.interact else "none", self.name))
             script = self.interact
@@ -2639,7 +2657,9 @@ class Camera(metaclass=use_on_events): #the view manager
         self._shake_x, self._shake_y = 0, 0
 
     def on_fade_out(self, seconds=3):
-        self.game.player._says("FADE OUT", None)
+        items = self.game.player._says("FADE OUT", None)
+        if self.game._headless:  #headless mode skips sound and visuals
+            items[0].trigger_interact() #auto-close the on_says
         return
         d = pyglet.resource.get_script_home()
         mask = pyglet.image.load(os.path.join(d, 'data/special/black.png'))
@@ -2654,7 +2674,9 @@ class Camera(metaclass=use_on_events): #the view manager
         self._overlay_fx = FX_FADE_OUT
 
     def on_fade_in(self, seconds=3):
-        self.game.player._says("FADE IN", None)
+        items = self.game.player._says("FADE IN", None)
+        if self.game._headless:  #headless mode skips sound and visuals
+            items[0].trigger_interact() #auto-close the on_says
         return
         d = pyglet.resource.get_script_home()
         mask = pyglet.image.load(os.path.join(d, 'data/special/black.png'))

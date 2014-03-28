@@ -1,4 +1,8 @@
-import unittest
+"""
+python3 -m unittest tests.SaveTest
+"""
+
+import unittest, pickle, sys
 
 from __init__ import *
 
@@ -580,6 +584,23 @@ class PortalTest(unittest.TestCase):
 #            self.assertAlmostEqual(self.actor.y, 200+(i+1)*self.actor._goto_dy)
         import pdb; pdb.set_trace()
         self.assertEqual([x[0].__name__ for x in self.game._events],['on_goto', 'on_scene', 'on_pan', 'on_relocate', 'on_goto'])
+
+class SaveTest(unittest.TestCase):
+    def setUp(self):
+        self.game = Game("Unit Tests", fps=60, afps=16, resolution=RESOLUTION)
+        self.game.settings = Settings()
+        self.actor = Actor("_test_actor").smart(self.game)
+        self.scene = Scene("_test_scene")
+        self.game.player = self.actor
+        self.game.add([self.scene, self.actor])
+
+    def test_pickle(self):
+        with open('saves/actor.pickle', 'wb') as f:
+            pickle.dump(self.actor, f)    
+        with open('saves/actor.pickle', 'rb') as f:
+            actor = pickle.load(f)
+        self.assertEqual(self.actor.name, "_test_actor")
+        self.assertEqual(actor.name, "_test_actor")
 
 if __name__ == '__main__':
     unittest.main()
