@@ -801,7 +801,7 @@ class Actor(object, metaclass=use_on_events):
         for fn_name in ["_interact", "_look", "_drag", "_mouse_motion", "_mouse_none", "_collection_select"]:
             fn = getattr(self, fn_name)
             if hasattr(fn, "__name__"): setattr(self, fn_name, fn.__name__)                
-        self._sprite.delete()
+        if self._sprite: self._sprite.delete()
         self._sprite = None
         self.uses = {}
         self._editable = []
@@ -2345,6 +2345,10 @@ class Text(Item):
             x += self._parent.x
             y += self._parent.y
 
+        if not absolute and self.game.scene:
+            x += self.game.scene.x * self.z
+            y -= self.game.scene.y * self.z
+
         x, y = x - self.ax, self.game.resolution[1] - y + self.ay 
         if self._label_offset: #draw offset first
             self._label_offset.x, self._label_offset.y = int(x+self.offset), int(y-self.offset)
@@ -2860,13 +2864,15 @@ class MenuFactory(object):
     
     
 class Factory(object):
-    """ Create multiple objects from a single template """
+    """ Create multiple objects from a single template, template being an object to clone """
     def __init__(self, game, template):
         self.game = game
         self.template = template
         
     def _create_object(self, name):
         obj = copy.copy(self.template)
+        obj.__dict__ = copy.copy(self.template.__dict__)
+        if obj._sprite: obj._sprite.delete()
         obj._sprite = None #clear the pyglet Sprite from the copy 
         obj._smart_actions(self.game) #reload the pyglet actions for this object
         obj.name = name
@@ -4137,7 +4143,6 @@ class MyTkApp(threading.Thread):
 
         def _new_object(obj):
             d = os.path.join(get_smart_directory(self.game, obj), obj.name)
-            import pdb; pdb.set_trace()
             if not os.path.exists(d):
                 os.makedirs(d)
             obj.smart(self.game)
