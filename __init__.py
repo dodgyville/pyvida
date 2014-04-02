@@ -1482,7 +1482,8 @@ class Actor(object, metaclass=use_on_events):
         label.fullscreen(True)
         label.x,label.y = x+dx,y+dy
         if ok and ok.viewable:
-            ok.x, ok.y = x + msgbox.w - ok.w//2, y + msgbox.h - ok.h//2
+            ok._parent = msgbox
+            ok.x, ok.y = msgbox.w - (ok.w*2)//3, msgbox.h - (ok.h*2)//3
         msgbox.x, msgbox.y = x,y
 
         #make the game wait until the user closes the modal
@@ -1493,6 +1494,12 @@ class Actor(object, metaclass=use_on_events):
         items = [msgbox, label]
         if ok: items.append(ok)
         if portrait: items.append(portrait)
+
+        dy = 39
+        df = 3
+        msgbox._goto_x, msgbox._goto_y = msgbox._x, msgbox._y
+        msgbox._y += dy
+        msgbox._goto_dy = -dy/df
 
         def close_on_says(game, obj, player):
             if ok: self.game._modals.remove(ok)
