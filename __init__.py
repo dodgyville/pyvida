@@ -732,6 +732,11 @@ class Actor(object, metaclass=use_on_events):
         self._goto_x, self._goto_y = None, None
         self._goto_dx, self._goto_dy = 0, 0
         self._goto_points = [] #list of points Actor is walking through
+
+        self._opacity = 255
+        self._opacity_target = None
+        self._opacity_delta = 0
+
         self._sx, self._sy = 0, 0 #stand points
         self._ax, self._ay = 0, 0 #anchor points
         self._nx, self._ny = 0, 0 # displacement point for name
@@ -979,6 +984,17 @@ class Actor(object, metaclass=use_on_events):
 
         self._scroll_dy += self.scroll[1] #%self.h
 
+        if self._opacity_target != None:
+            self._opacity += self._opacity_delta
+            if self._opacity < 0:
+                self._opacity = 0
+                self._opacity_target = None
+            elif self._opacity > 255:
+                self._opacity = 255
+                self._opacity_target = None
+
+            if self._sprite: self._sprite.opacity = self._opacity
+
         if self._goto_x != None:
             self.x = self.x + self._goto_dx
             self.y = self.y + self._goto_dy
@@ -995,7 +1011,7 @@ class Actor(object, metaclass=use_on_events):
                 else:
                     self._finished_goto()
                     self.busy -= 1
-                    if logging: log.info("%s has finished on_goto by arriving at point, so decrement busy to %s."%(self.name, self.busy))
+                    if logging: log.info("%s has finished on_goto by arriving at point, so decrement %s.busy to %s."%(self.name, self.name, self.busy))
                     self._goto_x, self._goto_y = None, None
                     self._goto_dx, self._goto_dy = 0, 0
                     if "idle" in self._actions.keys():
@@ -1500,6 +1516,7 @@ class Actor(object, metaclass=use_on_events):
         msgbox._goto_x, msgbox._goto_y = msgbox._x, msgbox._y
         msgbox._y += dy
         msgbox._goto_dy = -dy/df
+        msgbox.busy += 1
 
         def close_on_says(game, obj, player):
             if ok: self.game._modals.remove(ok)
@@ -2249,6 +2266,14 @@ class Scene(metaclass=use_on_events):
 #            fname = self._background_fname
 #        if fname:
 #            self._background_fname = fname
+
+    def on_fade_objects(self, objects=[], seconds = 3, fx=FX_FADE_OUT):
+        """ fade the requested objects """
+        log.warning("scene.fade_objects can only fade out")
+        for obj in objects:
+            obj._opacity_target = 0
+            obj._opacity_delta = (obj._opacity_target-obj._opacity)/(self.game.fps*seconds)
+            print(obj._opacity_delta)
 
     def pyglet_draw(self, absolute=False): #scene.draw (not used)
         pass
@@ -3132,6 +3157,9 @@ class Game(metaclass=use_on_events):
             game = self
             import pdb; pdb.set_trace()
 
+        if symbol == pyglet.window.key.F4: 
+            self.scene.fade_objects(self.scene._layer)
+
         if symbol == pyglet.window.key.F5: 
             self.camera.fade_out()
         if symbol == pyglet.window.key.F6:
@@ -3658,6 +3686,8 @@ class Game(metaclass=use_on_events):
             if self.scene and self.scene != obj.scene and obj not in self._modals and obj not in self._menu:
                 import pdb; pdb.set_trace()
                 log.error("{} not in scene {}, it's on {}".format(walkthrough[1], self.scene.name, obj.scene.name if obj.scene else "no scene"))
+            if self.player: 
+                self.player.x, self.player.y = obj.x + obj.sx, obj.y + obj.sy
             x, y = obj.clickable_area.center
             user_trigger_interact(self, obj)
 #                self._window.dispatch_event('on_mouse_release', x, self.resolution[1] - y, button, modifiers)
