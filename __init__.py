@@ -986,11 +986,11 @@ class Actor(object, metaclass=use_on_events):
 
         if self._opacity_target != None:
             self._opacity += self._opacity_delta
-            if self._opacity < 0:
-                self._opacity = 0
+            if self._opacity_delta<0 and self._opacity < self._opacity_target:
+                self._opacity = self._opacity_target
                 self._opacity_target = None
-            elif self._opacity > 255:
-                self._opacity = 255
+            elif self._opacity_delta>0 and self._opacity > self._opacity_target:
+                self._opacity = self._opacity_target
                 self._opacity_target = None
 
             if self._sprite: self._sprite.opacity = self._opacity
@@ -1398,6 +1398,7 @@ class Actor(object, metaclass=use_on_events):
             tuples containing a text option to display and a function to call if the player selects this option.
             
         """    
+        if logging: log.info("%s has started on_asks."%(self.name))
         name = self.display_text if self.display_text else self.name
         if self.game._output_walkthrough: print("%s says \"%s\"."%(name, args[0]))
         items = self._says(statement, **kwargs) 
@@ -2183,7 +2184,6 @@ class Scene(metaclass=use_on_events):
         self._layer.append(f) #add layer items as items
         return f
 
-
     def _load_layers(self, game, wildcard=None):
         sdir = os.path.join(os.getcwd(),os.path.join(game.directory_scenes, self.name))    
         wildcard = wildcard if wildcard else os.path.join(sdir, "*.png")
@@ -2267,13 +2267,15 @@ class Scene(metaclass=use_on_events):
 #        if fname:
 #            self._background_fname = fname
 
-    def on_fade_objects(self, objects=[], seconds = 3, fx=FX_FADE_OUT):
+    def on_fade_objects(self, objects=[], seconds = 3, fx=FX_FADE_OUT, block=False):
         """ fade the requested objects """
         log.warning("scene.fade_objects can only fade out")
+        log.info("fading out %s"%[o.name for o in objects])
         for obj in objects:
             obj._opacity_target = 0
             obj._opacity_delta = (obj._opacity_target-obj._opacity)/(self.game.fps*seconds)
             print(obj._opacity_delta)
+
 
     def pyglet_draw(self, absolute=False): #scene.draw (not used)
         pass
@@ -3253,6 +3255,9 @@ class Game(metaclass=use_on_events):
     def on_mouse_release(self, x, y, button, modifiers):
         """ Call the correct function depending on what the mouse has clicked on """
         x, y = x / self._scale, y / self._scale #if window is being scaled
+
+        ax, ay = x,y #asbolute x,y (for modals and menu)
+
         if self.scene:
             x -= self.scene.x #displaced by camera
             y += self.scene.y
@@ -3265,8 +3270,10 @@ class Game(metaclass=use_on_events):
             self._drag = None
 
         y = self.game.resolution[1] - y #invert y-axis if needed
-        for obj in self._modals:
-            if obj.collide(x,y):
+        ay = self.game.resolution[1] - ay
+
+        for obj in self._modals: #modals are absolute (they aren't displaced by camera)
+            if obj.collide(ax, ay):
                 user_trigger_interact(self, obj)
                 return
         #don't process other objects while there are modals
@@ -3274,7 +3281,7 @@ class Game(metaclass=use_on_events):
 
         #try menu events
         for obj in self._menu:
-            if obj.collide(x,y):
+            if obj.collide(ax, ay):
                 user_trigger_interact(self, obj)
                 return
 
@@ -3727,12 +3734,14 @@ class Game(metaclass=use_on_events):
         """ Handle game events """
         safe_to_call_again = False #is it safe to call _handle_events immediately after this?
         waiting_for_user = True
+#        log.info("There are %s events, game._waiting is %s, index is %s and current event is %s",len(self._events), self._waiting, self._event_index, self._event)
+            
         if self._waiting: 
             """ check all the Objects with existing events, if any of them are busy, don't process the next event """
             none_busy = True
             for event in self._events[:self._event_index]: #event_index is point to the game.wait event at the moment
                 obj = event[1][0] #first arg is always the object that called the event
-                if obj.busy > 0: 
+                if obj.busy > 0: #this object is busy so don't remove its event and don't let game stop waiting if it's waiting
                     none_busy = False
             if none_busy == True: 
                 if logging: log.info("Game has no busy events, so setting game.waiting to False.")
