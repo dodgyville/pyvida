@@ -3427,7 +3427,8 @@ class Game(metaclass=use_on_events):
         colour = self.font_info_colour
         font = self.font_info
         size = self.font_info_size
-        self._info_object = Text("_info_text", display_text="", font=font, colour=colour, size=size, offset=1)
+        self._info_object = Text("_info_text", display_text=" ", font=font, colour=colour, size=size, offset=1)
+        self._info_object.x, self._info_object.y = -100,-200
         self._info_object.game = self
 
     def reset(self):
