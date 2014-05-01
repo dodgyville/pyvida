@@ -737,8 +737,8 @@ class Actor(object, metaclass=use_on_events):
         self._opacity_target = None
         self._opacity_delta = 0
 
-        self._sx, self._sy = 0, 0 #stand points
-        self._ax, self._ay = 0, 0 #anchor points
+        self._sx, self._sy = 0, 0 #stand point
+        self._ax, self._ay = 0, 0 #anchor point
         self._nx, self._ny = 0, 0 # displacement point for name
         self._tx, self._ty = 0, 0 # displacement point for text
         self._parent = None
@@ -943,6 +943,12 @@ class Actor(object, metaclass=use_on_events):
         return self._allow_update
     allow_update = property(get_allow_update, set_allow_update)
 
+    def set_alpha(self, v):
+        self._opacity = v
+        if self._sprite: self._sprite.opacity = self._opacity
+    def get_alpha(self):
+        return self._opacity
+    alpha = property(get_alpha, set_alpha)
 
     @property
     def w(self):
@@ -1268,9 +1274,7 @@ class Actor(object, metaclass=use_on_events):
             self._ay = -int(self.h * 0.85)
             self._sx, self._sy = self._ax - 50, 0  # stand point
             self._nx, self._ny = self._ax * 0.5, self._ay #name point
-            self._cx, self._cy = int(self.w + 10), int(self.h)  # text when using POSITION_TEXT
-#                self._tx, self._ty = 0,0    # target for when this actor is mid-movement
-
+            self._tx, self._ty = int(self.w + 10), int(self.h)  # text when using POSITION_TEXT
 
         #guessestimate the clickable mask for this actor
         if self._sprite:
@@ -1443,6 +1447,20 @@ class Actor(object, metaclass=use_on_events):
             opt.response_callback = callback
             self.game.add(opt)
             self.game._modals.append(opt)
+
+    def on_continues(self, text, delay=0.01, step=3):
+        label = Text(text, delay=delay, step=step)
+        label.game = self.game
+        label.fullscreen(True)
+        label.x,label.y = self.tx, self.ty
+        def close_on_says(game, obj, player):
+            self.game._modals.remove(label)
+            self.busy -= 1
+            if logging: log.info("%s has finished on_says (%s), so decrement self.busy to %i."%(self.name, text, self.busy))
+        label.interact = close_on_says
+        self.busy += 1
+        self.game._modals.append(label)
+
 
     def on_says(self, text, *args, **kwargs):
         print("AK",args, kwargs)
@@ -1726,6 +1744,13 @@ class Actor(object, metaclass=use_on_events):
         """
         self._usage(draw=True, update=True) # switch everything on
 
+    def on_fade_in(self, action=None, seconds=3): #actor.fade_in
+        if action: self._do(action)
+        if self.game._headless:  #headless mode skips sound and visuals
+            self.alpha = 255
+            return
+        self._opacity_target = 255
+        self._opacity_delta = (self._opacity_target - self._opacity)/(self.game.fps*seconds)
 
     def on_usage(self, draw=None, update=None, look=None, interact=None, use=None):
         """ Set the player->object interact flags on this object """
@@ -2724,6 +2749,13 @@ class Camera(metaclass=use_on_events): #the view manager
         self._overlay_end = time.time() + seconds
         self._overlay_fx = FX_FADE_IN
 
+    def on_off(self):
+        pass
+
+    def on_on(self):
+        pass
+
+
     def on_pan(self, left=False, right=False, top=False, bottom=False, speed=None):
         """ Convenience method for panning camera to left, right, top and/or bottom of scene, left OR right OR Neither AND top OR bottom Or Neither """
         x = 0 if left else self.game.scene.x
@@ -3206,8 +3238,15 @@ class Game(metaclass=use_on_events):
             for obj in self._menu:
                 if obj.collide(ox,oy): #absolute screen values
                      self.mouse_cursor = MOUSE_CROSSHAIR
+                     if obj._actions and "over" in obj._actions and (obj.allow_interact or obj.allow_use or obj.allow_look):
+                         obj._do("over")
+
                      if obj._mouse_motion: obj._mouse_motion(self.game, obj, self.game.player,x,y,dx,dy)
                      return
+                else: #unhover over menu item
+                    if obj.action and obj.action.name == "over" and (obj.allow_interact or obj.allow_use or obj.allow_look):
+                        if "idle" in obj._actions: 
+                            obj._do('idle')
 
             for obj in self.scene._objects.values():
                 if obj.collide(x,y) and obj._mouse_motion: 
