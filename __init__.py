@@ -1486,6 +1486,8 @@ class Actor(object, metaclass=use_on_events):
             x, y = self.game.resolution[0]//2 - msgbox.w//2, self.game.resolution[1]*0.8 - msgbox.h
         elif position == TOP:
             x, y = self.game.resolution[0]//2 - msgbox.w//2, self.game.resolution[1]*0.1
+        elif position == BOTTOM:
+            x, y = self.game.resolution[0]//2 - msgbox.w//2, self.game.resolution[1]*0.95 - msgbox.h
         elif type(position) in [tuple, list]: #assume coords
             x, y = position
 
@@ -1666,7 +1668,6 @@ class Actor(object, metaclass=use_on_events):
             self._sprite._frame_index = len(self._sprite.image.frames)
 
     def on_do(self, action, frame=None):
-#        self.busy -= False
         self._do(action, frame=frame)
         
     def on_do_once(self, action):
@@ -1752,6 +1753,17 @@ class Actor(object, metaclass=use_on_events):
         self._opacity_target = 255
         self._opacity_delta = (self._opacity_target - self._opacity)/(self.game.fps*seconds)
 
+    def _fade_out(self, action=None, seconds=3): #actor.fade_out
+        if action: self._do(action)
+        if self.game._headless:  #headless mode skips sound and visuals
+            self.alpha = 0
+            return
+        self._opacity_target = 0
+        self._opacity_delta = (self._opacity_target - self._opacity)/(self.game.fps*seconds)
+
+    def on_fade_out(self, action=None, seconds=3): #actor.fade_out
+        self._fade_out(action, seconds)
+
     def on_usage(self, draw=None, update=None, look=None, interact=None, use=None):
         """ Set the player->object interact flags on this object """
         self._usage(draw, update, look, interact, use)
@@ -1763,6 +1775,8 @@ class Actor(object, metaclass=use_on_events):
         if interact != None: self.allow_interact = interact
         if use != None: self.allow_use = use
 
+    def on_displace(self, displacement):
+        self._relocate(self.scene, (self.x-displacement[0], self.y-displacement[1]))
 
     def on_relocate(self, scene, destination=None, scale=None): #actor.relocate
         self._relocate(scene, destination, scale)
@@ -4025,6 +4039,7 @@ class Game(metaclass=use_on_events):
                     f.write('    %s.restand((%i, %i))\n'%(slug, obj._sx, obj._sy))
                     f.write('    %s.rename((%i, %i))\n'%(slug, obj._nx, obj._ny))
                     f.write('    %s.retext((%i, %i))\n'%(slug, obj._tx, obj._ty))
+                    if obj.z != 1.0: f.write('    %s.z = %f\n'%(obj.z))
                     if obj._parent:
                         f.write('    %s.reparent(\"%s\")\n'%(slug, obj._parent.name))
                     if obj.action:
