@@ -567,6 +567,17 @@ def open_editor(game, filepath, track=True):
 #    return filehandle.read()
 
 
+def update_progress_bar(game, obj):
+    """ During smart loads the game may wish to have an onscreen progress bar, here it gets called """
+    if game._progress_bar_renderer:
+        game._window.set_mouse_visible(False)
+        game._window.dispatch_events()
+        game._window.dispatch_event('on_draw')
+        game._progress_bar_renderer(game)
+        game._window.flip()
+        game._window.set_mouse_visible(True)
+
+
 """
 Classes
 """
@@ -936,6 +947,7 @@ class Actor(object, metaclass=use_on_events):
         self._images = [] #image filenames that the actions are based on
         self.busy = 0 #don't process any more events for this actor until busy is False, will block all events if game._waiting = True
         self._sprite = None
+        self._batch = None
         self._events = []
 
         self._tint = None
@@ -1392,6 +1404,7 @@ class Actor(object, metaclass=use_on_events):
         """
         DEFAULT_CLICKABLE = Rect(0, 0, 70, 110)
         self.game = game
+
         if using:
             if logging: log.info("actor.smart - using %s for smart load instead of real name %s"%(using, self.name))
             name = os.path.basename(using)
@@ -1488,19 +1501,15 @@ class Actor(object, metaclass=use_on_events):
 
             pyglet.gl.glTranslatef(self._scroll_dx, 0.0, 0.0);
             self._sprite.position = (int(x), int(y))
-            self._sprite.draw()
             if self._scroll_dx != 0 and self._scroll_dx + self.w < self.game.resolution[0]:
                 self._sprite.position = (int(x+self.w), int(y))
-                self._sprite.draw()
             if self._scroll_dx != 0 and x > 0:
                 self._sprite.position = (int(x-self.w), int(y))
-                self._sprite.draw()
+            if not self._batch: self._sprite.draw()
             pyglet.gl.glTranslatef(-self._scroll_dx, 0.0, 0.0);
 
         if self.show_debug:
             self.debug_pyglet_draw(absolute=absolute)
-
-
 
     def debug_pyglet_draw(self, absolute=False): #actor.debug_pyglet_draw
         """ Draw some debug info (store it for the unittests) """
@@ -1813,7 +1822,7 @@ class Actor(object, metaclass=use_on_events):
         
         #TODO: group sprites in batches and OrderedGroups
         kwargs = {}
-        if self.game and self.game._pyglet_batch: kwargs["batch"] = self.game._pyglet_batch
+#        if self.game and self.game._pyglet_batch: kwargs["batch"] = self.game._pyglet_batch
         
         self._sprite = pyglet.sprite.Sprite(self.action._animation, **kwargs)
         if self._tint: self._sprite.color = self._tint
@@ -2491,6 +2500,7 @@ class Text(Item):
         self.x, self.y = pos
         self.step = step
         self.offset = offset
+        self._height = None #height of full text (ignores 
 
 
         #animate the text
@@ -2531,6 +2541,17 @@ class Text(Item):
                                   anchor_x='left', anchor_y='top')
             
         self._clickable_area = Rect(0, 0, self._label.content_width, self._label.content_height)
+
+        tmp = pyglet.text.Label(self._display_text,
+                                  font_name=font_name,
+                                  font_size=size,
+                                  multiline=True,
+                                  width=wrap,
+                                  anchor_x='left', anchor_y='top')
+        self._height = tmp.content_height
+
+
+
         
     def get_display_text(self):
         return self._display_text
@@ -2549,8 +2570,8 @@ class Text(Item):
 
     @property
     def h(self):
-        return self._label.content_height
-
+        v = self._height if self._height else self._label.content_height
+        return v
 
     def _animate_text(self, dt):
         """ called by the clock at regular intervals """
@@ -3138,7 +3159,10 @@ def advance_help_index(game):
     """ Move the help index forward one step and then skip any static commands such as 'description' and 'location' """
     game._help_index += 1
     for step in game._walkthrough[game._help_index:]:
-        function_name = step[0].__name__ 
+        try:
+            function_name = step[0].__name__ 
+        except AttributeError:
+            print("Error with",step)
         if function_name in ["description", "location", "has", "goto"]: game._help_index += 1
     if game._help_index >= len(game._walkthrough): 
         game._help_index = len(game._walkthrough) -1
@@ -3241,7 +3265,7 @@ class Game(metaclass=use_on_events):
         self._window.on_mouse_press = self.on_mouse_press
         self._window.on_mouse_release = self.on_mouse_release
         self._window.on_mouse_drag = self.on_mouse_drag
-        self._pyglet_batch = pyglet.graphics.Batch()
+        self._pyglet_batches = []
 
         #event handling
         self._waiting = False #If true, don't process any new events until the existing ones are no longer busy
@@ -3397,28 +3421,30 @@ class Game(metaclass=use_on_events):
         oy = self.game.resolution[1] - oy
 
         if not self.scene: return
+        modal_collide = False
         for obj in self._modals:
             if obj.collide(ox,oy): #absolute screen values
                 self.mouse_cursor = MOUSE_CROSSHAIR
-                if obj._mouse_motion: obj._mouse_motion(self.game, obj, self.game.player,x,y,dx,dy)
-                return
+                if obj._mouse_motion and not modal_collide: obj._mouse_motion(self.game, obj, self.game.player,x,y,dx,dy)
+                modal_collide = True
             else:
                 if obj._mouse_none: obj._mouse_none(self.game, obj, self.game.player,x,y,dx,dy)
-
+        if modal_collide: return
         if len(self._modals) == 0: 
+            menu_collide = False
             for obj in self._menu:
                 if obj.collide(ox,oy): #absolute screen values
                      self.mouse_cursor = MOUSE_CROSSHAIR
                      if obj._actions and "over" in obj._actions and (obj.allow_interact or obj.allow_use or obj.allow_look):
                          obj._do("over")
 
-                     if obj._mouse_motion: obj._mouse_motion(self.game, obj, self.game.player,x,y,dx,dy)
-                     return
+                     if obj._mouse_motion and not menu_collide: obj._mouse_motion(self.game, obj, self.game.player,x,y,dx,dy)
+                     menu_collide = True
                 else: #unhover over menu item
                     if obj.action and obj.action.name == "over" and (obj.allow_interact or obj.allow_use or obj.allow_look):
                         if "idle" in obj._actions: 
                             obj._do('idle')
-
+                if menu_collide: return
             for obj in self.scene._objects.values():
                 if not obj.allow_draw: continue
                 if obj.collide(x,y) and obj._mouse_motion: 
@@ -3602,13 +3628,13 @@ class Game(metaclass=use_on_events):
         self._info_object.x, self._info_object.y = -100,-200
         self._info_object.game = self
 
-    def reset(self):
+    def reset(self, leave=[]):
         """ reset all game state information, perfect for loading new games """
         self.scene = None
         self.player = None
         self._actors = {}
 #        self._items = dict([(key,value) for key,value in self.items.items() if isinstance(value, MenuItem)])
-        self._items = {}
+        self._items = dict([(key,value) for key,value in self._items.items() if value.name in leave])
         self._scenes = {}
 #        self._emitters = {}                
 #        if self.ENABLE_EDITOR: #editor enabled for this game instance
@@ -3717,21 +3743,35 @@ class Game(metaclass=use_on_events):
             draw_progress_bar is the fn that handles the drawing of a progress bar on this screen
             refresh = reload the defaults for this actor (but not images)
         """
+        print("SIZE OF EVENT QUEUE A",len(self._events))
+
         if draw_progress_bar:
             self._progress_bar_renderer = draw_progress_bar
             self._progress_bar_index = 0
             self._progress_bar_count = 0
+            update_progress_bar(self.game, self)
+            print("PROGRESS")
 
         portals = []
+        #estimate size of all loads
+        for obj_cls in [Actor, Item, Emitter, Portal, Scene]:
+            dname = "directory_%ss"%obj_cls.__name__.lower()
+            if not os.path.exists(getattr(self, dname)): 
+                continue #skip directory if non-existent
+            for name in os.listdir(getattr(self, dname)):
+                if draw_progress_bar: #estimate the size of the loading
+                    self._progress_bar_count += 1
+
         for obj_cls in [Actor, Item, Emitter, Portal, Scene]:
             dname = "directory_%ss"%obj_cls.__name__.lower()
 #            dname = get_smart_directory(self, obj)
             if not os.path.exists(getattr(self, dname)): 
                 continue #skip directory if non-existent
             for name in os.listdir(getattr(self, dname)):
-                if draw_progress_bar: #estimate the size of the loading
-                    self._progress_bar_count += 1
                 if only and name not in only: continue #only load specific objects 
+                if draw_progress_bar: 
+                    update_progress_bar(self.game, self)
+
                 if logging: log.debug("game.smart loading %s %s"%(obj_cls.__name__.lower(), name))
                 #if there is already a non-custom Actor or Item with that name, warn!
                 if obj_cls == Actor and name in self._actors and isinstance(self._actors[name], Actor) and not refresh:
@@ -3756,6 +3796,7 @@ class Game(metaclass=use_on_events):
             self._items[pname].auto_align() #auto align portal text
         if type(player) in [str]: player = self._actors[player]
         if player: self.player = player
+        print("SIZE OF EVENT QUEUE B",len(self._events))
 
     def check_modules(self):
         """ poll system to see if python files have changed """
@@ -4032,7 +4073,8 @@ class Game(metaclass=use_on_events):
 
     def pyglet_draw(self): #game.draw
         """ Draw the scene """
-        if not self.scene: return
+        if not self.scene: 
+            return
 #        if self._headless: return
 #        self.scene.pyglet_draw()
 
@@ -4050,6 +4092,9 @@ class Game(metaclass=use_on_events):
         objects = sorted(objects, key=lambda x: x.z, reverse=False)
         for item in objects:
             item.pyglet_draw(absolute=False)
+
+        for batch in self._pyglet_batches: #if Actor._batch is set, it will be drawn here.
+            batch.draw()
 
         #draw scene foregrounds (layers with z greater than 1.0)
         for item in self.scene._layer:
@@ -4075,6 +4120,7 @@ class Game(metaclass=use_on_events):
             now = round(time.time() * 100) #max 100 fps
             d = os.path.join(self.directory_screencast, "%s.png"%now)
             pyglet.image.get_buffer_manager().get_color_buffer().save(d)
+
 
     def _add(self, objects, replace=False): #game.add
         objects_iterable = [objects] if not isinstance(objects, Iterable) else objects
