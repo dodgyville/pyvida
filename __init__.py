@@ -3523,7 +3523,7 @@ class Game(metaclass=use_on_events):
 
         #finally, try scene objects
         for obj in self.scene._objects.values():
-            if obj.collide(x,y) and (obj.allow_interact or obj.allow_use or obj.allow_look):
+            if obj.collide(x,y) and (obj.allow_interact or obj.allow_use or obj.allow_look) and obj.allow_draw:
                 #if wanting to interact or use an object go to it. If engine says to go to object for look, do that too.
                 if (self.mouse_mode != MOUSE_LOOK or GOTO_LOOK) and (obj.allow_interact or obj.allow_use or obj.allow_look): 
                     if self.player in self.scene._objects.values() and self.player != obj: self.player.goto(obj, block=True)
@@ -4076,6 +4076,8 @@ class Game(metaclass=use_on_events):
         if not self.scene: 
             return
 #        if self._headless: return
+
+#        if self._headless: return
 #        self.scene.pyglet_draw()
 
         #draw scene backgroundsgrounds (layers with z equal or less than 1.0)
@@ -4594,7 +4596,7 @@ class MyTkApp(threading.Thread):
             fname = os.path.join(directory, "%s.py"%slugify(obj.name).lower())
             if not os.path.isfile(fname): #create a new module for this actor
                 with open(fname, "w") as f:
-                    f.write("from pyvida import gettext as _\nfrom pyvida import answer\n\n")
+                    f.write("from pyvida import gettext as _\nfrom pyvida import answer\nfrom pyvida import set_interacts, BOTTOM\n\n")
             module_name = os.path.splitext(os.path.basename(fname))[0]
 
             #find and suggest some missing functions (interact, look, use functions)
