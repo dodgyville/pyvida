@@ -2494,6 +2494,7 @@ class Text(Item):
         """
         self._label = None
         self._label_offset = None
+        self.format_text = None #function for formatting text for display
         super().__init__(name, interact=interact, look=look)
 
         self._display_text = display_text if display_text else name
@@ -2558,9 +2559,13 @@ class Text(Item):
 
     def set_display_text(self, v):
         self._display_text = v
-        if self._label: self._label.text = v
+        if self.format_text: #this feels like one level of abstraction too far.
+            text = self.format_text(v)
+        else:
+            text = v
+        if self._label: self._label.text = text
         if self._label_offset:
-            self._label_offset.text = v
+            self._label_offset.text = text
 
     display_text = property(get_display_text, set_display_text)
 
@@ -2621,7 +2626,7 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         self.index = 0 #where in the index to start showing
         self.selected = None
         self._mouse_motion = self._mouse_motion_collection
-        self.mx, self.my = 0,0
+        self.mx, self.my = 0,0 #in pyglet format
 
         self.callback = callback
         self.padding = padding
@@ -2658,7 +2663,7 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         mx,my = pos
         show = self._get_sorted()[self.index:]
         for i in show:
-            if hasattr(i, "_cr") and collide(i._cr, mx, my): 
+            if hasattr(i, "_cr") and collide(i._cr, mx, my):
                 if logging: log.debug("On %s in collection %s"%(i.name, self.name))
                 self.selected = i
                 return i
@@ -2668,7 +2673,7 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
 
 
     def _mouse_motion_collection(self, game, collection, player,x,y,dx,dy):
-        self.mx, self.my = x, y #mouse coords are in universal format
+        self.mx, self.my = x, y #mouse coords are in universal format (top-left is 0,0)
 
     def _interact_default(self, game, collection, player):
         #XXX should use game.mouse_press or whatever it's calleed
@@ -2681,7 +2686,7 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
 
     def pyglet_draw(self, absolute=False): #collection.draw
         super().pyglet_draw() #actor.draw
-        x,y = self.x + self.ax, self.y #self.padding[0], self.padding[1] #item padding
+        x,y = self._sprite.x + self.padding[0], self._sprite.y + self._sprite.height - self.padding[1]  #, self.y #self.padding[0], self.padding[1] #item padding
         w = self.clickable_area.w
         dx,dy = self.tile_size
         for obj in self._objects.values():
@@ -2693,25 +2698,25 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
                 nw1, nh1 = int(sw*ratio_w), int(sh*ratio_w)
                 nw2, nh2 = int(sw*ratio_h), int(sh*ratio_h)
                 if nh1>dy:
-                    scale = ratio_w
-                    sh *= ratio_w
-                else:
                     scale = ratio_h
                     sh *= ratio_h
+                else:
+                    scale = ratio_w
+                    sh *= ratio_w
                 if hasattr(sprite, "scale"):
                     old_scale = sprite.scale
                     sprite.scale = scale
-                final_x, final_y = int(x + self.ax), int(self._sprite.y + self._sprite.height/2 - sh/2)
+                final_x, final_y = int(x), int(y)
                 sprite.x, sprite.y = final_x, final_y
                 sprite.draw()
                 if hasattr(sprite, "scale"): sprite.scale = old_scale
-                obj._cr = Rect(final_x, self.game.resolution[1] - final_y - sprite.height, sw, sh) #temporary collection values, stored for collection
-
+                obj._cr = Rect(final_x, self.game.resolution[1] - final_y, sw, sh) #temporary collection values, stored for collection
+#                rectangle(self.game, obj._cr, colour=(255, 255, 255, 255), fill=False, label=False, absolute=False)
             if x + self.tile_size[0] > self.dimensions[0]:
-                x = self.padding[0]
-                y += self.tile_size[1]
+                x = self._sprite.x + self.padding[0]
+                y -= (self.tile_size[1] + self.padding[1])
             else:    
-                x += self.tile_size[0] + self.padding[0]
+                x += (self.tile_size[0] + self.padding[0])
 
 
 class MenuManager(metaclass=use_on_events):
