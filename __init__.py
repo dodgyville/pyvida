@@ -1073,6 +1073,11 @@ class Actor(object, metaclass=use_on_events):
         self._rotate = v
     rotate = property(get_rotate, set_rotate)
 
+    @property
+    def position(self):
+        return (self.x, self.y)
+
+
     def set_interact(self, v):
         self._interact = v
     def get_interact(self):
@@ -2706,12 +2711,12 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
                 if hasattr(sprite, "scale"):
                     old_scale = sprite.scale
                     sprite.scale = scale
-                final_x, final_y = int(x), int(y)
-                sprite.x, sprite.y = final_x, final_y
+                final_x, final_y = int(x), int(y - sh) 
+                sprite.x, sprite.y = final_x, final_y 
                 sprite.draw()
                 if hasattr(sprite, "scale"): sprite.scale = old_scale
-                obj._cr = Rect(final_x, self.game.resolution[1] - final_y, sw, sh) #temporary collection values, stored for collection
-#                rectangle(self.game, obj._cr, colour=(255, 255, 255, 255), fill=False, label=False, absolute=False)
+                obj._cr = Rect(final_x, self.game.resolution[1] - final_y - sh, sw, sh) #temporary collection values, stored for collection
+                rectangle(self.game, obj._cr, colour=(255, 255, 255, 255), fill=False, label=False, absolute=False)
             if x + self.tile_size[0] > self.dimensions[0]:
                 x = self._sprite.x + self.padding[0]
                 y -= (self.tile_size[1] + self.padding[1])
