@@ -765,7 +765,7 @@ def crosshair(game, point, colour, absolute=False):
 
         pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0) # undo alpha for pyglet drawing
 
-        label = pyglet.text.Label("{0}, {1}".format(x,y),
+        label = pyglet.text.Label("{0}, {1}".format(x, game.resolution[1] - y),
                           font_name='Arial',
                           font_size=10,
                           color=colour,
@@ -804,7 +804,7 @@ def rectangle(game, rect, colour=(255, 255, 255, 255), fill=False, label=True, a
         pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0) # undo alpha for pyglet drawing
 
         if label:
-            label = pyglet.text.Label("{0}, {1}".format(x,game.resolution[1]-y),
+            label = pyglet.text.Label("{0}, {1}".format(x, y),
                               font_name='Arial',
                               font_size=10,
                               color=colour,
@@ -2705,9 +2705,11 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
                 if nh1>dy:
                     scale = ratio_h
                     sh *= ratio_h
+                    sw *= ratio_h
                 else:
                     scale = ratio_w
                     sh *= ratio_w
+                    sw *= ratio_w
                 if hasattr(sprite, "scale"):
                     old_scale = sprite.scale
                     sprite.scale = scale
@@ -3375,7 +3377,7 @@ class Game(metaclass=use_on_events):
             log.error("Unable to set mouse to %s, no cursor available"%cursor)
             return
         image = self.mouse_cursors[cursor] 
-        cursor = pyglet.window.ImageMouseCursor(image, 16, 8)
+        cursor = pyglet.window.ImageMouseCursor(image, image.width/2, image.height/2)
         self._window.set_mouse_cursor(cursor)
 
     def set_mouse_cursor(self, cursor):
@@ -4127,6 +4129,10 @@ class Game(metaclass=use_on_events):
             self._mouse_object.pyglet_draw()
 
         if self.game.camera._overlay: self.game.camera._overlay.draw()
+
+        pyglet.graphics.draw(1, pyglet.gl.GL_POINTS,
+            ('v2i', (int(self.mouse_down[0]), int(self.resolution[1] - self.mouse_down[1])))
+        )
 
         if self.directory_screencast: #save to directory
             now = round(time.time() * 100) #max 100 fps
