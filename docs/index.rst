@@ -19,7 +19,6 @@ Contents:
 
    overview.rst
    quickstart.rst
-   tutorial.rst
    testing.rst
    sceneedit.rst
    assets.rst

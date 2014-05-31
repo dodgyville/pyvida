@@ -2,6 +2,8 @@ pyvida
 ======
 #### an easy-to-use fully-featured cross platform point-and-click adventure game engine ####
 
+June 2014: Active development of pyvida is currently occurring in the pyglet branch. This version is hardware accelerated, has a simpler API, and many other new features. However it is currently not ready for production.
+
 ### Features ###
 
 * cross platform - windows, mac and linux
