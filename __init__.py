@@ -1998,9 +1998,9 @@ class Actor(object, metaclass=use_on_events):
             if logging: log.info("%s has request game to wait for goto to finish, so game.waiting to True."%(self.name))
             self.game._waiting = True
 
-    def on_move(self, displacement, ignore=False):
+    def on_move(self, displacement, ignore=False, block=False):
         """ Move Actor relative to its current position """
-        self._goto((self.x + displacement[0], self.y + displacement[1]), ignore)
+        self._goto((self.x + displacement[0], self.y + displacement[1]), ignore, block)
 
     def on_goto(self, destination, ignore=False, block=False):
         self._goto(destination, ignore=ignore, block=block)
@@ -2677,8 +2677,8 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         return None
 
 
-    def _mouse_motion_collection(self, game, collection, player,x,y,dx,dy):
-        self.mx, self.my = x, y #mouse coords are in universal format (top-left is 0,0)
+    def _mouse_motion_collection(self, game, collection, player,x,y,dx,dy, rx,ry):
+        self.mx, self.my = rx, ry #mouse coords are in universal format (top-left is 0,0), use rawx, rawy to ignore camera
 
     def _interact_default(self, game, collection, player):
         #XXX should use game.mouse_press or whatever it's calleed
@@ -3437,10 +3437,10 @@ class Game(metaclass=use_on_events):
         for obj in self._modals:
             if obj.collide(ox,oy): #absolute screen values
                 self.mouse_cursor = MOUSE_CROSSHAIR
-                if obj._mouse_motion and not modal_collide: obj._mouse_motion(self.game, obj, self.game.player,x,y,dx,dy)
+                if obj._mouse_motion and not modal_collide: obj._mouse_motion(self.game, obj, self.game.player,x,y,dx,dy, ox,oy)
                 modal_collide = True
             else:
-                if obj._mouse_none: obj._mouse_none(self.game, obj, self.game.player,x,y,dx,dy)
+                if obj._mouse_none: obj._mouse_none(self.game, obj, self.game.player,x,y,dx,dy, ox,oy)
         if modal_collide: return
         if len(self._modals) == 0: 
             menu_collide = False
@@ -3450,7 +3450,7 @@ class Game(metaclass=use_on_events):
                      if obj._actions and "over" in obj._actions and (obj.allow_interact or obj.allow_use or obj.allow_look):
                          obj._do("over")
 
-                     if obj._mouse_motion and not menu_collide: obj._mouse_motion(self.game, obj, self.game.player,x,y,dx,dy)
+                     if obj._mouse_motion and not menu_collide: obj._mouse_motion(self.game, obj, self.game.player,x,y,dx,dy, ox,oy)
                      menu_collide = True
                 else: #unhover over menu item
                     if obj.action and obj.action.name == "over" and (obj.allow_interact or obj.allow_use or obj.allow_look):
@@ -3460,7 +3460,7 @@ class Game(metaclass=use_on_events):
             for obj in self.scene._objects.values():
                 if not obj.allow_draw: continue
                 if obj.collide(x,y) and obj._mouse_motion: 
-                    if obj._mouse_motion: obj._mouse_motion(self.game, obj, self.game.player,x,y,dx,dy)
+                    if obj._mouse_motion: obj._mouse_motion(self.game, obj, self.game.player,x,y,dx,dy, ox,oy)
                 if obj.collide(x,y) and (obj.allow_interact or obj.allow_use or obj.allow_look):
                     t = obj.name if obj.display_text == None else obj.display_text
                     if isinstance(obj, Portal):
@@ -3903,6 +3903,7 @@ class Game(metaclass=use_on_events):
         if options.fullscreen: 
             self.fullscreen = True
             self._window.set_fullscreen(True)
+            #import pdb; pdb.set_trace() #Don't do this. Lesson learned.
 
         if splash:
             scene = Scene(splash, self)
