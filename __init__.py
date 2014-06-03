@@ -837,7 +837,11 @@ def get_pixel_from_image(image, x, y):
 
 def get_pixel_from_data(data, x, y):
     start = (int(x)*int(y)+int(x))*4
-    return (data[start], data[start+1], data[start+2], data[start+3])
+    try:
+        result = (data[start], data[start+1], data[start+2], data[start+3])
+    except:
+        result = (None, None, None, None)
+    return result
 
 #signal dispatching, based on django.dispatch
 class Signal(object):
@@ -2079,10 +2083,10 @@ class Portal(Actor, metaclass=use_on_events):
 #            return
         return self.travel()
 
-    def exit_here(self, actor=None):
+    def exit_here(self, actor=None, block=True):
         """ exit the scene via the portal """
         if actor == None: actor = self.game.player
-        actor.goto((self.x + self.sx, self.y + self.sy)) 
+        actor.goto((self.x + self.sx, self.y + self.sy), block=block) 
         self._pre_leave(self, actor)
         actor.goto((self.x + self.ox, self.y + self.oy)) 
 
@@ -2096,20 +2100,20 @@ class Portal(Actor, metaclass=use_on_events):
         if actor == None: actor = self.game.player
         actor.relocate(self.link.scene, (self.link.x + self.link.ox, self.link.y + self.link.oy)) #moves player to scene            
 
-    def enter_link(self, actor=None):
+    def enter_link(self, actor=None, block=True):
         """ exit the portal's link """
         if actor == None: actor = self.game.player
-        actor.goto((self.link.x + self.link.sx, self.link.y + self.link.sy), ignore=True) #walk into scene        
+        actor.goto((self.link.x + self.link.sx, self.link.y + self.link.sy), ignore=True, block=block) #walk into scene        
         self._post_arrive(self.link, actor)           
 
-    def enter_here(self, actor=None):
+    def enter_here(self, actor=None, block=True):
         """ exit the portal's link """
         if actor == None: actor = self.game.player
         actor.relocate(self.scene, (self.x + self.ox, self.y + self.oy)) #moves player here
-        actor.goto((self.x + self.sx, self.y + self.sy), ignore=True) #walk into scene        
+        actor.goto((self.x + self.sx, self.y + self.sy), ignore=True, block=block) #walk into scene        
         self._post_arrive(self, actor)   
 
-    def travel(self, actor=None):
+    def travel(self, actor=None, block=True):
         """ default interact method for a portal, march player through portal and change scene """
         if actor == None: actor = self.game.player
         if actor == None:
@@ -2123,10 +2127,10 @@ class Portal(Actor, metaclass=use_on_events):
             if logging: log.error("Unable to travel through portal %s"%self.name)
         else:
             if logging: log.info("Portal - actor %s goes from scene %s to %s"%(actor.name, self.scene.name, self.link.scene.name))
-        self.exit_here(actor)
+        self.exit_here(actor, block=block)
         self.relocate_link(actor)
         self.game.camera.scene(self.link.scene) #change the scene
-        self.enter_link(actor)
+        self.enter_link(actor, block=block)
 
 
 class Particle(object):
@@ -4372,9 +4376,10 @@ class Game(metaclass=use_on_events):
     def on_set_headless(self, v):
         self._headless = v
 
-    def on_set_menu(self, *args):
+    def on_set_menu(self, *args, clear=False):
         """ add the items in args to the menu
          """
+        if clear == True: self._menu = []
         args = list(args)
         args.reverse()
         for i in args:
