@@ -890,6 +890,8 @@ class Actor(object, metaclass=use_on_events):
         self.name = name
         self._actions = {}
         self.action = None
+        self.control_queue = [] #list of activities (fn, (*args)) to loop through - good for background actors
+
         self.game = None
         self.scene = None
         self._x, self._y = 0.0, 0.0
@@ -935,6 +937,8 @@ class Actor(object, metaclass=use_on_events):
         self._allow_look = True
         self._editing = None #what attribute of this Actor are we editing
         self._editing_save = True #allow saving via the editor
+        self._tk_edit = {} #used by tk editor
+
         self.show_debug = False 
 
         self._interact = interact #special queuing function for interacts
@@ -968,6 +972,7 @@ class Actor(object, metaclass=use_on_events):
             ("allow look", self.get_allow_look, self.set_allow_look, bool),
             ("allow use", self.get_allow_use, self.set_allow_use, bool),
             ("allow update", self.get_allow_update, self.set_allow_update, bool),
+            ("editing save", self.get_editing_save, self.set_editing_save, bool),
             ]
 
     def __getstate__(self):
@@ -1065,6 +1070,14 @@ class Actor(object, metaclass=use_on_events):
         if sf > 0.95 and sf < 1.05: sf = 1.0 #snap to full size
  #       print("setting scale for %s to %f"%(self.name, sf))
         self.scale = sf
+        if "scale" in self._tk_edit: 
+            self._tk_edit["scale"].delete(0, 100)
+            self._tk_edit["scale"].insert(0, sf)
+
+    def get_editing_save(self): return self._editing_save
+    def set_editing_save(self, v): self._editing_save = v
+    editing_save = property(get_editing_save, set_editing_save)
+
 
     def adjust_scale_y(self,x):
         pass
@@ -1489,7 +1502,8 @@ class Actor(object, metaclass=use_on_events):
 
         return self
 
-    def pyglet_draw(self, absolute=False): #actor.draw
+    def pyglet_draw(self, absolute=False, force=False): #actor.draw
+        if self.game and self.game._headless and not force: return
         if self._sprite and self.allow_draw:
             x, y = self.x, self.y
             if self._parent:
@@ -1531,6 +1545,8 @@ class Actor(object, metaclass=use_on_events):
         self._debugs.append(crosshair(self.game, (self.x + self.sx, self.y + self.sy ), (255, 200, 200, 255), absolute=absolute))
         #name point - yellow
         self._debugs.append(crosshair(self.game, (self.x + self.nx, self.y + self.ny ), (255, 220, 80, 255), absolute=absolute))
+        #talk point - cyan
+        self._debugs.append(crosshair(self.game, (self.x + self.tx, self.y + self.ty ), (80, 200, 220, 255), absolute=absolute))
         #clickable area
         self._debugs.append(rectangle(self.game, self.clickable_area, (0, 255, 100, 255), absolute=absolute))
         #solid area
@@ -2203,8 +2219,10 @@ class Emitter(Item):
         for p in self.particles:
             self._update_particle(dt, p)
                     
-    def pyglet_draw(self, absolute=False): #emitter.draw
+    def pyglet_draw(self, absolute=False, force=False): #emitter.draw
 #        if self._sprite and self._allow_draw: return
+        if self.game and self.game._headless and not force: return
+
         if not self.action: 
             if logging: log.error("Emitter %s has no actions"%(self.name))
             return
@@ -2599,6 +2617,8 @@ class Text(Item):
                 self._label_offset.text = self.__text
 
     def pyglet_draw(self, absolute=False): #text draw
+        if self.game and self.game._headless: return
+
         if not self._label or not self.allow_draw: return
             
         if not self.game:
@@ -2694,6 +2714,8 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
             self.callback(self.game, self, self.game.player)
 
     def pyglet_draw(self, absolute=False): #collection.draw
+        if self.game and self.game._headless: return
+
         super().pyglet_draw() #actor.draw
         x,y = self._sprite.x + self.padding[0], self._sprite.y + self._sprite.height - self.padding[1]  #, self.y #self.padding[0], self.padding[1] #item padding
         w = self.clickable_area.w
@@ -3312,6 +3334,8 @@ class Game(metaclass=use_on_events):
         self._editing = None
         self._editing_point_set = None #the set fns to pump in new x,y coords
         self._editing_point_get = None #the get fns to pump in new x,y coords
+        self._editing_label = None #what is the name of var(s) we're editing
+
 
         self._progress_bar_count = 0 #how many event steps in this progress block
         self._progress_bar_index = 0 #how far along the event list are we for this progress block
@@ -3572,6 +3596,12 @@ class Game(metaclass=use_on_events):
                 y -= dy
                 self._editing_point_set[0](x)
                 self._editing_point_set[1](y)
+                if self._editing_label in self._editing._tk_edit: 
+                    self._editing._tk_edit[self._editing_label][0].delete(0, 100)
+                    self._editing._tk_edit[self._editing_label][0].insert(0, x)
+
+                    self._editing._tk_edit[self._editing_label][1].delete(0, 100)
+                    self._editing._tk_edit[self._editing_label][1].insert(0, y)
 
 #                if self._editing_point_set[0] == self._editing.set_x: #set x, so use raw
 #                else: #displace the point by the object's x,y so the point is relative to the obj
@@ -4112,8 +4142,8 @@ class Game(metaclass=use_on_events):
         for item in objects:
             item.pyglet_draw(absolute=False)
 
-        for batch in self._pyglet_batches: #if Actor._batch is set, it will be drawn here.
-            batch.draw()
+#        for batch in self._pyglet_batches: #if Actor._batch is set, it will be drawn here.
+#            batch.draw()
 
         #draw scene foregrounds (layers with z greater than 1.0)
         for item in self.scene._layer:
@@ -4610,6 +4640,7 @@ class MyTkApp(threading.Thread):
                     self.game._editing = self.obj
                     self.game._editing_point_set = set_attrs
                     self.game._editing_point_get = get_attrs
+                    self.game._editing_label = label
 
         def edit_btn():
             """ Open the script for this object for editing """
@@ -4666,17 +4697,20 @@ class MyTkApp(threading.Thread):
 
         for i, editable in enumerate(self.obj._editable):
             label, get_attrs, set_attrs, types = editable
-            tk.Radiobutton(frame, text=label, variable=self._editing, value=label, indicatoron=0, command=selected).grid(row=row, column=0)
+            btn = tk.Radiobutton(frame, text=label, variable=self._editing, value=label, indicatoron=0, command=selected)
+            btn.grid(row=row, column=0)
             if type(types) == tuple: #assume two ints
-                e = tk.Entry(frame)
-                e.grid(row=row, column=1)
-                e.insert(0, int(get_attrs[0]()))
-                e = tk.Entry(frame)
-                e.grid(row=row, column=2)
-                e.insert(0, int(get_attrs[1]()))
+                e1 = tk.Entry(frame)
+                e1.grid(row=row, column=1)
+                e1.insert(0, int(get_attrs[0]()))
+                e2 = tk.Entry(frame)
+                e2.grid(row=row, column=2)
+                e2.insert(0, int(get_attrs[1]()))
+                self.obj._tk_edit[label] = (e1,e2)
             elif types == str:
                 e = tk.Entry(frame)
                 e.grid(row=row, column=1, columnspan=2)
+                self.obj._tk_edit[label] = e
 #                if get_attrs: e.insert(0, get_attrs())
             elif types == bool:
                 #value="%s%s"%(label, val)
@@ -4687,6 +4721,7 @@ class MyTkApp(threading.Thread):
                 e = tk.Entry(frame)
                 e.grid(row=row, column=1)
                 e.insert(0, int(get_attrs()))
+                self.obj._tk_edit[label] = e
 
             row += 1
 
@@ -4696,6 +4731,7 @@ class MyTkApp(threading.Thread):
         actions = [x.name for x in self.obj._actions.values()]
         actions.sort()
         if len(actions)>0:
+            tk.Label(group, text="Action:").grid(column=0, row=row)
             option = tk.OptionMenu(group, action, *actions, command=change_action).grid(column=1,row=row)
             row += 1
 
@@ -4705,6 +4741,7 @@ class MyTkApp(threading.Thread):
         actions = [x.name for x in self.game.player._actions.values()]
         actions.sort()
         if len(actions)>0:
+            tk.Label(group, text="Requested player action on stand:").grid(column=0, row=row)
             option = tk.OptionMenu(group, request_idle, *actions, command=change_idle).grid(column=1,row=row)
             row += 1
 
