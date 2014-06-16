@@ -655,7 +655,7 @@ class Action(object):
         self.actor = None
         self.game = None
 #        self._sprite = None
-        self.speed = 5 #speed if used in pathplanning
+        self.speed = 10 #speed if used in pathplanning
         self.angle_start = 0 #arc zone this action can be used for in pathplanning
         self.angle_end = 0
         self.available_for_pathplanning = False
@@ -3001,7 +3001,7 @@ class Camera(metaclass=use_on_events): #the view manager
         """ Move Camera relative to its current position """
         self._goto((self.game.scene.x + displacement[0], self.game.scene.y + displacement[1]), speed)
 
-    def on_goto(self, destination, speed=None):
+    def on_goto(self, destination, speed=None): #camera.goto
         self._goto(destination, speed)
 
     def _goto(self, destination, speed=None):
