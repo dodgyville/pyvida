@@ -10,6 +10,8 @@ from random import choice, randint
 import tkinter as tk
 import tkinter.filedialog, tkinter.simpledialog
 import threading, traceback
+import pickle
+import json
 
 from pyglet.image.codecs.png import PNGImageDecoder
 
@@ -31,7 +33,7 @@ Constants
 DEBUG_ASTAR = False
 DEBUG_STDOUT = True #stream errors to stdout as well as log file
 
-ENABLE_EDITOR = True #default for editor
+ENABLE_EDITOR = False #default for editor
 ENABLE_PROFILING = False
 ENABLE_LOGGING = True
 ENABLE_LOCAL_LOGGING = True
@@ -660,6 +662,13 @@ class Action(object):
         self.angle_end = 0
         self.available_for_pathplanning = False
         self.num_of_frames = 0
+        self._animation = None
+        self._image = None
+        self.w, self.h = 0,0
+
+    def __getstate__(self):
+        self.unload_assets()
+        return self.__dict__
 
     def draw(self):
         self._sprite.draw()
@@ -668,9 +677,9 @@ class Action(object):
         #load the image and slice info if necessary
         self.actor = actor if actor else self.actor
         self.game = game
-        image = load_image(filename)
         fname = os.path.splitext(filename)[0]
         montage_fname = fname + ".montage"
+        self._image = filename
         if not os.path.isfile(montage_fname):
             num, w,h = 1, 0, 0
         else:
@@ -680,19 +689,29 @@ class Action(object):
                 except ValueError as err:
                     if logging: log.error("Can't read values in %s (%s)"%(self.name, montage_fname))
                     num,w,h = 0,0,0
+        self.num_of_frames, self.w, self.h = num, w, h
 
         log.warning("MONTAGE IMPORT ONLY DOES A SINGLE STRIP")
 #        MAX_WIDTH = 16384
 #        ncols = num%(MAX_WIDTH/mwidth)
 #        nrows = int(ceil(float(len(files))/float(MAX_WIDTH/mwidth)))
+        self.load_assets(game)
+        return self
 
-        image_seq = pyglet.image.ImageGrid(image, 1, num)
+    def unload_assets(self):
+        self._animation = None
+        self.game = None
+        self.actor = getattr(self.actor, "name", self.actor) if self.actor else None
+
+    def load_assets(self, game):
+        self.game = game
+        image = load_image(self._image)
+        image_seq = pyglet.image.ImageGrid(image, 1, self.num_of_frames)
         frames = []
-        self.num_of_frames = num
         for frame in image_seq: #TODO: generate ping poing, reverse effects here
             frames.append(pyglet.image.AnimationFrame(frame, 1/game.default_actor_fps))
         self._animation = pyglet.image.Animation(frames)
-        return self
+
 
     
 class Rect(object):
@@ -889,11 +908,11 @@ class Actor(object, metaclass=use_on_events):
         super().__init__()
         self.name = name
         self._actions = {}
-        self.action = None
+        self._action = None
         self.control_queue = [] #list of activities (fn, (*args)) to loop through - good for background actors
 
         self.game = None
-        self.scene = None
+        self._scene = None
         self._x, self._y = 0.0, 0.0
         self.z = 1.0 #used for parallax 
         self.scroll = (0.0, 0.0) #scrolling speeds (x,y) for texture
@@ -983,14 +1002,57 @@ class Actor(object, metaclass=use_on_events):
             if hasattr(fn, "__name__"): setattr(self, fn_name, fn.__name__)                
         if self._sprite: self._sprite.delete()
         self._sprite = None
+        self.game = None
+        self._editable = []
+        self._tk_edit = {}
+        self._clickable_mask = None
+
+#        print("SCENE1",self.scene.name if self.scene else self.scene)
+#        for pyvida_obj_name in ["scene"]:
+#            obj = getattr(self, pyvida_obj_name, None)
+#            if obj:
+#                setattr(self, pyvida_obj_name, obj if type(obj) == str else obj.name)
+        print("SCENE",self._scene)
+
+        #PROBLEM values:
+#        self._actions = {}
+#        self.inventory = {}
         self.uses = {}
         self._editable = []
+
+        with open("tmp.save", 'wb') as f:
+            for k,v in self.__dict__.items():
+#                print(k, v)
+                pickle.dump(v, f)
+                if v != None and type(v) not in [str, int, bool, float, Rect] and k not in ["font_colour", "uses", "facts", "inventory", "_actions"]:
+                    print("%s is %s"%(k,type(v)))
+#        d = {k: self.__dict__.get(k, None) for k in ["name", "_x", "_y"]}
+        return self.__dict__
+
+
+#    def __setstate__(self, d):
+#        import pdb; pdb.set_trace()
 
     def get_busy(self):
         return self._busy
     def set_busy(self, v):
         self._busy = v
     busy = property(get_busy, set_busy)
+
+    def get_action(self):
+        return self._actions.get(self._action, None) if self._action else None
+    def set_action(self, v):
+        self._action = v if type(v) == str else v.name
+    action = property(get_action, set_action)
+
+    def get_scene(self):
+        s = self.game._scenes.get(self._scene, None) if self._scene and self.game else None
+        print("Get scene",s)
+        return s
+    def set_scene(self, v):
+        print("setting scene",v)
+        self._scene = v if type(v) == str else v.name
+    scene = property(get_scene, set_scene)
 
     @property
     def viewable(self):
@@ -1489,17 +1551,17 @@ class Actor(object, metaclass=use_on_events):
                 self.__dict__[key] = val
             
 
-        #potentially load some interact/use/look scripts for this actor
-        filepath = os.path.join(myd, "%s.py"%slugify(self.name).lower())
-        if os.path.isfile(filepath):
-            #add file directory to path so that import can find it
-            if os.path.dirname(filepath) not in sys.path: sys.path.append(os.path.dirname(filepath))
-            #add to the list of modules we are tracking
-            module_name = os.path.splitext(os.path.basename(filepath))[0]
-            game._modules[module_name] = 0
-            __import__(module_name) #load now
-            game.reload_modules(modules=[module_name]) #reload now to refresh existing references
-
+        #potentially load some interact/use/look scripts for this actor but only if editor is enabled (it interferes with game pickling)
+        if self.game and self.game._allow_editing:
+            filepath = os.path.join(myd, "%s.py"%slugify(self.name).lower())
+            if os.path.isfile(filepath):
+                #add file directory to path so that import can find it
+                if os.path.dirname(filepath) not in sys.path: sys.path.append(os.path.dirname(filepath))
+                #add to the list of modules we are tracking
+                module_name = os.path.splitext(os.path.basename(filepath))[0]
+                game._modules[module_name] = 0
+                __import__(module_name) #load now
+                game.reload_modules(modules=[module_name]) #reload now to refresh existing references
         return self
 
     def pyglet_draw(self, absolute=False, force=False): #actor.draw
@@ -1881,7 +1943,10 @@ class Actor(object, metaclass=use_on_events):
         def finish_idle(dt, start):
             print("Finished idling",dt, start, datetime.now())
             self.busy -= 1
-        pyglet.clock.schedule_once(finish_idle, seconds, datetime.now())
+        if self.game and not self.game._headless:
+            pyglet.clock.schedule_once(finish_idle, seconds, datetime.now())
+        else:
+            finished_idle(0, datetime.now())
 
 
     def _set(self, attrs, values):
@@ -2327,7 +2392,7 @@ class WalkArea(object):
 
 class Scene(metaclass=use_on_events):
     def __init__(self, name, game=None):
-        self._objects = {}
+        self._objects = [] #list of names of objects in this scene (name not object references to assist pickling)
         self.name = name
         self.game = game
         self._layer = []
@@ -2367,7 +2432,7 @@ class Scene(metaclass=use_on_events):
 
     def has(self, obj):
         obj = get_object(self.game, obj) 
-        return True if obj in self._objects.values() else False
+        return True if obj.name in self._objects else False
 
     @property
     def directory(self):
@@ -2449,26 +2514,24 @@ class Scene(metaclass=use_on_events):
         if not isinstance(objects, Iterable): objects = [objects]
         for obj in objects:
             obj = get_object(self.game, obj) 
-            if obj in self._objects.values(): #already on scene, don't resize
+            obj.scene = self
+            if obj.name in self._objects: #already on scene, don't resize
                 return
             if obj.name in self.scales.keys():
                 obj.scale = self.scales[obj.name]
             elif "actors" in self.scales.keys() and not isinstance(obj, Item) and not isinstance(obj, Portal): #use auto scaling for actor if available
                 obj.scale = self.scales["actors"]
-            self._objects[obj.name] = obj
-            obj.scene = self
+            self._objects.append(obj.name)
 
     def _remove(self, obj):
         """ remove object from the scene """
-        if type(obj) in [str]:
-            if obj in self._objects:
-                obj = self._objects[obj]
-            else:
-                if logging: log.warning("Object %s not in this scene %s"%(obj, self.name))
-                return
+        obj = get_object(self.game, obj) 
+        if obj.name not in self._objects:
+           if logging: log.warning("Object %s not in this scene %s"%(obj, self.name))
+           return
         obj.scene = None
         if obj.name in self._objects:
-            del self._objects[obj.name]
+            self._objects.remove(obj.name)
         else:
             log.warning("%s not in scene %s"%(obj.name, self.name))
 
@@ -2481,8 +2544,8 @@ class Scene(metaclass=use_on_events):
         
 
     def on_clean(self, objs=[]): #remove items not in this list from the scene
-        for i in list(self._objects.values()):
-            if i.name not in objs and not isinstance(i, Portal) and i != self.game.player: self._remove(i)
+        for i in self._objects:
+            if i not in objs and not isinstance(i, Portal) and i != self.game.player: self._remove(i)
 
 
     def on_set_background(self, fname=None):
@@ -2713,10 +2776,10 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         if self.callback:
             self.callback(self.game, self, self.game.player)
 
-    def pyglet_draw(self, absolute=False): #collection.draw
+    def pyglet_draw(self, absolute=True): #collection.draw, by default uses screen values
         if self.game and self.game._headless: return
 
-        super().pyglet_draw() #actor.draw
+        super().pyglet_draw(absolute=absolute) #actor.draw
         x,y = self._sprite.x + self.padding[0], self._sprite.y + self._sprite.height - self.padding[1]  #, self.y #self.padding[0], self.padding[1] #item padding
         w = self.clickable_area.w
         dx,dy = self.tile_size
@@ -3224,6 +3287,27 @@ def user_trigger_look(game, obj):
 Game class
 """
 
+import jsonpickle
+
+def save_game(game, fname):
+    with open(fname, 'wb') as f:
+        for objects in [game._actors, game._items]:
+#            for obj in objects.values():
+            print("pickling ",objects)
+#            jsonpickle.encode(objects)
+            pickle.dump(objects, f)
+            for o in objects.values(): #store game object that was cleansed for pickle
+                o.game = game
+
+def load_game(game, fname):
+    with open(fname, "rb") as f:
+        game._actors = pickle.load(f)
+        game._items = pickle.load(f)
+    #restory game object
+    for objects in [game._actors.values(), game._items.values()]:
+        for o in objects:
+            o.game = game
+    
 
 class Game(metaclass=use_on_events):
     def __init__(self, name="Untitled Game", version="v1.0", engine=VERSION_MAJOR, fullscreen=DEFAULT_FULLSCREEN, resolution=DEFAULT_RESOLUTION, fps=DEFAULT_FPS, afps=DEFAULT_ACTOR_FPS, projectsettings=None, scale=1.0):
@@ -3427,7 +3511,7 @@ class Game(metaclass=use_on_events):
             import pdb; pdb.set_trace()
 
         if symbol == pyglet.window.key.F4: 
-            self.scene.fade_objects(self.scene._layer)
+            save_game(self, "test.save")
 
         if symbol == pyglet.window.key.F5: 
             self.camera.fade_out()
@@ -3485,7 +3569,8 @@ class Game(metaclass=use_on_events):
                         if "idle" in obj._actions: 
                             obj._do('idle')
                 if menu_collide: return
-            for obj in self.scene._objects.values():
+            for obj_name in self.scene._objects:
+                obj = get_object(self, obj_name) 
                 if not obj.allow_draw: continue
                 if obj.collide(x,y) and obj._mouse_motion: 
                     if obj._mouse_motion: obj._mouse_motion(self.game, obj, self.game.player,x,y,dx,dy, ox,oy)
@@ -3524,7 +3609,8 @@ class Game(metaclass=use_on_events):
 
         self.mouse_down = (x,y)
 
-        for obj in self.scene._objects.values():
+        for obj_name in self.scene._objects:
+            obj = get_object(self, obj_name) 
             if obj.collide(x,y) and obj._drag:
                 self._drag = obj
 
@@ -3562,11 +3648,12 @@ class Game(metaclass=use_on_events):
                 return
 
         #finally, try scene objects
-        for obj in self.scene._objects.values():
+        for obj_name in self.scene._objects:
+            obj = get_object(self, obj_name) 
             if obj.collide(x,y) and (obj.allow_interact or obj.allow_use or obj.allow_look) and obj.allow_draw:
                 #if wanting to interact or use an object go to it. If engine says to go to object for look, do that too.
                 if (self.mouse_mode != MOUSE_LOOK or GOTO_LOOK) and (obj.allow_interact or obj.allow_use or obj.allow_look): 
-                    if self.player in self.scene._objects.values() and self.player != obj: self.player.goto(obj, block=True)
+                    if self.player.name in self.scene._objects and self.player != obj: self.player.goto(obj, block=True)
                 if button & pyglet.window.mouse.RIGHT:
                     if obj.allow_look: user_trigger_look(self, obj)
                 else:
@@ -3780,7 +3867,7 @@ class Game(metaclass=use_on_events):
     def on_smart(self, player=None, player_class=Actor, draw_progress_bar=None, refresh=False, only=None): #game.smart
         self._smart(player, player_class, draw_progress_bar, refresh, only)
 
-    def _smart(self, player=None, player_class=Actor, draw_progress_bar=None, refresh=False, only=None): #game.smart
+    def _smart(self, player=None, player_class=Actor, draw_progress_bar=None, refresh=False, only=None, exclude=[]): #game.smart
         """ cycle through the actors, items and scenes and load the available objects 
             it is very common to have custom methods on the player, so allow smart
             to use a custom class
@@ -3834,7 +3921,7 @@ class Game(metaclass=use_on_events):
                     else: #if just refreshing, then use the existing object
                         a = self._actors.get(name, self._items.get(name, self._scenes.get(name, None)))
                         if not a: import pdb; pdb.set_trace()
-                    a.smart(self)
+                    if a.name not in exclude: a.smart(self)
                     if isinstance(a, Portal): portals.append(a.name)   
         for pname in portals: #try and guess portal links
             if draw_progress_bar: self._progress_bar_count += 1
@@ -3930,6 +4017,9 @@ class Game(metaclass=use_on_events):
                 for i, x in enumerate(self._walkthrough):
                     if x[-1] == options.target_step:
                         self._walkthrough_target = i + 1
+        if options.allow_editor:
+            print("enabled editor")
+            self._allow_editing = True
         if options.exit_step:
             self.exit_step = True                
         if options.headless: 
@@ -3993,7 +4083,6 @@ class Game(metaclass=use_on_events):
                 return
             #if not in same scene as camera, and not in modals or menu, log the error
             if self.scene and self.scene != obj.scene and obj not in self._modals and obj not in self._menu:
-                import pdb; pdb.set_trace()
                 log.error("{} not in scene {}, it's on {}".format(walkthrough[1], self.scene.name, obj.scene.name if obj.scene else "no scene"))
             if self.player: 
                 self.player.x, self.player.y = obj.x + obj.sx, obj.y + obj.sy
@@ -4095,7 +4184,11 @@ class Game(metaclass=use_on_events):
 
     def update(self, dt, single_event=False): #game.update
         """ Run update on scene objects """
-        scene_objects = self.scene._objects.values() if self.scene else []
+        scene_objects = []
+        if self.scene:
+            for obj_name in self.scene._objects:
+                scene_objects.append(get_object(self, obj_name))
+
         layer_objects = self.scene._layer if self.scene else []
 
         #update all the objects in the scene or the event queue.
@@ -4136,8 +4229,11 @@ class Game(metaclass=use_on_events):
             else:
                 break
         
-
-        objects = sorted(self.scene._objects.values(), key=lambda x: x.y, reverse=False)
+        scene_objects = []
+        if self.scene:
+            for obj_name in self.scene._objects:
+                scene_objects.append(get_object(self, obj_name))
+        objects = sorted(scene_objects, key=lambda x: x.y, reverse=False)
         objects = sorted(objects, key=lambda x: x.z, reverse=False)
         for item in objects:
             item.pyglet_draw(absolute=False)
@@ -4245,10 +4341,16 @@ class Game(metaclass=use_on_events):
         if state=="": return
         sfname = os.path.join(self.scene.directory, state)
         sfname = "%s.py"%sfname
-        keys = [x.name for x in game.scene._objects.values() if not isinstance(x, Portal) and x != game.player]
-        objects = '\",\"'.join(keys)
+        keys = []
+        for obj_name in game.scene._objects:
+            obj = get_object(self, obj_name)
+            if not isintance(obj, Portal) and obj != game.player:
+                keys.append(obj_name) 
+
+        objects = '\", \"'.join(keys)
         has_emitter = False
-        for name, obj in game.scene._objects.items():
+        for name in game.scene._objects:
+            obj = get_object(self, name)           
             if isinstance(obj, Emitter): has_emitter=True
         
         if not os.path.isdir(os.path.dirname(sfname)):
@@ -4274,7 +4376,8 @@ class Game(metaclass=use_on_events):
 #                walkarea = str(w.polygon.vertexarray)
 #                f.write('WalkArea().smart(game, %s),'%(walkarea))
 #            f.write(']\n')
-            for name, obj in game.scene._objects.items():
+            for name in game.scene._objects:
+                obj = get_object(self, name)           
                 slug = slugify(name).lower()
                 if obj._editing_save == False: continue
                 if obj != game.player:
@@ -4391,7 +4494,7 @@ class Game(metaclass=use_on_events):
             self.busy -= 1 #finish the event
             callback(d, game)
         if callback:
-            if not duration:
+            if not duration or self._headless:
                 splash_finish(0, self)
             else:
                 pyglet.clock.schedule_once(splash_finish, duration, self)
@@ -4468,7 +4571,11 @@ class MyTkApp(threading.Thread):
     def __init__(self, game):
         threading.Thread.__init__(self)
         self.game = game
-        self.obj = list(self.game.scene._objects.values())[0] if len(self.game.scene._objects.values())>0 else None
+        if len(self.game.scene._objects) > 0:
+            self.obj = get_object(game, self.game.scene._objects[0])
+        else:
+            self.obj = None
+#        self.obj = list(self.game.scene._objects.values())[0] if len(self.game.scene._objects.values())>0 else None
         if self.obj: self.obj.show_debug = True
         self.rows = 0
         self.index = 0
@@ -4485,11 +4592,11 @@ class MyTkApp(threading.Thread):
             if self.game._editing and self.game._editing.show_debug:
                 self.game._editing.show_debug = False
             new_scene = self.game._scenes[scene.get()]
-            self.app.objects = objects = list(new_scene._objects.values())
+            self.app.objects = objects = new_scene._objects
             self.game.camera._scene(new_scene)
             self.index = 0
             if len(objects)>0:
-                self.game._editing = objects[self.index]
+                self.game._editing = get_object(self.game, objects[self.index])
                 self.game._editing.show_debug = True
             self.game.player.relocate(new_scene)
         tk.Label(group, text="Current scene:").grid(column=0, row=row)
@@ -4511,7 +4618,7 @@ class MyTkApp(threading.Thread):
             obj.x, obj.y = (self.game.resolution[0]/2, self.game.resolution[1]/2)
             self.game.add(obj)
             self.game.scene.add(obj)
-            self.app.objects = list(self.game.scene._objects.values())
+            self.app.objects = self.game.scene._objects
             _set_edit_object(obj)
 
         def add_object():
@@ -4584,6 +4691,7 @@ class MyTkApp(threading.Thread):
         row += 1
 
         def _set_edit_object(obj):
+            obj = get_object(self.game, obj)
             if self.obj: self.obj.show_debug = False
             self.obj = obj
             obj.show_debug = True
@@ -4594,12 +4702,13 @@ class MyTkApp(threading.Thread):
 #            self.edit_button["text"] = obj.name
         
         def _navigate(delta):
-            objects = list(self.game.scene._objects.values())
+            objects = self.game.scene._objects
             num_objects = len(objects)
             if num_objects == 0:
                 print("No objects in scene")
                 return
             obj = objects[self.index]
+            obj = get_object(self.game, obj)
             obj.show_debug = False
             self.index += delta
             if self.index < 0: self.index = num_objects-1
