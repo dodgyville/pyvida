@@ -10,6 +10,7 @@ from random import choice, randint
 import tkinter as tk
 import tkinter.filedialog, tkinter.simpledialog
 import threading, traceback
+#import dill as pickle
 import pickle
 import json
 
@@ -318,7 +319,7 @@ def location(): pass #stub #XXX deprecated
 def description(): pass #used by walkthrough output
 
 scene_path = []
-def scene_search(scene, target): #are scenes connected via portals?
+def scene_search(game, scene, target): #are scenes connected via portals?
     global scene_path
     if not scene or not scene.name:
         if logging: log.warning("Strange scene search %s"%scene_path)
@@ -326,10 +327,11 @@ def scene_search(scene, target): #are scenes connected via portals?
     scene_path.append(scene)
     if scene.name.upper() == target:
         return scene
-    for i in scene._objects.values():
+    for i in scene._objects:
+        obj = get_object(game, i)
         if isinstance(i, Portal): #if portal and has link, follow that portal
             if i.link and i.link.scene not in scene_path:
-                found_target = scene_search(i.link.scene, target)
+                found_target = scene_search(game, i.link.scene, target)
                 if found_target != False: 
                     return found_target
     scene_path.pop(-1)
@@ -665,6 +667,7 @@ class Action(object):
         self._animation = None
         self._image = None
         self.w, self.h = 0,0
+        self._loaded = False
 
     def __getstate__(self):
         self.unload_assets()
@@ -699,19 +702,23 @@ class Action(object):
         return self
 
     def unload_assets(self):
+        print("UNLOAD ASSETS",self.name)
         self._animation = None
         self.game = None
         self.actor = getattr(self.actor, "name", self.actor) if self.actor else None
+        self._loaded = False
 
     def load_assets(self, game):
+        self._loaded = True
         self.game = game
         image = load_image(self._image)
         image_seq = pyglet.image.ImageGrid(image, 1, self.num_of_frames)
         frames = []
+        if game == None:
+            import pdb; pdb.set_trace()
         for frame in image_seq: #TODO: generate ping poing, reverse effects here
             frames.append(pyglet.image.AnimationFrame(frame, 1/game.default_actor_fps))
         self._animation = pyglet.image.Animation(frames)
-
 
     
 class Rect(object):
@@ -720,8 +727,11 @@ class Rect(object):
         self._w, self._h = w, h
         self.scale = 1.0
 
+    def serialise(self):
+        return "[{}, {}, {}, {}, {}]".format(self.x, self.y, self.w, self.h, self.scale)
+
     def __str__(self):
-        return "{}, {}, {}, {}".format(self.x, self.y, self.w, self.h)
+        return self.serialise()
 
     def __getitem__(self, key):
         return [self.x, self.y, self.w, self.h][key]
@@ -1003,32 +1013,22 @@ class Actor(object, metaclass=use_on_events):
         if self._sprite: self._sprite.delete()
         self._sprite = None
         self.game = None
-        self._editable = []
         self._tk_edit = {}
         self._clickable_mask = None
-
-#        print("SCENE1",self.scene.name if self.scene else self.scene)
-#        for pyvida_obj_name in ["scene"]:
-#            obj = getattr(self, pyvida_obj_name, None)
-#            if obj:
-#                setattr(self, pyvida_obj_name, obj if type(obj) == str else obj.name)
-        print("SCENE",self._scene)
-
+        editable = []
+#        for e in self._editable:
+#            import pdb; pdb.set_trace()
         #PROBLEM values:
 #        self._actions = {}
 #        self.inventory = {}
         self.uses = {}
         self._editable = []
+        for k, v in self.__dict__.items():
+            if callable(v):
+                print("textifying ",k,v,"on",self.name)
+                self.__dict__[k] = v.__name__
 
-        with open("tmp.save", 'wb') as f:
-            for k,v in self.__dict__.items():
-#                print(k, v)
-                pickle.dump(v, f)
-                if v != None and type(v) not in [str, int, bool, float, Rect] and k not in ["font_colour", "uses", "facts", "inventory", "_actions"]:
-                    print("%s is %s"%(k,type(v)))
-#        d = {k: self.__dict__.get(k, None) for k in ["name", "_x", "_y"]}
         return self.__dict__
-
 
 #    def __setstate__(self, d):
 #        import pdb; pdb.set_trace()
@@ -1040,18 +1040,20 @@ class Actor(object, metaclass=use_on_events):
     busy = property(get_busy, set_busy)
 
     def get_action(self):
-        return self._actions.get(self._action, None) if self._action else None
+        action = self._actions.get(self._action, None)
+        if action and action._animation == None:
+            action.load_assets(self.game)
+            self.create_sprite(action)
+        return action
     def set_action(self, v):
-        self._action = v if type(v) == str else v.name
+        self._action = getattr(v, "name", v)
     action = property(get_action, set_action)
 
     def get_scene(self):
         s = self.game._scenes.get(self._scene, None) if self._scene and self.game else None
-        print("Get scene",s)
         return s
     def set_scene(self, v):
-        print("setting scene",v)
-        self._scene = v if type(v) == str else v.name
+        self._scene = v.name if hasattr(v, "name") else v
     scene = property(get_scene, set_scene)
 
     @property
@@ -1552,13 +1554,15 @@ class Actor(object, metaclass=use_on_events):
             
 
         #potentially load some interact/use/look scripts for this actor but only if editor is enabled (it interferes with game pickling)
-        if self.game and self.game._allow_editing:
+        if self.game: #and self.game._allow_editing:
             filepath = os.path.join(myd, "%s.py"%slugify(self.name).lower())
             if os.path.isfile(filepath):
                 #add file directory to path so that import can find it
+                if os.path.dirname(filepath) not in self.game._sys_paths: self.game._sys_paths.append(os.path.dirname(filepath))
                 if os.path.dirname(filepath) not in sys.path: sys.path.append(os.path.dirname(filepath))
                 #add to the list of modules we are tracking
                 module_name = os.path.splitext(os.path.basename(filepath))[0]
+                print(self.name, module_name)
                 game._modules[module_name] = 0
                 __import__(module_name) #load now
                 game.reload_modules(modules=[module_name]) #reload now to refresh existing references
@@ -1566,6 +1570,9 @@ class Actor(object, metaclass=use_on_events):
 
     def pyglet_draw(self, absolute=False, force=False): #actor.draw
         if self.game and self.game._headless and not force: return
+        if self.game and self.action and self.action._loaded == False:
+            print("FORCE LOAD ACTION ASSETS", self.name, self.action.name)
+            self.action.load_assets(self.game)
         if self._sprite and self.allow_draw:
             x, y = self.x, self.y
             if self._parent:
@@ -1752,7 +1759,8 @@ class Actor(object, metaclass=use_on_events):
        
         if action != None:
             portrait = Item("_portrait")
-            portrait._actions["idle"] = portrait.action = action
+            portrait.game = self.game
+            portrait._actions["idle"] = action
             portrait._do("idle")
             portrait = self.game.add(portrait)
 #            portrait_x, portrait_y = 5, 5 #top corner for portrait offset
@@ -1898,25 +1906,31 @@ class Actor(object, metaclass=use_on_events):
 #        import pdb; pdb.set_trace()
 
     def _do(self, action, callback=None, frame=None):
+        myA = action
         if type(action) == str and action not in self._actions.keys():
             log.error("Unable to find action %s in object %s"%(action, self.name))
             return
-        action = action if isinstance(action, Action) else self._actions[action]
-        callback = self.on_animation_end if callback == None else callback
+        if isinstance(action, Action) and action.name not in self._actions: #new action for this Actor
+            self._actions[action.name] = action
+
+        action = getattr(action, "name", action) #action if isinstance(action, Action) else self._actions[action]
         if self._sprite:
             self._sprite.delete()
-        self.action = action
+        self._action = action
         
         #TODO: group sprites in batches and OrderedGroups
         kwargs = {}
 #        if self.game and self.game._pyglet_batch: kwargs["batch"] = self.game._pyglet_batch
-        
-        self._sprite = pyglet.sprite.Sprite(self.action._animation, **kwargs)
+        self.create_sprite(self.action, **kwargs)
+        callback = self.on_animation_end if callback == None else callback
+        self._sprite.on_animation_end = callback
+
+    def create_sprite(self, action, **kwargs):
+        self._sprite = pyglet.sprite.Sprite(action._animation, **kwargs)
         if self._tint: self._sprite.color = self._tint
         if self._scale: self._sprite.scale = self.scale 
         if self.rotate: self._sprite.rotation = self.rotate
-        self._sprite.on_animation_end = callback
-        if self.game and self.game._headless and callback and isinstance(self._sprite.image, pyglet.image.Animation): #jump to end
+        if self.game and self.game._headless and isinstance(self._sprite.image, pyglet.image.Animation): #jump to end
             self._sprite._frame_index = len(self._sprite.image.frames)
 
     def on_do(self, action, frame=None):
@@ -2386,6 +2400,9 @@ class WalkArea(object):
     def __init__(self, *args, **kwargs):
         log.warning("WalkArea deprecated, please update your code")
 
+    def serialise(self):
+        return []
+
     def smart(self, *args, **kwargs):
         return self
 
@@ -2411,6 +2428,12 @@ class Scene(metaclass=use_on_events):
         self.scales = {}
 
         self.walkareas = WalkareaManager(self, game) #pyvida4 compatability
+
+    def __getstate__(self):
+        self.game = None
+        self.walkareas = None #XXX can't pickle this yet
+#        self._layer = []
+        return self.__dict__
 
     def get_x(self): return self._x
     def set_x(self, v): self._x = v
@@ -2610,26 +2633,12 @@ class Text(Item):
                 log.error("Unable to find %s in fonts, use game.add_font"%font)
             else:
                 font_name = _pyglet_fonts[font]
-        try:
-            self._label = pyglet.text.Label(self.__text,
-                                      font_name=font_name,
-                                      font_size=size,
-                                      color=colour,
-                                      multiline=True,
-                                      width=wrap,
-                                      x=self.x, y=self.y,
-                                      anchor_x='left', anchor_y='top')
-        except:
-            import pdb; pdb.set_trace()
-        if self.offset:
-            self._label_offset = pyglet.text.Label(self.__text,
-                                  font_name=font_name,
-                                  font_size=size,
-                                  color=(0,0,0, 255),
-                                  multiline=True,
-                                  width=wrap,
-                                  x=self.x+offset, y=self.y-offset,
-                                  anchor_x='left', anchor_y='top')
+        self.colour = colour
+        self.size = size
+        self.font_name = font_name
+        self.wrap = wrap
+
+        self.create_label()
             
         self._clickable_area = Rect(0, 0, self._label.content_width, self._label.content_height)
 
@@ -2642,6 +2651,32 @@ class Text(Item):
         self._height = tmp.content_height
 
 
+    def __getstate__(self):
+        self.__dict__ = super().__getstate__()
+        self._label = None
+        self._label_offset = None
+        return self.__dict__
+
+
+    def create_label(self):
+        self._label = pyglet.text.Label(self.__text,
+                                      font_name=self.font_name,
+                                      font_size=self.size,
+                                      color=self.colour,
+                                      multiline=True,
+                                      width=self.wrap,
+                                      x=self.x, y=self.y,
+                                      anchor_x='left', anchor_y='top')
+
+        if self.offset:
+            self._label_offset = pyglet.text.Label(self.__text,
+                                  font_name=self.font_name,
+                                  font_size=self.size,
+                                  color=(0,0,0, 255),
+                                  multiline=True,
+                                  width=self.wrap,
+                                  x=self.x+self.offset, y=self.y-self.offset,
+                                  anchor_x='left', anchor_y='top')
 
         
     def get_display_text(self):
@@ -2682,7 +2717,9 @@ class Text(Item):
     def pyglet_draw(self, absolute=False): #text draw
         if self.game and self.game._headless: return
 
-        if not self._label or not self.allow_draw: return
+        if not self.allow_draw: return
+
+        if not self._label: self.create_label()
             
         if not self.game:
             log.warning("Unable to draw Text %s without a self.game object"%self.name)
@@ -3235,6 +3272,7 @@ class Factory(object):
         obj._sprite = None #clear the pyglet Sprite from the copy 
         obj._smart_actions(self.game) #reload the pyglet actions for this object
         obj.name = name
+        obj.game = self.game
         obj._do(self.template.action.name)
         return obj
         
@@ -3289,25 +3327,129 @@ Game class
 
 import jsonpickle
 
-def save_game(game, fname):
+def save_game_pickle(game, fname):
     with open(fname, 'wb') as f:
-        for objects in [game._actors, game._items]:
-#            for obj in objects.values():
-            print("pickling ",objects)
-#            jsonpickle.encode(objects)
+        pickle.dump(game.get_game_info, f) #dump some metadata (eg date, title, etc)
+        pickle.dump(game.get_player_info, f) #dump info about the player, including history
+
+        pickle.dump(game._menu, f)
+        pickle.dump(game._menus, f)
+        pickle.dump(game._modals, f)
+        pickle.dump(game.visited, f)
+        pickle.dump(game._modules, f)
+        pickle.dump(game._sys_paths, f)
+
+        #dump info about all the objects and scenes in the game
+        for objects in [game._actors, game._items, game._scenes]:
             pickle.dump(objects, f)
-            for o in objects.values(): #store game object that was cleansed for pickle
+            for o in objects.values(): #restore game object that was cleansed for pickle
+                try:
+                    pickle.dumps(o)
+                except:
+                    for k,x in o.__dict__.items():
+                        try:
+                            pickle.dumps(x)
+                        except:
+                            print("failed on",k, x)
+                    print("Error:", sys.exc_info())
+                    print("failed pickling",o.name)
+                    import pdb; pdb.set_trace()
                 o.game = game
 
-def load_game(game, fname):
+
+def load_game_pickle(game, fname, meta_only=False):
     with open(fname, "rb") as f:
-        game._actors = pickle.load(f)
-        game._items = pickle.load(f)
-    #restory game object
-    for objects in [game._actors.values(), game._items.values()]:
-        for o in objects:
+       meta = pickle.load(f)
+       if not meta_only:
+            player_info = pickle.load(f)
+
+            game._menu = pickle.load(f)
+            game._menus = pickle.load(f)
+            game._modals = pickle.load(f)
+            game.visited = pickle.load(f)
+            game._modules = pickle.load(f)
+            game._sys_paths = pickle.load(f)
+            sys.path.extend(game._sys_paths)
+
+            game._actors = pickle.load(f)
+            game._items = pickle.load(f)
+            game._scenes = pickle.load(f)
+
+            #restore game object
+            for objects in [game._actors.values(), game._items.values(), game._scenes.values()]:
+                for o in objects:
+                    o.game = game
+#                    if o._module_name: __import__(o._module_name)
+            #change camera to scene
+            game.player = get_object(game, player_info["player"])
+            game.camera._scene(player_info["scene"])
+#            game._scene.load_assets(game)
+            for module_name in game._modules:
+                __import__(module_name) #load now
+            game.reload_modules() #reload now to refresh existing references
+#            import pdb; pdb.set_trace()
+    return meta
+
+
+class PyvidaEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            encoded_object = list(obj.timetuple())[0:6]
+        elif isinstance(obj, Actor):
+            encoded_object = obj.serialise()
+        elif isinstance(obj, Action):
+            encoded_object = obj.serialise()
+        elif isinstance(obj, Scene):
+            encoded_object = obj.serialise()
+        elif isinstance(obj, Rect):
+            encoded_object = obj.serialise()
+        elif isinstance(obj, WalkArea):
+            encoded_object = obj.serialise()
+        elif isinstance(obj, WalkAreaManager):
+            encoded_object = obj.serialise()
+        else:
+            encoded_object =json.JSONEncoder.default(self, obj)
+        return encoded_object
+
+class PyvidaDecoder(json.JSONDecoder):
+    def decode(self, obj):
+        decoded_object = json.JSONDecoder.decode(self, obj)
+        import pdb; pdb.set_trace()
+        return decoded_object
+      
+def save_game_json(game, fname):
+    all_objects = {"_actors":game._actors, "_items":game._items, "_scenes":game._scenes}
+    data = [game.get_game_info, game.get_player_info, all_objects]
+    with open(fname, 'w', encoding='utf-8') as f:
+        json.dump(data, f, cls=PyvidaEncoder, indent=2)
+
+    for k, objects in all_objects.items():
+        for o in objects.values(): #restore game object that was cleansed for pickle
             o.game = game
-    
+
+
+def load_game_json(game, fname):
+
+    with open(fname, 'r', encoding='utf-8') as f:
+        game_info, player_info, all_objects = json.load(f) 
+    for k, objects in all_objects.items():
+        setattr(game, k, {})
+        for o in objects:
+            myO = o
+            import pdb; pdb.set_trace()
+            o.game = game
+
+    game.player = get_object(game, player_info["player"])
+    game.camera._scene(player_info["scene"])
+
+
+def save_game(game, fname):
+    save_game_pickle(game, fname)
+
+
+def load_game(game, fname):
+    load_game_pickle(game, fname)
+
 
 class Game(metaclass=use_on_events):
     def __init__(self, name="Untitled Game", version="v1.0", engine=VERSION_MAJOR, fullscreen=DEFAULT_FULLSCREEN, resolution=DEFAULT_RESOLUTION, fps=DEFAULT_FPS, afps=DEFAULT_ACTOR_FPS, projectsettings=None, scale=1.0):
@@ -3318,6 +3460,8 @@ class Game(metaclass=use_on_events):
         self.game = self
         self.player = None
         self.scene = None
+        self.version = version
+        self.engine = engine
 
         self._scale = scale
 
@@ -3402,6 +3546,7 @@ class Game(metaclass=use_on_events):
 
         #editor and walkthrough      
         self._modules = {}
+        self._sys_paths = [] #file paths to dynamically loaded modules
         self._walkthrough = []
         self._walkthrough_index = 0 #our location in the walkthrough
         self._walkthrough_target = 0  #our target
@@ -3499,6 +3644,26 @@ class Game(metaclass=use_on_events):
     def get_mouse_cursor(self):
         return self._mouse_cursor
     mouse_cursor = property(get_mouse_cursor, set_mouse_cursor)
+
+    @property
+    def get_game_info(self):  
+        """ Information required to read/write run a save file """ 
+        return {"version": VERSION_SAVE, "game_version": self.version, "game_engine": self.engine, "title":self.name, "datetime":datetime.now() }
+
+    @property
+    def get_player_info(self):
+        """ Information required to put the player at the correct location in the game """
+        return {"scene": self.scene.name if self.scene else None, "player": self.player.name if self.player else None}
+
+    @property
+    def get_gamestate_info(self):  
+        """ Information required to read/write run a save file """ 
+        data = {self._menu, self._modals, }
+        #_menu, _modals, _modals, visited, _modules
+        print(self.__dict__)
+        import pdb; pdb.set_trace()
+        return data
+
 
     def on_key_press(self, symbol, modifiers):
         global use_effect
@@ -3965,6 +4130,8 @@ class Game(metaclass=use_on_events):
         modules -- use the listed modules instead of game._modules
         """
 
+        if not self._allow_editing: #only reload during edit mode as it disables save games
+            return
 #        print("RELOAD MODULES")
         #clear signals so they reload
         for i in [post_interact, pre_interact, post_use, pre_use, pre_leave, post_arrive]:
@@ -4099,7 +4266,7 @@ class Game(metaclass=use_on_events):
             scene_path = []
             obj = get_object(self, walkthrough[1])
             if self.scene:
-                scene = scene_search(self.scene, obj.name.upper())
+                scene = scene_search(self, self.scene, obj.name.upper())
                 if scene != False:
                     scene._add(self.player)
                     if logging: log.info("TEST SUITE: Player goes %s"%([x.name for x in scene_path]))
@@ -4198,6 +4365,7 @@ class Game(metaclass=use_on_events):
             for item in items: #_to_update:
                 if item not in items_to_update: items_to_update.append(item)
         for item in items_to_update: #_to_update:
+                item.game = self
                 if hasattr(item, "_update"): item._update(dt)
         if single_event:
             self._handle_events() #run the event handler only once
@@ -4224,6 +4392,8 @@ class Game(metaclass=use_on_events):
         self._window.clear()
         pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0) # undo alpha for pyglet drawing            
         for item in self.scene._layer:
+            item.game = self #awkward, layers have to be updated in case from save file
+#            if self.scene.name == "astatues": import pdb; pdb.set_trace()
             if item.z <= 1.0:
                 item.pyglet_draw(absolute=False)
             else:
@@ -4250,9 +4420,11 @@ class Game(metaclass=use_on_events):
             self._info_object.pyglet_draw(absolute=False)
 
         for item in self._menu:
+            item.game = self
             item.pyglet_draw(absolute=True)
 
         for modal in self._modals:
+            modal.game = self
             modal.pyglet_draw(absolute=True)
 
         if self._mouse_object: # and hasattr(self._mouse_object, "pyglet_draw"):
