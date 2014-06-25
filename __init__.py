@@ -327,9 +327,10 @@ def scene_search(game, scene, target): #are scenes connected via portals?
     scene_path.append(scene)
     if scene.name.upper() == target:
         return scene
-    for i in scene._objects:
-        obj = get_object(game, i)
+    for obj_name in scene._objects:
+        i = get_object(game, obj_name)
         if isinstance(i, Portal): #if portal and has link, follow that portal
+#            if getattr(target, "name", target) == "afoyer": import pdb; pdb.set_trace()
             if i.link and i.link.scene not in scene_path:
                 found_target = scene_search(game, i.link.scene, target)
                 if found_target != False: 
@@ -586,6 +587,13 @@ def update_progress_bar(game, obj):
 Classes
 """
 
+class Storage(object):
+    """ Per game data that the developer wants stored with the save game file """
+    def __init__(self):
+        pass
+
+    def __getstate__(self):
+        return self.__dict__
 
 #If we use text reveal
 SLOW = 0
@@ -710,14 +718,14 @@ class Action(object):
 
     def load_assets(self, game):
         self._loaded = True
-        self.game = game
+        if game: self.game = game
         image = load_image(self._image)
         image_seq = pyglet.image.ImageGrid(image, 1, self.num_of_frames)
         frames = []
         if game == None:
-            import pdb; pdb.set_trace()
+            log.error("Load assets for ",getattr(self.actor,"name", self.actor),"has no game object")
         for frame in image_seq: #TODO: generate ping poing, reverse effects here
-            frames.append(pyglet.image.AnimationFrame(frame, 1/game.default_actor_fps))
+            frames.append(pyglet.image.AnimationFrame(frame, 1/getattr(game, "default_actor_fps", DEFAULT_ACTOR_FPS)))
         self._animation = pyglet.image.Animation(frames)
 
     
@@ -3331,6 +3339,7 @@ def save_game_pickle(game, fname):
     with open(fname, 'wb') as f:
         pickle.dump(game.get_game_info, f) #dump some metadata (eg date, title, etc)
         pickle.dump(game.get_player_info, f) #dump info about the player, including history
+        pickle.dump(game.storage, f)
 
         pickle.dump(game._menu, f)
         pickle.dump(game._menus, f)
@@ -3362,7 +3371,8 @@ def load_game_pickle(game, fname, meta_only=False):
        meta = pickle.load(f)
        if not meta_only:
             player_info = pickle.load(f)
-
+            game.storage = pickle.load(f)
+    
             game._menu = pickle.load(f)
             game._menus = pickle.load(f)
             game._modals = pickle.load(f)
@@ -3496,6 +3506,7 @@ class Game(metaclass=use_on_events):
         self._menus = [] #a stack of menus 
         self._scenes = {}
         self._gui = []
+        self.storage = Storage()
         #scale the game if the screen is too small
 
 
