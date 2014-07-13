@@ -99,7 +99,7 @@ DEBUG_ASTAR = False
 
 ENABLE_EDITOR = False #default for editor
 ENABLE_PROFILING = False
-ENABLE_LOGGING = False #enable DEBUG logging
+ENABLE_LOGGING = True #enable DEBUG logging
 
 SELECT = 0 #manually select an item
 EDIT = 1  #can click on item to change focus
@@ -1512,7 +1512,7 @@ class Actor(object):
             self.action = self.actions[action]
             self.action.mode = mode
             if self.action.mode in [ONCE, ONCE_BLOCK, ONCE_BLOCK_DELTA]: self.action.index = 0  #reset action for non-looping anims
-            if logging: log.debug("actor %s does action %s"%(self.name, action))
+            if logging and action != "over": log.debug("actor %s does action %s"%(self.name, action))
         else:
             if logging: log.error("actor %s missing action %s"%(self.name, action))
 
@@ -1945,7 +1945,6 @@ class Actor(object):
         if not p:
             if logging: log.warning("%s unable to find path from %s to %s (walkrea: %s)"%(self.name, (self.x, self.y), (x,y), walkarea))
             self._do('idle')
-
             if self.game: self.game.block = False
             if self.game: self.game._event_finish(success=False) #signal to game event queue this event is done
             return None
@@ -2014,6 +2013,7 @@ class Actor(object):
                 modal = [True|False] #block user input until action reaches destination
                 block = [True|False] #block other events from running until actor reaches dest
         """    
+
         if self.game: self.game.block = True
         self._motion_queue_ignore = ignore
         if type(destination) == str:
@@ -2097,6 +2097,7 @@ class Actor(object):
         """ Does this actor have this item in their inventory?"""
         if type(item) != str: item = item.name
         return True if item in self.inventory.keys() else False
+
         
     def add_to_inventory(self, item):
         """Add this item in their inventory"""
@@ -4141,6 +4142,8 @@ class Game(object):
         if len(self.events) > 0:  #only allow modal events or double clicks on Portals when events in queue
             self._click_on_object(x, y, button, modifiers, same_portal_only=True) #check for double click
             return 
+        else: #if no events, then we are not in the middle of a double click, so reset last clicked
+            self.last_clicked = None
         for i in self.menu: #then menu 
             if self.game and self.game.block == True: break #don't allow menu clicks when event queue is blocked
             if i.collide(x,y) and i.allow_interact:
@@ -4518,6 +4521,7 @@ class Game(object):
                 if type(game.editing) == WalkArea: game.editing = None 
                 #reset to scene objects
                 game.editing_point = None
+
                 game.editing_index = None
                 if game.scene and len(game.scene.objects)>0:
                     objects = game.scene.objects.values()
@@ -5104,6 +5108,7 @@ class Game(object):
                 for group in blank:
                     for obj in group: obj.clear()
                 for w in self.scene.walkareas: w.clear() #clear walkarea if editing
+
                 if self._message_object: self._message_object.clear()
 
             if not self._wait: #process events normally
@@ -5449,39 +5454,6 @@ class Game(object):
 #        self.player.says("TODO: [pop up %s]"%image)
         self._event_finish()            
         return
-        self.block = True #stop other events until says finished
-        self._event_finish(block=True) #remove the on_says
-
-        self.stuff_event(self.game.on_wait, None) #push an on_wait as the final event in this script
-        def close_msgbox(game, box, player):
-            if game._event and not game._event[0] == msg.actor.on_wait: return
-            try:
-                t = game.remove_related_events(game.items[image])
-                game.modals.remove(t)
-                t = game.remove_related_events(game.items["ok"])
-                game.modals.remove(t)
-            except ValueError:
-                pass
-            game.block = False #release event lock
-            self._event_finish() #should remove the on_wait event
-            
-        TOP = False
-        if TOP: #place text boxes on top of screen
-            oy, iy = -400, 40
-        else:
-#            oy, iy = 1200, 360
-            if self.game.resolution == (800,480):
-                oy, oy2, iy = 190, -400, 160
-            else:
-                oy, oy2, iy = 420, 800, 360
-        msg = self.add(ModalItem(image, close_msgbox,(54, oy)).smart(self.game))
-        msg.actor = self
-            
-        ok = self.game.add(Item("ok").smart(self.game), False, ModalItem)
-        ok.interact = close_msgbox
-        
-        self.game.stuff_event(ok.on_place, (900, iy+210))
-        self.game.stuff_event(msg.on_goto, (54, iy))
 
     def on_splash(self, image, callback, duration, immediately=False):
         """ show a splash screen then pass to callback after duration 
