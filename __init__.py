@@ -99,7 +99,7 @@ DEBUG_ASTAR = False
 
 ENABLE_EDITOR = False #default for editor
 ENABLE_PROFILING = False
-ENABLE_LOGGING = True #enable DEBUG logging
+ENABLE_LOGGING = False #enable DEBUG logging
 
 SELECT = 0 #manually select an item
 EDIT = 1  #can click on item to change focus
