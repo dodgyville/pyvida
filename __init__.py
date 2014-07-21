@@ -3,6 +3,8 @@ import __builtin__
 
 from datetime import datetime, timedelta, date
 import gc, glob, copy, inspect, math, os, operator, pickle, types, sys, time, re
+from os.path import expanduser
+
 try:
     import logging
     import logging.handlers
@@ -30,11 +32,15 @@ except ImportError:
             return txt
 
 
+#XXX game specific 
 SAVE_DIR = "saves"
 if "LOCALAPPDATA" in os.environ: #win 7
     SAVE_DIR = os.path.join(os.environ["LOCALAPPDATA"], "spaceout", 'saves')
 elif "APPDATA" in os.environ: #win XP
     SAVE_DIR = os.path.join(os.environ["APPDATA"], "spaceout", 'saves')
+elif 'darwin' in sys.platform: # check for OS X support
+    SAVE_DIR = os.path.join(os.path.join(expanduser("~"), "Library", "Application Support", "spaceout")
+
 READONLY = False
 if not os.path.exists(SAVE_DIR):
     try:
