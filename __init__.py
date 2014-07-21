@@ -5299,6 +5299,8 @@ class Game(object):
                     log.error("Exception in handle_events running fn %s (%s, %s)\n"%e)
                     print("\nError running fn %s (%s, %s)\n"%e)
                     if traceback: traceback.print_exc(file=sys.stdout)
+                    log.exception("Exception")
+                    log.debug("exception logged")   
                     print("\n\n")
                     self._event_finish()
 
