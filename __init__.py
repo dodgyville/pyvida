@@ -39,7 +39,7 @@ if "LOCALAPPDATA" in os.environ: #win 7
 elif "APPDATA" in os.environ: #win XP
     SAVE_DIR = os.path.join(os.environ["APPDATA"], "spaceout", 'saves')
 elif 'darwin' in sys.platform: # check for OS X support
-    SAVE_DIR = os.path.join(os.path.join(expanduser("~"), "Library", "Application Support", "spaceout")
+    SAVE_DIR = os.path.join(expanduser("~"), "Library", "Application Support", "spaceout")
 
 READONLY = False
 if not os.path.exists(SAVE_DIR):
