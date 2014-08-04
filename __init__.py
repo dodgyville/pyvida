@@ -495,6 +495,7 @@ def process_step(game, step):
                 scene._add(game.player)
                 if logging: log.info("TEST SUITE: %s. Player goes %s"%(game.steps_complete, [x.name for x in scene_path]))
                 name = scene.display_text if scene.display_text else scene.name
+                game.save_game.append([goto, scene.name, datetime.now()])
                 if game.trunk_step and game.output_walkthrough: print("Go to %s."%(name))
                 game.camera.scene(scene)
             else:
@@ -3801,7 +3802,7 @@ class Game(object):
         meta, visited, scripts, data, result, txt = self._test_load(fname)
         return result, txt
 
-    def load(self, fname): #game.load - load a game state
+    def load(self, fname): #game.load - load a save game
         """ Queues a reload and returns (True|False, Title|Error) depending on result """
         meta, visited, scripts, data, result, txt = self._test_load(fname)
         if not result: #return error
