@@ -5044,7 +5044,7 @@ class MyTkApp(threading.Thread):
         def remove_btn():
             self.obj.show_debug = False
             self.game.scene.remove(self.obj)
-            objects = list(self.game.scene._objects.values())
+            objects = self.game.scene._objects
             if len(objects)> 0:
                 self.obj = objects[0]
         self.remove_btn = tk.Button(frame, text="Remove", command=remove_btn).grid(row=row, column=1)
