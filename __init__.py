@@ -1324,6 +1324,8 @@ class Actor(object, metaclass=use_on_events):
         if not self.clickable_area.collidepoint(x,y): return False
 #        data = get_pixel_from_image(self.clickable_mask, x - self.clickable_area.x , y - self.clickable_area.y)
 #        if data[:2] == (0,0,0) or data[3] == 255: return False #clicked on black or transparent, so not a collide
+#        if self.name == "menu_new_game": import pdb; pdb.set_trace()
+        if self.clickable_area.collidepoint(x,y): return True
         data = get_pixel_from_data(self.clickable_mask, x - self.clickable_area.x , y - self.clickable_area.y)
         if data[:2] == (0,0,0) or data[3] == 255: return False #clicked on black or transparent, so not a collide
         return True
@@ -3333,7 +3335,6 @@ def user_trigger_look(game, obj):
 Game class
 """
 
-import jsonpickle
 
 def save_game_pickle(game, fname):
     with open(fname, 'wb') as f:
