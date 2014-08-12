@@ -4642,6 +4642,12 @@ class Game(metaclass=use_on_events):
 
             variables['load_state'](self, scene)
 
+    def on_save_game(self, fname):
+        save_game(self, fname)
+
+    def on_load_game(self, fname):
+        load_game(self, fname)
+
 
     def on_wait(self):
         """ Wait for all scripting events to finish """
