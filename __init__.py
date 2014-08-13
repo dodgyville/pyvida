@@ -681,7 +681,7 @@ class Motion(object):
         fname = fname + ".motion"
         self._filename = fname
         if not os.path.isfile(fname):
-            
+            pass
         else:
             with open(fname, "r") as f:
                 data = f.readlines()
@@ -1114,6 +1114,13 @@ class Actor(object, metaclass=use_on_events):
     def get_y(self): return self._y
     def set_y(self, v): self._y = v
     y = property(get_y, set_y)
+
+    def get_position(self): return (self._x, self._y)
+    def set_position(self, xy): 
+        self._x = xy[0]
+        self._y = xy[1]
+    position = property(get_position, set_position)
+
 
     def get_ax(self):
         return self._ax * self._scale
@@ -1982,6 +1989,8 @@ class Actor(object, metaclass=use_on_events):
             self._sprite._frame_index = len(self._sprite.image.frames)
 
     def on_motion(self, motion, mode=MOTION_LOOP):
+        motion = self._motions.get(motion, None) if motion in self._motions.keys() else motion
+        self._motion = motion
 
     def on_do(self, action, frame=None):
         self._do(action, frame=frame)
@@ -4568,7 +4577,7 @@ class Game(metaclass=use_on_events):
         keys = []
         for obj_name in game.scene._objects:
             obj = get_object(self, obj_name)
-            if not isintance(obj, Portal) and obj != game.player:
+            if not isinstance(obj, Portal) and obj != game.player:
                 keys.append(obj_name) 
 
         objects = '\", \"'.join(keys)
@@ -4765,6 +4774,32 @@ Editor stuff
 """
 
 # pyqt4 editor
+def edit_object_script(game, obj):
+    """ Create and/or open a script for editing """
+    directory = obj._directory
+    fname = os.path.join(directory, "%s.py"%slugify(obj.name).lower())
+    if not os.path.isfile(fname): #create a new module for this actor
+        with open(fname, "w") as f:
+            f.write("from pyvida import gettext as _\nfrom pyvida import answer\nfrom pyvida import set_interacts, BOTTOM\n\n")
+    module_name = os.path.splitext(os.path.basename(fname))[0]
+
+    #find and suggest some missing functions (interact, look, use functions)
+    with open(fname, "r") as f:
+        script = f.read()
+    slug = slugify(obj.name).lower()
+    search_fns = ["def interact_%s(game, %s, player):"%(slug, slug), "def look_%s(game, %s, player):"%(slug, slug)]
+    for i in list(game.player.inventory.keys()):
+        slug2 = slugify(i).lower()
+        search_fns.append("def %s_use_%s(game, %s, %s):"%(slug, slug2, slug, slug2))
+    new_fns = []
+    with open(fname, "a") as f:
+        for fn in search_fns:
+            if fn not in script:
+                f.write("#%s\n#    pass\n\n"%fn)
+    open_editor(game, fname)
+    __import__(module_name)
+
+
 class SelectDialog(tk.simpledialog.Dialog):
     def __init__(self, game, title, objects, *args, **kwargs):
         parent = tkinter._default_root
@@ -4832,7 +4867,6 @@ class MyTkApp(threading.Thread):
         tk.Label(group, text="Current scene:").grid(column=0, row=row)
         scenes = [x.name for x in self.game._scenes.values()]
         scenes.sort()
-
         option = tk.OptionMenu(group, scene, *scenes, command=change_scene).grid(column=1,row=row)
 
 #        actors = [x.name for x in self.game._actors.values()]
@@ -4877,6 +4911,16 @@ class MyTkApp(threading.Thread):
         self.new_actor = tk.Button(group, text='New Actor', command=new_actor).grid(column=3, row=row)
         self.new_item = tk.Button(group, text='New Item', command=new_item).grid(column=4, row=row)
         self.new_portal = tk.Button(group, text='New Portal', command=new_portal).grid(column=5, row=row)
+
+        menu_item = tk.StringVar(group)
+        def edit_menu_item(*args, **kwargs):
+            mitem = get_object(self.game, menu_item.get())
+            edit_object_script(self.game, mitem)
+        tk.Label(group, text="Edit menu item:").grid(column=6, row=row)
+        menu = [x.name for x in self.game._menu]
+        menu.sort()
+        option = tk.OptionMenu(group, menu_item, *menu, command=edit_menu_item).grid(column=7,row=row)
+
 
         row += 1
         def edit_camera():
@@ -4984,28 +5028,7 @@ class MyTkApp(threading.Thread):
         def edit_btn():
             """ Open the script for this object for editing """
             obj = self.obj
-            directory = obj._directory
-            fname = os.path.join(directory, "%s.py"%slugify(obj.name).lower())
-            if not os.path.isfile(fname): #create a new module for this actor
-                with open(fname, "w") as f:
-                    f.write("from pyvida import gettext as _\nfrom pyvida import answer\nfrom pyvida import set_interacts, BOTTOM\n\n")
-            module_name = os.path.splitext(os.path.basename(fname))[0]
-
-            #find and suggest some missing functions (interact, look, use functions)
-            with open(fname, "r") as f:
-                script = f.read()
-            slug = slugify(obj.name).lower()
-            search_fns = ["def interact_%s(game, %s, player):"%(slug, slug), "def look_%s(game, %s, player):"%(slug, slug)]
-            for i in list(self.game.player.inventory.keys()):
-                slug2 = slugify(i).lower()
-                search_fns.append("def %s_use_%s(game, %s, %s):"%(slug, slug2, slug, slug2))
-            new_fns = []
-            with open(fname, "a") as f:
-                for fn in search_fns:
-                    if fn not in script:
-                        f.write("#%s\n#    pass\n\n"%fn)
-            open_editor(self.game, fname)
-            __import__(module_name)
+            edit_object_script(self.game, obj)
 
         def reset_btn():
             """ Reset the main editable variables for this object """
