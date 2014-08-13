@@ -108,6 +108,11 @@ MOUSE_LEFT = 2
 MOUSE_RIGHT = 3
 MOUSE_EYES = 4
 
+#MOTION TYPES
+MOTION_LOOP = 0
+MOTION_ONCE = 1
+MOTION_PINGPONG = 2
+MOTION_REVERSE = 3
 
 #WALKTHROUGH EXTRAS KEYWORDS
 LABEL = "label"
@@ -660,6 +665,28 @@ class Settings(object):
             return self 
 
 
+class Motion(object):
+    def __init__(self, name):
+        self.name = name
+        self.actor = None
+        self.game = None
+        self._filename = None
+        self.deltas = []
+        self.default = MOTION_LOOP
+
+    def smart(self, game, actor=None, filename=None): #motion.smart
+        self.actor = actor if actor else self.actor
+        self.game = game
+        fname = os.path.splitext(filename)[0]
+        fname = fname + ".motion"
+        self._filename = fname
+        if not os.path.isfile(fname):
+            
+        else:
+            with open(fname, "r") as f:
+                data = f.readlines()
+                self.default, self.deltas = int(data[0]), list(data[1])
+        return self
 
 class Action(object):
     def __init__(self, name):
@@ -927,6 +954,8 @@ class Actor(object, metaclass=use_on_events):
         self.name = name
         self._actions = {}
         self._action = None
+        self._motions = {}
+        self._motion = None
         self.control_queue = [] #list of activities (fn, (*args)) to loop through - good for background actors
 
         self.game = None
@@ -1460,6 +1489,14 @@ class Actor(object, metaclass=use_on_events):
             ]
         if self.game.player: self.game.player.says(choice(c))
 
+    def _smart_motions(self, game, exclude=[]): 
+        """ smart load the motions """
+        motions = glob.glob(os.path.join(self._directory, "*.motion"))
+        for motion_file in motions:
+            motion_name = os.path.splitext(os.path.basename(motion_file))[0]
+            if motion_name in exclude: continue
+            motion = Motion(motion_name).smart(game, actor=self, filename=motion_file)
+            self._motions[motion_name] = motion
 
     def _smart_actions(self, game, exclude=[]): 
         """ smart load the actions """
@@ -1528,6 +1565,7 @@ class Actor(object, metaclass=use_on_events):
 
         self._images = images
         self._smart_actions(game) #load the actions
+        self._smart_motions(game) #load the motions
 
         if len(self._actions)>0: #do an action by default
             self._do(idle if idle in self._actions else list(self._actions.keys())[0])
@@ -1942,6 +1980,8 @@ class Actor(object, metaclass=use_on_events):
         if self.rotate: self._sprite.rotation = self.rotate
         if self.game and self.game._headless and isinstance(self._sprite.image, pyglet.image.Animation): #jump to end
             self._sprite._frame_index = len(self._sprite.image.frames)
+
+    def on_motion(self, motion, mode=MOTION_LOOP):
 
     def on_do(self, action, frame=None):
         self._do(action, frame=frame)
