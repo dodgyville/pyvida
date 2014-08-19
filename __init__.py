@@ -1279,7 +1279,7 @@ class Actor(object, metaclass=use_on_events):
         """ Called when goto finishes """
         pass
 
-    def _update(self, dt): #actor._update
+    def _update(self, dt, obj=None): #actor._update, use obj to override self
         self._scroll_dx += self.scroll[0] #
         if self.w and self._scroll_dx < -self.w: self._scroll_dx += self.w
         if self.w and self._scroll_dx > self.w: self._scroll_dx -= self.w
@@ -2352,8 +2352,8 @@ class Emitter(Item):
             if p.terminate == True:
                 self.particles.remove(p)
     
-    def _update(self, dt): #emitter.update
-        Item._update(self, dt)
+    def _update(self, dt, obj=None): #emitter.update
+        Item._update(self, dt, obj=obj)
         for p in self.particles:
             self._update_particle(dt, p)
                     
@@ -2999,7 +2999,7 @@ class Camera(metaclass=use_on_events): #the view manager
         self.busy = 0
         self._ambient_sound = None
         
-    def _update(self, dt):
+    def _update(self, dt, obj=None):
         if self._goto_x != None:
             self.game.scene.x = self.game.scene.x + self._goto_dx
             self.game.scene.y = self.game.scene.y + self._goto_dy
@@ -4427,7 +4427,7 @@ class Game(metaclass=use_on_events):
                 if item not in items_to_update: items_to_update.append(item)
         for item in items_to_update: #_to_update:
                 item.game = self
-                if hasattr(item, "_update"): item._update(dt)
+                if hasattr(item, "_update"): item._update(dt, obj=item)
         if single_event:
             self._handle_events() #run the event handler only once
         else:
