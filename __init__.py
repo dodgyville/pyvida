@@ -16,6 +16,8 @@ import json
 
 from pyglet.image.codecs.png import PNGImageDecoder
 
+#TODO better handling of loading/unloading assets
+
 try:
     import android
 except ImportError:
@@ -533,9 +535,10 @@ def get_function(game, basic):
 
 def create_event(q):
     try:
-        return lambda self, *args, **kwargs: self.game.queue_event(q, self, *args, **kwargs)
+        f = lambda self, *args, **kwargs: self.game.queue_event(q, self, *args, **kwargs)
     except:
         import pdb; pdb.set_trace()
+    return f
 
 def use_on_events(name, bases, dic):
     """ create a small method for each "on_<x>" queue function """
@@ -730,10 +733,7 @@ class Action(object):
         self.num_of_frames, self.w, self.h = num, w, h
 
         log.warning("MONTAGE IMPORT ONLY DOES A SINGLE STRIP")
-#        MAX_WIDTH = 16384
-#        ncols = num%(MAX_WIDTH/mwidth)
-#        nrows = int(ceil(float(len(files))/float(MAX_WIDTH/mwidth)))
-        self.load_assets(game)
+#        self.load_assets(game)
         return self
 
     def unload_assets(self):
@@ -1248,12 +1248,16 @@ class Actor(object, metaclass=use_on_events):
 
     @property
     def w(self):
-        if not self._sprite: return None
+        if not self._sprite: 
+            if self._action: self._do(self._action) #load asset 
+            if not self._sprite: return None #if still no sprite, return None
         return self._sprite.width
 
     @property
     def h(self):
-        if not self._sprite: return None
+        if not self._sprite:
+            if self._action: self._do(self._action) #load asset 
+            if not self._sprite: return None #if still no sprite, return None
         return self._sprite.height
 
     def _get_text_details(self, font=None, size=None, wrap=None):
@@ -1526,7 +1530,23 @@ class Actor(object, metaclass=use_on_events):
                 action.angle_start = p[0]
                 action.angle_end = p[1]
 
-    def smart(self, game, image=None, using=None, idle="idle", action_prefix = ""): #actor.smart
+    def _load_scripts(self):
+        #potentially load some interact/use/look scripts for this actor but only if editor is enabled (it interferes with game pickling)
+        if self.game: #and self.game._allow_editing:
+            filepath = os.path.join(self._directory, "%s.py"%slugify(self.name).lower())
+            if os.path.isfile(filepath):
+                #add file directory to path so that import can find it
+                if os.path.dirname(filepath) not in self.game._sys_paths: self.game._sys_paths.append(os.path.dirname(filepath))
+                if os.path.dirname(filepath) not in sys.path: sys.path.append(os.path.dirname(filepath))
+                #add to the list of modules we are tracking
+                module_name = os.path.splitext(os.path.basename(filepath))[0]
+                print(self.name, module_name)
+                self.game._modules[module_name] = 0
+                __import__(module_name) #load now
+                self.game.reload_modules(modules=[module_name]) #reload now to refresh existing references
+
+
+    def smart(self, game, image=None, using=None, idle="idle", action_prefix = "", assets=False): #actor.smart
         """ 
         Intelligently load as many animations and details about this actor/item.
         
@@ -1560,6 +1580,17 @@ class Actor(object, metaclass=use_on_events):
             myd = os.path.join(this_dir, d, name)
 
         self._directory = myd
+
+        filepath = os.path.join(myd, "%s.smart"%slugify(self.name).lower())
+        if self.__class__ in [Item, Actor, Text, Portal]: #Only fast load smart values for generic game objects
+            if os.path.isfile(filepath) and game._build == False:
+                obj = pickle.load(open(filepath, "rb"))
+                if obj.__class__ != self.__class__: import pdb; pdb.set_trace()
+                self.__dict__ = obj.__dict__
+                self.game = obj.game = game
+                if assets and self._action: self._do(self._action) #force load of the assets for the action
+                self._load_scripts()
+                return self
 
         if image:
             images = [image]
@@ -1606,21 +1637,18 @@ class Actor(object, metaclass=use_on_events):
                     elif val in COLOURS: 
                         val = COLOURS[val]
                 self.__dict__[key] = val
-            
 
-        #potentially load some interact/use/look scripts for this actor but only if editor is enabled (it interferes with game pickling)
-        if self.game: #and self.game._allow_editing:
-            filepath = os.path.join(myd, "%s.py"%slugify(self.name).lower())
-            if os.path.isfile(filepath):
-                #add file directory to path so that import can find it
-                if os.path.dirname(filepath) not in self.game._sys_paths: self.game._sys_paths.append(os.path.dirname(filepath))
-                if os.path.dirname(filepath) not in sys.path: sys.path.append(os.path.dirname(filepath))
-                #add to the list of modules we are tracking
-                module_name = os.path.splitext(os.path.basename(filepath))[0]
-                print(self.name, module_name)
-                game._modules[module_name] = 0
-                __import__(module_name) #load now
-                game.reload_modules(modules=[module_name]) #reload now to refresh existing references
+        #save fast load info for this actor (rebuild using --B option)
+        filepath = os.path.join(myd, "%s.smart"%slugify(self.name).lower())
+        if self.__class__ in [Item, Actor, Text, Portal]: #store fast smart load values for generic game objects only
+            try:
+                with open(filepath, "wb") as f:
+                    pickle.dump(self, f)
+            except IOError:
+                pass
+            self.game = game #restore game object
+
+        self._load_scripts() #start watching the module for this actor
         return self
 
     def pyglet_draw(self, absolute=False, force=False): #actor.draw
@@ -1791,8 +1819,8 @@ class Actor(object, metaclass=use_on_events):
         using = high_contrast if self.game.settings.high_contrast and os.path.isdir(myd) else background
         msgbox = get_object(self.game, using)
         if not msgbox: #assume using is a file        
-            msgbox = self.game.add(Item("msgbox").smart(self.game, using=using))
-        if ok: ok = self.game.add(Item(ok).smart(self.game))
+            msgbox = self.game.add(Item("msgbox").smart(self.game, using=using, assets=True))
+        if ok: ok = self.game.add(Item(ok).smart(self.game, assets=True))
 
         kwargs =  self._get_text_details(font=font, size=size)
         #position 10% off the bottom
@@ -3614,6 +3642,7 @@ class Game(metaclass=use_on_events):
         self._walkthrough_stored_state = None #TODO: for jumping back to a previous state in the game (WIP)
         self._help_index = 0 #this tracks the walkthrough as the player plays
         self._headless = False #no user input or graphics
+        self._build = False #if set to true (via --B option), smart load will ignore quick load files
 
         self._output_walkthrough = False
         self._create_from_walkthrough = False
@@ -3950,6 +3979,7 @@ class Game(metaclass=use_on_events):
         """ Add allowable commandline arguments """
         self.parser.add_argument("-a", "--alloweditor", action="store_true", dest="allow_editor", help="Enable editor via F1 key")
 #        self.parser.add_argument("-b", "--blank", action="store_true", dest="force_editor", help="smart load the game but enter the editor")
+        self.parser.add_argument("-B", "--build", action="store_true", dest="build", help="Force smart load to rebuild fast load files", default=False)        
         self.parser.add_argument("-c", "--contrast", action="store_true", dest="high_contrast", help="Play game in high contrast mode (for vision impaired players)", default=False)
         self.parser.add_argument("-d", "--detailed <scene>", dest="analyse_scene", help="Print lots of info about one scene (best used with test runner)")
         self.parser.add_argument("-e", "--exceptions", action="store_true", dest="allow_exceptions", help="Switch off exception catching.")
@@ -3972,7 +4002,6 @@ class Game(metaclass=use_on_events):
 
         self.parser.add_argument("-x", "--exit", action="store_true", dest="exit_step", help="Used with --step, exit program after reaching step (good for profiling)")
         self.parser.add_argument("-z", "--zerosound", action="store_true", dest="mute", help="Mute sounds", default=False)        
-
     def walkthroughs(self, suites):
         """ use test suites to enable jumping forward """
         self._walkthrough = [i for sublist in suites for i in sublist]  #all tests, flattened in order
@@ -4245,6 +4274,8 @@ class Game(metaclass=use_on_events):
                 for i, x in enumerate(self._walkthrough):
                     if x[-1] == options.target_step:
                         self._walkthrough_target = i + 1
+        if options.build:
+            self._build = True
         if options.allow_editor:
             print("enabled editor")
             self._allow_editing = True
