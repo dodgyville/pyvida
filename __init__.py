@@ -737,7 +737,6 @@ class Action(object):
         return self
 
     def unload_assets(self):
-        print("UNLOAD ASSETS",self.name)
         self._animation = None
         self.game = None
         self.actor = getattr(self.actor, "name", self.actor) if self.actor else None
@@ -750,7 +749,7 @@ class Action(object):
         image_seq = pyglet.image.ImageGrid(image, 1, self.num_of_frames)
         frames = []
         if game == None:
-            log.error("Load assets for ",getattr(self.actor,"name", self.actor),"has no game object")
+            log.error("Load assets for {} has no game object".format(getattr(self.actor,"name", self.actor)))
         for frame in image_seq: #TODO: generate ping poing, reverse effects here
             frames.append(pyglet.image.AnimationFrame(frame, 1/getattr(game, "default_actor_fps", DEFAULT_ACTOR_FPS)))
         self._animation = pyglet.image.Animation(frames)
@@ -1309,7 +1308,6 @@ class Actor(object, metaclass=use_on_events):
 #            target = Rect(self._goto_x, self._goto_y, speed, speed).move(-int(speed*0.5),-int(speed*0.5))
 #            target = Rect(self._goto_x, self._goto_y, 3, 3).move(-1, -1)
             if target.collidepoint(self.x, self.y):
-#                print(self.name,"arrived",self.x, self.y, target)
                 if len(self._goto_points)>0: #continue to follow the path
                     destination = self._goto_points.pop()
                     point = get_point(self.game, destination)
@@ -1540,7 +1538,6 @@ class Actor(object, metaclass=use_on_events):
                 if os.path.dirname(filepath) not in sys.path: sys.path.append(os.path.dirname(filepath))
                 #add to the list of modules we are tracking
                 module_name = os.path.splitext(os.path.basename(filepath))[0]
-                print(self.name, module_name)
                 self.game._modules[module_name] = 0
                 __import__(module_name) #load now
                 self.game.reload_modules(modules=[module_name]) #reload now to refresh existing references
@@ -1581,6 +1578,7 @@ class Actor(object, metaclass=use_on_events):
 
         self._directory = myd
 
+        """ XXX per actor quickload disabled in favour single game quickload, which I'm testing at the moment
         filepath = os.path.join(myd, "%s.smart"%slugify(self.name).lower())
         if self.__class__ in [Item, Actor, Text, Portal]: #Only fast load smart values for generic game objects
             if os.path.isfile(filepath) and game._build == False:
@@ -1591,6 +1589,7 @@ class Actor(object, metaclass=use_on_events):
                 if assets and self._action: self._do(self._action) #force load of the assets for the action
                 self._load_scripts()
                 return self
+        """
 
         if image:
             images = [image]
@@ -1638,6 +1637,7 @@ class Actor(object, metaclass=use_on_events):
                         val = COLOURS[val]
                 self.__dict__[key] = val
 
+        """ XXX per actor quickload disabled in favour single game quickload, which I'm testing at the moment
         #save fast load info for this actor (rebuild using --B option)
         filepath = os.path.join(myd, "%s.smart"%slugify(self.name).lower())
         if self.__class__ in [Item, Actor, Text, Portal]: #store fast smart load values for generic game objects only
@@ -1647,6 +1647,7 @@ class Actor(object, metaclass=use_on_events):
             except IOError:
                 pass
             self.game = game #restore game object
+        """
 
         self._load_scripts() #start watching the module for this actor
         return self
@@ -2476,12 +2477,22 @@ class Emitter(Item):
 class WalkareaManager(object):
     """ Comptability layer with pyvida4 walkareas """
     def __init__(self, scene, game):
-        self.scene = scene
+        self._scene = scene.name
         self.game = game
         log.warning("scene.walkareas is deprecated, please update your code")
 
+    @property
+    def scene(self):
+        import pdb; pdb.set_trace()
+        return self.game._scenes.get(self._scene, None)
+
+    def __getstate__(self):
+        self.game = None
+        return self.__dict__
+
     def set(self, *args, **kwargs):
         pass
+
 
 class WalkArea(object):
     def __init__(self, *args, **kwargs):
@@ -2518,9 +2529,8 @@ class Scene(metaclass=use_on_events):
 
     def __getstate__(self):
         self.game = None
-        self.walkareas = None #XXX can't pickle this yet
-#        self._layer = []
         return self.__dict__
+
 
     def get_x(self): return self._x
     def set_x(self, v): self._x = v
@@ -3426,10 +3436,14 @@ def save_game_pickle(game, fname):
         pickle.dump(game._modules, f)
         pickle.dump(game._sys_paths, f)
 
+        PYVIDA_CLASSES = [Actor, Item, Scene, Portal, Text, Emitter]
         #dump info about all the objects and scenes in the game
         for objects in [game._actors, game._items, game._scenes]:
-            pickle.dump(objects, f)
-            for o in objects.values(): #restore game object that was cleansed for pickle
+            objects_to_pickle = []
+            for o in objects.values(): #test objects
+                if o.__class__ not in PYVIDA_CLASSES:
+                    print("warning: Pickling {}, a NON-PYVIDA CLASS {}".format(o.name, o.__class__))
+#                    continue
                 try:
                     pickle.dumps(o)
                 except:
@@ -3441,6 +3455,8 @@ def save_game_pickle(game, fname):
                     print("Error:", sys.exc_info())
                     print("failed pickling",o.name)
                     import pdb; pdb.set_trace()
+            pickle.dump(objects, f)
+            for o in objects.values(): #restore game object that was cleansed for pickle
                 o.game = game
 
 
@@ -3469,8 +3485,8 @@ def load_game_pickle(game, fname, meta_only=False):
                     o.game = game
 #                    if o._module_name: __import__(o._module_name)
             #change camera to scene
-            game.player = get_object(game, player_info["player"])
-            game.camera._scene(player_info["scene"])
+            if player_info["player"]: game.player = get_object(game, player_info["player"])
+            if player_info["scene"]: game.camera._scene(player_info["scene"])
 #            game._scene.load_assets(game)
             for module_name in game._modules:
                 __import__(module_name) #load now
@@ -4122,7 +4138,7 @@ class Game(metaclass=use_on_events):
     def on_smart(self, player=None, player_class=Actor, draw_progress_bar=None, refresh=False, only=None): #game.smart
         self._smart(player, player_class, draw_progress_bar, refresh, only)
 
-    def _smart(self, player=None, player_class=Actor, draw_progress_bar=None, refresh=False, only=None, exclude=[]): #game.smart
+    def _smart(self, player=None, player_class=Actor, draw_progress_bar=None, refresh=False, only=None, exclude=[], use_quick_load=None): #game.smart
         """ cycle through the actors, items and scenes and load the available objects 
             it is very common to have custom methods on the player, so allow smart
             to use a custom class
@@ -4130,8 +4146,14 @@ class Game(metaclass=use_on_events):
             player_class can be used to override the player class with a custom one.
             draw_progress_bar is the fn that handles the drawing of a progress bar on this screen
             refresh = reload the defaults for this actor (but not images)
+            use_quick_load = use a save file if available and/or write one after loading.
         """
         print("SIZE OF EVENT QUEUE A",len(self._events))
+        if use_quick_load:
+            if os.path.exists(use_quick_load): 
+                print("LOADED FROM QUICK LOAD")
+                load_game(self, use_quick_load)
+                return
 
         if draw_progress_bar:
             self._progress_bar_renderer = draw_progress_bar
@@ -4185,6 +4207,11 @@ class Game(metaclass=use_on_events):
         if type(player) in [str]: player = self._actors[player]
         if player: self.player = player
         print("SIZE OF EVENT QUEUE B",len(self._events))
+
+        if use_quick_load: #save quick load file
+            print("SAVING QUICK LOAD")
+            save_game(self, use_quick_load)
+
 
     def check_modules(self):
         """ poll system to see if python files have changed """
