@@ -746,6 +746,9 @@ class Action(object):
         self._loaded = True
         if game: self.game = game
         image = load_image(self._image)
+        if not image:
+            log.error("Load action {} assets for actor {} has not loaded an image".format(self.name, getattr(self.actor,"name", self.actor)))
+            return
         image_seq = pyglet.image.ImageGrid(image, 1, self.num_of_frames)
         frames = []
         if game == None:
@@ -2007,9 +2010,10 @@ class Actor(object, metaclass=use_on_events):
 #        if self.game and self.game._pyglet_batch: kwargs["batch"] = self.game._pyglet_batch
         self.create_sprite(self.action, **kwargs)
         callback = self.on_animation_end if callback == None else callback
-        self._sprite.on_animation_end = callback
+        if self._sprite: self._sprite.on_animation_end = callback
 
     def create_sprite(self, action, **kwargs):
+        if not action._animation: return
         self._sprite = pyglet.sprite.Sprite(action._animation, **kwargs)
         if self._tint: self._sprite.color = self._tint
         if self._scale: self._sprite.scale = self.scale 
