@@ -2556,7 +2556,8 @@ class Scene(metaclass=use_on_events):
 
     @property
     def directory(self):
-        return os.path.join(os.getcwd(),os.path.join(self.game.directory_scenes, self.name))    
+        return os.path.join(self.game.directory_scenes, self.name)
+#        return os.path.join(os.getcwd(),os.path.join(self.game.directory_scenes, self.name))    
 
     """
     @property
@@ -3655,6 +3656,8 @@ class Game(metaclass=use_on_events):
         self._walkthrough = []
         self._walkthrough_index = 0 #our location in the walkthrough
         self._walkthrough_target = 0  #our target
+        self._walkthrough_target_name = None  #if auto-creating a savefile for this walkthrough
+
         self._walkthrough_stored_state = None #TODO: for jumping back to a previous state in the game (WIP)
         self._help_index = 0 #this tracks the walkthrough as the player plays
         self._headless = False #no user input or graphics
@@ -4109,9 +4112,9 @@ class Game(metaclass=use_on_events):
                 x,y = positions[i]
                 dx,dy =0,0
             elif factory.layout == HORIZONTAL: 
-                dx, dy = w + factory.padding, 0
+                dx, dy = min_x + factory.padding, 0
             elif factory.layout == VERTICAL:
-                dx, dy = 0, h + factory.padding
+                dx, dy = 0, min_y + factory.padding
             obj.x, obj.y = x, y
 #            print('MENU', obj.name, obj.x, obj.y)
             x += dx
@@ -4300,6 +4303,7 @@ class Game(metaclass=use_on_events):
             else: #use a label
                 for i, x in enumerate(self._walkthrough):
                     if x[-1] == options.target_step:
+                        self._walkthrough_target_name = x[-1]
                         self._walkthrough_target = i + 1
         if options.build:
             self._build = True
@@ -4343,12 +4347,18 @@ class Game(metaclass=use_on_events):
         if self._walkthrough_index > self._walkthrough_target or self._walkthrough_index > len(self._walkthrough):
             if self._headless: self._headless = False
             log.info("FINISHED WALKTHROUGH")
+            if self._walkthrough_target_name:
+                save_game(self, "saves/{}.save".format(self._walkthrough_target_name))
 #            self.player.says(gettext("Let's play."))
             return
         s = "Walkthrough:",list(walkthrough)
         log.info(s)
 #        print(s)
 #        print("AUTO WALKTHROUGH", walkthrough)
+        #If this walkthrough step has the optional human-readable name, and exit flag is set, create a savegame for the label.
+#        if self.exit_step and function_name in ["interact", "location", "goto", "description"] and len(walkthrough)==3: 
+#            save_game(self, "saves/{}.save".format(walkthrough[-1]))
+
         if function_name == "interact":
 #            print("trigger interact", self._walkthrough_target, self._walkthrough_index, walkthrough[1])
             button = pyglet.window.mouse.LEFT
