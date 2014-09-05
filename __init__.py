@@ -337,7 +337,6 @@ def scene_search(game, scene, target): #are scenes connected via portals?
     for obj_name in scene._objects:
         i = get_object(game, obj_name)
         if isinstance(i, Portal): #if portal and has link, follow that portal
-#            if getattr(target, "name", target) == "afoyer": import pdb; pdb.set_trace()
             if i.link and i.link.scene not in scene_path:
                 found_target = scene_search(game, i.link.scene, target)
                 if found_target != False: 
@@ -1024,9 +1023,41 @@ class Actor(object, metaclass=use_on_events):
         self.busy = 0 #don't process any more events for this actor until busy is False, will block all events if game._waiting = True
         self._sprite = None
         self._batch = None
-        self._events = []
+#        self._events = []
 
         self._tint = None
+        self.set_editable()
+
+    def __getstate__(self):
+        """ Prepare the object for pickling """
+        for fn_name in ["_interact", "_look", "_drag", "_mouse_motion", "_mouse_none", "_collection_select"]:
+            fn = getattr(self, fn_name)
+            if hasattr(fn, "__name__"): setattr(self, fn_name, fn.__name__)                
+        if self._sprite: self._sprite.delete()
+        self._sprite = None #gets reloaded when needed
+        self.game = None    #re-populated after load
+        self._editable = [] #re-populated after load
+
+        self._tk_edit = {}
+        self._clickable_mask = None
+
+        log.warning("Actor.__getstate__ discards essential USES information")
+        #PROBLEM values:
+        self.uses = {}
+
+        for k, v in self.__dict__.items():
+            if callable(v):
+                print("textifying ",k,v,"on",self.name)
+                self.__dict__[k] = v.__name__
+
+        return self.__dict__
+
+#    def __setstate__(self, d):
+#        self.__dict__ = d
+
+
+    def set_editable(self):
+        """ Set which attributes are editable in the editor """
         self._editable = [ #(human readable, get variable names, set variable names, widget types)
             ("position", (self.get_x, self.get_y), (self.set_x, self.set_y),  (int, int)),
             ("stand point", (self.get_sx, self.get_sy), (self.set_sx, self.set_sy),  (int, int)),
@@ -1043,34 +1074,6 @@ class Actor(object, metaclass=use_on_events):
             ("editing save", self.get_editing_save, self.set_editing_save, bool),
             ]
 
-    def __getstate__(self):
-        """ Prepare the object for pickling """
-        log.warning("Actor.__getstate__ discards essential information")
-        for fn_name in ["_interact", "_look", "_drag", "_mouse_motion", "_mouse_none", "_collection_select"]:
-            fn = getattr(self, fn_name)
-            if hasattr(fn, "__name__"): setattr(self, fn_name, fn.__name__)                
-        if self._sprite: self._sprite.delete()
-        self._sprite = None
-        self.game = None
-        self._tk_edit = {}
-        self._clickable_mask = None
-        editable = []
-#        for e in self._editable:
-#            import pdb; pdb.set_trace()
-        #PROBLEM values:
-#        self._actions = {}
-#        self.inventory = {}
-        self.uses = {}
-        self._editable = []
-        for k, v in self.__dict__.items():
-            if callable(v):
-                print("textifying ",k,v,"on",self.name)
-                self.__dict__[k] = v.__name__
-
-        return self.__dict__
-
-#    def __setstate__(self, d):
-#        import pdb; pdb.set_trace()
 
     def get_busy(self):
         return self._busy
@@ -1990,7 +1993,6 @@ class Actor(object, metaclass=use_on_events):
 #    def _collection_select(self, collection, obj):
 #        """ Called when this object is selected in a collection """
 #        print("handling object selection")
-#        import pdb; pdb.set_trace()
 
     def _do(self, action, callback=None, frame=None):
         myA = action
@@ -3461,8 +3463,9 @@ def save_game_pickle(game, fname):
                     print("failed pickling",o.name)
                     import pdb; pdb.set_trace()
             pickle.dump(objects, f)
-            for o in objects.values(): #restore game object that was cleansed for pickle
+            for o in objects.values(): #restore game object and editables that were cleansed for pickle
                 o.game = game
+                if hasattr(o, "set_editable"): o.set_editable()
 
 
 def load_game_pickle(game, fname, meta_only=False):
@@ -3484,19 +3487,18 @@ def load_game_pickle(game, fname, meta_only=False):
             game._items = pickle.load(f)
             game._scenes = pickle.load(f)
 
-            #restore game object
+            #restore game object and editable info
             for objects in [game._actors.values(), game._items.values(), game._scenes.values()]:
                 for o in objects:
                     o.game = game
-#                    if o._module_name: __import__(o._module_name)
+                    if hasattr(o, "set_editable"): o.set_editable()
+
             #change camera to scene
             if player_info["player"]: game.player = get_object(game, player_info["player"])
             if player_info["scene"]: game.camera._scene(player_info["scene"])
-#            game._scene.load_assets(game)
             for module_name in game._modules:
                 __import__(module_name) #load now
             game.reload_modules() #reload now to refresh existing references
-#            import pdb; pdb.set_trace()
     return meta
 
 
@@ -3519,38 +3521,6 @@ class PyvidaEncoder(json.JSONEncoder):
         else:
             encoded_object =json.JSONEncoder.default(self, obj)
         return encoded_object
-
-class PyvidaDecoder(json.JSONDecoder):
-    def decode(self, obj):
-        decoded_object = json.JSONDecoder.decode(self, obj)
-        import pdb; pdb.set_trace()
-        return decoded_object
-      
-def save_game_json(game, fname):
-    all_objects = {"_actors":game._actors, "_items":game._items, "_scenes":game._scenes}
-    data = [game.get_game_info, game.get_player_info, all_objects]
-    with open(fname, 'w', encoding='utf-8') as f:
-        json.dump(data, f, cls=PyvidaEncoder, indent=2)
-
-    for k, objects in all_objects.items():
-        for o in objects.values(): #restore game object that was cleansed for pickle
-            o.game = game
-
-
-def load_game_json(game, fname):
-
-    with open(fname, 'r', encoding='utf-8') as f:
-        game_info, player_info, all_objects = json.load(f) 
-    for k, objects in all_objects.items():
-        setattr(game, k, {})
-        for o in objects:
-            myO = o
-            import pdb; pdb.set_trace()
-            o.game = game
-
-    game.player = get_object(game, player_info["player"])
-    game.camera._scene(player_info["scene"])
-
 
 def save_game(game, fname):
     save_game_pickle(game, fname)
@@ -3961,16 +3931,17 @@ class Game(metaclass=use_on_events):
                 y -= dy
                 self._editing_point_set[0](x)
                 self._editing_point_set[1](y)
-                if self._editing_label in self._editing._tk_edit: 
-                    self._editing._tk_edit[self._editing_label][0].delete(0, 100)
-                    self._editing._tk_edit[self._editing_label][0].insert(0, x)
+                try:
+                    if self._editing_label in self._editing._tk_edit: 
+                        self._editing._tk_edit[self._editing_label][0].delete(0, 100)
+                        self._editing._tk_edit[self._editing_label][0].insert(0, x)
 
-                    self._editing._tk_edit[self._editing_label][1].delete(0, 100)
-                    self._editing._tk_edit[self._editing_label][1].insert(0, y)
-
+                        self._editing._tk_edit[self._editing_label][1].delete(0, 100)
+                        self._editing._tk_edit[self._editing_label][1].insert(0, y)
+                except:
+                    import pdb; pdb.set_trace()
 #                if self._editing_point_set[0] == self._editing.set_x: #set x, so use raw
 #                else: #displace the point by the object's x,y so the point is relative to the obj
-#                    import pdb; pdb.set_trace()
 #                    self._editing_point_set[0](x - self._editing.x)
 #                    self._editing_point_set[1](y - self._editing.y)
             elif type(self._editing_point_set) == str: #editing a Rect
@@ -4287,7 +4258,6 @@ class Game(metaclass=use_on_events):
                         import pdb; pdb.set_trace()
                     new_fn = get_function(self.game, i.interact.__name__)
                     if new_fn: i.interact = new_fn #only replace if function found, else rely on existing fn
-            if i.name == "Brutus Ship": import pdb; pdb.set_trace()
             if i._look: 
                 if type(i._look) != str:
                     new_fn = get_function(self.game, i._look.__name__)
@@ -4436,7 +4406,6 @@ class Game(metaclass=use_on_events):
                     none_busy = False
             if none_busy == True: 
                 if logging: log.info("Game has no busy events, so setting game.waiting to False.")
-#                if not self._headless: import pdb; pdb.set_trace()
                 self._waiting = False #no prior events are busy, so stop waiting
             else:
                 return safe_to_call_again #game is waiting on an actor, so leave
@@ -4526,7 +4495,6 @@ class Game(metaclass=use_on_events):
         pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0) # undo alpha for pyglet drawing            
         for item in self.scene._layer:
             item.game = self #awkward, layers have to be updated in case from save file
-#            if self.scene.name == "astatues": import pdb; pdb.set_trace()
             if item.z <= 1.0:
                 item.pyglet_draw(absolute=False)
             else:
@@ -5124,7 +5092,6 @@ class MyTkApp(threading.Thread):
 #            editing = self._editing_bool.get()[:-2]
 #            val = True if self._editing_bool.get()[-1:] == "t" else False
 #            print("Set %s to %s"%(editing, val))
-#            import pdb; pdb.set_trace()
 #                    self.game._editing = self.obj
 #                    self.game._editing_point_set = set_attrs
 #                    self.game._editing_point_get = get_attrs
