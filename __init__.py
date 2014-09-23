@@ -3529,6 +3529,38 @@ def save_game(game, fname):
 def load_game(game, fname):
     load_game_pickle(game, fname)
 
+def fit_to_screen(screen, resolution):
+    #given a screen size and the game's resolution, return a screen size and scaling factor 
+
+    w,h = screen
+    scale = 1.0
+#        scale = min(w/resolution[0], h/resolution[1])
+ #   scale = max(w/resolution[0], resolution[0]/w)
+ #   scale = 1/scale
+ #   ww, hh = w,h
+ #   import pdb; pdb.set_trace()
+    scale = w/resolution[0]
+    scale_y = h/resolution[1]
+#    scale_x = max(w/resolution[0], resolution[0]/w)
+#    scale_y = max(h/resolution[1], resolution[1]/h)
+
+#    if scale != 1.0:
+    if resolution[1]*scale > h: #unusual case where screen is more portrait than game.
+        print("GAME BOUND BY HEIGHT")
+        scale = scale_y
+    else:
+        print("GAME BOUND BY WIDTH")
+    #    import pdb; pdb.set_trace()
+
+#        if resolution[0]>w or resolution[1]>h: #scale down
+#            print("SCALING")
+#            scale = min(w/resolution[0], h/resolution[1])
+#            resolution = int(resolution[0] * scale), int(resolution[1] * scale)
+    print("GAME RESOLUTION, SCREEN, SCALING",resolution, screen, scale)
+    if scale != 1.0:
+        resolution = round(resolution[0] * scale), round(resolution[1] * scale)
+    return resolution, scale
+
 
 class Game(metaclass=use_on_events):
     def __init__(self, name="Untitled Game", version="v1.0", engine=VERSION_MAJOR, fullscreen=DEFAULT_FULLSCREEN, resolution=DEFAULT_RESOLUTION, fps=DEFAULT_FPS, afps=DEFAULT_ACTOR_FPS, projectsettings=None, scale=1.0):
@@ -3581,25 +3613,14 @@ class Game(metaclass=use_on_events):
 
         display = pyglet.window.get_platform().get_default_display()
 
-        """
+        #don't allow game to be bigger than the available screen.
         w = display.get_default_screen().width        
         h = display.get_default_screen().height
-        print(w,h)
-        scale = 1.0
-#        scale = min(w/resolution[0], h/resolution[1])
-        scale = max(w/resolution[0], resolution[0]/w)
-        scale_x = max(w/resolution[0], resolution[0]/w)
-        scale_y = max(h/resolution[1], resolution[1]/h)
+        print("DEFAULT SCREEN", w,h)
 
-#        if resolution[0]>w or resolution[1]>h: #scale down
-#            print("SCALING")
-#            scale = min(w/resolution[0], h/resolution[1])
-#            resolution = int(resolution[0] * scale), int(resolution[1] * scale)
-        print("RESOLUTION",resolution, scale)
-        """
+        resolution, scale = fit_to_screen((w,h), resolution)
         self.resolution = resolution
-        if scale != 1.0:
-            resolution = int(resolution[0] * scale), int(resolution[1] * scale)
+
 #        config = pyglet.gl.Config(double_buffer=True, vsync=True)
         self._window = pyglet.window.Window(*resolution)
 #        print(self._window.width, self._window.height, resolution)
