@@ -426,8 +426,8 @@ def load_image(fname, convert_alpha=False, eight_bit=False):
 
 def get_font(game, filename, fontname):
     pyglet.font.add_file(filename)
-    return pyglet.font.load(fontname)
-
+    f = pyglet.font.load(fontname)
+    return f
 
 def get_point(game, destination):
     """ get a point from a tuple, str or destination """
@@ -3533,30 +3533,15 @@ def fit_to_screen(screen, resolution):
     #given a screen size and the game's resolution, return a screen size and scaling factor 
 
     w,h = screen
-    scale = 1.0
-#        scale = min(w/resolution[0], h/resolution[1])
- #   scale = max(w/resolution[0], resolution[0]/w)
- #   scale = 1/scale
- #   ww, hh = w,h
- #   import pdb; pdb.set_trace()
+#    scale = 1.0
     scale = w/resolution[0]
     scale_y = h/resolution[1]
-#    scale_x = max(w/resolution[0], resolution[0]/w)
-#    scale_y = max(h/resolution[1], resolution[1]/h)
 
-#    if scale != 1.0:
     if resolution[1]*scale > h: #unusual case where screen is more portrait than game.
-        print("GAME BOUND BY HEIGHT")
         scale = scale_y
+        if scale != 1.0: log.info("Game screen scaled on height (%0.3f)"%scale)
     else:
-        print("GAME BOUND BY WIDTH")
-    #    import pdb; pdb.set_trace()
-
-#        if resolution[0]>w or resolution[1]>h: #scale down
-#            print("SCALING")
-#            scale = min(w/resolution[0], h/resolution[1])
-#            resolution = int(resolution[0] * scale), int(resolution[1] * scale)
-    print("GAME RESOLUTION, SCREEN, SCALING",resolution, screen, scale)
+        if scale != 1.0: log.info("Game screen scaled on width (%0.3f)"%scale)
     if scale != 1.0:
         resolution = round(resolution[0] * scale), round(resolution[1] * scale)
     return resolution, scale
@@ -3608,22 +3593,20 @@ class Game(metaclass=use_on_events):
         self._scenes = {}
         self._gui = []
         self.storage = Storage()
+        self.resolution = resolution
+
         #scale the game if the screen is too small
-
-
-        display = pyglet.window.get_platform().get_default_display()
-
         #don't allow game to be bigger than the available screen.
+        #we do this using a glScalef call which makes it invisible to the engine
+        #except that mouse inputs will also need to be scaled, so store the new scale factor
+        display = pyglet.window.get_platform().get_default_display()
         w = display.get_default_screen().width        
         h = display.get_default_screen().height
-        print("DEFAULT SCREEN", w,h)
-
         resolution, scale = fit_to_screen((w,h), resolution)
-        self.resolution = resolution
+        self._scale = scale
 
 #        config = pyglet.gl.Config(double_buffer=True, vsync=True)
         self._window = pyglet.window.Window(*resolution)
-#        print(self._window.width, self._window.height, resolution)
         pyglet.gl.glScalef(scale, scale, scale)
 
         self._window.on_draw = self.pyglet_draw
