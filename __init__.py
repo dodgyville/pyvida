@@ -373,6 +373,7 @@ if logging:
     ANALYSIS_FILENAME = os.path.join(DIRECTORY_SAVES, 'analysis.log')
     log = create_log("pyvida", LOG_FILENAME, log_level)
     analysis_log = create_log("analysis", ANALYSIS_FILENAME, log_level)
+    log.warning("MONTAGE IMPORT ONLY DOES A SINGLE STRIP")
 
 
 """
@@ -667,14 +668,46 @@ class Settings(object):
             return self 
 
 
+class MotionDelta(object):
+    def __init__(self):
+        self.x = 0
+        self.y = 0
+        self.z = 0
+        self.r = 0
+        self.scale = 1.0
+
+    @property
+    def flat(self):
+        return self.x, self.y, self.z, self.r, self.scale
+
 class Motion(object):
+    """ A motion is an event independent set of displacement values for an Actor 
+        Perfect for setting up repetitive background motions.
+    """
     def __init__(self, name):
         self.name = name
         self.actor = None
         self.game = None
         self._filename = None
-        self.deltas = []
+        self.deltas = [] #(x,y,z,rotate,scale) NOTE: scale is absolute, not a delta
         self.default = MOTION_LOOP
+        self.index = 0 #where in the motion we currently are
+
+    def __getstate__(self):
+        self.game = None
+        return self.__dict__
+
+    def apply_to_actor(self, actor):
+        """ Apply the current frame to the actor and increment index """
+        num_deltas = len(self.deltas)
+        if len(self.deltas)< self.index%num_deltas: return
+        d = self.deltas[self.index%num_deltas]
+        actor.x += d[0]
+        actor.y += d[1]
+        actor.z += d[2]
+        actor.rotate += d[3]
+        actor.scale = d[4]
+        self.index += 1
 
     def smart(self, game, actor=None, filename=None): #motion.smart
         self.actor = actor if actor else self.actor
@@ -686,8 +719,17 @@ class Motion(object):
             pass
         else:
             with open(fname, "r") as f:
-                data = f.readlines()
-                self.default, self.deltas = int(data[0]), list(data[1])
+                data = f.readlines() #first line is metadata (variable names and default)
+                meta = data[0].strip().split(",")
+                for line in data[1:]:
+                    m = MotionDelta()
+                    d = line.strip().split(",")
+                    for i, key in enumerate(meta):
+                        try:
+                            setattr(m, key, float(d[i]))
+                        except:
+                            import pdb; pdb.set_trace()
+                    self.deltas.append(m.flat)
         return self
 
 class Action(object):
@@ -730,8 +772,6 @@ class Action(object):
                     if logging: log.error("Can't read values in %s (%s)"%(self.name, montage_fname))
                     num,w,h = 0,0,0
         self.num_of_frames, self.w, self.h = num, w, h
-
-        log.warning("MONTAGE IMPORT ONLY DOES A SINGLE STRIP")
 #        self.load_assets(game)
         return self
 
@@ -956,7 +996,7 @@ class Actor(object, metaclass=use_on_events):
         self._actions = {}
         self._action = None
         self._motions = {}
-        self._motion = None
+        self._applied_motions = [] #list of motions applied at the moment
         self.control_queue = [] #list of activities (fn, (*args)) to loop through - good for background actors
 
         self.game = None
@@ -1032,7 +1072,8 @@ class Actor(object, metaclass=use_on_events):
         """ Prepare the object for pickling """
         for fn_name in ["_interact", "_look", "_drag", "_mouse_motion", "_mouse_none", "_collection_select"]:
             fn = getattr(self, fn_name)
-            if hasattr(fn, "__name__"): setattr(self, fn_name, fn.__name__)                
+#            if getattr(fn, "__name__", None) == "close_on_says": import pdb; pdb.set_trace()         
+            if hasattr(fn, "__name__"): setattr(self, fn_name, fn.__name__)       
         if self._sprite: self._sprite.delete()
         self._sprite = None #gets reloaded when needed
         self.game = None    #re-populated after load
@@ -1102,6 +1143,26 @@ class Actor(object, metaclass=use_on_events):
     def viewable(self):
         if self._sprite: return True
         return False
+
+    def pyglet_set_anchor(self, x, y):
+        """ Very raw helper function for setting anchor point of image
+            Useful for rotating Actors around an anchor point
+            But message
+        """
+        if isinstance(self._sprite._animation, pyglet.image.Animation):
+            for f in self._sprite._animation.frames:
+                f.image.anchor_x = x
+                f.image.anchor_y = y
+        else:
+            self._sprite._animation.anchor_x = self._ax
+            self._sprite._animation.anchor_y = self._ay
+        if self._sprite:
+            self._sprite.anchor_x = x
+            self._sprite.anchor_y = y
+        import pdb; pdb.set_trace()
+#        if self._image:
+#            self._image.anchor_x = x
+#            self._image.anchor_y = y
 
     def update_anchor(self):
         if isinstance(self._sprite._animation, pyglet.image.Animation):
@@ -1328,8 +1389,10 @@ class Actor(object, metaclass=use_on_events):
                         self._do("idle")
          #   else:
           #      print("missed",target,self.x, self.y)
-                
-
+        #apply motions
+        for motion in self._applied_motions:
+            motion.apply_to_actor(self)               
+ 
     @property
     def clickable_area(self):
         return self._clickable_area.move(self.x + self.ax, self.y + self.ay)
@@ -1796,17 +1859,21 @@ class Actor(object, metaclass=use_on_events):
             self.game.add(opt)
             self.game._modals.append(opt)
 
+    def _close_on_says(game, obj, player):
+        import pdb; pdb.set_trace()
+        self.game._modals.remove(label)
+        self.busy -= 1
+        if logging: log.info("%s has finished on_says (%s), so decrement self.busy to %i."%(self.name, text, self.busy))
+
+
     def on_continues(self, text, delay=0.01, step=3):
         kwargs =  self._get_text_details()
         label = Text(text, delay=delay, step=step, **kwargs)
         label.game = self.game
         label.fullscreen(True)
         label.x,label.y = self.x + self.tx, self.y - self.ty
-        def close_on_says(game, obj, player):
-            self.game._modals.remove(label)
-            self.busy -= 1
-            if logging: log.info("%s has finished on_says (%s), so decrement self.busy to %i."%(self.name, text, self.busy))
-        label.interact = close_on_says
+        import pdb; pdb.set_trace()
+        label.interact = _close_on_says
         self.busy += 1
         self.game._modals.append(label)
 
@@ -2024,8 +2091,13 @@ class Actor(object, metaclass=use_on_events):
             self._sprite._frame_index = len(self._sprite.image.frames)
 
     def on_motion(self, motion, mode=MOTION_LOOP):
+        """ Clear all existing motions and do just one motion. """
         motion = self._motions.get(motion, None) if motion in self._motions.keys() else motion
-        self._motion = motion
+        self._applied_motions = [motion]
+
+    def on_add_motion(self, motion, mode=MOTION_LOOP):
+        motion = self._motions.get(motion, None) if motion in self._motions.keys() else motion
+        self._applied_motions.append(motion)
 
     def on_do(self, action, frame=None):
         self._do(action, frame=frame)
@@ -2258,7 +2330,7 @@ class Portal(Actor, metaclass=use_on_events):
 
     def on_auto_align(self): #auto align display_text
         if not self.game:
-            log.warning("Unable to auto_align {} without a game object"%self.name)
+            log.warning("Unable to auto_align {} without a game object".format(self.name))
             return
         if logging: log.warning("auto_align only works properly on 1024x768")
         if self.nx > self.game.resolution[0]//2: self.display_text_align = RIGHT #auto align text
@@ -2275,6 +2347,7 @@ class Portal(Actor, metaclass=use_on_events):
     def exit_here(self, actor=None, block=True):
         """ exit the scene via the portal """
         if actor == None: actor = self.game.player
+        log.warning("Actor {} exiting portal {}".format(actor.name, self.name))
         actor.goto((self.x + self.sx, self.y + self.sy), block=block) 
         self._pre_leave(self, actor)
         actor.goto((self.x + self.ox, self.y + self.oy)) 
@@ -2298,8 +2371,10 @@ class Portal(Actor, metaclass=use_on_events):
     def enter_here(self, actor=None, block=True):
         """ exit the portal's link """
         if actor == None: actor = self.game.player
+        log.warning("Actor {} arriving via portal {}".format(actor.name, self.name))
         actor.relocate(self.scene, (self.x + self.ox, self.y + self.oy)) #moves player here
         actor.goto((self.x + self.sx, self.y + self.sy), ignore=True, block=block) #walk into scene        
+        if self.name == "astatues_to_pbridge": import pdb; pdb.set_trace()
         self._post_arrive(self, actor)   
 
     def travel(self, actor=None, block=True):
@@ -2814,7 +2889,8 @@ class Text(Item):
         else:
             self._text_index += self.step
             self.__text = self.display_text[:self._text_index]
-            self._label.text = self.__text
+            if self._label: 
+                self._label.text = self.__text
             if self._label_offset:
                 self._label_offset.text = self.__text
 
@@ -4417,7 +4493,7 @@ class Game(metaclass=use_on_events):
                 for event in self._events[:self._event_index]: #check the previous events' objects, delete if not busy
                     if event[1][0].busy == 0:
 #                        if self._headless==False: import pdb; pdb.set_trace()
-                        if logging: log.info("%s is no longer busy, so deleting event %s."%(event[1][0].name, event))
+#                        if logging: log.info("%s is no longer busy, so deleting event %s."%(event[1][0].name, event))
                         del_events += 1
                         self._events.remove(event)
                         self._event_index -= 1
