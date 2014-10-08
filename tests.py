@@ -12,6 +12,76 @@ RESOLUTION = (RESOLUTION_X, RESOLUTION_Y)
 
 
 
+class ScaleTest(unittest.TestCase):
+    def test_scale(self):
+        resolution = (1600, 900) #sample game resolution
+
+        #macbook air, 2013, smaller than game so scale down, same ratio
+        screen = (1280, 720)
+        r, s = fit_to_screen(screen, resolution)
+        self.assertEqual(r, (1280, 720))
+        self.assertAlmostEqual(s, 0.8)   
+
+        #macbook air, 2013, smaller than game so scale down, game too landscape
+        screen = (1440, 900)
+        r, s = fit_to_screen(screen, resolution)
+        self.assertEqual(r, (1440, 810))
+        self.assertAlmostEqual(s, 0.9)   
+
+        #macbook air, 2013, smaller than game so scale down, game too portrait
+        screen = (900, 1440)
+        r, s = fit_to_screen(screen, resolution)
+        self.assertEqual(r, (900, 506))
+        self.assertAlmostEqual(s, 0.5625)   
+
+        #same size, same ratio
+        screen = resolution
+        r, s = fit_to_screen(screen, resolution)
+        self.assertEqual(r, resolution)
+        self.assertAlmostEqual(s, 1.0) 
+
+        #HD, larger than game, so scale up, same ratio
+        screen = (1920, 1080)
+        r, s = fit_to_screen(screen, resolution)
+        self.assertEqual(r, (1920, 1080))
+        self.assertAlmostEqual(s, 1.2) 
+
+        #HD, larger than game, so scale up, game too landscape
+        screen = (1920, 1200)
+        r, s = fit_to_screen(screen, resolution)
+        self.assertEqual(r, (1920, 1080))
+        self.assertAlmostEqual(s, 1.2) 
+
+        #HD, larger than game, so scale up, game too portrait
+        screen = (2160, 3840)
+        r, s = fit_to_screen(screen, resolution)
+        self.assertEqual(r, (2160, 1215))
+        self.assertAlmostEqual(s, 1.35) 
+
+
+        #same width, different ratio, squarer screen
+        screen = (1600, 1080)
+        r, s = fit_to_screen(screen, resolution)
+        self.assertEqual(r, resolution)
+        self.assertAlmostEqual(s, 1.0) 
+
+
+        #same width, different ratio, more landscape screen
+        resolution = (1024, 768)
+        screen = (1024, 576)
+        r, s = fit_to_screen(screen, resolution)
+        self.assertEqual(r, (768, 576))
+        self.assertAlmostEqual(s, 0.75) 
+
+        #game slighty wider, uncomfortable ratio (height difference greater than width difference)
+        screen = (1500, 550)
+        r, s = fit_to_screen(screen, resolution)
+        self.assertEqual(r, (733, 550))
+        self.assertAlmostEqual(0.7161458, s) 
+
+
+
+
 class ActorTest(unittest.TestCase):
     def setUp(self):
         self.game = Game("Unit Tests", fps=60, afps=16, resolution=RESOLUTION)
