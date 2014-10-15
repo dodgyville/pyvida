@@ -3797,6 +3797,9 @@ class Game(metaclass=use_on_events):
             log.error("Unable to set mouse to %s, no cursor available"%cursor)
             return
         image = self.mouse_cursors[cursor] 
+        if not image:
+            log.error("Unable to find mouse cursor for mouse mode %s"%cursor)
+            return
         cursor = pyglet.window.ImageMouseCursor(image, image.width/2, image.height/2)
         self._window.set_mouse_cursor(cursor)
 
