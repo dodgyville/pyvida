@@ -374,7 +374,7 @@ if logging:
     log = create_log("pyvida", LOG_FILENAME, log_level)
     analysis_log = create_log("analysis", ANALYSIS_FILENAME, log_level)
     log.warning("MONTAGE IMPORT ONLY DOES A SINGLE STRIP")
-
+    log.warning("Actor.__getstate__ discards essential USES information")
 
 """
 Utilities
@@ -989,6 +989,11 @@ def receiver(signal, **kwargs):
 Classes
 """
 
+
+def collide_never(x,y): #for asks, most modals can't be clicked, only the txt modelitam options can.
+    #Helper callback for modals used during on_ask events
+    return False
+
 class Actor(object, metaclass=use_on_events):
     def __init__(self, name, interact=None, display_text=None, look=None, drag=None):
         super().__init__()
@@ -1082,7 +1087,6 @@ class Actor(object, metaclass=use_on_events):
         self._tk_edit = {}
         self._clickable_mask = None
 
-        log.warning("Actor.__getstate__ discards essential USES information")
         #PROBLEM values:
         self.uses = {}
 
@@ -1647,19 +1651,6 @@ class Actor(object, metaclass=use_on_events):
 
         self._directory = myd
 
-        """ XXX per actor quickload disabled in favour single game quickload, which I'm testing at the moment
-        filepath = os.path.join(myd, "%s.smart"%slugify(self.name).lower())
-        if self.__class__ in [Item, Actor, Text, Portal]: #Only fast load smart values for generic game objects
-            if os.path.isfile(filepath) and game._build == False:
-                obj = pickle.load(open(filepath, "rb"))
-                if obj.__class__ != self.__class__: import pdb; pdb.set_trace()
-                self.__dict__ = obj.__dict__
-                self.game = obj.game = game
-                if assets and self._action: self._do(self._action) #force load of the assets for the action
-                self._load_scripts()
-                return self
-        """
-
         if image:
             images = [image]
         else:
@@ -1819,8 +1810,6 @@ class Actor(object, metaclass=use_on_events):
         label = None
         for item in items:
             if isinstance(item, Text): label=item
-            def collide_never(x,y): #for asks, most modals can't be clicked, only the txt modelitam options can.
-                return False
             item.collide = collide_never
         #add the options
         for i, option in enumerate(args):
@@ -2793,7 +2782,8 @@ class Text(Item):
         self.x, self.y = pos
         self.step = step
         self.offset = offset
-        self._height = None #height of full text (ignores 
+        self._height = None #height of full text
+        self._width = None #width of full text
 
 
         #animate the text
@@ -2828,14 +2818,15 @@ class Text(Item):
                                   width=wrap,
                                   anchor_x='left', anchor_y='top')
         self._height = tmp.content_height
+        self._width = tmp.content_width
 
 
     def __getstate__(self):
+        print("UNLOADING",self.name)
         self.__dict__ = super().__getstate__()
         self._label = None
         self._label_offset = None
         return self.__dict__
-
 
     def create_label(self):
         self._label = pyglet.text.Label(self.__text,
@@ -2875,7 +2866,10 @@ class Text(Item):
 
     @property
     def w(self):
-        return self._label.content_width
+        w = self._label.content_width if self._label else self._width
+#        if not w:
+#            import pdb; pdb.set_trace()
+        return w
 
     @property
     def h(self):
@@ -3519,7 +3513,7 @@ def save_game_pickle(game, fname):
         pickle.dump(game._modules, f)
         pickle.dump(game._sys_paths, f)
 
-        PYVIDA_CLASSES = [Actor, Item, Scene, Portal, Text, Emitter]
+        PYVIDA_CLASSES = [Actor, Item, Scene, Portal, Text, Emitter, Collection]
         #dump info about all the objects and scenes in the game
         for objects in [game._actors, game._items, game._scenes]:
             objects_to_pickle = []
@@ -3541,6 +3535,11 @@ def save_game_pickle(game, fname):
             pickle.dump(objects, f)
             for o in objects.values(): #restore game object and editables that were cleansed for pickle
                 o.game = game
+                if hasattr(o, "collide") and type(o.collide) == str: 
+                    import pdb; pdb.set_trace()
+                    o.collide = get_function(game, o.collide)
+
+                if hasattr(o, "create_label"): o.create_label()
                 if hasattr(o, "set_editable"): o.set_editable()
 
 
@@ -3715,7 +3714,7 @@ class Game(metaclass=use_on_events):
         self._walkthrough_stored_state = None #TODO: for jumping back to a previous state in the game (WIP)
         self._help_index = 0 #this tracks the walkthrough as the player plays
         self._headless = False #no user input or graphics
-        self._build = False #if set to true (via --B option), smart load will ignore quick load files
+        self._build = False #if set to true (via --B option), smart load will ignore quick load files and rebuild them.
 
         self._output_walkthrough = False
         self._create_from_walkthrough = False
@@ -3878,12 +3877,15 @@ class Game(metaclass=use_on_events):
         if not self.scene: return
         modal_collide = False
         for obj in self._modals:
-            if obj.collide(ox,oy): #absolute screen values
-                self.mouse_cursor = MOUSE_CROSSHAIR
-                if obj._mouse_motion and not modal_collide: obj._mouse_motion(self.game, obj, self.game.player,x,y,dx,dy, ox,oy)
-                modal_collide = True
-            else:
-                if obj._mouse_none: obj._mouse_none(self.game, obj, self.game.player,x,y,dx,dy, ox,oy)
+            try:
+                if obj.collide(ox,oy): #absolute screen values
+                    self.mouse_cursor = MOUSE_CROSSHAIR
+                    if obj._mouse_motion and not modal_collide: obj._mouse_motion(self.game, obj, self.game.player,x,y,dx,dy, ox,oy)
+                    modal_collide = True
+                else:
+                    if obj._mouse_none: obj._mouse_none(self.game, obj, self.game.player,x,y,dx,dy, ox,oy)
+            except:
+                import pdb; pdb.set_trace()
         if modal_collide: return
         if len(self._modals) == 0: 
             menu_collide = False
@@ -4056,7 +4058,7 @@ class Game(metaclass=use_on_events):
         """ Add allowable commandline arguments """
         self.parser.add_argument("-a", "--alloweditor", action="store_true", dest="allow_editor", help="Enable editor via F1 key")
 #        self.parser.add_argument("-b", "--blank", action="store_true", dest="force_editor", help="smart load the game but enter the editor")
-        self.parser.add_argument("-B", "--build", action="store_true", dest="build", help="Force smart load to rebuild fast load files", default=False)        
+        self.parser.add_argument("-B", "--build", action="store_true", dest="build", help="Force smart load to rebuild fast load files based on walkthrough", default=False)        
         self.parser.add_argument("-c", "--contrast", action="store_true", dest="high_contrast", help="Play game in high contrast mode (for vision impaired players)", default=False)
         self.parser.add_argument("-d", "--detailed <scene>", dest="analyse_scene", help="Print lots of info about one scene (best used with test runner)")
         self.parser.add_argument("-e", "--exceptions", action="store_true", dest="allow_exceptions", help="Switch off exception catching.")
@@ -4408,16 +4410,17 @@ class Game(metaclass=use_on_events):
                 save_game(self, "saves/{}.save".format(self._walkthrough_target_name))
 #            self.player.says(gettext("Let's play."))
             return
+        human_readable_name = None #if this walkthrough has a human readable name, we might be wanting to create an autosave here.
         s = "Walkthrough:",list(walkthrough)
         log.info(s)
-#        print(s)
-#        print("AUTO WALKTHROUGH", walkthrough)
-        #If this walkthrough step has the optional human-readable name, and exit flag is set, create a savegame for the label.
-#        if self.exit_step and function_name in ["interact", "location", "goto", "description"] and len(walkthrough)==3: 
-#            save_game(self, "saves/{}.save".format(walkthrough[-1]))
+
+        #if there is an optional human readable tag for this step, store it.
+        if function_name in ["interact", "goto", "location", "description"]:
+            if len(walkthrough) ==  3: human_readable_name = walkthrough[-1]
+        elif function_name in ["use"]:
+            if len(walkthrough) ==  4: human_readable_name = walkthrough[-1]
 
         if function_name == "interact":
-#            print("trigger interact", self._walkthrough_target, self._walkthrough_index, walkthrough[1])
             button = pyglet.window.mouse.LEFT
             modifiers = 0
             #check modals and menu first for text options
@@ -4441,7 +4444,6 @@ class Game(metaclass=use_on_events):
                 self.player.x, self.player.y = obj.x + obj.sx, obj.y + obj.sy
             x, y = obj.clickable_area.center
             user_trigger_interact(self, obj)
-#                self._window.dispatch_event('on_mouse_release', x, self.resolution[1] - y, button, modifiers)
         elif function_name == "use":
             obj = get_object(self, walkthrough[2])
             subject = get_object(self, walkthrough[1])
@@ -4463,7 +4465,6 @@ class Game(metaclass=use_on_events):
                     if logging: log.error("Unable to get player from scene %s to scene %s"%(self.scene.name, obj.name))
             else:
                 if logging: log.error("Going from no scene to scene %s"%obj.name)
-            return
         elif function_name == "description":
             pass
         elif function_name == "location":
@@ -4472,7 +4473,8 @@ class Game(metaclass=use_on_events):
                 log.error("Unable to find scene %s"%walkthrough[1])
             elif self.scene != scene:
                 log.error("Location check: Should be on scene {}, instead camera is on {}".format(scene.name, self.scene.name))
-            
+        if human_readable_name:
+            save_game(self, "saves/{}.save".format(human_readable_name))
 
     def _handle_events(self):
         """ Handle game events """
@@ -4685,6 +4687,11 @@ class Game(metaclass=use_on_events):
     def add_font(self, filename, fontname):
         font = get_font(self, filename, fontname)
         _pyglet_fonts[filename] = fontname 
+
+    def add_modal(self, modal):
+        """ An an Item to the modals, making sure it is in the game.items collection """
+        self._modals.append(modal)
+        self._add(modal)
 
     def set_interact(self, actor, fn): #game.set_interact
         """ helper function for setting interact on an actor """
