@@ -1077,7 +1077,6 @@ class Actor(object, metaclass=use_on_events):
         """ Prepare the object for pickling """
         for fn_name in ["_interact", "_look", "_drag", "_mouse_motion", "_mouse_none", "_collection_select"]:
             fn = getattr(self, fn_name)
-#            if getattr(fn, "__name__", None) == "close_on_says": import pdb; pdb.set_trace()         
             if hasattr(fn, "__name__"): setattr(self, fn_name, fn.__name__)       
         if self._sprite: self._sprite.delete()
         self._sprite = None #gets reloaded when needed
@@ -1846,11 +1845,12 @@ class Actor(object, metaclass=use_on_events):
             opt._mouse_motion = _mouse_motion
             opt.response_callback = callback
             self.game.add(opt)
-            self.game._modals.append(opt)
+            self.game._modals.append(opt.name)
 
     def _close_on_says(game, obj, player):
+        print("IS THIS EVEN USED? PERHAPS in 'on_continues'")
         import pdb; pdb.set_trace()
-        self.game._modals.remove(label)
+        self.game._modals.remove(label.name)
         self.busy -= 1
         if logging: log.info("%s has finished on_says (%s), so decrement self.busy to %i."%(self.name, text, self.busy))
 
@@ -1864,7 +1864,7 @@ class Actor(object, metaclass=use_on_events):
         import pdb; pdb.set_trace()
         label.interact = _close_on_says
         self.busy += 1
-        self.game._modals.append(label)
+        self.game._modals.append(label.name)
 
 
     def on_says(self, text, *args, **kwargs):
@@ -1946,16 +1946,17 @@ class Actor(object, metaclass=use_on_events):
         msgbox.busy += 1
 
         def close_on_says(game, obj, player):
-            if ok: self.game._modals.remove(ok)
-            if portrait: self.game._modals.remove(portrait)
-            self.game._modals.remove(label)
-            self.game._modals.remove(msgbox)
+            if ok: self.game._modals.remove(ok.name)
+            if portrait: self.game._modals.remove(portrait.name)
+            self.game._modals.remove(label.name)
+            self.game._modals.remove(msgbox.name)
             self.busy -= 1
             if logging: log.info("%s has finished on_says (%s), so decrement self.busy to %i."%(self.name, text, self.busy))
 
         for obj in items:
             obj.interact = close_on_says
-        self.game._modals.extend(items)
+            self.game.add_modal(obj)
+#        self.game._modals.extend([x.name for x in items])
         return items
 
     def _forget(self, fact):
@@ -3535,10 +3536,9 @@ def save_game_pickle(game, fname):
             pickle.dump(objects, f)
             for o in objects.values(): #restore game object and editables that were cleansed for pickle
                 o.game = game
-                if hasattr(o, "collide") and type(o.collide) == str: 
-                    import pdb; pdb.set_trace()
-                    o.collide = get_function(game, o.collide)
-
+                for fn_name in ["_mouse_motion", "_mouse_none", "_collection_select", "collide"]:
+#                for fn_name in ["_interact", "_look", "_drag", "_mouse_motion", "_mouse_none", "_collection_select", "collide"]:
+                    if hasattr(o, fn_name) and type(getattr(o, fn_name)) == str: setattr(o, fn_name, get_function(game, fn_name))
                 if hasattr(o, "create_label"): o.create_label()
                 if hasattr(o, "set_editable"): o.set_editable()
 
@@ -3641,7 +3641,6 @@ class Game(metaclass=use_on_events):
         self.menu = MenuManager(self) #the menu manager object
         self._menu_factories = {}
 
-
         self.directory_portals = DIRECTORY_PORTALS
         self.directory_items = DIRECTORY_ITEMS
         self.directory_scenes = DIRECTORY_SCENES
@@ -3662,9 +3661,10 @@ class Game(metaclass=use_on_events):
 
         self._actors = {}
         self._items = {}
-        self._modals = []
+        self._modals = [] #list of object names
         self._menu = []
         self._menus = [] #a stack of menus 
+        self._menu_modal = False #is this menu blocking game events
         self._scenes = {}
         self._gui = []
         self.storage = Storage()
@@ -3876,7 +3876,8 @@ class Game(metaclass=use_on_events):
 
         if not self.scene: return
         modal_collide = False
-        for obj in self._modals:
+        for name in self._modals:
+            obj = get_object(self, name)
             try:
                 if obj.collide(ox,oy): #absolute screen values
                     self.mouse_cursor = MOUSE_CROSSHAIR
@@ -3902,6 +3903,9 @@ class Game(metaclass=use_on_events):
                         if "idle" in obj._actions: 
                             obj._do('idle')
                 if menu_collide: return
+
+            if len(self._menu)>0 and self._menu_modal: return #menu is in modal mode so block other objects
+
             for obj_name in self.scene._objects:
                 obj = get_object(self, obj_name) 
                 if not obj.allow_draw: continue
@@ -3967,7 +3971,8 @@ class Game(metaclass=use_on_events):
         y = self.game.resolution[1] - y #invert y-axis if needed
         ay = self.game.resolution[1] - ay
 
-        for obj in self._modals: #modals are absolute (they aren't displaced by camera)
+        for name in self._modals: #modals are absolute (they aren't displaced by camera)
+            obj = get_object(self, name)
             if obj.collide(ax, ay):
                 user_trigger_interact(self, obj)
                 return
@@ -3979,6 +3984,8 @@ class Game(metaclass=use_on_events):
             if obj.collide(ax, ay):
                 user_trigger_interact(self, obj)
                 return
+
+        if len(self._menu)>0 and self._menu_modal: return #menu is in modal mode so block other objects
 
         #finally, try scene objects
         for obj_name in self.scene._objects:
@@ -4425,7 +4432,8 @@ class Game(metaclass=use_on_events):
             modifiers = 0
             #check modals and menu first for text options
             obj = None
-            for o in self._modals:
+            for name in self._modals:
+                o = get_object(self, name)
                 if o.display_text == walkthrough[1]: obj = o
             if not obj:
                 for o in self._menu:
@@ -4438,7 +4446,7 @@ class Game(metaclass=use_on_events):
                 self._headless = False
                 return
             #if not in same scene as camera, and not in modals or menu, log the error
-            if self.scene and self.scene != obj.scene and obj not in self._modals and obj not in self._menu:
+            if self.scene and self.scene != obj.scene and obj.name not in self._modals and obj not in self._menu:
                 log.error("{} not in scene {}, it's on {}".format(walkthrough[1], self.scene.name, obj.scene.name if obj.scene else "no scene"))
             if self.player: 
                 self.player.x, self.player.y = obj.x + obj.sx, obj.y + obj.sy
@@ -4543,10 +4551,16 @@ class Game(metaclass=use_on_events):
             for obj_name in self.scene._objects:
                 scene_objects.append(get_object(self, obj_name))
 
+        modal_objects = []
+        if self._modals:
+            for obj_name in self._modals:
+                modal_objects.append(get_object(self, obj_name))
+
+
         layer_objects = self.scene._layer if self.scene else []
 
         #update all the objects in the scene or the event queue.
-        items_list = [layer_objects, scene_objects, self._menu, self._modals, [self.camera], [obj[1][0] for obj in self._events]]
+        items_list = [layer_objects, scene_objects, self._menu, modal_objects, [self.camera], [obj[1][0] for obj in self._events]]
         items_to_update = []
         for items in items_list:
             for item in items: #_to_update:
@@ -4609,7 +4623,9 @@ class Game(metaclass=use_on_events):
             item.game = self
             item.pyglet_draw(absolute=True)
 
-        for modal in self._modals:
+        for name in self._modals:
+            modal = get_object(self, name)
+            if not modal: import pdb; pdb.set_trace()
             modal.game = self
             modal.pyglet_draw(absolute=True)
 
@@ -4690,8 +4706,12 @@ class Game(metaclass=use_on_events):
 
     def add_modal(self, modal):
         """ An an Item to the modals, making sure it is in the game.items collection """
-        self._modals.append(modal)
+        self._modals.append(modal.name)
         self._add(modal)
+
+    def on_menu_modal(self, modal=True):
+        """ Set if the menu is currently in modal mode (ie non-menu events are blocked """
+        self._menu_modal = modal
 
     def set_interact(self, actor, fn): #game.set_interact
         """ helper function for setting interact on an actor """
