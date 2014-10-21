@@ -501,7 +501,7 @@ class answer(object):
 #The callback functions for Options in an on_ask event.
 def option_mouse_none(game, btn, player,*args, **kwargs2):
     """ When not hovering over this option """
-    r,g,b = kwargs["colour"]
+    r,g,b = btn.colour #kwargs["colour"]
     btn._label.color = (r,g,b, 255)
 
 def option_mouse_motion(game, btn, player, *args, **kwargs2):
@@ -1865,6 +1865,7 @@ class Actor(object, metaclass=use_on_events):
             opt = Text("option{}".format(i), display_text=text, **kwargs)
             opt.x, opt.y = label.x + 10, label.y + label.h + i*opt.h + 5
             opt.creator = self #store this Actor so the callback can modify it.
+            opt.colour = kwargs["colour"] #store the colour so we can undo it after hover
             opt.interact = option_answer_callback
             opt._mouse_none = option_mouse_none
             opt._mouse_motion = option_mouse_motion
