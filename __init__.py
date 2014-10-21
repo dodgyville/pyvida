@@ -110,6 +110,11 @@ MOUSE_LEFT = 2
 MOUSE_RIGHT = 3
 MOUSE_EYES = 4
 
+#COLLIDE TYPES
+COLLIDE_CLICKABLE = 0 #use the clickable area as the collision boundaries
+COLLIDE_NEVER = 1 #never collide (used by on_asks)
+#COLLIDE_ALWAYS = 2 #always collide (potentially used by modals)
+
 #MOTION TYPES
 MOTION_LOOP = 0
 MOTION_ONCE = 1
@@ -325,6 +330,8 @@ def location(): pass #stub #XXX deprecated
 
 def description(): pass #used by walkthrough output
 
+def savepoint(): pass #define a savepoint in the walkthrough
+
 scene_path = []
 def scene_search(game, scene, target): #are scenes connected via portals?
     global scene_path
@@ -491,6 +498,24 @@ class answer(object):
         return (self.opt, answer_callback)
 
 
+#The callback functions for Options in an on_ask event.
+def option_mouse_none(game, btn, player,*args, **kwargs2):
+    """ When not hovering over this option """
+    r,g,b = kwargs["colour"]
+    btn._label.color = (r,g,b, 255)
+
+def option_mouse_motion(game, btn, player, *args, **kwargs2):
+    """ When hovering over this answer """
+    btn._label.color = (255,255,255,255)
+    
+def option_answer_callback(game, btn, player):
+    """ Called when the option is selected """
+    btn.creator.busy -= 1 #no longer busy, so game can stop waiting
+    if logging: log.info("%s has finished on_asks by selecting %s, so decrement self.busy to %s."%(btn.creator.name, btn.display_text, btn.creator.busy))
+    game._remove(game._modals) #remove modals from game (mostly so we don't have to pickle the knotty little bastard custom callbacks!)
+    game._modals = [] #empty modals
+    if btn.response_callback: btn.response_callback(game, btn, player)
+
 def get_smart_directory(game, obj):
     """
     Given an pyvida object, return the smartest parent directory for it.
@@ -511,12 +536,17 @@ def get_smart_directory(game, obj):
         d = game.directory_scenes
     return d
 
-def get_function(game, basic):
+def get_function(game, basic, obj=None):
     """ 
         Search memory for a function that matches this name 
         Also search any modules in game._modules (eg used when cProfile has taken control of __main__ )
+        If obj provided then also search that object
     """
     if hasattr(basic, "__call__"): basic = basic.__name__
+    if obj:
+        fn = getattr(obj, basic, None)
+        if fn and hasattr(fn, "__name__"): return fn
+
     script = None
     module = "main" if android else "__main__" #which module to search for functions
     extra_modules = game._modules if __name__ == "pyvida" and game else {}
@@ -990,10 +1020,6 @@ Classes
 """
 
 
-def collide_never(x,y): #for asks, most modals can't be clicked, only the txt modelitam options can.
-    #Helper callback for modals used during on_ask events
-    return False
-
 class Actor(object, metaclass=use_on_events):
     def __init__(self, name, interact=None, display_text=None, look=None, drag=None):
         super().__init__()
@@ -1049,6 +1075,7 @@ class Actor(object, metaclass=use_on_events):
         self._allow_look = True
         self._editing = None #what attribute of this Actor are we editing
         self._editing_save = True #allow saving via the editor
+        self.collide_mode = COLLIDE_CLICKABLE #how the collide method for this Actor functions
         self._tk_edit = {} #used by tk editor
 
         self.show_debug = False 
@@ -1075,6 +1102,8 @@ class Actor(object, metaclass=use_on_events):
 
     def __getstate__(self):
         """ Prepare the object for pickling """
+
+        #functions that are probably on the object so search them first.
         for fn_name in ["_interact", "_look", "_drag", "_mouse_motion", "_mouse_none", "_collection_select"]:
             fn = getattr(self, fn_name)
             if hasattr(fn, "__name__"): setattr(self, fn_name, fn.__name__)       
@@ -1091,8 +1120,12 @@ class Actor(object, metaclass=use_on_events):
 
         for k, v in self.__dict__.items():
             if callable(v):
-                print("textifying ",k,v,"on",self.name)
+#                print("textifying ",k,v,"on",self.name)
                 self.__dict__[k] = v.__name__
+                if not get_function(self.game, v.__name__, self):
+                    vv = v
+                    print("*******UNABLE TO FIND function",v.__name__,"for",k,"on",self.name)
+                    import pdb; pdb.set_trace()
 
         return self.__dict__
 
@@ -1426,6 +1459,10 @@ class Actor(object, metaclass=use_on_events):
         """ collide with actor's clickable 
             if image is true, ignore clickable and collide with image.
         """
+        if self.collide_mode == COLLIDE_NEVER:
+             #for asks, most modals can't be clicked, only the txt modelitam options can.
+             return False
+
         if self._parent:
             x = x - self._parent.x
             y = y - self._parent.y
@@ -1809,7 +1846,7 @@ class Actor(object, metaclass=use_on_events):
         label = None
         for item in items:
             if isinstance(item, Text): label=item
-            item.collide = collide_never
+            item.collide_mode == COLLIDE_NEVER
         #add the options
         for i, option in enumerate(args):
             text, callback = option
@@ -1827,32 +1864,13 @@ class Actor(object, metaclass=use_on_events):
 #            kwargs["over"] = over_option
             opt = Text("option{}".format(i), display_text=text, **kwargs)
             opt.x, opt.y = label.x + 10, label.y + label.h + i*opt.h + 5
-            def _mouse_none(game, btn, player,*args, **kwargs2):
-                r,g,b = kwargs["colour"]
-                btn._label.color = (r,g,b, 255)
-
-            def _mouse_motion(game, btn, player, *args, **kwargs2):
-                btn._label.color = (255,255,255,255)
-                
-            def answer_callback(game, btn, player):
-                self.busy -= 1 #no longer busy, so game can stop waiting
-                if logging: log.info("%s has finished on_asks by selecting %s, so decrement self.busy to %s."%(self.name, btn.display_text, self.busy))
-                self.game._modals = [] #empty modals
-#                print("ANSWER CALLBACK",i,btn.response_callback)
-                if btn.response_callback: btn.response_callback(game, btn, player)
-            opt.interact = answer_callback
-            opt._mouse_none = _mouse_none
-            opt._mouse_motion = _mouse_motion
+            opt.creator = self #store this Actor so the callback can modify it.
+            opt.interact = option_answer_callback
+            opt._mouse_none = option_mouse_none
+            opt._mouse_motion = option_mouse_motion
             opt.response_callback = callback
-            self.game.add(opt)
+            self.game._add(opt)
             self.game._modals.append(opt.name)
-
-    def _close_on_says(game, obj, player):
-        print("IS THIS EVEN USED? PERHAPS in 'on_continues'")
-        import pdb; pdb.set_trace()
-        self.game._modals.remove(label.name)
-        self.busy -= 1
-        if logging: log.info("%s has finished on_says (%s), so decrement self.busy to %i."%(self.name, text, self.busy))
 
 
     def on_continues(self, text, delay=0.01, step=3):
@@ -1861,7 +1879,13 @@ class Actor(object, metaclass=use_on_events):
         label.game = self.game
         label.fullscreen(True)
         label.x,label.y = self.x + self.tx, self.y - self.ty
-        import pdb; pdb.set_trace()
+        def _close_on_says(game, obj, player):
+            print("IS THIS EVEN USED? PERHAPS in 'on_continues'")
+            import pdb; pdb.set_trace()
+            self.game._modals.remove(label.name)
+            self.busy -= 1
+            if logging: log.info("%s has finished on_says (%s), so decrement self.busy to %i."%(self.name, text, self.busy))
+
         label.interact = _close_on_says
         self.busy += 1
         self.game._modals.append(label.name)
@@ -2364,7 +2388,6 @@ class Portal(Actor, metaclass=use_on_events):
         log.warning("Actor {} arriving via portal {}".format(actor.name, self.name))
         actor.relocate(self.scene, (self.x + self.ox, self.y + self.oy)) #moves player here
         actor.goto((self.x + self.sx, self.y + self.sy), ignore=True, block=block) #walk into scene        
-        if self.name == "astatues_to_pbridge": import pdb; pdb.set_trace()
         self._post_arrive(self, actor)   
 
     def travel(self, actor=None, block=True):
@@ -2823,7 +2846,6 @@ class Text(Item):
 
 
     def __getstate__(self):
-        print("UNLOADING",self.name)
         self.__dict__ = super().__getstate__()
         self._label = None
         self._label_offset = None
@@ -3536,9 +3558,18 @@ def save_game_pickle(game, fname):
             pickle.dump(objects, f)
             for o in objects.values(): #restore game object and editables that were cleansed for pickle
                 o.game = game
-                for fn_name in ["_mouse_motion", "_mouse_none", "_collection_select", "collide"]:
+#                for fn_name in ["_mouse_motion", "_mouse_none", "_collection_select"]:
 #                for fn_name in ["_interact", "_look", "_drag", "_mouse_motion", "_mouse_none", "_collection_select", "collide"]:
-                    if hasattr(o, fn_name) and type(getattr(o, fn_name)) == str: setattr(o, fn_name, get_function(game, fn_name))
+#                    if hasattr(o, fn_name) and type(getattr(o, fn_name)) == str: setattr(o, fn_name, get_function(game, fn_name))
+                    #restore textified methods
+                for k, v in o.__dict__.items():
+                    #assume string is a function name. Slightly dangerous. TODO check if text values clash with reserved functions
+                    #Also, some variables are strings that may clash with methods (eg Actor._idle is always a string) so ignore  
+                    if type(v) == str and hasattr(o, v) and k not in ["_idle", "_action"]: 
+                        fn =  get_function(game, v, o)
+#                        print("untextifying the variable",k,"looking for function named",v,"for",o.name,"... found" if fn else "... NOT FOUND")
+                        o.__dict__[k] = fn
+
                 if hasattr(o, "create_label"): o.create_label()
                 if hasattr(o, "set_editable"): o.set_editable()
 
@@ -4421,13 +4452,15 @@ class Game(metaclass=use_on_events):
         s = "Walkthrough:",list(walkthrough)
         log.info(s)
 
+        #XXX disabled optional tag names for steps, savepoints MUST use savepoint function
         #if there is an optional human readable tag for this step, store it.
-        if function_name in ["interact", "goto", "location", "description"]:
-            if len(walkthrough) ==  3: human_readable_name = walkthrough[-1]
-        elif function_name in ["use"]:
-            if len(walkthrough) ==  4: human_readable_name = walkthrough[-1]
-
-        if function_name == "interact":
+#        if function_name in ["interact", "goto", "location", "description"]:
+#            if len(walkthrough) ==  3: human_readable_name = walkthrough[-1]
+#        elif function_name in ["use"]:
+#            if len(walkthrough) ==  4: human_readable_name = walkthrough[-1]
+        if function_name == "savepoint":
+            human_readable_name = walkthrough[-1]
+        elif function_name == "interact":
             button = pyglet.window.mouse.LEFT
             modifiers = 0
             #check modals and menu first for text options
@@ -4644,6 +4677,23 @@ class Game(metaclass=use_on_events):
             d = os.path.join(self.directory_screencast, "%s.png"%now)
             pyglet.image.get_buffer_manager().get_color_buffer().save(d)
 
+    def _remove(self, objects): #game.remove
+        """ Removes objects from the game's storage (it may still exist in other lists, etc) """
+        objects_iterable = [objects] if not isinstance(objects, Iterable) else objects
+        for obj in objects_iterable:
+            name = obj if type(obj) == str else obj.name
+            if name in self._actors.keys():
+                 self._actors.pop(name)
+            elif name in self._items.keys():
+                 self._items.pop(name)
+            elif name in self._scenes.keys():
+                 self._scenes.pop(name)
+            else:
+                print("Unable to find",name,"in game")
+        
+    def remove(self, objects): #game.remove (not an event driven function)
+        return self._remove(objects)
+  
 
     def _add(self, objects, replace=False): #game.add
         objects_iterable = [objects] if not isinstance(objects, Iterable) else objects
