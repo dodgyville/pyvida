@@ -8,7 +8,7 @@ from datetime import datetime
 from gettext import gettext
 from random import choice, randint
 import tkinter as tk
-import tkinter.filedialog, tkinter.simpledialog
+import tkinter.filedialog, tkinter.simpledialog, tkinter.messagebox
 import threading, traceback
 #import dill as pickle
 import pickle
@@ -1659,6 +1659,7 @@ class Actor(object, metaclass=use_on_events):
         Most of the information is derived from the file structure.
         
         If no <image>, smart will load all .PNG files in data/actors/<Actor Name> as actions available for this actor.
+        If there is <image>, use that file to create an action
 
         If there is an <image>, create an idle action for that.
         
@@ -5024,13 +5025,19 @@ class SelectDialog(tk.simpledialog.Dialog):
 class SceneSelectDialog(SelectDialog):
     def __init__(self, game, title, *args, **kwargs):
         objects = game._scenes.values()
-        super().__init__(game, title, objects)
+        super().__init__(game, title, objects, *args, **kwargs)
 
+class SceneOptionMenu(tk.OptionMenu):
+    def __init__(self, group, tkvalue, *args, **kwargs):
+        self._group = group
+        self._tkvalue = tkvalue
+        super().__init__(group, tkvalue, *args, **kwargs)
+    pass
 
 class ObjectSelectDialog(SelectDialog):
     def __init__(self, game, title, *args, **kwargs):
         objects = list(game._actors.values()) + list(game._items.values())
-        super().__init__(game, title, objects)
+        super().__init__(game, title, objects, *args, **kwargs)
 
 
 class MyTkApp(threading.Thread):
@@ -5053,11 +5060,12 @@ class MyTkApp(threading.Thread):
         group = tk.LabelFrame(self.app, text="Navigator", padx=5, pady=5)
         group.grid(padx=10, pady=10)
 
-        scene = tk.StringVar(group)
+        self._scene = tk.StringVar(group)
         def change_scene(*args, **kwargs):
+            sname = args[0]
             if self.game._editing and self.game._editing.show_debug:
                 self.game._editing.show_debug = False
-            new_scene = self.game._scenes[scene.get()]
+            new_scene = get_object(self.game, sname)
             self.app.objects = objects = new_scene._objects
             self.game.camera._scene(new_scene)
             self.index = 0
@@ -5065,10 +5073,22 @@ class MyTkApp(threading.Thread):
                 self.game._editing = get_object(self.game, objects[self.index])
                 self.game._editing.show_debug = True
             self.game.player.relocate(new_scene)
+
+        def refresh(selector):
+            objects = self.game._scenes.values()
+            menu = selector["menu"]
+            menu.delete(0, "end")
+            scenes = [x.name for x in self.game._scenes.values()]
+            scenes.sort()
+            for value in scenes:
+                menu.add_command(label=value, command=tk._setit(self._scene, value, change_scene))
+
+
         tk.Label(group, text="Current scene:").grid(column=0, row=row)
         scenes = [x.name for x in self.game._scenes.values()]
         scenes.sort()
-        option = tk.OptionMenu(group, scene, *scenes, command=change_scene).grid(column=1,row=row)
+        self._sceneselect = SceneOptionMenu(group, self._scene, *scenes, command=change_scene)
+        self._sceneselect.grid(column=1,row=row)
 
 #        actors = [x.name for x in self.game._actors.values()]
 #        actors.sort()
@@ -5090,6 +5110,12 @@ class MyTkApp(threading.Thread):
             d = ObjectSelectDialog(self.game, "Add to scene")
             if not d: return
             obj = get_object(self.game, d.result)
+            if not obj:
+                tk.messagebox.showwarning(
+                    "Add Object",
+                    "Unable to find %s in list of game objects"%d.result,
+                )
+
             self.game.scene._add(obj)
             _set_edit_object(obj)
         def new_actor():
@@ -5106,21 +5132,44 @@ class MyTkApp(threading.Thread):
             name = "{}_to_{}".format(self.game.scene.name, d.result)
             _new_object(Portal(name))
             self.obj.guess_link()
+        def import_object():
+            fname = tk.filedialog.askdirectory(initialdir="./data/scenes/mship",title='Please select a directory containing an Actor, Item or Scene')
+
+            name = os.path.basename(fname)
+            for obj_cls in [Actor, Item, Emitter, Portal, Scene]:
+                dname = "directory_%ss"%obj_cls.__name__.lower()
+                if getattr(self.game, dname) in fname:  #guess the class
+                    o = obj_cls(name)
+                    self.game._add(o)
+                    o.smart(self.game)
+                    refresh(self._sceneselect)
+                    tk.messagebox.showwarning(
+                        "Import Object",
+                        "Imported %s as new %s"%(name, obj_cls.__name__.lower()),
+                    )
+                    return
+            tk.messagebox.showwarning(
+                "Import Object",
+                "Cannot guess the type of object (is it stored in data/actors data/items data/scenes?)"
+            )
+
 
         self.add_object = tk.Button(group, text='Add Object', command=add_object).grid(column=2, row=row)
 
         self.new_actor = tk.Button(group, text='New Actor', command=new_actor).grid(column=3, row=row)
         self.new_item = tk.Button(group, text='New Item', command=new_item).grid(column=4, row=row)
         self.new_portal = tk.Button(group, text='New Portal', command=new_portal).grid(column=5, row=row)
+        self.import_object = tk.Button(group, text='Import Object', command=import_object).grid(column=6, row=row)
 
         menu_item = tk.StringVar(group)
         def edit_menu_item(*args, **kwargs):
             mitem = get_object(self.game, menu_item.get())
             edit_object_script(self.game, mitem)
-        tk.Label(group, text="Edit menu item:").grid(column=6, row=row)
+        row += 1
+        tk.Label(group, text="Edit menu item:").grid(column=1, row=row)
         menu = [x.name for x in self.game._menu]
         menu.sort()
-        option = tk.OptionMenu(group, menu_item, *menu, command=edit_menu_item).grid(column=7,row=row)
+        option = tk.OptionMenu(group, menu_item, *menu, command=edit_menu_item).grid(column=2,row=row)
 
 
         row += 1
