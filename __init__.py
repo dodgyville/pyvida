@@ -121,6 +121,10 @@ MOTION_ONCE = 1
 MOTION_PINGPONG = 2
 MOTION_REVERSE = 3
 
+#EMITTER BEHAVIOURS
+BEHAVIOUR_CYCLE = 0 #continiously on
+BEHAVIOUR_FIRE = 1 #spawn one batch of particles then stop
+
 #WALKTHROUGH EXTRAS KEYWORDS
 LABEL = "label"
 HINT = "hint"
@@ -2424,9 +2428,9 @@ class Particle(object):
         self.hidden = True #hide for first run
         self.terminate = False #don't renew this particle if True
 
-class Emitter(Item):
+class Emitter(Item, metaclass=use_on_events):
 #    def __init__(self, name, *args, **kwargs):
-    def __init__(self, name, number=10, frames=10, direction=0, fov=0, speed=1, acceleration=(0,0), size_start=1, size_end=1, alpha_start=1.0, alpha_end=0,random_index=0):
+    def __init__(self, name, number=10, frames=10, direction=0, fov=0, speed=1, acceleration=(0,0), size_start=1, size_end=1, alpha_start=1.0, alpha_end=0,random_index=0, behaviour=BEHAVIOUR_CYCLE):
         """ This object's clickable_mask|clickable_area is used for spawning """
         super().__init__(name)
         self.name = name
@@ -2441,6 +2445,7 @@ class Emitter(Item):
         self.alpha_start, self.alpha_end = alpha_start, alpha_end
         self.random_index = random_index #should each particle start mid-action?
         self.particles = []
+        self._behaviour = behaviour
         self._editable.append(("emitter area", "solid_area", "_solid_area", Rect),)
 
         #self._solid_area = Rect(0,0,0,0) #used for the spawn area        
@@ -2527,16 +2532,29 @@ class Emitter(Item):
         if self.show_debug:
             self.debug_pyglet_draw(absolute=absolute)
 
+    def on_fire(self):
+        """ Run the emitter for one cycle and then disable but leave the batch particles to complete their cycle """
+        self._behaviour = BEHAVIOUR_FIRE
+        self._add_particles(self.number, terminate=True)
+
+    def on_on(self):
+        """ switch emitter on permanently (default) """
+        self._behaviour = BEHAVIOUR_CYCLE
+        self._reset()
+
+    def on_off(self):
+        """ switch emitter off  """
+        self._behaviour = BEHAVIOUR_FIRE
+        self._reset()
 
     def on_reanchor(self, pt):
         """ queue event for changing the anchor points """
         self._ax, self._ay = pt[0], pt[1]
         for p in self.particles:
             p.ax, p.ay = self._ax, self._ay
-        self._event_finish(block=False)
 
 
-    def _add_particles(self, num=1):
+    def _add_particles(self, num=1, terminate=False):
         for x in range(0,num):
             d = randint(self.direction-float(self.fov/2), self.direction+float(self.fov/2))
             self.particles.append(Particle(self.x + randint(0, self._solid_area.w), self.y + randint(0, self._solid_area.h), self._ax, self._ay, self.speed, d))
@@ -2547,28 +2565,26 @@ class Emitter(Item):
             for j in range(0, self.frames): #fast forward particle to mid position
                 self._update_particle(0, p)
             p.hidden = True
+            p.terminate = terminate
 
     def on_add_particles(self, num):
         self._add_particles(num=num)
-        self._event_finish(block=False)
     
     def on_limit_particles(self, num):
         """ restrict the number of particles to num through attrition """
         for p in self.particles[num:]:
             p.terminate = True
-        self._event_finish(block=False)
         
     
     def _reset(self):
         """ rebuild emitter """
         self.particles = []
-        self._add_particles(self.number)
+        if self._behaviour == BEHAVIOUR_CYCLE:
+            self._add_particles(self.number)
     
     def on_reset(self):
-        self._reset()
-        self._event_finish(block=False)
-    
-        
+        self._reset()  
+       
 
 class WalkareaManager(object):
     """ Comptability layer with pyvida4 walkareas """
@@ -3508,6 +3524,8 @@ def advance_help_index(game):
 
 def user_trigger_interact(game, obj):
     obj.trigger_interact()
+    game.event_count += 1
+    if game.event_callback: game.event_callback(game)
     function_name = game._walkthrough[game._help_index][0].__name__ 
     if game._walkthrough and function_name == "interact":
         advance_help_index(game)
@@ -3515,10 +3533,13 @@ def user_trigger_interact(game, obj):
 def user_trigger_use(game, subject, obj):
     """ use obj on subject """
     subject.trigger_use(obj)
+    game.event_count += 1
+    if game.event_callback: game.event_callback(game)
 
 def user_trigger_look(game, obj):
     obj.trigger_look()
-
+    game.event_count += 1
+    if game.event_callback: game.event_callback(game)
 
 """
 Game class
@@ -3732,6 +3753,8 @@ class Game(metaclass=use_on_events):
         self._event = None
         self._event_index = 0
         self._drag = None #is mouse dragging an object
+        self.event_count = 0 #how many events has the player triggered in this game (useful for some game logic)
+        self.event_callback = None #function to call after each event (useful for some game logic)
 
         self._selected_options = [] #keep track of convo trees
         self.visited = [] #list of scene names visited
@@ -4056,15 +4079,12 @@ class Game(metaclass=use_on_events):
                 y -= dy
                 self._editing_point_set[0](x)
                 self._editing_point_set[1](y)
-                try:
-                    if self._editing_label in self._editing._tk_edit: 
-                        self._editing._tk_edit[self._editing_label][0].delete(0, 100)
-                        self._editing._tk_edit[self._editing_label][0].insert(0, x)
+                if self._editing_label in self._editing._tk_edit: 
+                    self._editing._tk_edit[self._editing_label][0].delete(0, 100)
+                    self._editing._tk_edit[self._editing_label][0].insert(0, x)
 
-                        self._editing._tk_edit[self._editing_label][1].delete(0, 100)
-                        self._editing._tk_edit[self._editing_label][1].insert(0, y)
-                except:
-                    import pdb; pdb.set_trace()
+                    self._editing._tk_edit[self._editing_label][1].delete(0, 100)
+                    self._editing._tk_edit[self._editing_label][1].insert(0, y)
 #                if self._editing_point_set[0] == self._editing.set_x: #set x, so use raw
 #                else: #displace the point by the object's x,y so the point is relative to the obj
 #                    self._editing_point_set[0](x - self._editing.x)
@@ -4822,6 +4842,7 @@ class Game(metaclass=use_on_events):
                         em = str(obj.summary)
                         f.write("    em = %s\n"%em)
                         f.write('    %s = Emitter(**em).smart(game)\n'%slug)
+                        f.write('    game.add(%s, replace=True)\n'%slug)
                     else:
                         f.write('    %s = game._%s["%s"]\n'%(slug, txt, name))
                     f.write('    %s.relocate(scene, (%i, %i))\n'%(slug, obj.x, obj.y))
@@ -5110,6 +5131,7 @@ class MyTkApp(threading.Thread):
             d = ObjectSelectDialog(self.game, "Add to scene")
             if not d: return
             obj = get_object(self.game, d.result)
+            if obj == None: return
             if not obj:
                 tk.messagebox.showwarning(
                     "Add Object",
@@ -5209,8 +5231,12 @@ class MyTkApp(threading.Thread):
                 state_name = os.path.splitext(os.path.basename(fname))[0]
                 print("STATE_NAME",state_name)
                 self.game.load_state(self.game.scene, state_name)
+        def initial_state(*args, **kwargs):
+            self.game.load_state(self.game.scene, "initial")
+
         self.state_save_button = tk.Button(group, text='save state', command=save_state).grid(column=0, row=row)
         self.state_load_button = tk.Button(group, text='load state', command=load_state).grid(column=1, row=row)
+        self.state_initial_button = tk.Button(group, text='initial state', command=initial_state).grid(column=2, row=row)
 
         row += 1
 
