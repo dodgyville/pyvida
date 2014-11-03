@@ -2911,7 +2911,8 @@ class Text(Item):
     def set_display_text(self, v):
         self._display_text = v
         if self.format_text: #this feels like one level of abstraction too far.
-            text = self.format_text(v)
+            fn = get_function(self.game, self.format_text, self) #if the previous line was too abstracted then this is ridiculous!
+            text = fn(v)
         else:
             text = v
         if self._label: self._label.text = text
@@ -3041,10 +3042,11 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
             obj._collection_select(self.game, obj, self)
         self.selected = obj
         if self.callback:
-            if not callable(self.callback):
-                print("Callback is not callable. Is function findable?")
-                import pdb; pdb.set_trace()
-            self.callback(self.game, self, self.game.player)
+            if callable(self.callback):
+                cb = self.callback
+            else:
+                cb = get_function(game, self.callback)
+            cb(self.game, self, self.game.player)
 
     def pyglet_draw(self, absolute=True): #collection.draw, by default uses screen values
         if self.game and self.game._headless: return
@@ -3985,7 +3987,9 @@ class Game(metaclass=use_on_events):
                 obj = get_object(self, obj_name) 
                 if not obj.allow_draw: continue
                 if obj.collide(x,y) and obj._mouse_motion: 
-                    if obj._mouse_motion: obj._mouse_motion(self.game, obj, self.game.player,x,y,dx,dy, ox,oy)
+                    if obj._mouse_motion: 
+                        fn = get_function(self, obj._mouse_motion, obj)
+                        fn(self.game, obj, self.game.player,x,y,dx,dy, ox,oy)
                 if obj.collide(x,y) and (obj.allow_interact or obj.allow_use or obj.allow_look):
                     t = obj.name if obj.display_text == None else obj.display_text
                     if isinstance(obj, Portal):
@@ -5204,7 +5208,7 @@ class MyTkApp(threading.Thread):
             edit_object_script(self.game, mitem)
         row += 1
         tk.Label(group, text="Edit menu item:").grid(column=1, row=row)
-        menu = [x.name for x in self.game._menu]
+        menu = [x.name for x in self.game._menu if type(x.name) == str]
         menu.sort()
         option = tk.OptionMenu(group, menu_item, *menu, command=edit_menu_item).grid(column=2,row=row)
 
