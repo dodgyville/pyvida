@@ -679,8 +679,6 @@ class Settings(object):
         self.language = "en"
 
 
-
-
     def save(self, save_dir):
         """ save the current game settings """
         if logging: log.debug("Saving settings to %s"%save_dir)
@@ -1106,7 +1104,6 @@ class Actor(object, metaclass=use_on_events):
 
     def __getstate__(self):
         """ Prepare the object for pickling """
-
         #functions that are probably on the object so search them first.
         for fn_name in ["_interact", "_look", "_drag", "_mouse_motion", "_mouse_none", "_collection_select"]:
             fn = getattr(self, fn_name)
@@ -1124,7 +1121,6 @@ class Actor(object, metaclass=use_on_events):
 
         for k, v in self.__dict__.items():
             if callable(v):
-#                print("textifying ",k,v,"on",self.name)
                 self.__dict__[k] = v.__name__
                 if not get_function(self.game, v.__name__, self):
                     vv = v
@@ -1807,9 +1803,11 @@ class Actor(object, metaclass=use_on_events):
         self._debugs.append(rectangle(self.game, self.solid_area, (255, 15, 30, 255), absolute=absolute))
 
     def on_animation_end(self):
+#        log.warning("This function seems to not do anything")
+        pass
 #        self.busy -= 1
-        if self._sprite._animation:
-            frame = self._sprite._animation.frames[self._sprite._frame_index]
+#        if self._sprite and self._sprite._animation:
+#            frame = self._sprite._animation.frames[self._sprite._frame_index]
 
     def on_animation_end_once(self):
         """ When an animation has been called once only """
@@ -1851,7 +1849,7 @@ class Actor(object, metaclass=use_on_events):
         label = None
         for item in items:
             if isinstance(item, Text): label=item
-            item.collide_mode == COLLIDE_NEVER
+            item.collide_mode = COLLIDE_NEVER
         #add the options
         for i, option in enumerate(args):
             text, callback = option
@@ -2316,6 +2314,12 @@ class Portal(Actor, metaclass=use_on_events):
         self.link = None #the connecting Portal
         self._editable.append(("out point", (self.get_ox, self.get_oy), (self.set_ox, self.set_oy),  (int, int)))
 
+#    def __getstate__(self):
+#        """ Prepare the object for pickling """
+#        self.__dict__ = super().__getstate__()
+#        if self.link.scene
+#        return self.__dict__
+
     def debug_pyglet_draw(self, absolute=False):
         super().debug_pyglet_draw(absolute=absolute)
         #outpoint - red
@@ -2480,7 +2484,7 @@ class Emitter(Item, metaclass=use_on_events):
         p.index +=  1
         p.action_index += 1
         if p.index >= self.frames: #reset
-            print("RESET PARTICLE", self.frames, p.index)
+#            print("RESET PARTICLE", self.frames, p.index)
             p.x, p.y = self.x+ randint(0, self._solid_area.w), self.y + randint(0, self._solid_area.h)
             p.index = 0
             p.hidden = False
@@ -2490,7 +2494,7 @@ class Emitter(Item, metaclass=use_on_events):
     def _update(self, dt, obj=None): #emitter.update
         Item._update(self, dt, obj=obj)
         for i,p in enumerate(self.particles):
-            print("PARTICLE",i,"LOCATION",p.x,p.y)
+            #print("PARTICLE",i,"LOCATION",p.x,p.y)
             self._update_particle(dt, p)
                     
     def pyglet_draw(self, absolute=False, force=False): #emitter.draw
@@ -2571,7 +2575,7 @@ class Emitter(Item, metaclass=use_on_events):
             if self.random_age:
                 p.index = randint(0, self.frames)
             if self.random_index and self.action:
-                p.action_index = randint(0, self.action.count)
+                p.action_index = randint(0, self.action.num_of_frames)
             if self.behaviour == BEHAVIOUR_CYCLE:
                 for j in range(0, self.frames): #fast forward particle through one full cycle so they are mid-stream when they start
                     self._update_particle(0, p)
@@ -3037,6 +3041,9 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
             obj._collection_select(self.game, obj, self)
         self.selected = obj
         if self.callback:
+            if not callable(self.callback):
+                print("Callback is not callable. Is function findable?")
+                import pdb; pdb.set_trace()
             self.callback(self.game, self, self.game.player)
 
     def pyglet_draw(self, absolute=True): #collection.draw, by default uses screen values
@@ -3632,6 +3639,7 @@ def load_game_pickle(game, fname, meta_only=False):
                 for o in objects:
                     o.game = game
                     if hasattr(o, "set_editable"): o.set_editable()
+#                    if hasattr(o, "link"): print("Portal",o.name," has scene",o.scene)
 
             #change camera to scene
             if player_info["player"]: game.player = get_object(game, player_info["player"])
@@ -4282,10 +4290,8 @@ class Game(metaclass=use_on_events):
             refresh = reload the defaults for this actor (but not images)
             use_quick_load = use a save file if available and/or write one after loading.
         """
-        print("SIZE OF EVENT QUEUE A",len(self._events))
         if use_quick_load:
             if os.path.exists(use_quick_load): 
-                print("LOADED FROM QUICK LOAD")
                 load_game(self, use_quick_load)
                 return
 
@@ -4343,9 +4349,8 @@ class Game(metaclass=use_on_events):
         print("SIZE OF EVENT QUEUE B",len(self._events))
 
         if use_quick_load: #save quick load file
-            print("SAVING QUICK LOAD")
-            save_game(self, use_quick_load)
-
+            print("SIZE OF EVENT QUEUE:",len(self._events),"QUEUE SAVEGAME")
+            self.save_game(use_quick_load) #use the on_save queuing method to allow all load_states to finish
 
     def check_modules(self):
         """ poll system to see if python files have changed """
@@ -4931,7 +4936,6 @@ class Game(metaclass=use_on_events):
 
     def on_load_game(self, fname):
         load_game(self, fname)
-
 
     def on_wait(self):
         """ Wait for all scripting events to finish """
