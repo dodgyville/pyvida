@@ -754,6 +754,7 @@ class Motion(object):
                 data = f.readlines() #first line is metadata (variable names and default)
                 meta = data[0].strip().split(",")
                 for line in data[1:]:
+                    if line[0] == "#": continue #allow comments after metadata
                     m = MotionDelta()
                     d = line.strip().split(",")
                     for i, key in enumerate(meta):
@@ -4883,6 +4884,11 @@ class Game(metaclass=use_on_events):
                         f.write('    %s.reparent(\"%s\")\n'%(slug, obj._parent.name))
                     if obj.action:
                         f.write('    %s.do("%s")\n'%(slug, obj.action.name))
+                    for i, motion in enumerate(obj._applied_motions):
+                        if i == 0:
+                            f.write('    %s.motion("%s")\n'%(slug, motion))
+                        else:
+                            f.write('    %s.add_motion("%s")\n'%(slug, motion))
                     if isinstance(obj, Portal): #special portal details
                         ox,oy = obj._ox, obj._oy
                         if (ox,oy) == (0,0): #guess outpoint
@@ -5041,6 +5047,14 @@ def edit_object_script(game, obj):
     open_editor(game, fname)
     __import__(module_name)
 
+def edit_action_motion(game, obj, action):
+    directory = obj._directory
+    fname = os.path.join(directory, "%s.motion"%slugify(action.name).lower())
+    if not os.path.isfile(fname): #create a new module for this actor
+        with open(fname, "w") as f:
+            f.write("#first line of this file is metadata, some combination of:\n")
+            f.write("#x,y,z,r,scale\n")
+    open_editor(game, fname, track=False)
 
 class SelectDialog(tk.simpledialog.Dialog):
     def __init__(self, game, title, objects, *args, **kwargs):
@@ -5384,11 +5398,20 @@ class MyTkApp(threading.Thread):
         action = tk.StringVar(group)
         def change_action(*args, **kwargs):
             self.obj.do(action.get())
+        def edit_motion_btn(*args, **kwargs):
+            action_to_edit = self.obj._actions[action.get()] if action.get() in self.obj._actions else None
+            if action_to_edit:
+                edit_action_motion(self.game, self.obj, action_to_edit)
+
+
         actions = [x.name for x in self.obj._actions.values()]
         actions.sort()
         if len(actions)>0:
             tk.Label(group, text="Action:").grid(column=0, row=row)
             option = tk.OptionMenu(group, action, *actions, command=change_action).grid(column=1,row=row)
+            self.edit_motion_btn = tk.Button(frame, text="Edit Motion", command=edit_motion_btn).grid(row=row, column=2)
+
+
             row += 1
 
         request_idle = tk.StringVar(group)

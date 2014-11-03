@@ -457,6 +457,22 @@ class EmitterTest(unittest.TestCase):
             self.assertAlmostEqual(p.x, 0) 
             self.assertAlmostEqual(p.y, 0)
 
+    def test_angle180(self):
+        e = self.emitter
+        p = self.particle
+        e.direction = p.direction = 180 #straight down
+        e._update(0, e)
+        self.assertAlmostEqual(p.x, 0) 
+        self.assertAlmostEqual(p.y, 10)
+
+    def test_angle270(self):
+        e = self.emitter
+        p = self.particle
+        e.direction = p.direction = 270 #straight left
+        e._update(0, e)
+        self.assertAlmostEqual(p.x, -10) 
+        self.assertAlmostEqual(p.y, 0)
+
     def test_fov(self):
         e = self.emitter
         p = self.particle
