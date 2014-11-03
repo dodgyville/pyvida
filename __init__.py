@@ -2430,8 +2430,11 @@ class Particle(object):
 
 class Emitter(Item, metaclass=use_on_events):
 #    def __init__(self, name, *args, **kwargs):
-    def __init__(self, name, number=10, frames=10, direction=0, fov=0, speed=1, acceleration=(0,0), size_start=1, size_end=1, alpha_start=1.0, alpha_end=0,random_index=0, behaviour=BEHAVIOUR_CYCLE):
-        """ This object's clickable_mask|clickable_area is used for spawning """
+    def __init__(self, name, number=10, frames=10, direction=0, fov=0, speed=1, acceleration=(0,0), size_start=1, size_end=1, alpha_start=1.0, alpha_end=0,random_index=True, random_age=True, behaviour=BEHAVIOUR_CYCLE):
+        """ This object's solid_mask|solid_area is used for spawning 
+            direction: what is the angle of the emitter
+            fov: what is the arc of the emitter's 'nozzle'?
+        """
         super().__init__(name)
         self.name = name
         self.number = number
@@ -2444,15 +2447,16 @@ class Emitter(Item, metaclass=use_on_events):
         self.size_end = size_end
         self.alpha_start, self.alpha_end = alpha_start, alpha_end
         self.random_index = random_index #should each particle start mid-action?
+        self.random_age = random_age #should each particle start mid-life?
         self.particles = []
-        self._behaviour = behaviour
+        self.behaviour = behaviour
         self._editable.append(("emitter area", "solid_area", "_solid_area", Rect),)
 
         #self._solid_area = Rect(0,0,0,0) #used for the spawn area        
 
     @property
     def summary(self):
-        fields = ["name", "number", "frames", "direction", "fov", "speed", "acceleration", "size_start", "size_end", "alpha_start", "alpha_end", "random_index"]
+        fields = ["name", "number", "frames", "direction", "fov", "speed", "acceleration", "size_start", "size_end", "alpha_start", "alpha_end", "random_index", "random_age", "behaviour"]
         d = {}
         for i in fields:
             d[i] = getattr(self, i, None)  
@@ -2476,6 +2480,7 @@ class Emitter(Item, metaclass=use_on_events):
         p.index +=  1
         p.action_index += 1
         if p.index >= self.frames: #reset
+            print("RESET PARTICLE", self.frames, p.index)
             p.x, p.y = self.x+ randint(0, self._solid_area.w), self.y + randint(0, self._solid_area.h)
             p.index = 0
             p.hidden = False
@@ -2484,7 +2489,8 @@ class Emitter(Item, metaclass=use_on_events):
     
     def _update(self, dt, obj=None): #emitter.update
         Item._update(self, dt, obj=obj)
-        for p in self.particles:
+        for i,p in enumerate(self.particles):
+            print("PARTICLE",i,"LOCATION",p.x,p.y)
             self._update_particle(dt, p)
                     
     def pyglet_draw(self, absolute=False, force=False): #emitter.draw
@@ -2534,17 +2540,17 @@ class Emitter(Item, metaclass=use_on_events):
 
     def on_fire(self):
         """ Run the emitter for one cycle and then disable but leave the batch particles to complete their cycle """
-        self._behaviour = BEHAVIOUR_FIRE
+        self.behaviour = BEHAVIOUR_FIRE
         self._add_particles(self.number, terminate=True)
 
     def on_on(self):
         """ switch emitter on permanently (default) """
-        self._behaviour = BEHAVIOUR_CYCLE
+        self.behaviour = BEHAVIOUR_CYCLE
         self._reset()
 
     def on_off(self):
         """ switch emitter off  """
-        self._behaviour = BEHAVIOUR_FIRE
+        self.behaviour = BEHAVIOUR_FIRE
         self._reset()
 
     def on_reanchor(self, pt):
@@ -2553,17 +2559,22 @@ class Emitter(Item, metaclass=use_on_events):
         for p in self.particles:
             p.ax, p.ay = self._ax, self._ay
 
+    def get_a_direction(self):
+        return randint(self.direction-float(self.fov/2), self.direction+float(self.fov/2))
 
     def _add_particles(self, num=1, terminate=False):
         for x in range(0,num):
-            d = randint(self.direction-float(self.fov/2), self.direction+float(self.fov/2))
+            d = self.get_a_direction()
+#            print("DIRECTION",d, self.direction, self.fov/2, self.x, self.y, self._solid_area.__dict__)
             self.particles.append(Particle(self.x + randint(0, self._solid_area.w), self.y + randint(0, self._solid_area.h), self._ax, self._ay, self.speed, d))
             p = self.particles[-1]
-            p.index = randint(0, self.frames)
+            if self.random_age:
+                p.index = randint(0, self.frames)
             if self.random_index and self.action:
                 p.action_index = randint(0, self.action.count)
-            for j in range(0, self.frames): #fast forward particle to mid position
-                self._update_particle(0, p)
+            if self.behaviour == BEHAVIOUR_CYCLE:
+                for j in range(0, self.frames): #fast forward particle through one full cycle so they are mid-stream when they start
+                    self._update_particle(0, p)
             p.hidden = True
             p.terminate = terminate
 
@@ -2579,7 +2590,7 @@ class Emitter(Item, metaclass=use_on_events):
     def _reset(self):
         """ rebuild emitter """
         self.particles = []
-        if self._behaviour == BEHAVIOUR_CYCLE:
+        if self.behaviour == BEHAVIOUR_CYCLE:
             self._add_particles(self.number)
     
     def on_reset(self):

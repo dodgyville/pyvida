@@ -10,8 +10,6 @@ RESOLUTION_X = 1000
 RESOLUTION_Y = 1000
 RESOLUTION = (RESOLUTION_X, RESOLUTION_Y)
 
-
-
 class ScaleTest(unittest.TestCase):
     def test_scale(self):
         resolution = (1600, 900) #sample game resolution
@@ -420,6 +418,60 @@ class EventTest(unittest.TestCase):
         self.game.update(0, single_event=True) #do the says step part of the on_gets
         self.game.update(0, single_event=True) #remove the says step
         self.assertEqual([x[0].__name__ for x in self.game._events], ['on_says',])
+
+
+class EmitterTest(unittest.TestCase):
+    def setUp(self):
+        self.game = Game("Unit Tests", fps=60, afps=16, resolution=RESOLUTION)
+        self.game.settings = Settings()
+        em = {'speed': 10, 'number': 1, 'alpha_end': 0, 'frames': 10, 'fov': 0, 'size_end': 1, 'size_start': 1, 'acceleration': (0, 0), 'alpha_start': 1.0, 'random_index': False, 'name': '_test_emitter', 'direction': 90, 'behaviour': BEHAVIOUR_FIRE, "random_age":False}
+        self.emitter = Emitter(**em) #.smart(self.game)
+        self.emitter._solid_area = Rect(0, 0, 0, 0)
+        self.emitter._add_particles(self.emitter.number, terminate=False) #create particles
+        self.particle = self.emitter.particles[0]
+        self.game.add(self.emitter)
+
+    def test_basic(self):
+        e = self.emitter
+        self.assertEqual(len(e.particles), 1)
+        for p in e.particles: 
+            self.assertEqual((p.x, p.y), (0,0))
+        e._update(0, e)
+        self.assertEqual(e.solid_area.w, 0)
+        self.assertEqual(e.solid_area.__dict__, Rect(0,0,0,0).__dict__)
+        self.assertEqual(len(e.particles), 1)
+        for p in e.particles: 
+            self.assertAlmostEqual(p.x, 10)
+            self.assertAlmostEqual(p.y, 0)
+        e._update(0, e)
+        for p in e.particles: 
+            self.assertAlmostEqual(p.x, 20)
+            self.assertAlmostEqual(p.y, 0)
+        for i in range(0, e.frames-3):
+            e._update(0, e)
+        for p in e.particles: #particle should be at (frames*speed-speed,0)
+            self.assertAlmostEqual(p.x, 90) 
+            self.assertAlmostEqual(p.y, 0)
+        e._update(0, e) #particle should reset to 0,0
+        for p in e.particles: 
+            self.assertAlmostEqual(p.x, 0) 
+            self.assertAlmostEqual(p.y, 0)
+
+    def test_fov(self):
+        e = self.emitter
+        p = self.particle
+        e.fov = 90
+        p.direction = e.direction-float(e.fov/2)
+        self.assertEqual(p.direction, 45) #particle is heading in 45 degree angle to right of screen
+        e._update(0, e) 
+        d = 7.071067811865475
+        self.assertAlmostEqual(p.x, d)
+        self.assertAlmostEqual(p.y, -d)
+        e._update(0, e) 
+        self.assertAlmostEqual(p.x, d*2)
+        self.assertAlmostEqual(p.y, -d*2)
+
+
 
 
 class WalkthroughTest(unittest.TestCase):
