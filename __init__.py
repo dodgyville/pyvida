@@ -2112,7 +2112,8 @@ class Actor(object, metaclass=use_on_events):
     def on_motion(self, motion, mode=MOTION_LOOP):
         """ Clear all existing motions and do just one motion. """
         motion = self._motions.get(motion, None) if motion in self._motions.keys() else motion
-        self._applied_motions = [motion]
+        motion = [motion] if motion else []
+        self._applied_motions = motion
 
     def on_add_motion(self, motion, mode=MOTION_LOOP):
         motion = self._motions.get(motion, None) if motion in self._motions.keys() else motion
@@ -3703,7 +3704,7 @@ class Game(metaclass=use_on_events):
 
         self.name = name
         self.fps = fps
-        self.default_actor_fps =afps
+        self.default_actor_fps = afps
         self.game = self
         self.player = None
         self.scene = None
@@ -3828,8 +3829,8 @@ class Game(metaclass=use_on_events):
         self.mouse_position = (0,0) #last known position of mouse
 
         pyglet.clock.schedule_interval(self._monitor_scripts, 2) #keep reloading scripts
+        pyglet.clock.schedule_interval(self.update, 1/self.default_actor_fps) #the pyvida game scripting event loop, XXX: limited to actor fps
 
-        pyglet.clock.schedule(self.update) #the pyvida game scripting event loop
 
     def _monitor_scripts(self, dt):
         modified_modules = self.check_modules()
@@ -3919,7 +3920,7 @@ class Game(metaclass=use_on_events):
             import pdb; pdb.set_trace()
 
         if symbol == pyglet.window.key.F4: 
-            save_game(self, "test.save")
+            self.moby_cupcake.motion("idle")
 
         if symbol == pyglet.window.key.F5: 
             self.camera.fade_out()
@@ -4466,6 +4467,7 @@ class Game(metaclass=use_on_events):
             self.camera.scene(scene)
 
         if callback: callback(0, self)
+        self.last_clock_tick = self.current_clock_tick = int(round(time.time() * 1000))
         pyglet.app.run()
 
     def quit(self):
@@ -4623,6 +4625,8 @@ class Game(metaclass=use_on_events):
     def update(self, dt, single_event=False): #game.update
         """ Run update on scene objects """
         scene_objects = []
+
+#        dt = self.fps #time passed (in miliseconds)
         if self.scene:
             for obj_name in self.scene._objects:
                 scene_objects.append(get_object(self, obj_name))
@@ -4651,6 +4655,15 @@ class Game(metaclass=use_on_events):
                 pass
 
 #        print("game update", self._headless, self._walkthrough_target>self._walkthrough_index, len(self._modals)>0, len(self._events))
+
+        if not self._headless:
+            self.current_clock_tick = int(round(time.time() * 1000))
+            #only delay as much as needed
+#            used_time = self.current_clock_tick - self.last_clock_tick #how much time did computation use of this loop
+#            delay = self.time_delay - used_time  #how much pause do we need to limit frame rate?
+#            if delay > 0: pygame.time.delay(int(delay))
+        self.last_clock_tick = int(round(time.time() * 1000))
+
 
         #if waiting for user input, assume the event to trigger the modal is in the walkthrough        
         if self._headless and self._walkthrough_target >= self._walkthrough_index and len(self._modals)>0:
@@ -4885,10 +4898,11 @@ class Game(metaclass=use_on_events):
                     if obj.action:
                         f.write('    %s.do("%s")\n'%(slug, obj.action.name))
                     for i, motion in enumerate(obj._applied_motions):
+                        m = motion.name if hasattr(motion, "name") else motion
                         if i == 0:
-                            f.write('    %s.motion("%s")\n'%(slug, motion))
+                            f.write('    %s.motion("%s")\n'%(slug, m))
                         else:
-                            f.write('    %s.add_motion("%s")\n'%(slug, motion))
+                            f.write('    %s.add_motion("%s")\n'%(slug, m))
                     if isinstance(obj, Portal): #special portal details
                         ox,oy = obj._ox, obj._oy
                         if (ox,oy) == (0,0): #guess outpoint
@@ -5136,7 +5150,6 @@ class MyTkApp(threading.Thread):
             scenes.sort()
             for value in scenes:
                 menu.add_command(label=value, command=tk._setit(self._scene, value, change_scene))
-
 
         tk.Label(group, text="Current scene:").grid(column=0, row=row)
         scenes = [x.name for x in self.game._scenes.values()]
@@ -5402,7 +5415,9 @@ class MyTkApp(threading.Thread):
             action_to_edit = self.obj._actions[action.get()] if action.get() in self.obj._actions else None
             if action_to_edit:
                 edit_action_motion(self.game, self.obj, action_to_edit)
-
+        def apply_motion_btn(*args, **kwargs): #XXX editor can only apply one motion at a time, should probably use a checkbox list or something
+            print("APPLY", self.obj._motions, action.get())
+            self.obj.motion(action.get())
 
         actions = [x.name for x in self.obj._actions.values()]
         actions.sort()
@@ -5410,8 +5425,7 @@ class MyTkApp(threading.Thread):
             tk.Label(group, text="Action:").grid(column=0, row=row)
             option = tk.OptionMenu(group, action, *actions, command=change_action).grid(column=1,row=row)
             self.edit_motion_btn = tk.Button(frame, text="Edit Motion", command=edit_motion_btn).grid(row=row, column=2)
-
-
+            self.apply_motion_btn = tk.Button(frame, text="Apply Motion", command=apply_motion_btn).grid(row=row, column=3)
             row += 1
 
         request_idle = tk.StringVar(group)
@@ -5434,7 +5448,14 @@ class MyTkApp(threading.Thread):
             objects = self.game.scene._objects
             if len(objects)> 0:
                 self.obj = objects[0]
+        def refresh_btn():
+            """ Reload object """            
+            obj = self.obj
+            obj.smart(self.game)
+            self.game._add(obj, replace=True)
+            
         self.remove_btn = tk.Button(frame, text="Remove", command=remove_btn).grid(row=row, column=1)
+        self.refresh_btn = tk.Button(frame, text="Reload", command=refresh_btn).grid(row=row, column=3)
         self.reset_btn = tk.Button(frame, text="Reset", command=reset_btn).grid(row=row, column=4)
 
         row += 1
