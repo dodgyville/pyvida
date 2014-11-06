@@ -431,6 +431,10 @@ def load_image(fname, convert_alpha=False, eight_bit=False):
             im = pyglet.image.codecs.pil.PILImageDecoder().decode(f, fname)
     except:
         im = pyglet.image.load(fname)
+#    texture = im.get_texture()
+#    pyglet.gl.glTexParameteri(pyglet.gl.GL_TEXTURE_2D, pyglet.gl.GL_TEXTURE_MAG_FILTER, pyglet.gl.GL_LINEAR) #blurry
+#    pyglet.gl.glTexParameteri(pyglet.gl.GL_TEXTURE_2D, pyglet.gl.GL_TEXTURE_MAG_FILTER, pyglet.gl.GL_NEAREST) #pixel
+#    im = texture
 #    im = pyglet.image.codecs.png.PNGImageDecoder().decode(open(fname, "rb"), fname)
 #    im = pyglet.image.load(fname)
 #    im = pyglet.image.load(fname, decoder=PNGImageDecoder())
@@ -1121,7 +1125,7 @@ class Actor(object, metaclass=use_on_events):
         self.uses = {}
 
         for k, v in self.__dict__.items():
-            if callable(v):
+            if callable(v): #textify function/method calls
                 self.__dict__[k] = v.__name__
                 if not get_function(self.game, v.__name__, self):
                     vv = v
@@ -2422,6 +2426,10 @@ class Portal(Actor, metaclass=use_on_events):
         self.enter_link(actor, block=block)
 
 
+def terminate_by_frame(game, emitter, particle):
+    """ If particle has lived longer than the emitter's frames then terminate """
+    return particle.index >= emitter.frames
+
 class Particle(object):
     def __init__(self, x, y, ax, ay, speed, direction):
         self.index = 0
@@ -2436,7 +2444,7 @@ class Particle(object):
 
 class Emitter(Item, metaclass=use_on_events):
 #    def __init__(self, name, *args, **kwargs):
-    def __init__(self, name, number=10, frames=10, direction=0, fov=0, speed=1, acceleration=(0,0), size_start=1, size_end=1, alpha_start=1.0, alpha_end=0,random_index=True, random_age=True, behaviour=BEHAVIOUR_CYCLE):
+    def __init__(self, name, number=10, frames=10, direction=0, fov=0, speed=1, acceleration=(0,0), size_start=1, size_end=1, alpha_start=1.0, alpha_end=0,random_index=True, random_age=True, terminate=terminate_by_frame, behaviour=BEHAVIOUR_CYCLE):
         """ This object's solid_mask|solid_area is used for spawning 
             direction: what is the angle of the emitter
             fov: what is the arc of the emitter's 'nozzle'?
@@ -2457,15 +2465,16 @@ class Emitter(Item, metaclass=use_on_events):
         self.particles = []
         self.behaviour = behaviour
         self._editable.append(("emitter area", "solid_area", "_solid_area", Rect),)
-
         #self._solid_area = Rect(0,0,0,0) #used for the spawn area        
+        self.test_terminate = terminate
 
     @property
     def summary(self):
-        fields = ["name", "number", "frames", "direction", "fov", "speed", "acceleration", "size_start", "size_end", "alpha_start", "alpha_end", "random_index", "random_age", "behaviour"]
+        fields = ["name", "number", "frames", "direction", "fov", "speed", "acceleration", "size_start", "size_end", "alpha_start", "alpha_end", "random_index", "random_age", "test_terminate", "behaviour"]
         d = {}
         for i in fields:
             d[i] = getattr(self, i, None)  
+            if callable(d[i]): d[i] = d.__name__ #textify
         return d
 
     def smart(self, game, *args, **kwargs): #emitter.smart
@@ -2485,7 +2494,8 @@ class Emitter(Item, metaclass=use_on_events):
         p.y -= self.acceleration[1] * p.index
         p.index +=  1
         p.action_index += 1
-        if p.index >= self.frames: #reset
+        test_terminate = get_function(self.game, self.test_terminate, self)
+        if test_terminate(self.game, self, p): #reset if needed
 #            print("RESET PARTICLE", self.frames, p.index)
             p.x, p.y = self.x+ randint(0, self._solid_area.w), self.y + randint(0, self._solid_area.h)
             p.index = 0
@@ -3830,7 +3840,8 @@ class Game(metaclass=use_on_events):
 
         pyglet.clock.schedule_interval(self._monitor_scripts, 2) #keep reloading scripts
         pyglet.clock.schedule_interval(self.update, 1/self.default_actor_fps) #the pyvida game scripting event loop, XXX: limited to actor fps
-
+        pyglet.clock.set_fps_limit(self.fps)
+        self.fps_clock = pyglet.clock.ClockDisplay()
 
     def _monitor_scripts(self, dt):
         modified_modules = self.check_modules()
@@ -3920,7 +3931,8 @@ class Game(metaclass=use_on_events):
             import pdb; pdb.set_trace()
 
         if symbol == pyglet.window.key.F4: 
-            self.moby_cupcake.motion("idle")
+            self.player.rescale(3)
+            self.player.relocate(destination=(700,1600))
 
         if symbol == pyglet.window.key.F5: 
             self.camera.fade_out()
@@ -4636,7 +4648,6 @@ class Game(metaclass=use_on_events):
             for obj_name in self._modals:
                 modal_objects.append(get_object(self, obj_name))
 
-
         layer_objects = self.scene._layer if self.scene else []
 
         #update all the objects in the scene or the event queue.
@@ -4664,13 +4675,13 @@ class Game(metaclass=use_on_events):
 #            if delay > 0: pygame.time.delay(int(delay))
         self.last_clock_tick = int(round(time.time() * 1000))
 
-
         #if waiting for user input, assume the event to trigger the modal is in the walkthrough        
         if self._headless and self._walkthrough_target >= self._walkthrough_index and len(self._modals)>0:
             self._process_walkthrough()
 
     def pyglet_draw(self): #game.draw
         """ Draw the scene """
+#        pyglet.clock.tick()
         if not self.scene: 
             return
 #        if self._headless: return
@@ -4724,6 +4735,7 @@ class Game(metaclass=use_on_events):
 
         if self.game.camera._overlay: self.game.camera._overlay.draw()
 
+        self.fps_clock.draw()
         pyglet.graphics.draw(1, pyglet.gl.GL_POINTS,
             ('v2i', (int(self.mouse_down[0]), int(self.resolution[1] - self.mouse_down[1])))
         )
