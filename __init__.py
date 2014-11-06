@@ -520,6 +520,9 @@ def option_answer_callback(game, btn, player):
     """ Called when the option is selected """
     btn.creator.busy -= 1 #no longer busy, so game can stop waiting
     if logging: log.info("%s has finished on_asks by selecting %s, so decrement self.busy to %s."%(btn.creator.name, btn.display_text, btn.creator.busy))
+    remember = (btn.creator.name, btn.question, btn.display_text)
+    if remember not in game._selected_options: game._selected_options.append(remember)
+
     game._remove(game._modals) #remove modals from game (mostly so we don't have to pickle the knotty little bastard custom callbacks!)
     game._modals = [] #empty modals
     if btn.response_callback: btn.response_callback(game, btn, player)
@@ -1864,16 +1867,18 @@ class Actor(object, metaclass=use_on_events):
                 kwargs = self._get_text_details() #use the actor's text options
                 kwargs["colour"] = (55, 255, 87) #but with a nice different colour
             #dim the colour of the option if we have already selected it.
-            remember = (self.name, text, statement)
+            remember = (self.name, statement, text)
             if remember in self.game._selected_options and "colour" in kwargs:
                 r,g,b= kwargs["colour"]
-                kwargs["colour"] = (r/2, g/2, b/2)
+                kwargs["colour"] = (r//2, g//2, b//2)
 #            def over_option
 #            kwargs["over"] = over_option
             opt = Text("option{}".format(i), display_text=text, **kwargs)
             opt.x, opt.y = label.x + 10, label.y + label.h + i*opt.h + 5
             opt.creator = self #store this Actor so the callback can modify it.
             opt.colour = kwargs["colour"] #store the colour so we can undo it after hover
+            opt.question = statement
+           
             opt.interact = option_answer_callback
             opt._mouse_none = option_mouse_none
             opt._mouse_motion = option_mouse_motion
@@ -4681,7 +4686,6 @@ class Game(metaclass=use_on_events):
 
     def pyglet_draw(self): #game.draw
         """ Draw the scene """
-#        pyglet.clock.tick()
         if not self.scene: 
             return
 #        if self._headless: return
@@ -4690,6 +4694,7 @@ class Game(metaclass=use_on_events):
 #        self.scene.pyglet_draw()
 
         #draw scene backgroundsgrounds (layers with z equal or less than 1.0)
+        dt = pyglet.clock.tick()
         self._window.clear()
         pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0) # undo alpha for pyglet drawing            
         for item in self.scene._layer:
