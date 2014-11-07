@@ -1118,6 +1118,7 @@ class Actor(object, metaclass=use_on_events):
             if hasattr(fn, "__name__"): setattr(self, fn_name, fn.__name__)       
         if self._sprite: self._sprite.delete()
         self._sprite = None #gets reloaded when needed
+        game = self.game
         self.game = None    #re-populated after load
         self._editable = [] #re-populated after load
 
@@ -1130,7 +1131,7 @@ class Actor(object, metaclass=use_on_events):
         for k, v in self.__dict__.items():
             if callable(v): #textify function/method calls
                 self.__dict__[k] = v.__name__
-                if not get_function(self.game, v.__name__, self):
+                if not get_function(game, v.__name__, self):
                     vv = v
                     print("*******UNABLE TO FIND function",v.__name__,"for",k,"on",self.name)
                     import pdb; pdb.set_trace()
@@ -2867,7 +2868,7 @@ class Text(Item):
         else:
             self._text_index = len(self._display_text)
 
-        self.__text = self._display_text[:self._text_index]
+        self._animated_text = self._display_text[:self._text_index]
 
         if len(colour) == 3: colour = (colour[0], colour[1], colour[2], 255) #add an alpha value if needed
         font_name = "Times New Roman" #"Arial"
@@ -2902,17 +2903,19 @@ class Text(Item):
         return self.__dict__
 
     def create_label(self):
-        self._label = pyglet.text.Label(self.__text,
+        c = self.colour
+        if len(c)==3: c = (c[0], c[1], c[2], 255)
+        self._label = pyglet.text.Label(self._animated_text,
                                       font_name=self.font_name,
                                       font_size=self.size,
-                                      color=self.colour,
+                                      color=c,
                                       multiline=True,
                                       width=self.wrap,
                                       x=self.x, y=self.y,
                                       anchor_x='left', anchor_y='top')
 
         if self.offset:
-            self._label_offset = pyglet.text.Label(self.__text,
+            self._label_offset = pyglet.text.Label(self._animated_text,
                                   font_name=self.font_name,
                                   font_size=self.size,
                                   color=(0,0,0, 255),
@@ -2956,11 +2959,11 @@ class Text(Item):
             pyglet.clock.unschedule(self._animate_text)
         else:
             self._text_index += self.step
-            self.__text = self.display_text[:self._text_index]
+            self._animated_text = self.display_text[:self._text_index]
             if self._label: 
-                self._label.text = self.__text
+                self._label.text = self._animated_text
             if self._label_offset:
-                self._label_offset.text = self.__text
+                self._label_offset.text = self._animated_text
 
     def pyglet_draw(self, absolute=False): #text draw
         if self.game and self.game._headless: return
@@ -5097,7 +5100,7 @@ class SelectDialog(tk.simpledialog.Dialog):
     def body(self, master):
         self.listbox = tk.Listbox(master)
         self.listbox.pack()
-        objects = [i.name for i in self.objects]
+        objects = [i.name for i in self.objects if i.name != None]
         objects.sort()
         for item in objects:
             self.listbox.insert(tk.END, item)
@@ -5304,8 +5307,9 @@ class MyTkApp(threading.Thread):
         row += 1
 
         def _set_edit_object(obj):
-            obj = get_object(self.game, obj)
-            if self.obj: self.obj.show_debug = False
+            obj = get_object(self.game, obj) 
+            old_obj = get_object(self.game, self.obj)
+            if old_obj: old_obj.show_debug = False
             self.obj = obj
             obj.show_debug = True
             self.editor_label.grid_forget()
@@ -5464,7 +5468,7 @@ class MyTkApp(threading.Thread):
             self.game.scene.remove(self.obj)
             objects = self.game.scene._objects
             if len(objects)> 0:
-                self.obj = objects[0]
+                self.obj = get_object(self.game, objects[0])
         def refresh_btn():
             """ Reload object """            
             obj = self.obj
