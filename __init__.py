@@ -2,6 +2,7 @@
 Python3 
 """
 import copy, glob, imp, json, math, pyglet, os, subprocess, sys, time
+import gc, resource
 from argparse import ArgumentParser
 from collections import Iterable
 from datetime import datetime
@@ -815,7 +816,7 @@ class Action(object):
 #        self.load_assets(game)
         return self
 
-    def unload_assets(self):
+    def unload_assets(self): #action.unload
         self._animation = None
         self.game = None
         self.actor = getattr(self.actor, "name", self.actor) if self.actor else None
@@ -1110,21 +1111,30 @@ class Actor(object, metaclass=use_on_events):
         self._tint = None
         self.set_editable()
 
+
+    def unload_assets(self, unload_actions=False): #actor.unload
+        """ Unload graphic assets """
+        if self._sprite: self._sprite.delete()
+        print("DELETE SPRITE")
+        self._sprite = None #gets reloaded when needed
+        self._tk_edit = {}
+        self._clickable_mask = None
+        if unload_actions:
+            for action in self._actions.values():
+                action.unload_assets()
+
     def __getstate__(self):
         """ Prepare the object for pickling """
         #functions that are probably on the object so search them first.
         for fn_name in ["_interact", "_look", "_drag", "_mouse_motion", "_mouse_none", "_collection_select"]:
             fn = getattr(self, fn_name)
             if hasattr(fn, "__name__"): setattr(self, fn_name, fn.__name__)       
-        if self._sprite: self._sprite.delete()
-        self._sprite = None #gets reloaded when needed
+
+        self.unload_assets()
+
         game = self.game
         self.game = None    #re-populated after load
         self._editable = [] #re-populated after load
-
-        self._tk_edit = {}
-        self._clickable_mask = None
-
         #PROBLEM values:
         self.uses = {}
 
@@ -1135,6 +1145,7 @@ class Actor(object, metaclass=use_on_events):
                     vv = v
                     print("*******UNABLE TO FIND function",v.__name__,"for",k,"on",self.name)
                     import pdb; pdb.set_trace()
+
 
         return self.__dict__
 
@@ -2735,8 +2746,15 @@ class Scene(metaclass=use_on_events):
                 self.__dict__[key] = val
         return self
 
+    def unload_assets(self): #scene.unload
+        print("UNLOAD1",self.name)
+        for obj_name in self._objects:
+            obj = get_object(self.game, obj_name) 
+            print("UNLOAD obj",obj_name, obj)
+            if obj: obj.unload_assets(unload_actions=True)
+    
     def _unload_layer(self):
-        log.error("TODO: Actor unload not done yet")
+        log.error("TODO: Scene unload not done yet")
 #        for l in self._layer:
 #            l.unload()
 
@@ -3249,6 +3267,19 @@ class Camera(metaclass=use_on_events): #the view manager
 
         if camera_point: scene.x, scene.y = camera_point
         if scene.name not in self.game.visited: self.game.visited.append(scene.name) #remember scenes visited
+        #unload assets from older scenes
+        if scene.name in self.game._resident: self.game._resident.remove(scene.name) 
+        self.game._resident.append(scene.name)
+        unload = self.game._resident[:-6] #unload older scenes
+        print("RESIDENT",self.game._resident, unload)
+        if len(unload)>0:
+            for unload_scene in unload:
+                s = get_object(self.game, unload_scene)
+                print("Unload scene",unload_scene, s, resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1000)
+                if s: s.unload_assets()
+                self.game._resident.remove(unload_scene)
+                gc.collect() #force garbage collection
+                print("Finished collect",resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1000)
         if logging: log.debug("changing scene to %s"%scene.name)
         if self.game and self.game._headless: return #headless mode skips sound and visuals
 
@@ -3799,6 +3830,7 @@ class Game(metaclass=use_on_events):
 
         self._selected_options = [] #keep track of convo trees
         self.visited = [] #list of scene names visited
+        self._resident = [] #list of scenes recently visited, unload assets for scenes that haven't been visited for a while
 
         #editor and walkthrough      
         self._modules = {}
@@ -3939,8 +3971,9 @@ class Game(metaclass=use_on_events):
             import pdb; pdb.set_trace()
 
         if symbol == pyglet.window.key.F4: 
-            self.player.rescale(3)
-            self.player.relocate(destination=(700,1600))
+            print("MEMORY USAGE",resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1000)
+#            self.player.rescale(3)
+ #           self.player.relocate(destination=(700,1600))
 
         if symbol == pyglet.window.key.F5: 
             self.camera.fade_out()
