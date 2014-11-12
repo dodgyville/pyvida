@@ -8,8 +8,10 @@ from collections import Iterable
 from datetime import datetime
 from gettext import gettext
 from random import choice, randint
+
 import tkinter as tk
 import tkinter.filedialog, tkinter.simpledialog, tkinter.messagebox
+
 import threading, traceback
 #import dill as pickle
 import pickle
@@ -817,12 +819,14 @@ class Action(object):
         return self
 
     def unload_assets(self): #action.unload
+        log.debug("UNLOAD ASSETS %s %s"%(self.actor, self.name))
         self._animation = None
         self.game = None
         self.actor = getattr(self.actor, "name", self.actor) if self.actor else None
         self._loaded = False
 
     def load_assets(self, game):
+        log.debug("LOAD ASSETS %s %s"%(self.actor, self.name))
         self._loaded = True
         if game: self.game = game
         image = load_image(self._image)
@@ -1037,6 +1041,7 @@ class Actor(object, metaclass=use_on_events):
         self.name = name
         self._actions = {}
         self._action = None
+        self._next_action = None #"idle" #for use by do_once
         self._motions = {}
         self._applied_motions = [] #list of motions applied at the moment
         self.control_queue = [] #list of activities (fn, (*args)) to loop through - good for background actors
@@ -1087,7 +1092,7 @@ class Actor(object, metaclass=use_on_events):
         self._editing = None #what attribute of this Actor are we editing
         self._editing_save = True #allow saving via the editor
         self.collide_mode = COLLIDE_CLICKABLE #how the collide method for this Actor functions
-        self._tk_edit = {} #used by tk editor
+        self._tk_edit = {} #used by tk editor to update values in widgets
 
         self.show_debug = False 
 
@@ -1115,7 +1120,6 @@ class Actor(object, metaclass=use_on_events):
     def unload_assets(self, unload_actions=False): #actor.unload
         """ Unload graphic assets """
         if self._sprite: self._sprite.delete()
-        print("DELETE SPRITE")
         self._sprite = None #gets reloaded when needed
         self._tk_edit = {}
         self._clickable_mask = None
@@ -1823,6 +1827,7 @@ class Actor(object, metaclass=use_on_events):
         self._debugs.append(rectangle(self.game, self.solid_area, (255, 15, 30, 255), absolute=absolute))
 
     def on_animation_end(self):
+        """ The default callback when an animation ends """
 #        log.warning("This function seems to not do anything")
         pass
 #        self.busy -= 1
@@ -1832,7 +1837,7 @@ class Actor(object, metaclass=use_on_events):
     def on_animation_end_once(self):
         """ When an animation has been called once only """
         self.busy -= 1
-        self._do("idle")
+        self._do(self._next_action)
 
     def on_frames(self, num_frames):
         """ Advance the current action <num_frames> frames """
@@ -2101,7 +2106,8 @@ class Actor(object, metaclass=use_on_events):
 #        """ Called when this object is selected in a collection """
 #        print("handling object selection")
 
-    def _do(self, action, callback=None, frame=None):
+    def _do(self, action, callback=None):
+        """ Callback is called when animation ends """
         myA = action
         if type(action) == str and action not in self._actions.keys():
             log.error("Unable to find action %s in object %s"%(action, self.name))
@@ -2140,14 +2146,21 @@ class Actor(object, metaclass=use_on_events):
         motion = self._motions.get(motion, None) if motion in self._motions.keys() else motion
         self._applied_motions.append(motion)
 
-    def on_do(self, action, frame=None):
-        self._do(action, frame=frame)
+    def on_do(self, action):
+        self._do(action)
         
-    def on_do_once(self, action):
+    def on_do_once(self, action, next_action="idle"):
+        if self.name == "aterminal_background": 
+            print(next_action)
+            import pdb; pdb.set_trace()
         self._do(action, self.on_animation_end_once)
-
-#        if follow: self.do(follow)
+#        self._next_action = next_action
         self.busy += 1
+
+    def on_remove(self):
+        """ Remove from scene """
+        if self.scene:
+            self.scene._remove(self)
 
     def on_speed(self, speed):
         print("set speed for %s"%self.action.name)
@@ -2335,7 +2348,6 @@ class Portal(Actor, metaclass=use_on_events):
         self._ox, self._oy = 0,0 #out point for this portal
 #        self.interact = self._interact_default
         self.link = None #the connecting Portal
-        self._editable.append(("out point", (self.get_ox, self.get_oy), (self.set_ox, self.set_oy),  (int, int)))
 
 #    def __getstate__(self):
 #        """ Prepare the object for pickling """
@@ -2347,6 +2359,12 @@ class Portal(Actor, metaclass=use_on_events):
         super().debug_pyglet_draw(absolute=absolute)
         #outpoint - red
         self._debugs.append(crosshair(self.game, (self.x + self.ox, self.y + self.oy ), (255, 10, 10, 255), absolute=absolute))
+
+    def set_editable(self):
+        """ Set which attributes are editable in the editor """
+        super().set_editable()
+        self._editable.insert(1, ("out point", (self.get_ox, self.get_oy), (self.set_ox, self.set_oy),  (int, int)))   #(human readable, get variable names, set variable names, widget types)
+
 
     def guess_link(self):
         links = self.name.split("_to_")
@@ -3275,7 +3293,7 @@ class Camera(metaclass=use_on_events): #the view manager
         if len(unload)>0:
             for unload_scene in unload:
                 s = get_object(self.game, unload_scene)
-                print("Unload scene",unload_scene, s, resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1000)
+                log.debug("Unload scene %s %s %s"%(unload_scene, s, resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1000))
                 if s: s.unload_assets()
                 self.game._resident.remove(unload_scene)
                 gc.collect() #force garbage collection
@@ -3682,7 +3700,6 @@ def load_game_pickle(game, fname, meta_only=False):
             game._modules = pickle.load(f)
             game._sys_paths = pickle.load(f)
             sys.path.extend(game._sys_paths)
-
             game._actors = pickle.load(f)
             game._items = pickle.load(f)
             game._scenes = pickle.load(f)
@@ -3808,6 +3825,7 @@ class Game(metaclass=use_on_events):
 
 #        config = pyglet.gl.Config(double_buffer=True, vsync=True)
         self._window = pyglet.window.Window(*resolution)
+
         pyglet.gl.glScalef(scale, scale, scale)
 
         self._window.on_draw = self.pyglet_draw
@@ -3832,7 +3850,9 @@ class Game(metaclass=use_on_events):
         self.visited = [] #list of scene names visited
         self._resident = [] #list of scenes recently visited, unload assets for scenes that haven't been visited for a while
 
-        #editor and walkthrough      
+        #editor and walkthrough     
+        self._edit_window = None #the 2nd pyglet window containing the edit menu
+        self._edit_menu = [] #the items to draw on the second window
         self._modules = {}
         self._sys_paths = [] #file paths to dynamically loaded modules
         self._walkthrough = []
@@ -3848,7 +3868,7 @@ class Game(metaclass=use_on_events):
         self._output_walkthrough = False
         self._create_from_walkthrough = False
         self._catch_exceptions = True #engine will try and continue after encountering exception
-
+        self._pyglet_gui_batch = pyglet.graphics.Batch()
 
         self._allow_editing = ENABLE_EDITOR
         self._editing = None
@@ -3962,16 +3982,25 @@ class Game(metaclass=use_on_events):
 
     def on_key_press(self, symbol, modifiers):
         global use_effect
+        game = self
+
         if symbol == pyglet.window.key.F1:
 #            edit_object(self, list(self.scene._objects.values()), 0)
 #            self.menu_from_factory("editor", MENU_EDITOR)
             editor(self)
         if symbol == pyglet.window.key.F2:
-            game = self
             import pdb; pdb.set_trace()
+
+        if symbol == pyglet.window.key.F3: #pyglet editor
+            pyglet_editor(self)
 
         if symbol == pyglet.window.key.F4: 
             print("MEMORY USAGE",resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1000)
+            self.camera.scene("arcadia")
+            self.pleasuretron.remove()
+            self.pause(2)
+            self.pleasuretron.relocate("arcadia", (900,700))
+            self.pleasuretron.do_once("jump", "jump_idle")
 #            self.player.rescale(3)
  #           self.player.relocate(destination=(700,1600))
 
@@ -4158,6 +4187,7 @@ class Game(metaclass=use_on_events):
                 self._editing_point_set[0](x)
                 self._editing_point_set[1](y)
                 if self._editing_label in self._editing._tk_edit: 
+                    print("Edit",self._editing_label, self._editing._tk_edit[self._editing_label][0])
                     self._editing._tk_edit[self._editing_label][0].delete(0, 100)
                     self._editing._tk_edit[self._editing_label][0].insert(0, x)
 
@@ -4720,6 +4750,11 @@ class Game(metaclass=use_on_events):
         if self._headless and self._walkthrough_target >= self._walkthrough_index and len(self._modals)>0:
             self._process_walkthrough()
 
+    def pyglet_editor_draw(self): #editor draw
+        for item in self._edit_menu:
+            item.pyglet_draw(absolute=False)
+
+
     def pyglet_draw(self): #game.draw
         """ Draw the scene """
         if not self.scene: 
@@ -4732,6 +4767,7 @@ class Game(metaclass=use_on_events):
         #draw scene backgroundsgrounds (layers with z equal or less than 1.0)
         dt = pyglet.clock.tick()
         self._window.clear()
+        if self._edit_window: self._edit_window.clear()
         pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0) # undo alpha for pyglet drawing            
         for item in self.scene._layer:
             item.game = self #awkward, layers have to be updated in case from save file
@@ -4780,6 +4816,7 @@ class Game(metaclass=use_on_events):
         pyglet.graphics.draw(1, pyglet.gl.GL_POINTS,
             ('v2i', (int(self.mouse_down[0]), int(self.resolution[1] - self.mouse_down[1])))
         )
+
 
         if self.directory_screencast: #save to directory
             now = round(time.time() * 100) #max 100 fps
@@ -5534,3 +5571,10 @@ class MyTkApp(threading.Thread):
 
 def editor(game):
     app = MyTkApp(game)
+
+##### pyglet editor 
+
+def pyglet_editor(game):
+    game._edit_window = pyglet.window.Window(600, 960)
+    game._edit_window.on_draw = pyglet_draw
+    
