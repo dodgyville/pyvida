@@ -1041,7 +1041,7 @@ class Actor(object, metaclass=use_on_events):
         self.name = name
         self._actions = {}
         self._action = None
-        self._next_action = None #"idle" #for use by do_once
+        self._next_action = "idle" #for use by do_once
         self._motions = {}
         self._applied_motions = [] #list of motions applied at the moment
         self.control_queue = [] #list of activities (fn, (*args)) to loop through - good for background actors
@@ -2154,7 +2154,7 @@ class Actor(object, metaclass=use_on_events):
             print(next_action)
             import pdb; pdb.set_trace()
         self._do(action, self.on_animation_end_once)
-#        self._next_action = next_action
+        self._next_action = next_action
         self.busy += 1
 
     def on_remove(self):
@@ -2199,6 +2199,9 @@ class Actor(object, metaclass=use_on_events):
 
     def on_rescale(self, v):
         self._set(["scale"], [v])
+
+    def on_reparent(self, parent):
+        self._set(["_parent"], [parent])
 
     def on_restand(self, point):
         self._set(("sx", "sy"), point)
@@ -3677,7 +3680,7 @@ def save_game_pickle(game, fname):
                 for k, v in o.__dict__.items():
                     #assume string is a function name. Slightly dangerous. TODO check if text values clash with reserved functions
                     #Also, some variables are strings that may clash with methods (eg Actor._idle is always a string) so ignore  
-                    if type(v) == str and hasattr(o, v) and k not in ["_idle", "_action"]: 
+                    if type(v) == str and hasattr(o, v) and k not in ["_idle", "_action", "_next_action"]: 
                         fn =  get_function(game, v, o)
 #                        print("untextifying the variable",k,"looking for function named",v,"for",o.name,"... found" if fn else "... NOT FOUND")
                         o.__dict__[k] = fn
@@ -3853,6 +3856,7 @@ class Game(metaclass=use_on_events):
         #editor and walkthrough     
         self._edit_window = None #the 2nd pyglet window containing the edit menu
         self._edit_menu = [] #the items to draw on the second window
+        self._edit_index = 0
         self._modules = {}
         self._sys_paths = [] #file paths to dynamically loaded modules
         self._walkthrough = []
@@ -3995,12 +3999,9 @@ class Game(metaclass=use_on_events):
             pyglet_editor(self)
 
         if symbol == pyglet.window.key.F4: 
+            ship_arrives_at_planet = get_function(self, "ship_arrives_at_planet")
             print("MEMORY USAGE",resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1000)
-            self.camera.scene("arcadia")
-            self.pleasuretron.remove()
-            self.pause(2)
-            self.pleasuretron.relocate("arcadia", (900,700))
-            self.pleasuretron.do_once("jump", "jump_idle")
+            ship_arrives_at_planet(game)
 #            self.player.rescale(3)
  #           self.player.relocate(destination=(700,1600))
 
@@ -4045,7 +4046,9 @@ class Game(metaclass=use_on_events):
                     if obj._mouse_motion and not modal_collide: obj._mouse_motion(self.game, obj, self.game.player,x,y,dx,dy, ox,oy)
                     modal_collide = True
                 else:
-                    if obj._mouse_none: obj._mouse_none(self.game, obj, self.game.player,x,y,dx,dy, ox,oy)
+                    if obj._mouse_none: 
+                        fn = get_function(self, obj._mouse_none, obj)
+                        fn(self.game, obj, self.game.player,x,y,dx,dy, ox,oy)
             except:
                 import pdb; pdb.set_trace()
         if modal_collide: return
@@ -4275,12 +4278,11 @@ class Game(metaclass=use_on_events):
 #        if self.ENABLE_EDITOR: #editor enabled for this game instance
 #            self._load_editor()
 
-
-    def on_menu_from_factory(self, menu, items):
+    def _menu_from_factory(self, menu, items):
         """ Create a menu from a factory """
         if menu not in self._menu_factories: 
             log.error("Unable to find menu factory '{0}'".format(menu))
-            return
+            return []
         factory = self._menu_factories[menu]
         #guesstimate width of whole menu so we can do some fancy layout stuff
 
@@ -4347,7 +4349,10 @@ class Game(metaclass=use_on_events):
 #            print('MENU', obj.name, obj.x, obj.y)
             x += dx
             y += dy
+        return new_menu
 
+    def on_menu_from_factory(self, menu, items):
+        self._menu_from_factory(menu, items)
         
     def message(self, text): #system message to display on screen (eg sfx subtitles)
         self.messages.append((text, datetime.now()))
@@ -4575,6 +4580,11 @@ class Game(metaclass=use_on_events):
             if self._walkthrough_target_name:
                 save_game(self, "saves/{}.save".format(self._walkthrough_target_name))
 #            self.player.says(gettext("Let's play."))
+#            self.camera.scene("lfloatmid")
+            self.load_state("igreenhouse", "initial")
+            self.player.relocate("igreenhouse")
+            self.camera.scene("igreenhouse")
+
             return
         human_readable_name = None #if this walkthrough has a human readable name, we might be wanting to create an autosave here.
         s = "Walkthrough:",list(walkthrough)
@@ -4780,7 +4790,7 @@ class Game(metaclass=use_on_events):
         if self.scene:
             for obj_name in self.scene._objects:
                 scene_objects.append(get_object(self, obj_name))
-        objects = sorted(scene_objects, key=lambda x: x.y, reverse=False)
+        objects = sorted(scene_objects, key=lambda x: x.y, reverse=False) # - x._parent.y if x._parent else 0
         objects = sorted(objects, key=lambda x: x.z, reverse=False)
         for item in objects:
             item.pyglet_draw(absolute=False)
@@ -5573,8 +5583,42 @@ def editor(game):
     app = MyTkApp(game)
 
 ##### pyglet editor 
+def edit_navigate(game, delta):
+    objects = game.scene._objects
+    num_objects = len(objects)
+    import pdb; pdb.set_trace()
+    if num_objects == 0:
+        print("No objects in scene")
+        return
+    obj = objects[game._edit_index]
+    obj = get_object(game, obj)
+    obj.show_debug = False
+    game._edit_index += delta
+    if game._edit_index < 0: game._edit_index = num_objects-1
+    if game._edit_index >= num_objects: game._edit_index = 0
+    obj = objects[game._edit_index]
+#    _set_edit_object(obj)
+
+def edit_prev(game, btn, player):
+    edit_navigate(game, -1) #decrement navigation
+
+def edit_next(game, btn, player):
+    edit_navigate(game, 1) #increment navigation
 
 def pyglet_editor(game):
     game._edit_window = pyglet.window.Window(600, 960)
-    game._edit_window.on_draw = pyglet_draw
-    
+    game._edit_window.on_draw = game.pyglet_editor_draw
+    game._edit_window.on_key_press = game.on_key_press
+    game._edit_window.on_mouse_motion = game.on_mouse_motion
+    game._edit_window.on_mouse_press = game.on_mouse_press
+    game._edit_window.on_mouse_release = game.on_mouse_release
+    game._edit_window.on_mouse_drag = game.on_mouse_drag
+
+    #create the widgets 
+    game._edit_menu = game._menu_from_factory("menu", [
+        ("<-", edit_prev),
+        ("->", edit_next),
+#        (MENU_EXTRAS, menu_extras),
+#        (MENU_SETTINGS, menu_settings),
+#        (MENU_EXIT_GAME, menu_exit_game),
+        ])
