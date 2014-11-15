@@ -5789,28 +5789,22 @@ def edit_scene_btn(game, btn, player):
 
 
 def edit_save_state(game, btn, player):
-    fname = d.go(self.game.scene.directory, pattern, default, key)
-    if fname is None:
+    state_name = input("Save name (without directory or .py)")
+    if state_name is None:
         return
     else:
-        print("SAVE STATE")
-        state_name = os.path.splitext(os.path.basename(fname))[0]
-        self.game._save_state(state_name)
+        game._save_state(state_name)
 
-def load_state(*args, **kwargs):
-    d = tk.filedialog.LoadFileDialog(self.app)
-    pattern, default, key = "*.py", "", None
-    fname = d.go(self.game.scene.directory, pattern, default, key)
-    if fname is None:
+def edit_load_state(game, btn, player):
+    state_name = input("Load state (without directory or .py)")
+    if state_name is None:
         return
     else:
-        state_name = os.path.splitext(os.path.basename(fname))[0]
         print("STATE_NAME",state_name)
-        self.game.load_state(self.game.scene, state_name)
+        game.load_state(game.scene, state_name)
 
-def initial_state(*args, **kwargs):
-    self.game.load_state(self.game.scene, "initial")
-
+def edit_initial_state(game, btn, player):
+    game.load_state(game.scene, "initial")
 
 def pyglet_editor(game):
     e = Editor(game)
@@ -5844,9 +5838,9 @@ def pyglet_editor(game):
 
     x += 50
     game._edit_menu.append(Text("Save State", pos=(x,y), size=size, offset=offset, game=game, interact=edit_save_state))
-    x += 50
+    x += 150
     game._edit_menu.append(Text("Load State", pos=(x,y), size=size, offset=offset, game=game, interact=edit_load_state))
-    x += 50
+    x += 150
     game._edit_menu.append(Text("Initial State", pos=(x,y), size=size, offset=offset, game=game, interact=edit_initial_state))
 
 
