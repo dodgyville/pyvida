@@ -2882,7 +2882,7 @@ class Scene(metaclass=use_on_events):
 
 
 class Text(Item):
-    def __init__(self, name, pos=(0,0), display_text=None, colour=(255, 255, 255, 255), font=None, size=26, wrap=800, offset=None, interact=None, look=None, delay=0, step=2):
+    def __init__(self, name, pos=(0,0), display_text=None, colour=(255, 255, 255, 255), font=None, size=26, wrap=800, offset=None, interact=None, look=None, delay=0, step=2, game=None):
         """
         delay : How fast to display chunks of the text
         step : How many characters to advance during delayed display
@@ -2898,6 +2898,7 @@ class Text(Item):
         self.offset = offset
         self._height = None #height of full text
         self._width = None #width of full text
+        self.game=game
 
 
         #animate the text
@@ -4732,7 +4733,7 @@ class Game(metaclass=use_on_events):
         layer_objects = self.scene._layer if self.scene else []
 
         #update all the objects in the scene or the event queue.
-        items_list = [layer_objects, scene_objects, self._menu, modal_objects, [self.camera], [obj[1][0] for obj in self._events]]
+        items_list = [layer_objects, scene_objects, self._menu, modal_objects, [self.camera], [obj[1][0] for obj in self._events], self._edit_menu]
         items_to_update = []
         for items in items_list:
             for item in items: #_to_update:
@@ -4760,11 +4761,6 @@ class Game(metaclass=use_on_events):
         if self._headless and self._walkthrough_target >= self._walkthrough_index and len(self._modals)>0:
             self._process_walkthrough()
 
-    def pyglet_editor_draw(self): #editor draw
-        for item in self._edit_menu:
-            item.pyglet_draw(absolute=False)
-
-
     def pyglet_draw(self): #game.draw
         """ Draw the scene """
         if not self.scene: 
@@ -4777,7 +4773,6 @@ class Game(metaclass=use_on_events):
         #draw scene backgroundsgrounds (layers with z equal or less than 1.0)
         dt = pyglet.clock.tick()
         self._window.clear()
-        if self._edit_window: self._edit_window.clear()
         pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0) # undo alpha for pyglet drawing            
         for item in self.scene._layer:
             item.game = self #awkward, layers have to be updated in case from save file
@@ -5583,10 +5578,99 @@ def editor(game):
     app = MyTkApp(game)
 
 ##### pyglet editor 
+
+class Editor(object):
+    def __init__(self, game):
+        self.game = game
+        self.obj = None #the object in the edit window
+        self._edit_object_menu = []
+
+    def pyglet_editor_draw(self): #editor draw
+        self.game._edit_window.clear()
+        for item in self.game._edit_menu:
+            item.pyglet_draw(absolute=False)
+
+    def on_mouse_release(self, x, y, button, modifiers):
+        """ Call the correct function depending on what the mouse has clicked on """
+#        x, y = x / self._scale, y / self._scale #if window is being scaled
+        ax, ay = x,y #asbolute x,y (for modals and menu)
+        y = self.game.resolution[1] - y #invert y-axis if needed
+        ay = self.game.resolution[1] - ay
+
+        for name in self.game._edit_menu:
+            obj = get_object(self, name)
+            if obj.collide(ax, ay):
+                user_trigger_interact(self.game, obj)
+                return
+
+    def on_mouse_motion(self,x, y, dx, dy):
+        """ Change mouse cursor depending on what the mouse is hovering over """
+        self.game.mouse_position_raw = x,y
+        self.game.mouse_position = x, self.game.resolution[1] - y #adjusted for pyglet
+        ox, oy = x,y
+
+#        x, y = x / self._scale, y / self._scale #if window is being scaled
+        y = self.game.resolution[1] - y #invert y-axis if needed
+
+        ox, oy = ox / self.game._scale, oy / self.game._scale #if window is being scaled
+        oy = self.game.resolution[1] - oy
+
+        modal_collide = False
+        menu_collide = False
+        for obj in self.game._edit_menu:
+            if obj.collide(ox,oy): #absolute screen values
+                 self.mouse_cursor = MOUSE_CROSSHAIR
+                 if obj._actions and "over" in obj._actions and (obj.allow_interact or obj.allow_use or obj.allow_look):
+                     obj._do("over")
+
+                 if obj._mouse_motion and not menu_collide: obj._mouse_motion(self.game, obj, self.game.player,x,y,dx,dy, ox,oy)
+                 menu_collide = True
+            else: #unhover over menu item
+                if obj._mouse_none: 
+                    fn = get_function(self.game, obj._mouse_none, obj)
+                    fn(self.game, obj, self.game.player,x,y,dx,dy, ox,oy)
+                elif obj.action and obj.action.name == "over" and (obj.allow_interact or obj.allow_use or obj.allow_look):
+                    if "idle" in obj._actions: 
+                        obj._do('idle')
+            if menu_collide: return
+
+        #Not over any thing of importance
+        self.game._info_object.display_text = "" #clear info 
+        self.game.mouse_cursor = MOUSE_POINTER #reset mouse pointer
+
+    def object_editor(self, obj, x,y):
+        """ Create a display for the object """
+        size = 14
+        offset = 2
+        #clear old object widgets
+        for o in self._edit_object_menu:
+            if o in self.game._edit_menu: self.game._edit_menu.remove(o)
+        colour = COLOURS["cornflowerblue"]
+        #TODO use self._editable?
+        for editable in obj._editable:
+#            if game._editing.get() == editable[0]: #this is what we want to edit now.
+                label, get_attrs, set_attrs, types = editable
+                opt = ObjEditText(label, obj, get_attrs, set_attrs, format, pos=(x,y), size=size, offset=offset, colour=colour,game=self.game, interact=edit_point)
+                opt.colour = colour #store the colour so we can undo it after hover
+                opt._mouse_none = option_mouse_none
+                opt._mouse_motion = option_mouse_motion
+                self.game._edit_menu.append(opt) #display widget
+                self._edit_object_menu.append(opt) #remember object editor widgets
+                y += 30
+
+    def _set_edit_object(self, obj):
+        obj = get_object(self.game, obj) 
+        old_obj = get_object(self.game, self.obj)
+        if old_obj: old_obj.show_debug = False
+        self.obj = obj
+        obj.show_debug = True
+        #object navigation
+        x, y  = 0, 200
+        self.object_editor(obj, x,y)    
+
 def edit_navigate(game, delta):
     objects = game.scene._objects
     num_objects = len(objects)
-    import pdb; pdb.set_trace()
     if num_objects == 0:
         print("No objects in scene")
         return
@@ -5597,7 +5681,7 @@ def edit_navigate(game, delta):
     if game._edit_index < 0: game._edit_index = num_objects-1
     if game._edit_index >= num_objects: game._edit_index = 0
     obj = objects[game._edit_index]
-#    _set_edit_object(obj)
+    game.editor._set_edit_object(obj)
 
 def edit_prev(game, btn, player):
     edit_navigate(game, -1) #decrement navigation
@@ -5605,20 +5689,66 @@ def edit_prev(game, btn, player):
 def edit_next(game, btn, player):
     edit_navigate(game, 1) #increment navigation
 
+def edit_point(game, btn, player):
+    print("Toggle edit button, start editing this point if switching it on")
+    btn.toggled = not btn.toggled
+    if btn.toggled:
+        btn.colour = (255,255,0)
+        btn.create_label()
+    else:
+        btn.colour = COLOURS["cornflowerblue"]
+
+def edit_scene_btn(game, btn, player):
+    print("select scene")
+
+class ObjEditText(Text):
+    """ Special widget that always tracks an attribute of the object currently being edited """
+    def __init__(self, name, obj, get_attrs, set_attrs, format, *args, **kwargs):
+        self.label = name
+        self.obj = obj #object to edit
+        self.get_attrs = get_attrs #get method(s) to display
+        self.set_attrs = set_attrs #set method(s) to edit
+        self.format = format #format of what we're editing
+        self.toggled = False
+        super().__init__(name, *args, **kwargs)
+    
+    def _update(self, dt, obj=None): #actor._update, use obj to override self
+        super()._update(dt, obj)
+        if self.obj:
+            if hasattr(self.get_attrs, "__len__") and len(self.get_attrs) == 2: #track a point
+                x, y = self.get_attrs[0](), self.get_attrs[1]()
+                self.display_text = "%s: %s, %s"%(self.label, x,y)
+            elif type(self.set_attrs) == str: #editing a Rect
+                pass
+
 def pyglet_editor(game):
+    e = Editor(game)
     game._edit_window = pyglet.window.Window(600, 960)
-    game._edit_window.on_draw = game.pyglet_editor_draw
-    game._edit_window.on_key_press = game.on_key_press
-    game._edit_window.on_mouse_motion = game.on_mouse_motion
-    game._edit_window.on_mouse_press = game.on_mouse_press
-    game._edit_window.on_mouse_release = game.on_mouse_release
-    game._edit_window.on_mouse_drag = game.on_mouse_drag
+    game._edit_window.on_draw = e.pyglet_editor_draw
+#    game._edit_window.on_key_press = e.on_key_press
+    game._edit_window.on_mouse_motion = e.on_mouse_motion
+#    game._edit_window.on_mouse_press = e.on_mouse_press
+    game._edit_window.on_mouse_release = e.on_mouse_release
+#    game._edit_window.on_mouse_drag = e.on_mouse_drag
 
     #create the widgets 
-    game._edit_menu = game._menu_from_factory("menu", [
-        ("<-", edit_prev),
-        ("->", edit_next),
-#        (MENU_EXTRAS, menu_extras),
-#        (MENU_SETTINGS, menu_settings),
-#        (MENU_EXIT_GAME, menu_exit_game),
-        ])
+    size = 14
+    offset = 2
+
+    #game navigation
+    x,y = 0, 10
+    opt = Text("Scene: %s"%game.scene.name, pos=(x,y), size=size, offset=offset, game=game, interact=edit_scene_btn)
+    game._edit_menu.append(opt)
+
+    #scene navigation
+    x = 0 
+    y += 50
+    opt = Text("<-", pos=(x,y), size=size, offset=offset, game=game, interact=edit_prev)
+    game._edit_menu.append(opt)
+
+    x += 50
+    opt = Text("->", pos=(x,y), size=size, offset=offset, game=game, interact=edit_next)
+    game._edit_menu.append(opt)
+    game.editor = e
+
+
