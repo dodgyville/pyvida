@@ -5578,6 +5578,30 @@ def editor(game):
     app = MyTkApp(game)
 
 ##### pyglet editor 
+class ObjEditText(Text):
+    """ Special widget that always tracks an attribute of the object currently being edited """
+    def __init__(self, name, obj, get_attrs, set_attrs, format, *args, **kwargs):
+        self.label = name
+        self.obj = obj #object to edit
+        self.get_attrs = get_attrs #get method(s) to display
+        self.set_attrs = set_attrs #set method(s) to edit
+        self.format = format #format of what we're editing
+        self.toggled = False
+        super().__init__(name, *args, **kwargs)
+    
+    def _update(self, dt, obj=None): #actor._update, use obj to override self
+        super()._update(dt, obj)
+        if self.obj:
+            if hasattr(self.get_attrs, "__len__") and len(self.get_attrs) == 2: #track a point
+                x, y = self.get_attrs[0](), self.get_attrs[1]()
+                self.display_text = "%s: %0.3f, %0.3f"%(self.label, x,y)
+            elif type(self.set_attrs) == str: #display a Rect (a string attribute implies an attribute name like _clickable_area
+                #calculate are we editing the x,y or the w,h
+                r = getattr(self.obj, self.get_attrs, None)
+                if r: self.display_text = "%s: %s"%(self.label, r.serialise())
+            else: # a single variable (eg scale)
+                r = self.get_attrs()
+                if r: self.display_text = "%s: %0.3f"%(self.label, r)
 
 class Editor(object):
     def __init__(self, game):
@@ -5592,7 +5616,7 @@ class Editor(object):
 
     def on_mouse_release(self, x, y, button, modifiers):
         """ Call the correct function depending on what the mouse has clicked on """
-#        x, y = x / self._scale, y / self._scale #if window is being scaled
+#        x, y = x / self.game._scale, y / self.game._scale #if window is being scaled
         ax, ay = x,y #asbolute x,y (for modals and menu)
         y = self.game.resolution[1] - y #invert y-axis if needed
         ay = self.game.resolution[1] - ay
@@ -5609,10 +5633,10 @@ class Editor(object):
         self.game.mouse_position = x, self.game.resolution[1] - y #adjusted for pyglet
         ox, oy = x,y
 
-#        x, y = x / self._scale, y / self._scale #if window is being scaled
+#        x, y = x / self.game._scale, y / self.game._scale #if window is being scaled
         y = self.game.resolution[1] - y #invert y-axis if needed
 
-        ox, oy = ox / self.game._scale, oy / self.game._scale #if window is being scaled
+#        ox, oy = ox / self.game._scale, oy / self.game._scale #if window is being scaled
         oy = self.game.resolution[1] - oy
 
         modal_collide = False
@@ -5638,6 +5662,56 @@ class Editor(object):
         self.game._info_object.display_text = "" #clear info 
         self.game.mouse_cursor = MOUSE_POINTER #reset mouse pointer
 
+
+    def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
+#        x, y = x / self.game._scale, y / self.game._scale #if window is being scaled
+        y = self.game.resolution[1] - y #invert y-axis if needed
+
+        if self.game._editing and self.game._editing_point_set: #we are editing something so send through the new x,y in pyvida format
+#               x,y = x, self.resolution[1] - y #invert for pyglet to pyvida
+            if hasattr(self.game._editing_point_get, "__len__") and len(self.game._editing_point_get) == 2:
+                x, y = self.game._editing_point_get[0](), self.game._editing_point_get[1]()
+                x += dx
+                y -= dy
+                self.game._editing_point_set[0](x)
+                self.game._editing_point_set[1](y)
+                if self.game._editing_label in self.game._editing._tk_edit: 
+                    print("Edit",self.game._editing_label, self.game._editing._tk_edit[self.game._editing_label][0])
+                    self.game._editing._tk_edit[self.game._editing_label][0].delete(0, 100)
+                    self.game._editing._tk_edit[self.game._editing_label][0].insert(0, x)
+
+                    self.game._editing._tk_edit[self.game._editing_label][1].delete(0, 100)
+                    self.game._editing._tk_edit[self.game._editing_label][1].insert(0, y)
+#                if self.game._editing_point_set[0] == self.game._editing.set_x: #set x, so use raw
+#                else: #displace the point by the object's x,y so the point is relative to the obj
+#                    self.game._editing_point_set[0](x - self.game._editing.x)
+#                    self.game._editing_point_set[1](y - self.game._editing.y)
+            elif type(self.game._editing_point_set) == str: #editing a Rect
+                #calculate are we editing the x,y or the w,h
+                closest_distance = 10000.0
+                r = getattr(self.game._editing, self.game._editing_point_get, None)
+                editing_index = None
+                y =  self.game.h - y
+                for i,pt in enumerate([(r.left, r.top), (r.right, r.bottom)]): #possible select new point
+                    dist = math.sqrt( (pt[0] - x)**2 + (pt[1] - y)**2 )
+                    if dist<closest_distance:
+                        editing_index = i
+                        closest_distance = dist
+                if editing_index == None: return
+                r2 = getattr(self.game._editing, self.game._editing_point_set, None)
+                if editing_index == 0:
+                    r2.x += dx
+                    r2.y -= dy
+                else:
+                    r2._w += dx
+                    r2._h -= dy
+                if self.game._editing_point_set == "_clickable_area": self.game._editing._clickable_mask = None #clear mask
+                setattr(self.game._editing, self.game._editing_point_set, r2)
+                
+            else:
+                self.game._editing_point_set(x)
+
+
     def object_editor(self, obj, x,y):
         """ Create a display for the object """
         size = 14
@@ -5647,16 +5721,20 @@ class Editor(object):
             if o in self.game._edit_menu: self.game._edit_menu.remove(o)
         colour = COLOURS["cornflowerblue"]
         #TODO use self._editable?
+        opt = Text(obj.name, pos=(x,y), size=size, offset=offset, colour=colour,game=self.game, interact=edit_point)
+        self.game._edit_menu.append(opt) #display widget
+        self._edit_object_menu.append(opt) #remember object editor widgets
+
         for editable in obj._editable:
-#            if game._editing.get() == editable[0]: #this is what we want to edit now.
-                label, get_attrs, set_attrs, types = editable
-                opt = ObjEditText(label, obj, get_attrs, set_attrs, format, pos=(x,y), size=size, offset=offset, colour=colour,game=self.game, interact=edit_point)
-                opt.colour = colour #store the colour so we can undo it after hover
-                opt._mouse_none = option_mouse_none
-                opt._mouse_motion = option_mouse_motion
-                self.game._edit_menu.append(opt) #display widget
-                self._edit_object_menu.append(opt) #remember object editor widgets
-                y += 30
+            y += 30
+            label, get_attrs, set_attrs, types = editable
+            opt = ObjEditText(label, obj, get_attrs, set_attrs, format, pos=(x,y), size=size, offset=offset, colour=colour,game=self.game, interact=edit_point)
+            opt.colour = colour #store the colour so we can undo it after hover
+            opt._mouse_none = option_mouse_none
+            opt._mouse_motion = option_mouse_motion
+            opt.editable = editable
+            self.game._edit_menu.append(opt) #display widget
+            self._edit_object_menu.append(opt) #remember object editor widgets
 
     def _set_edit_object(self, obj):
         obj = get_object(self.game, obj) 
@@ -5667,6 +5745,8 @@ class Editor(object):
         #object navigation
         x, y  = 0, 200
         self.object_editor(obj, x,y)    
+
+""" Utility functions for editing game objects """
 
 def edit_navigate(game, delta):
     objects = game.scene._objects
@@ -5698,38 +5778,50 @@ def edit_point(game, btn, player):
     else:
         btn.colour = COLOURS["cornflowerblue"]
 
+    label, get_attrs, set_attrs, types = btn.editable
+    game._editing = game.editor.obj
+    game._editing_point_set = set_attrs
+    game._editing_point_get = get_attrs
+    game._editing_label = label
+
 def edit_scene_btn(game, btn, player):
     print("select scene")
 
-class ObjEditText(Text):
-    """ Special widget that always tracks an attribute of the object currently being edited """
-    def __init__(self, name, obj, get_attrs, set_attrs, format, *args, **kwargs):
-        self.label = name
-        self.obj = obj #object to edit
-        self.get_attrs = get_attrs #get method(s) to display
-        self.set_attrs = set_attrs #set method(s) to edit
-        self.format = format #format of what we're editing
-        self.toggled = False
-        super().__init__(name, *args, **kwargs)
-    
-    def _update(self, dt, obj=None): #actor._update, use obj to override self
-        super()._update(dt, obj)
-        if self.obj:
-            if hasattr(self.get_attrs, "__len__") and len(self.get_attrs) == 2: #track a point
-                x, y = self.get_attrs[0](), self.get_attrs[1]()
-                self.display_text = "%s: %s, %s"%(self.label, x,y)
-            elif type(self.set_attrs) == str: #editing a Rect
-                pass
+
+def edit_save_state(game, btn, player):
+    fname = d.go(self.game.scene.directory, pattern, default, key)
+    if fname is None:
+        return
+    else:
+        print("SAVE STATE")
+        state_name = os.path.splitext(os.path.basename(fname))[0]
+        self.game._save_state(state_name)
+
+def load_state(*args, **kwargs):
+    d = tk.filedialog.LoadFileDialog(self.app)
+    pattern, default, key = "*.py", "", None
+    fname = d.go(self.game.scene.directory, pattern, default, key)
+    if fname is None:
+        return
+    else:
+        state_name = os.path.splitext(os.path.basename(fname))[0]
+        print("STATE_NAME",state_name)
+        self.game.load_state(self.game.scene, state_name)
+
+def initial_state(*args, **kwargs):
+    self.game.load_state(self.game.scene, "initial")
+
 
 def pyglet_editor(game):
     e = Editor(game)
-    game._edit_window = pyglet.window.Window(600, 960)
+    game.editor = e
+    game._edit_window = pyglet.window.Window(int(600*0.99), int(960*0.99))
     game._edit_window.on_draw = e.pyglet_editor_draw
 #    game._edit_window.on_key_press = e.on_key_press
     game._edit_window.on_mouse_motion = e.on_mouse_motion
 #    game._edit_window.on_mouse_press = e.on_mouse_press
     game._edit_window.on_mouse_release = e.on_mouse_release
-#    game._edit_window.on_mouse_drag = e.on_mouse_drag
+    game._edit_window.on_mouse_drag = e.on_mouse_drag
 
     #create the widgets 
     size = 14
@@ -5749,6 +5841,12 @@ def pyglet_editor(game):
     x += 50
     opt = Text("->", pos=(x,y), size=size, offset=offset, game=game, interact=edit_next)
     game._edit_menu.append(opt)
-    game.editor = e
+
+    x += 50
+    game._edit_menu.append(Text("Save State", pos=(x,y), size=size, offset=offset, game=game, interact=edit_save_state))
+    x += 50
+    game._edit_menu.append(Text("Load State", pos=(x,y), size=size, offset=offset, game=game, interact=edit_load_state))
+    x += 50
+    game._edit_menu.append(Text("Initial State", pos=(x,y), size=size, offset=offset, game=game, interact=edit_initial_state))
 
 
