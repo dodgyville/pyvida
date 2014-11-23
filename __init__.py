@@ -2292,8 +2292,8 @@ class Actor(object):
 #        if self.game and self.game.output_walkthrough: print("%s says \"%s\"."%(self.name, args[0]))
         
         for m in modals: #for the new says elements, allow clicking on voice options
-            if m.name != "ok":
-                m.collide = collide_never
+            #if m.name != "ok":
+            m.collide = collide_never
             if m.name == "msgbox":
                 msgbox = m
 
