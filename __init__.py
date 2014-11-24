@@ -2796,8 +2796,15 @@ class Scene(metaclass=use_on_events):
             if os.path.isfile(details_filename): #find a details file for each element
                 f = self._load_layer(element)
                 try:
-                    layer_defaults = json.loads(open(details_filename).read())
+                    data = open(details_filename).read()
+                    layer_defaults = json.loads(data)
                     for key, val in layer_defaults.items():
+                        if type(val) is str:
+                            #this feels like very fragile code
+                            val = val.strip() #remove errant newlines or spaces
+                            if val[0] == "(" and val[-1] == ")": #convert jsoned tuples 
+                                l = val[1:-1].split(",") #remove brackets and split
+                                val = float(l[0].strip()), float(l[1].strip()) #convert to tuple. 
                         f.__dict__[key] = val
                 except ValueError:
                     log.error("Unable to load details from %s"%details_filename)
@@ -4582,10 +4589,9 @@ class Game(metaclass=use_on_events):
                 save_game(self, "saves/{}.save".format(self._walkthrough_target_name))
 #            self.player.says(gettext("Let's play."))
 #            self.camera.scene("lfloatmid")
-            self.load_state("igreenhouse", "initial")
-            self.player.relocate("igreenhouse")
-            self.camera.scene("igreenhouse")
-
+#            self.load_state("igreenhouse", "initial")
+ #           self.player.relocate("igreenhouse")
+ #           self.camera.scene("igreenhouse")
             return
         human_readable_name = None #if this walkthrough has a human readable name, we might be wanting to create an autosave here.
         s = "Walkthrough:",list(walkthrough)
@@ -5712,6 +5718,11 @@ class Editor(object):
                 self.game._editing_point_set(x)
 
 
+    def _add_object_to_editor(self, obj):
+        self.game._edit_menu.append(obj) #display widget
+        self._edit_object_menu.append(obj) #remember object editor widgets
+        
+
     def object_editor(self, obj, x,y):
         """ Create a display for the object """
         size = 14
@@ -5722,9 +5733,7 @@ class Editor(object):
         colour = COLOURS["cornflowerblue"]
         #TODO use self._editable?
         opt = Text(obj.name, pos=(x,y), size=size, offset=offset, colour=colour,game=self.game, interact=edit_point)
-        self.game._edit_menu.append(opt) #display widget
-        self._edit_object_menu.append(opt) #remember object editor widgets
-
+        self._add_object_to_editor(opt)
         for editable in obj._editable:
             y += 30
             label, get_attrs, set_attrs, types = editable
@@ -5733,8 +5742,12 @@ class Editor(object):
             opt._mouse_none = option_mouse_none
             opt._mouse_motion = option_mouse_motion
             opt.editable = editable
-            self.game._edit_menu.append(opt) #display widget
-            self._edit_object_menu.append(opt) #remember object editor widgets
+            self._add_object_to_editor(opt)
+
+        y += 60
+        opt = Text("Edit Script", pos=(x,y), size=size, offset=offset, colour=colour,game=self.game, interact=edit_point)
+        self._add_object_to_editor(opt)
+
 
     def _set_edit_object(self, obj):
         obj = get_object(self.game, obj) 
