@@ -5857,6 +5857,47 @@ def edit_load_state(game, btn, player):
 def edit_initial_state(game, btn, player):
     game.load_state(game.scene, "initial")
 
+def _new_object(game, obj):
+    d = os.path.join(get_smart_directory(game, obj), obj.name)
+    if not os.path.exists(d):
+        os.makedirs(d)
+    obj.smart(game)
+    obj.x, obj.y = (game.resolution[0]/2, game.resolution[1]/2)
+    game.add(obj)
+    game.scene.add(obj)
+    game.editor._set_edit_object(obj)
+    return obj
+
+def new_actor(game, btn, player):
+    d = input("Actor name?")
+    if not d: return
+    _new_object(game, Actor(d))
+
+def new_item(game, btn, player):
+    d = input("Item name?")
+    if not d: return
+    _new_object(game, Item(d))
+
+def new_portal(game, btn, player):
+#    d = SceneSelectDialog(self.game, "Exit Scene")
+    d = input("Connect to scene?")
+    if not d: return
+    name = "{}_to_{}".format(game.scene.name, d)
+    obj = _new_object(game, Portal(name))
+    obj.guess_link()
+
+def import_object(game, btn, player):
+    fname = input("Object name to import?")
+    name = os.path.basename(fname)
+    for obj_cls in [Actor, Item, Emitter, Portal, Scene]:
+        dname = "directory_%ss"%obj_cls.__name__.lower()
+        if getattr(game, dname) in fname:  #guess the class
+            o = obj_cls(name)
+            game._add(o)
+            o.smart(game)
+            return
+
+
 def close_editor(game, btn, player):
     if game.editor.obj: game.editor.obj.show_debug = False
     if game._editing:
@@ -5883,7 +5924,7 @@ def pyglet_editor(game):
     offset = 2
 
     #game navigation
-    x,y = 0, 10
+    x,y = 0, 5
     opt = Text("Scene: %s"%game.scene.name, pos=(x,y), size=size, offset=offset, game=game, interact=edit_scene_btn)
     game._edit_menu.append(opt)
 
@@ -5898,6 +5939,20 @@ def pyglet_editor(game):
     game._edit_menu.append(opt)
 
     x += 40
+    game._edit_menu.append(Text("New Actor", pos=(x,y), size=size, offset=offset, game=game, interact=new_actor))
+
+    x += 110
+    game._edit_menu.append(Text("New Item", pos=(x,y), size=size, offset=offset, game=game, interact=new_item))
+
+    x += 110
+    game._edit_menu.append(Text("New Portal", pos=(x,y), size=size, offset=offset, game=game, interact=new_portal))
+
+    x += 110
+    game._edit_menu.append(Text("Import Object", pos=(x,y), size=size, offset=offset, game=game, interact=import_object))
+
+
+    y += 40
+    x = 0
     game._edit_menu.append(Text("Save State", pos=(x,y), size=size, offset=offset, game=game, interact=edit_save_state))
     x += 120
     game._edit_menu.append(Text("Load State", pos=(x,y), size=size, offset=offset, game=game, interact=edit_load_state))
