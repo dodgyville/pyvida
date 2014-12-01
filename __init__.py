@@ -1061,6 +1061,7 @@ class Actor(object, metaclass=use_on_events):
         self._opacity = 255
         self._opacity_target = None
         self._opacity_delta = 0
+        self._opacity_target_block = False #is opacity change blocking other events
 
         self._sx, self._sy = 0, 0 #stand point
         self._ax, self._ay = 0, 0 #anchor point
@@ -1421,9 +1422,11 @@ class Actor(object, metaclass=use_on_events):
             if self._opacity_delta<0 and self._opacity < self._opacity_target:
                 self._opacity = self._opacity_target
                 self._opacity_target = None
+                if self._opacity_target_block: self.busy -= 1 #stop blocking
             elif self._opacity_delta>0 and self._opacity > self._opacity_target:
                 self._opacity = self._opacity_target
                 self._opacity_target = None
+                if self._opacity_target_block: self.busy -= 1 #stop blocking
 
             if self._sprite: self._sprite.opacity = self._opacity
 
@@ -1910,15 +1913,13 @@ class Actor(object, metaclass=use_on_events):
         label.game = self.game
         label.fullscreen(True)
         label.x,label.y = self.x + self.tx, self.y - self.ty
-        def _close_on_says(game, obj, player):
-            print("IS THIS EVEN USED? PERHAPS in 'on_continues'")
-            import pdb; pdb.set_trace()
+        def _close_on_says(game, obj, player): #close speech after continues.
             self.game._modals.remove(label.name)
             self.busy -= 1
             if logging: log.info("%s has finished on_says (%s), so decrement self.busy to %i."%(self.name, text, self.busy))
-
         label.interact = _close_on_says
         self.busy += 1
+        self.game._add(label)
         self.game._modals.append(label.name)
 
 
@@ -2219,6 +2220,9 @@ class Actor(object, metaclass=use_on_events):
         log.warning("respeech has been renamed retext")
         self.on_retext(point)
         
+    def on_opacity(self, v):
+        self.alpha = v
+
     def on_hide(self, interactive=False):
         """ A queuing function: hide the actor, including from all click and hover events 
         
@@ -2237,13 +2241,16 @@ class Actor(object, metaclass=use_on_events):
         """
         self._usage(draw=True, update=True) # switch everything on
 
-    def on_fade_in(self, action=None, seconds=3): #actor.fade_in
+    def on_fade_in(self, action=None, seconds=3, block=False): #actor.fade_in
         if action: self._do(action)
         if self.game._headless:  #headless mode skips sound and visuals
             self.alpha = 255
             return
         self._opacity_target = 255
         self._opacity_delta = (self._opacity_target - self._opacity)/(self.game.fps*seconds)
+        if block==True:
+            self.busy += 1
+            self._opacity_target_block = True
 
     def _fade_out(self, action=None, seconds=3): #actor.fade_out
         if action: self._do(action)
@@ -2252,6 +2259,9 @@ class Actor(object, metaclass=use_on_events):
             return
         self._opacity_target = 0
         self._opacity_delta = (self._opacity_target - self._opacity)/(self.game.fps*seconds)
+        if block==True: 
+            self.busy += 1
+            self._opacity_target_block = True
 
     def on_fade_out(self, action=None, seconds=3): #actor.fade_out
         self._fade_out(action, seconds)
@@ -4814,6 +4824,7 @@ class Game(metaclass=use_on_events):
         for name in self._modals:
             modal = get_object(self, name)
             if not modal: import pdb; pdb.set_trace()
+#            if modal:
             modal.game = self
             modal.pyglet_draw(absolute=True)
 
@@ -5745,7 +5756,8 @@ class Editor(object):
             self._add_object_to_editor(opt)
 
         y += 60
-        opt = Text("Edit Script", pos=(x,y), size=size, offset=offset, colour=colour,game=self.game, interact=edit_point)
+
+        opt = Text("Edit Script", pos=(x,y), size=size, offset=offset, colour=colour,game=self.game, interact=edit_script)
         self._add_object_to_editor(opt)
 
 
@@ -5760,6 +5772,8 @@ class Editor(object):
         self.object_editor(obj, x,y)    
 
 """ Utility functions for editing game objects """
+
+
 
 def edit_navigate(game, delta):
     objects = game.scene._objects
@@ -5800,6 +5814,10 @@ def edit_point(game, btn, player):
 def edit_scene_btn(game, btn, player):
     print("select scene")
 
+
+def edit_script(game, btn, player):
+    """ Open the script for this object for editing """
+    edit_object_script(game, game.editor.obj)
 
 def edit_save_state(game, btn, player):
     state_name = input("Save name (without directory or .py)")
