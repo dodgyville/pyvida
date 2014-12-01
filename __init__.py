@@ -1164,6 +1164,7 @@ class Actor(object, metaclass=use_on_events):
             ("position", (self.get_x, self.get_y), (self.set_x, self.set_y),  (int, int)),
             ("stand point", (self.get_sx, self.get_sy), (self.set_sx, self.set_sy),  (int, int)),
             ("name point", (self.get_nx, self.get_ny), (self.set_nx, self.set_ny),  (int, int)),
+            ("text point", (self.get_tx, self.get_ty), (self.set_tx, self.set_ty),  (int, int)),
             ("anchor", (self.get_ax, self.get_ay), (self.set_ax, self.set_ay), (int, int)),
             ("scale", self.get_scale, self.adjust_scale_x, float),
             ("interact", self.get_interact, self.set_interact, str),
@@ -1422,11 +1423,16 @@ class Actor(object, metaclass=use_on_events):
             if self._opacity_delta<0 and self._opacity < self._opacity_target:
                 self._opacity = self._opacity_target
                 self._opacity_target = None
-                if self._opacity_target_block: self.busy -= 1 #stop blocking
+                if self._opacity_target_block: 
+                    self.busy -= 1 #stop blocking
+                    if logging: log.info("%s has finished on_fade_out, so decrement self.busy to %i."%(self.name, self.busy))
+
             elif self._opacity_delta>0 and self._opacity > self._opacity_target:
                 self._opacity = self._opacity_target
                 self._opacity_target = None
-                if self._opacity_target_block: self.busy -= 1 #stop blocking
+                if self._opacity_target_block: 
+                    self.busy -= 1 #stop blocking
+                    if logging: log.info("%s has finished on_fade_in, so decrement self.busy to %i."%(self.name, self.busy))
 
             if self._sprite: self._sprite.opacity = self._opacity
 
@@ -1913,11 +1919,11 @@ class Actor(object, metaclass=use_on_events):
         label.game = self.game
         label.fullscreen(True)
         label.x,label.y = self.x + self.tx, self.y - self.ty
-        def _close_on_says(game, obj, player): #close speech after continues.
+        def _close_on_continues(game, obj, player): #close speech after continues.
             self.game._modals.remove(label.name)
             self.busy -= 1
-            if logging: log.info("%s has finished on_says (%s), so decrement self.busy to %i."%(self.name, text, self.busy))
-        label.interact = _close_on_says
+            if logging: log.info("%s has finished on_continues (%s), so decrement self.busy to %i."%(self.name, text, self.busy))
+        label.interact = _close_on_continues
         self.busy += 1
         self.game._add(label)
         self.game._modals.append(label.name)
@@ -5748,7 +5754,14 @@ class Editor(object):
         for editable in obj._editable:
             y += 30
             label, get_attrs, set_attrs, types = editable
-            opt = ObjEditText(label, obj, get_attrs, set_attrs, format, pos=(x,y), size=size, offset=offset, colour=colour,game=self.game, interact=edit_point)
+            edit_fn = edit_point
+            if types == tuple: #assume two ints
+                edit_fn = edit_point
+            elif types == bool: #assume bool
+                edit_fn = edit_bool
+#                tk.Checkbutton(frame, variable=self._editing_bool[label], command=toggle_bools, onvalue=True, offvalue=False).grid(row=row, column=1, columnspan=2)
+
+            opt = ObjEditText(label, obj, get_attrs, set_attrs, format, pos=(x,y), size=size, offset=offset, colour=colour,game=self.game, interact=edit_fn)
             opt.colour = colour #store the colour so we can undo it after hover
             opt._mouse_none = option_mouse_none
             opt._mouse_motion = option_mouse_motion
@@ -5796,8 +5809,7 @@ def edit_prev(game, btn, player):
 def edit_next(game, btn, player):
     edit_navigate(game, 1) #increment navigation
 
-def edit_point(game, btn, player):
-    print("Toggle edit button, start editing this point if switching it on")
+def _toggle_btn(game, btn, player):
     btn.toggled = not btn.toggled
     if btn.toggled:
         btn.colour = (255,255,0)
@@ -5805,15 +5817,22 @@ def edit_point(game, btn, player):
     else:
         btn.colour = COLOURS["cornflowerblue"]
 
+def edit_point(game, btn, player):
+    print("Toggle edit button, start editing this point if switching it on")
+    _toggle_btn(game, btn, player)
     label, get_attrs, set_attrs, types = btn.editable
     game._editing = game.editor.obj
     game._editing_point_set = set_attrs
     game._editing_point_get = get_attrs
     game._editing_label = label
 
+def edit_bool(game, btn, player):
+    _toggle_btn(game, btn, player)
+    label, get_attrs, set_attrs, types = btn.editable
+    set_attrs(not get_attrs())
+ 
 def edit_scene_btn(game, btn, player):
     print("select scene")
-
 
 def edit_script(game, btn, player):
     """ Open the script for this object for editing """
