@@ -3878,6 +3878,7 @@ class Game(metaclass=use_on_events):
         self._resident = [] #list of scenes recently visited, unload assets for scenes that haven't been visited for a while
 
         #editor and walkthrough     
+        self.editor = None #pyglet-based editor
         self._edit_window = None #the 2nd pyglet window containing the edit menu
         self._edit_menu = [] #the items to draw on the second window
         self._edit_index = 0
@@ -4503,8 +4504,7 @@ class Game(metaclass=use_on_events):
 
         modules -- use the listed modules instead of game._modules
         """
-
-        if not self._allow_editing: #only reload during edit mode as it disables save games
+        if not self._allow_editing and not self.editor: #only reload during edit mode as it disables save games
             return
 #        print("RELOAD MODULES")
         #clear signals so they reload
@@ -5633,6 +5633,7 @@ class Editor(object):
         self._edit_object_menu = []
 
     def pyglet_editor_draw(self): #editor draw
+        if not self.game._edit_window: return
         self.game._edit_window.clear()
         for item in self.game._edit_menu:
             item.pyglet_draw(absolute=False)
@@ -5856,6 +5857,16 @@ def edit_load_state(game, btn, player):
 def edit_initial_state(game, btn, player):
     game.load_state(game.scene, "initial")
 
+def close_editor(game, btn, player):
+    if game.editor.obj: game.editor.obj.show_debug = False
+    if game._editing:
+        game._editing.show_debug = False
+        game._editing = None #switch off editor
+    game.editor = None
+    game._edit_window.close()
+    game._edit_window = None
+
+
 def pyglet_editor(game):
     e = Editor(game)
     game.editor = e
@@ -5878,19 +5889,21 @@ def pyglet_editor(game):
 
     #scene navigation
     x = 0 
-    y += 50
+    y += 40
     opt = Text("<-", pos=(x,y), size=size, offset=offset, game=game, interact=edit_prev)
     game._edit_menu.append(opt)
 
-    x += 50
+    x += 40
     opt = Text("->", pos=(x,y), size=size, offset=offset, game=game, interact=edit_next)
     game._edit_menu.append(opt)
 
-    x += 50
+    x += 40
     game._edit_menu.append(Text("Save State", pos=(x,y), size=size, offset=offset, game=game, interact=edit_save_state))
-    x += 150
+    x += 120
     game._edit_menu.append(Text("Load State", pos=(x,y), size=size, offset=offset, game=game, interact=edit_load_state))
-    x += 150
+    x += 120
     game._edit_menu.append(Text("Initial State", pos=(x,y), size=size, offset=offset, game=game, interact=edit_initial_state))
+    x += 120
+    game._edit_menu.append(Text("Close Editor", pos=(x,y), size=size, offset=offset, game=game, interact=close_editor))
 
 
