@@ -3935,7 +3935,6 @@ class Game(metaclass=use_on_events):
     def _monitor_scripts(self, dt):
         modified_modules = self.check_modules()
         if modified_modules:
-#            print("game loop mod")
             self.reload_modules()
 
     def __getattr__(self, a): #game.__getattr__
@@ -4024,11 +4023,10 @@ class Game(metaclass=use_on_events):
             pyglet_editor(self)
 
         if symbol == pyglet.window.key.F4: 
-            ship_arrives_at_planet = get_function(self, "ship_arrives_at_planet")
-            print("MEMORY USAGE",resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1000)
-            ship_arrives_at_planet(game)
-#            self.player.rescale(3)
- #           self.player.relocate(destination=(700,1600))
+            print("RELOADED MODULES")
+            self._allow_editing = True
+            self.reload_modules() #reload now to refresh existing references
+            self._allow_editing = False
 
         if symbol == pyglet.window.key.F5: 
             self.camera.fade_out()
@@ -4045,6 +4043,14 @@ class Game(metaclass=use_on_events):
         if symbol == pyglet.window.key.F8: #stop recording
             self.directory_screencast = None 
             print("finished casting")
+
+        if symbol == pyglet.window.key.F9:
+            ship_arrives_at_planet = get_function(self, "ship_arrives_at_planet")
+            print("MEMORY USAGE",resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1000)
+            ship_arrives_at_planet(game)
+#            self.player.rescale(3)
+ #           self.player.relocate(destination=(700,1600))
+
 
     def on_mouse_motion(self,x, y, dx, dy):
         """ Change mouse cursor depending on what the mouse is hovering over """
@@ -4504,7 +4510,7 @@ class Game(metaclass=use_on_events):
 
         modules -- use the listed modules instead of game._modules
         """
-        if not self._allow_editing and not self.editor: #only reload during edit mode as it disables save games
+        if not self._allow_editing: #only reload during edit mode as it disables save games
             return
 #        print("RELOAD MODULES")
         #clear signals so they reload
