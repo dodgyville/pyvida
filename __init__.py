@@ -1142,7 +1142,6 @@ class Actor(object, metaclass=use_on_events):
         self._editable = [] #re-populated after load
         #PROBLEM values:
         self.uses = {}
-
         for k, v in self.__dict__.items():
             if callable(v): #textify function/method calls
                 self.__dict__[k] = v.__name__
@@ -1150,8 +1149,6 @@ class Actor(object, metaclass=use_on_events):
                     vv = v
                     print("*******UNABLE TO FIND function",v.__name__,"for",k,"on",self.name)
                     import pdb; pdb.set_trace()
-
-
         return self.__dict__
 
 #    def __setstate__(self, d):
@@ -1785,7 +1782,6 @@ class Actor(object, metaclass=use_on_events):
     def pyglet_draw(self, absolute=False, force=False): #actor.draw
         if self.game and self.game._headless and not force: return
         if self.game and self.action and self.action._loaded == False:
-            print("FORCE LOAD ACTION ASSETS", self.name, self.action.name)
             self.action.load_assets(self.game)
         if self._sprite and self.allow_draw:
             x, y = self.x, self.y
@@ -3062,7 +3058,7 @@ class Text(Item):
 class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
     def __init__(self, name, callback, padding=(10,10), dimensions=(300,300), tile_size=(80,80)):
         super().__init__(name)
-        self._objects = {}
+        self._objects = []
         self._sorted_objects = None
         self.sort_by = ALPHABETICAL
         self.reverse_sort = False
@@ -3077,10 +3073,9 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         self.tile_size = tile_size
 
     def on_empty(self):
-        self._objects = {}
+        self._objects = []
         self._sorted_objects = None
         self.index = 0
-
 
     def smart(self, *args, **kwargs):
         Item.smart(self, *args, **kwargs)
@@ -3091,21 +3086,22 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         """ Add an object to this collection and set up an event handler for it in the event it gets selected """
         obj = get_object(self.game, obj)
 #        obj.push_handlers(self) #TODO 
-        self._objects[obj.name] = obj
+        self._objects.append(obj.name)
         if callback:
             obj._collection_select = callback
 
     def _get_sorted(self):
         if self._sorted_objects == None:
-            show = self._objects.values()
-            self._sorted_objects = sorted(show, key=lambda x: x.name.lower(), reverse=self.reverse_sort)
+            show = self._objects
+            self._sorted_objects = sorted(show, key=lambda x: x.lower(), reverse=self.reverse_sort)
         return self._sorted_objects      
 
     def get_object(self, pos):
         """ Return the object at this spot on the screen in the collection """
         mx,my = pos
         show = self._get_sorted()[self.index:]
-        for i in show:
+        for obj_name in show:
+            i = get_object(self.game, obj_name)
             if hasattr(i, "_cr") and collide(i._cr, mx, my):
                 if logging: log.debug("On %s in collection %s"%(i.name, self.name))
                 self.selected = i
@@ -3138,7 +3134,9 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         x,y = self._sprite.x + self.padding[0], self._sprite.y + self._sprite.height - self.padding[1]  #, self.y #self.padding[0], self.padding[1] #item padding
         w = self.clickable_area.w
         dx,dy = self.tile_size
-        for obj in self._objects.values():
+        for obj_name in self._objects:
+            obj = get_object(self.game, obj_name)
+            obj.get_action()
             sprite = obj._sprite if obj._sprite else getattr(obj, "_label", None)
             if sprite:
                 sw,sh = getattr(sprite, "content_width", sprite.width), getattr(sprite, "content_height", sprite.height)
