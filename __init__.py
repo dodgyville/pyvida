@@ -1923,6 +1923,8 @@ class Actor(object, metaclass=use_on_events):
         self.busy += 1
         self.game._add(label)
         self.game._modals.append(label.name)
+        if self.game._headless:  #headless mode skips sound and visuals
+            label.trigger_interact() #auto-close the on_says
 
 
     def on_says(self, text, *args, **kwargs):
