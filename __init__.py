@@ -4162,7 +4162,7 @@ class Game(metaclass=use_on_events):
                         self.player._goto_dx, self.player._goto_dy = 0,0
                         return
 
-        self.last_mouse_release = (x, y, button, time.clock())
+        self.last_mouse_release = (x, y, button, time.time())
 
         x, y = x / self._scale, y / self._scale #if window is being scaled
 
