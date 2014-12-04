@@ -1054,7 +1054,7 @@ class Actor(object, metaclass=use_on_events):
         self._scroll_dx = 0.0 #when scrolling, what is our displacement?
         self._scroll_dy = 0.0
 
-        self._goto_x, self._goto_y = None, None
+        self._goto_x, self._goto_y = None, None #target when walking somewhere
         self._goto_dx, self._goto_dy = 0, 0
         self._goto_points = [] #list of points Actor is walking through
 
@@ -3861,6 +3861,7 @@ class Game(metaclass=use_on_events):
         self._window.on_mouse_press = self.on_mouse_press
         self._window.on_mouse_release = self.on_mouse_release
         self._window.on_mouse_drag = self.on_mouse_drag
+        self.last_mouse_release = None #track for double clicks
         self._pyglet_batches = []
 
         #event handling
@@ -4134,6 +4135,7 @@ class Game(metaclass=use_on_events):
     def on_mouse_press(self, x, y, button, modifiers):
         """ If the mouse is over an object with a down action, switch to that action """
 #        print('    (%s, %s), '%(x-self.player.x, self.resolution[1] - y - self.player.y))
+
         x, y = x / self._scale, y / self._scale #if window is being scaled
         if self.scene:
             x -= self.scene.x #displaced by camera
@@ -4150,6 +4152,18 @@ class Game(metaclass=use_on_events):
 
     def on_mouse_release(self, x, y, button, modifiers):
         """ Call the correct function depending on what the mouse has clicked on """
+        if self.last_mouse_release: #code courtesy from a stackoverflow entry by Andrew
+            if (x, y, button) == self.last_mouse_release[:-1]:
+                """Same place, same button"""
+                if time.clock() - self.last_mouse_release[-1] < 0.2:
+                    if self.player and self.player._goto_x != None:
+                        print("Double-click, jump!",self.player._x, self.player._y,self.player._goto_x, self.player._goto_y)
+                        self.player._x, self.player._y = self.player._goto_x, self.player._goto_y
+                        self.player._goto_dx, self.player._goto_dy = 0,0
+                        return
+
+        self.last_mouse_release = (x, y, button, time.clock())
+
         x, y = x / self._scale, y / self._scale #if window is being scaled
 
         ax, ay = x,y #asbolute x,y (for modals and menu)
@@ -4190,7 +4204,8 @@ class Game(metaclass=use_on_events):
             if obj.collide(x,y) and (obj.allow_interact or obj.allow_use or obj.allow_look) and obj.allow_draw:
                 #if wanting to interact or use an object go to it. If engine says to go to object for look, do that too.
                 if (self.mouse_mode != MOUSE_LOOK or GOTO_LOOK) and (obj.allow_interact or obj.allow_use or obj.allow_look): 
-                    if self.player.name in self.scene._objects and self.player != obj: self.player.goto(obj, block=True)
+                    if self.player.name in self.scene._objects and self.player != obj: 
+                        self.player.goto(obj, block=True)
                 if button & pyglet.window.mouse.RIGHT:
                     if obj.allow_look: user_trigger_look(self, obj)
                 else:
