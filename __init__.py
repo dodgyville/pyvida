@@ -528,7 +528,9 @@ def option_answer_callback(game, btn, player):
 
     game._remove(game._modals) #remove modals from game (mostly so we don't have to pickle the knotty little bastard custom callbacks!)
     game._modals = [] #empty modals
-    if btn.response_callback: btn.response_callback(game, btn, player)
+    if btn.response_callback:
+        fn = get_function(game, btn.response_callback, btn)
+        fn(game, btn, player)
 
 def get_smart_directory(game, obj):
     """
@@ -556,6 +558,9 @@ def get_function(game, basic, obj=None):
         Also search any modules in game._modules (eg used when cProfile has taken control of __main__ )
         If obj provided then also search that object
     """
+    if not basic: 
+        log.error("get_function called without a function name to search for")
+        return basic #empty call to script
     if hasattr(basic, "__call__"): basic = basic.__name__
     if obj:
         fn = getattr(obj, basic, None)
@@ -574,6 +579,7 @@ def get_function(game, basic, obj=None):
         elif hasattr(sys.modules[m], basic.lower()):
               script = getattr(sys.modules[m], basic.lower())
               break
+    if type(script) == tuple: script = script[1] #ungroup @answer fns
     return script
 
 
@@ -819,14 +825,14 @@ class Action(object):
         return self
 
     def unload_assets(self): #action.unload
-        log.debug("UNLOAD ASSETS %s %s"%(self.actor, self.name))
+#        log.debug("UNLOAD ASSETS %s %s"%(self.actor, self.name))
         self._animation = None
         self.game = None
         self.actor = getattr(self.actor, "name", self.actor) if self.actor else None
         self._loaded = False
 
     def load_assets(self, game):
-        log.debug("LOAD ASSETS %s %s"%(self.actor, self.name))
+#        log.debug("LOAD ASSETS %s %s"%(self.actor, self.name))
         self._loaded = True
         if game: self.game = game
         image = load_image(self._image)
@@ -2256,7 +2262,7 @@ class Actor(object, metaclass=use_on_events):
             self.busy += 1
             self._opacity_target_block = True
 
-    def _fade_out(self, action=None, seconds=3): #actor.fade_out
+    def _fade_out(self, action=None, seconds=3, block=False): #actor.fade_out
         if action: self._do(action)
         if self.game._headless:  #headless mode skips sound and visuals
             self.alpha = 0
@@ -2267,7 +2273,7 @@ class Actor(object, metaclass=use_on_events):
             self.busy += 1
             self._opacity_target_block = True
 
-    def on_fade_out(self, action=None, seconds=3): #actor.fade_out
+    def on_fade_out(self, action=None, seconds=3, block=False): #actor.fade_out
         self._fade_out(action, seconds)
 
     def on_usage(self, draw=None, update=None, look=None, interact=None, use=None):
@@ -4018,6 +4024,7 @@ class Game(metaclass=use_on_events):
 #            self.menu_from_factory("editor", MENU_EDITOR)
             editor(self)
         if symbol == pyglet.window.key.F2:
+            print("edit_script(game, obj) will open the editor for an object")
             import pdb; pdb.set_trace()
 
         if symbol == pyglet.window.key.F3: #pyglet editor
@@ -4072,17 +4079,16 @@ class Game(metaclass=use_on_events):
         modal_collide = False
         for name in self._modals:
             obj = get_object(self, name)
-            try:
-                if obj.collide(ox,oy): #absolute screen values
-                    self.mouse_cursor = MOUSE_CROSSHAIR
-                    if obj._mouse_motion and not modal_collide: obj._mouse_motion(self.game, obj, self.game.player,x,y,dx,dy, ox,oy)
-                    modal_collide = True
-                else:
-                    if obj._mouse_none: 
-                        fn = get_function(self, obj._mouse_none, obj)
-                        fn(self.game, obj, self.game.player,x,y,dx,dy, ox,oy)
-            except:
-                import pdb; pdb.set_trace()
+            if obj.collide(ox,oy): #absolute screen values
+                self.mouse_cursor = MOUSE_CROSSHAIR
+                if obj._mouse_motion and not modal_collide: 
+                    fn = get_function(self, obj._mouse_motion, obj)
+                    fn(self.game, obj, self.game.player,x,y,dx,dy, ox,oy)
+                modal_collide = True
+            else:
+                if obj._mouse_none: 
+                    fn = get_function(self, obj._mouse_none, obj)
+                    fn(self.game, obj, self.game.player,x,y,dx,dy, ox,oy)
         if modal_collide: return
         if len(self._modals) == 0: 
             menu_collide = False
@@ -5860,6 +5866,10 @@ def edit_script(game, btn, player):
     """ Open the script for this object for editing """
     edit_object_script(game, game.editor.obj)
 
+def edit_object(game, obj):
+    obj = get_object(game, obj)
+    edit_object_script(game, obj)
+    
 def edit_save_state(game, btn, player):
     state_name = input("Save name (without directory or .py)")
     if state_name is None:
