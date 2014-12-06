@@ -3454,7 +3454,11 @@ class Camera(metaclass=use_on_events): #the view manager
         self._goto_x, self._goto_y = destination
         x,y = self._goto_x - self.game.scene.x, self._goto_y - self.game.scene.y
         distance = math.hypot(x, y)
-        if distance == 0: return #already there
+        if distance == 0: 
+            if logging: log.warning("Camera %s has started _goto, but already there %f"%(self.name, self._goto_x))
+            self._goto_x, self._goto_y = None, None
+            self._goto_dx, self._goto_dy = 0, 0
+            return #already there
         d = speed/distance #how far we can travel along the distance in one update
         angle = math.atan2(y,x)
 
@@ -4617,6 +4621,7 @@ class Game(metaclass=use_on_events):
 
     def _process_walkthrough(self):
         """ Do a step in the walkthrough """
+#        if self._walkthrough_index == 77: import pdb; pdb.set_trace()
         if len(self._walkthrough) == 0 or self._walkthrough_index >= len(self._walkthrough): return #no walkthrough
         walkthrough = self._walkthrough[self._walkthrough_index]
         try:
@@ -4732,6 +4737,7 @@ class Game(metaclass=use_on_events):
                     if event[1][0].busy == 0:
 #                        if self._headless==False: import pdb; pdb.set_trace()
 #                        if logging: log.info("%s is no longer busy, so deleting event %s."%(event[1][0].name, event))
+#                        print("DEL",event)
                         del_events += 1
                         self._events.remove(event)
                         self._event_index -= 1
@@ -4744,10 +4750,11 @@ class Game(metaclass=use_on_events):
                 self._event = e
 #                print("Start",e[0], e[1][0].name, datetime.now(), e[1][0].busy)
                 done_events += 1
-                #print("DOING",e)
+#                print("DOING",e)
                 e[0](*e[1], **e[2]) #call the function with the args and kwargs
-                self._event_index += 1
-
+#                if self._event_index < len(self._events) - 1: 
+                self._event_index += 1 #potentially start next event
+#                print("SETTING EVENT_INDEX", self._event_index, len(self._events))
                 #if, after running the event, the obj is not busy, then it's OK to do the next event immediately.
                 if obj.busy == 0:
                     safe_to_call_again = True
@@ -4757,7 +4764,6 @@ class Game(metaclass=use_on_events):
                     print("obj.busy below zero, this should never happen.")
                     import pdb; pdb.set_trace()
             #if self._event_index<len(self._events)-1: self._event_index += 1
-
         #auto trigger an event from the walkthrough if needed and nothing else is happening
         if done_events == 0 and del_events == 0 and self._walkthrough_target >= self._walkthrough_index: 
             self._process_walkthrough()
@@ -5112,6 +5118,7 @@ class Game(metaclass=use_on_events):
         return  
 
     def on_pause(self, duration):
+        """ pause the game for duration seconds """
         if self._headless: return
         self.busy += 1
         self._waiting = True
