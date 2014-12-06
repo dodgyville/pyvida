@@ -118,6 +118,10 @@ COLLIDE_CLICKABLE = 0 #use the clickable area as the collision boundaries
 COLLIDE_NEVER = 1 #never collide (used by on_asks)
 #COLLIDE_ALWAYS = 2 #always collide (potentially used by modals)
 
+#SCROLL MODES
+SCROLL_TILE_SIMPLE = 0
+SCROLL_TILE_HORIZONTAL = 1
+
 #MOTION TYPES
 MOTION_LOOP = 0
 MOTION_ONCE = 1
@@ -1059,6 +1063,7 @@ class Actor(object, metaclass=use_on_events):
         self.scroll = (0.0, 0.0) #scrolling speeds (x,y) for texture
         self._scroll_dx = 0.0 #when scrolling, what is our displacement?
         self._scroll_dy = 0.0
+        self._scroll_mode = SCROLL_TILE_HORIZONTAL #scroll mode
 
         self._goto_x, self._goto_y = None, None #target when walking somewhere
         self._goto_dx, self._goto_dy = 0, 0
@@ -1814,6 +1819,10 @@ class Actor(object, metaclass=use_on_events):
             if self._scroll_dx != 0 and x > 0:
                 self._sprite.position = (int(x-self.w), int(y))
             if not self._batch: self._sprite.draw()
+            if self._scroll_dx != 0 and self._scroll_mode == SCROLL_TILE_HORIZONTAL: #draw extra tiles if needed
+                if self._sprite.x > 0:
+                    self._sprite.x -= (self.w - 2)
+                    if not self._batch: self._sprite.draw()
             pyglet.gl.glTranslatef(-self._scroll_dx, 0.0, 0.0);
 
         if self.show_debug:
@@ -2876,9 +2885,10 @@ class Scene(metaclass=use_on_events):
         
 
     def on_clean(self, objs=[]): #remove items not in this list from the scene
-        for i in self._objects:
-            if i not in objs and not isinstance(i, Portal) and i != self.game.player: self._remove(i)
-
+        check_objects = copy.copy(self._objects)
+        for i in check_objects:
+            if i not in objs and not isinstance(i, Portal) and i != self.game.player: 
+                self._remove(i)
 
     def on_set_background(self, fname=None):
         self._set_background(fname)
