@@ -534,6 +534,7 @@ def option_answer_callback(game, btn, player):
     game._modals = [] #empty modals
     if btn.response_callback:
         fn = get_function(game, btn.response_callback, btn)
+        if not fn: import pdb; pdb.set_trace()
         fn(game, btn, player)
 
 def get_smart_directory(game, obj):
@@ -1043,6 +1044,15 @@ def receiver(signal, **kwargs):
 """
 Classes
 """
+
+
+def close_on_says(game, obj, player):
+    """ Close an actor's msgbox and associted items """
+    #REMOVE ITEMS from obj.items instead
+    for item in obj.tmp_items:
+        if item in game._modals: game._modals.remove(item)
+    obj.tmp_actor.busy -= 1
+    if logging: log.info("%s has finished on_says (%s), so decrement self.busy to %i."%(obj.tmp_actor.name, obj.tmp_text, obj.tmp_actor.busy))
 
 
 class Actor(object, metaclass=use_on_events):
@@ -2020,16 +2030,11 @@ class Actor(object, metaclass=use_on_events):
         msgbox._goto_dy = -dy/df
         msgbox.busy += 1
 
-        def close_on_says(game, obj, player):
-            if ok: self.game._modals.remove(ok.name)
-            if portrait: self.game._modals.remove(portrait.name)
-            self.game._modals.remove(label.name)
-            self.game._modals.remove(msgbox.name)
-            self.busy -= 1
-            if logging: log.info("%s has finished on_says (%s), so decrement self.busy to %i."%(self.name, text, self.busy))
-
         for obj in items:
             obj.interact = close_on_says
+            obj.tmp_items = [x.name for x in items]
+            obj.tmp_actor = self
+            obj.tmp_text = text
             self.game.add_modal(obj)
 #        self.game._modals.extend([x.name for x in items])
         return items
