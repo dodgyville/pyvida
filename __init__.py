@@ -452,10 +452,12 @@ def get_font(game, filename, fontname):
     f = pyglet.font.load(fontname)
     return f
 
-def get_point(game, destination):
+def get_point(game, destination, actor=None):
     """ get a point from a tuple, str or destination """
     obj = None
-    if destination == game.player: import pdb; pdb.set_trace()
+    if game.player and destination == game.player and actor == game.player: 
+        print("Player moving to self seems like a mistake")
+        import pdb; pdb.set_trace()
     if type(destination) in [str]:
         if destination in game._actors: 
             obj = game._actors[destination]
@@ -894,6 +896,10 @@ class Rect(object):
 
     def move(self, dx, dy):
         return Rect(self.x+dx, self.y+dy, self.w, self.h)
+
+    def grow(self, v):
+        v = round(v/2)
+        return Rect(self.x-v, self.y-v, self.w+v*2, self.h+v*2)
 
 #    def scale(self, v):
 #        self.w, self.h = int(self.w*v), int(self.h*v)
@@ -1464,7 +1470,7 @@ class Actor(object, metaclass=use_on_events):
             if target.collidepoint(self.x, self.y):
                 if len(self._goto_points)>0: #continue to follow the path
                     destination = self._goto_points.pop()
-                    point = get_point(self.game, destination)
+                    point = get_point(self.game, destination, self)
                     self._calculate_goto(self, point)
                 else:
                     self._finished_goto()
@@ -1934,7 +1940,10 @@ class Actor(object, metaclass=use_on_events):
             self.game._modals.append(opt.name)
 
 
-    def on_continues(self, text, delay=0.01, step=3):
+    def on_continues(self, text, delay=0.01, step=3, duration=None):
+        """
+        duration: auto-clear after <duration> seconds or if duration == None, use user input.
+        """
         kwargs =  self._get_text_details()
         label = Text(text, delay=delay, step=step, **kwargs)
         label.game = self.game
@@ -1947,10 +1956,12 @@ class Actor(object, metaclass=use_on_events):
         label.interact = _close_on_continues
         self.busy += 1
         self.game._add(label)
-        self.game._modals.append(label.name)
-        if self.game._headless:  #headless mode skips sound and visuals
-            label.trigger_interact() #auto-close the on_says
-
+        if not duration:
+            self.game._modals.append(label.name)
+            if self.game._headless:  #headless mode skips sound and visuals
+                label.trigger_interact() #auto-close the on_says
+        else:
+            log.error("on_continues clearing after duration not complete yet")
 
     def on_says(self, text, *args, **kwargs):
         print("AK",args, kwargs)
@@ -2313,7 +2324,7 @@ class Actor(object, metaclass=use_on_events):
             scene = get_object(self.game, scene)
             scene._add(self)
         if destination:
-            pt = get_point(self.game, destination)
+            pt = get_point(self.game, destination, self)
             self.x, self.y = pt
         return
 
@@ -2363,7 +2374,7 @@ class Actor(object, metaclass=use_on_events):
     
     def _goto(self, destination, ignore=False, block=False):
         """ Get a path to the destination and then start walking """
-        point = get_point(self.game, destination)
+        point = get_point(self.game, destination, self)
 
         if self.game._headless:  #skip pathplanning if in headless mode
             self.x, self.y = point
@@ -2941,16 +2952,7 @@ class Text(Item):
         self._height = None #height of full text
         self._width = None #width of full text
         self.game=game
-
-
-        #animate the text
-        if delay>0:
-            self._text_index = 0
-            pyglet.clock.schedule_interval(self._animate_text, delay)
-        else:
-            self._text_index = len(self._display_text)
-
-        self._animated_text = self._display_text[:self._text_index]
+        self.delay = delay
 
         if len(colour) == 3: colour = (colour[0], colour[1], colour[2], 255) #add an alpha value if needed
         font_name = "Times New Roman" #"Arial"
@@ -2987,6 +2989,15 @@ class Text(Item):
     def create_label(self):
         c = self.colour
         if len(c)==3: c = (c[0], c[1], c[2], 255)
+        #animate the text
+        if self.delay>0:
+            self._text_index = 0
+            pyglet.clock.schedule_interval(self._animate_text, self.delay)
+        else:
+            self._text_index = len(self._display_text)
+
+        self._animated_text = self._display_text[:self._text_index]
+
         self._label = pyglet.text.Label(self._animated_text,
                                       font_name=self.font_name,
                                       font_size=self.size,
@@ -3460,7 +3471,7 @@ class Camera(metaclass=use_on_events): #the view manager
         speed = speed if speed else self.speed
         self._speed = speed
 
-        point = get_point(self.game, destination)
+        point = get_point(self.game, destination, self)
 
         if self.game._headless:  #skip pathplanning if in headless mode
             self.game.scene.x, self.game.scene.y = point
