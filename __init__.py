@@ -527,9 +527,10 @@ def option_mouse_motion(game, btn, player, *args, **kwargs2):
     
 def option_answer_callback(game, btn, player):
     """ Called when the option is selected """
-    btn.creator.busy -= 1 #no longer busy, so game can stop waiting
-    if logging: log.info("%s has finished on_asks by selecting %s, so decrement self.busy to %s."%(btn.creator.name, btn.display_text, btn.creator.busy))
-    remember = (btn.creator.name, btn.question, btn.display_text)
+    creator = get_object(game, btn.tmp_creator)
+    creator.busy -= 1 #no longer busy, so game can stop waiting
+    if logging: log.info("%s has finished on_asks by selecting %s, so decrement self.busy to %s."%(creator.name, btn.display_text, creator.busy))
+    remember = (creator.name, btn.question, btn.display_text)
     if remember not in game._selected_options: game._selected_options.append(remember)
 
     game._remove(game._modals) #remove modals from game (mostly so we don't have to pickle the knotty little bastard custom callbacks!)
@@ -1057,8 +1058,9 @@ def close_on_says(game, obj, player):
     #REMOVE ITEMS from obj.items instead
     for item in obj.tmp_items:
         if item in game._modals: game._modals.remove(item)
-    obj.tmp_actor.busy -= 1
-    if logging: log.info("%s has finished on_says (%s), so decrement self.busy to %i."%(obj.tmp_actor.name, obj.tmp_text, obj.tmp_actor.busy))
+    actor = get_object(game, obj.tmp_actor)
+    actor.busy -= 1
+    if logging: log.info("%s has finished on_says (%s), so decrement self.busy to %i."%(actor.name, obj.tmp_text, actor.busy))
 
 
 class Actor(object, metaclass=use_on_events):
@@ -1928,7 +1930,7 @@ class Actor(object, metaclass=use_on_events):
 #            kwargs["over"] = over_option
             opt = Text("option{}".format(i), display_text=text, **kwargs)
             opt.x, opt.y = label.x + 10, label.y + label.h + i*opt.h + 5
-            opt.creator = self #store this Actor so the callback can modify it.
+            opt.tmp_creator = self.name #store this Actor so the callback can modify it.
             opt.colour = kwargs["colour"] #store the colour so we can undo it after hover
             opt.question = statement
            
@@ -2044,7 +2046,7 @@ class Actor(object, metaclass=use_on_events):
         for obj in items:
             obj.interact = close_on_says
             obj.tmp_items = [x.name for x in items]
-            obj.tmp_actor = self
+            obj.tmp_actor = self.name
             obj.tmp_text = text
             self.game.add_modal(obj)
 #        self.game._modals.extend([x.name for x in items])
@@ -2813,10 +2815,9 @@ class Scene(metaclass=use_on_events):
         return self
 
     def unload_assets(self): #scene.unload
-        print("UNLOAD1",self.name)
         for obj_name in self._objects:
             obj = get_object(self.game, obj_name) 
-            print("UNLOAD obj",obj_name, obj)
+            log.debug("UNLOAD obj %s %s"%(obj_name, obj))
             if obj: obj.unload_assets(unload_actions=True)
     
     def _unload_layer(self):
@@ -3699,6 +3700,7 @@ Game class
 
 
 def save_game_pickle(game, fname):
+    log.info("Saving game to %s"%fname)
     with open(fname, 'wb') as f:
         pickle.dump(game.get_game_info, f) #dump some metadata (eg date, title, etc)
         pickle.dump(game.get_player_info, f) #dump info about the player, including history
@@ -3713,6 +3715,7 @@ def save_game_pickle(game, fname):
 
         PYVIDA_CLASSES = [Actor, Item, Scene, Portal, Text, Emitter, Collection]
         #dump info about all the objects and scenes in the game
+        TEST_DUMP = False
         for objects in [game._actors, game._items, game._scenes]:
             objects_to_pickle = []
             for o in objects.values(): #test objects
@@ -3738,6 +3741,8 @@ def save_game_pickle(game, fname):
 #                    if hasattr(o, fn_name) and type(getattr(o, fn_name)) == str: setattr(o, fn_name, get_function(game, fn_name))
                     #restore textified methods
                 for k, v in o.__dict__.items():
+                    if isinstance(v, Actor): 
+                        print("WARNING: Value of %s.%s is based on Actor class (%s). This attribute may not pickle properly"%(o.name, k, v))
                     #assume string is a function name. Slightly dangerous. TODO check if text values clash with reserved functions
                     #Also, some variables are strings that may clash with methods (eg Actor._idle is always a string) so ignore  
                     if type(v) == str and hasattr(o, v) and k not in ["_idle", "_action", "_next_action"]: 
@@ -3747,7 +3752,6 @@ def save_game_pickle(game, fname):
 
                 if hasattr(o, "create_label"): o.create_label()
                 if hasattr(o, "set_editable"): o.set_editable()
-
 
 def load_game_pickle(game, fname, meta_only=False):
     with open(fname, "rb") as f:
@@ -4235,6 +4239,7 @@ class Game(metaclass=use_on_events):
         if len(self._menu)>0 and self._menu_modal: return #menu is in modal mode so block other objects
 
         #finally, try scene objects
+        if len(self._events) > 0: return
         for obj_name in self.scene._objects:
             obj = get_object(self, obj_name) 
             if obj.collide(x,y) and (obj.allow_interact or obj.allow_use or obj.allow_look) and obj.allow_draw:
