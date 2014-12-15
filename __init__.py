@@ -416,11 +416,35 @@ def slugify(txt):
     txt = txt.replace("\\", "_")
     return txt.replace("'", "")
 
-def set_interacts(game, objects, short=None):
-    """ Set the interacts using the extension in <short> as a shortcut """
-    for obj in objects:
-        o = get_object(game, obj)
-        o.set_interact("interact_%s_%s"%(slugify(o.name), short))
+#def set_interacts(game, objects, short=None):
+#    """ Set the interacts using the extension in <short> as a shortcut """
+#    print("set interact",objects)       
+#    for obj in objects:
+#        o = get_object(game, obj)
+#        if o.name == "galaxy sister": import pdb; pdb.set_trace()
+#        fn = "interact_%s_%s"%(slugify(o.name), short) if short else "interact_%s"%(slugify(o.name))
+#        o.set_interact(fn)
+
+
+def _set_function(game, actors, slug=None, fn="interact", full=None):
+    """ helper function for switching large batches of Actor interacts """
+    if type(actors) != list: actors = [actors]
+    for i in actors:
+        i = get_object(game, i)
+        if type(i) != str: i = i.name
+        fn_name = "%s_%s_%s"%(fn, slugify(i), slug) if slug else "%s_%s"%(fn, slugify(i))
+        if full: fn_name = full #all actors share the same fn
+        if fn == "interact":
+            game.set_interact(i, get_function(game, fn_name))
+        else:
+            game.set_look(i, get_function(game, fn_name))
+
+def set_interacts(game, actors, slug=None, full=None):
+    log.debug("set interacts %s %s %s"%(actors,slug,full))
+    return _set_function(game, actors, slug, "interact", full)    
+
+def set_looks(game, actors, slug=None, full=None):
+    return _set_function(game, actors, slug, "look", full)    
 
 def get_available_languages():
     """ Return a list of available locale names """
@@ -1605,6 +1629,7 @@ class Actor(object, metaclass=use_on_events):
          script = get_function(self.game, basic)
 
          if script:
+                if logging: log.debug("Call use script (%s)"%basic)
                 script(self.game, self, actor)
          else:
              #warn if using default vida look
@@ -2323,6 +2348,8 @@ class Actor(object, metaclass=use_on_events):
     def _relocate(self, scene=None, destination=None, scale=None): #actor.relocate
         if scale: self.scale = scale
         if scene:
+            if self.scene: #remove from current scene
+                self.scene._remove(self)
             scene = get_object(self.game, scene)
             scene._add(self)
         if destination:
@@ -5687,9 +5714,13 @@ class ObjEditText(Text):
                 #calculate are we editing the x,y or the w,h
                 r = getattr(self.obj, self.get_attrs, None)
                 if r: self.display_text = "%s: %s"%(self.label, r.serialise())
-            else: # a single variable (eg scale)
+            else: # a single variable -float (eg scale) or string (interact)
                 r = self.get_attrs()
-                if r: self.display_text = "%s: %0.3f"%(self.label, r)
+                try:
+                    result = "%0.3f"%float(r)
+                except TypeError:
+                    result = "%s"%r
+                if r: self.display_text = "%s: %s"%(self.label, result)
 
 class Editor(object):
     def __init__(self, game):
