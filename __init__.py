@@ -2556,7 +2556,7 @@ class Particle(object):
 
 class Emitter(Item, metaclass=use_on_events):
 #    def __init__(self, name, *args, **kwargs):
-    def __init__(self, name, number=10, frames=10, direction=0, fov=0, speed=1, acceleration=(0,0), size_start=1, size_end=1, alpha_start=1.0, alpha_end=0,random_index=True, random_age=True, terminate=terminate_by_frame, behaviour=BEHAVIOUR_CYCLE):
+    def __init__(self, name, number=10, frames=10, direction=0, fov=0, speed=1, acceleration=(0,0), size_start=1, size_end=1, alpha_start=1.0, alpha_end=0,random_index=True, random_age=True, test_terminate=terminate_by_frame, behaviour=BEHAVIOUR_CYCLE):
         """ This object's solid_mask|solid_area is used for spawning 
             direction: what is the angle of the emitter
             fov: what is the arc of the emitter's 'nozzle'?
@@ -2578,7 +2578,7 @@ class Emitter(Item, metaclass=use_on_events):
         self.behaviour = behaviour
         self._editable.append(("emitter area", "solid_area", "_solid_area", Rect),)
         #self._solid_area = Rect(0,0,0,0) #used for the spawn area        
-        self.test_terminate = terminate
+        self.test_terminate = test_terminate
 
     @property
     def summary(self):
@@ -3709,8 +3709,9 @@ def advance_help_index(game):
 
 def user_trigger_interact(game, obj):
     obj.trigger_interact()
-    game.event_count += 1
-    if game.event_callback: game.event_callback(game)
+    if not game.editor:
+        game.event_count += 1
+        if game.event_callback: game.event_callback(game)
     function_name = game._walkthrough[game._help_index][0].__name__ 
     if game._walkthrough and function_name == "interact":
         advance_help_index(game)
@@ -3718,13 +3719,15 @@ def user_trigger_interact(game, obj):
 def user_trigger_use(game, subject, obj):
     """ use obj on subject """
     subject.trigger_use(obj)
-    game.event_count += 1
-    if game.event_callback: game.event_callback(game)
+    if not game.editor:
+        game.event_count += 1
+        if game.event_callback: game.event_callback(game)
 
 def user_trigger_look(game, obj):
     obj.trigger_look()
-    game.event_count += 1
-    if game.event_callback: game.event_callback(game)
+    if not game.editor:
+        game.event_count += 1
+        if game.event_callback: game.event_callback(game)
 
 """
 Game class
