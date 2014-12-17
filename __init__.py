@@ -2346,12 +2346,12 @@ class Actor(object, metaclass=use_on_events):
         self._relocate(scene, destination, scale)
 
     def _relocate(self, scene=None, destination=None, scale=None): #actor.relocate
-        if scale: self.scale = scale
         if scene:
             if self.scene: #remove from current scene
                 self.scene._remove(self)
             scene = get_object(self.game, scene)
             scene._add(self)
+        if scale: self.scale = scale
         if destination:
             pt = get_point(self.game, destination, self)
             self.x, self.y = pt
@@ -3147,6 +3147,8 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
     def on_add(self, obj, callback=None): #collection.add
         """ Add an object to this collection and set up an event handler for it in the event it gets selected """
         obj = get_object(self.game, obj)
+        if obj.game == None: self.game.add(obj) #set game object if object exists only in collection
+
 #        obj.push_handlers(self) #TODO 
         self._objects.append(obj.name)
         if callback:
@@ -3198,6 +3200,9 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         dx,dy = self.tile_size
         for obj_name in self._objects:
             obj = get_object(self.game, obj_name)
+            if not obj:
+                log.error("Unable to draw collection item %s, not found in Game object"%obj_name)
+                continue
             obj.get_action()
             sprite = obj._sprite if obj._sprite else getattr(obj, "_label", None)
             if sprite:
