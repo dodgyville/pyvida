@@ -771,6 +771,7 @@ class Motion(object):
         self._filename = None
         self.deltas = [] #(x,y,z,rotate,scale) NOTE: scale is absolute, not a delta
         self.default = MOTION_LOOP
+        self.mode = self.default
         self.index = 0 #where in the motion we currently are
 
     def __getstate__(self):
@@ -778,9 +779,12 @@ class Motion(object):
         return self.__dict__
 
     def apply_to_actor(self, actor):
-        """ Apply the current frame to the actor and increment index """
+        """ Apply the current frame to the actor and increment index, return False to delete the motion """
         num_deltas = len(self.deltas)
-        if len(self.deltas)< self.index%num_deltas: return
+        if len(self.deltas) < self.index%num_deltas: return True
+        if self.mode == MOTION_ONCE and self.index == num_deltas:
+            self.index = 0
+            return False 
         d = self.deltas[self.index%num_deltas]
         actor.x += d[0]
         actor.y += d[1]
@@ -788,6 +792,7 @@ class Motion(object):
         actor.rotate += d[3]
         actor.scale = d[4]
         self.index += 1
+        return True
 
     def smart(self, game, actor=None, filename=None): #motion.smart
         self.actor = actor if actor else self.actor
@@ -1509,8 +1514,12 @@ class Actor(object, metaclass=use_on_events):
          #   else:
           #      print("missed",target,self.x, self.y)
         #apply motions
+        remove_motions = []
         for motion in self._applied_motions:
-            motion.apply_to_actor(self)               
+            if motion.apply_to_actor(self) == False: #motion has finished
+                remove_motions.append(motion)
+        for motion in remove_motions:
+            self._applied_motions.remove(motion)
  
     @property
     def clickable_area(self):
@@ -2202,6 +2211,7 @@ class Actor(object, metaclass=use_on_events):
     def on_motion(self, motion, mode=MOTION_LOOP):
         """ Clear all existing motions and do just one motion. """
         motion = self._motions.get(motion, None) if motion in self._motions.keys() else motion
+        if motion: motion.mode = mode
         motion = [motion] if motion else []
         self._applied_motions = motion
 
