@@ -2208,7 +2208,7 @@ class Actor(object, metaclass=use_on_events):
         if self.game and self.game._headless and isinstance(self._sprite.image, pyglet.image.Animation): #jump to end
             self._sprite._frame_index = len(self._sprite.image.frames)
 
-    def on_motion(self, motion, mode=MOTION_LOOP):
+    def on_motion(self, motion=None, mode=MOTION_LOOP):
         """ Clear all existing motions and do just one motion. """
         motion = self._motions.get(motion, None) if motion in self._motions.keys() else motion
         if motion: motion.mode = mode
@@ -4135,6 +4135,10 @@ class Game(metaclass=use_on_events):
             ship_arrives_at_planet = get_function(self, "ship_arrives_at_planet")
             print("MEMORY USAGE",resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1000)
             ship_arrives_at_planet(game)
+        if symbol == pyglet.window.key.F10:
+            fn = get_function(self, "debug_cutscene")
+            fn(game)
+
 #            self.player.rescale(3)
  #           self.player.relocate(destination=(700,1600))
 
@@ -4949,10 +4953,10 @@ class Game(metaclass=use_on_events):
 
         if self.game.camera._overlay: self.game.camera._overlay.draw()
 
-        self.fps_clock.draw()
-        pyglet.graphics.draw(1, pyglet.gl.GL_POINTS,
-            ('v2i', (int(self.mouse_down[0]), int(self.resolution[1] - self.mouse_down[1])))
-        )
+#        self.fps_clock.draw()
+#        pyglet.graphics.draw(1, pyglet.gl.GL_POINTS,
+#            ('v2i', (int(self.mouse_down[0]), int(self.resolution[1] - self.mouse_down[1])))
+#        )
 
 
         if self.directory_screencast: #save to directory
