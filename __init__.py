@@ -355,8 +355,9 @@ def scene_search(game, scene, target): #are scenes connected via portals?
     for obj_name in scene._objects:
         i = get_object(game, obj_name)
         if isinstance(i, Portal): #if portal and has link, follow that portal
-            if i.link and i.link.scene not in scene_path:
-                found_target = scene_search(game, i.link.scene, target)
+            link = get_object(self.game, i.link)
+            if link and link.scene not in scene_path:
+                found_target = scene_search(game, link.scene, target)
                 if found_target != False: 
                     return found_target
     scene_path.pop(-1)
@@ -1134,6 +1135,8 @@ class Actor(object, metaclass=use_on_events):
 
         self.display_text = display_text #can override name for game.info display text
         self.display_text_align = LEFT
+        self._fog_display_text = None #if the player hasn't met this Actor use these "fog of war" variables.
+
         self.font_speech = None #use default font (from game)
         self.font_speech_size = None #use default font size (from game)
         self.font_colour = None #use default
@@ -1163,6 +1166,7 @@ class Actor(object, metaclass=use_on_events):
         self._collection_select = None #called when item is selected in a collection
         self.uses = {} #override use functions (actor is key name)
         self.facts = []
+        self._met = [] #list of Actors this actor has interacted with
         self.inventory = {}
 
         self._directory = None #directory this is smart loaded from (if any)
@@ -2178,6 +2182,23 @@ class Actor(object, metaclass=use_on_events):
 #        """ Called when this object is selected in a collection """
 #        print("handling object selection")
 
+    def _meets(self, actor):
+        actor = get_object(self.game, actor)
+        actor = actor.name if actor else actor
+        if actor and actor not in self._met: self._met.append(actor)
+
+    def on_meets(self, actor):
+        """ Remember this Actor has met actor """
+        self._meets(actor)
+
+    def has_met(self, actor):
+        """ Return True if either Actor recalls meeting the other """
+        met = False
+        actor = get_object(self.game, actor)
+        if actor and self.name in actor._met: met = True
+        actor = actor.name if actor else actor
+        return True if actor in self._met else met
+
     def _do(self, action, callback=None):
         """ Callback is called when animation ends """
         myA = action
@@ -2459,7 +2480,7 @@ class Portal(Actor, metaclass=use_on_events):
         if len(links)>1: #name format matches guess
             guess_link = "%s_to_%s"%(links[1].lower(), links[0].lower())
         if guess_link and guess_link in self.game._items:
-            self.link = self.game._items[guess_link]
+            self.link = self.game._items[guess_link].name if self.game._items[guess_link] else None
         else:
             if logging: log.warning("game.smart unable to guess link for %s"%self.name)
 
@@ -2512,13 +2533,15 @@ class Portal(Actor, metaclass=use_on_events):
     def relocate_link(self, actor=None):
         """ Relocate actor to this portal's link's out point """
         if actor == None: actor = self.game.player
-        actor.relocate(self.link.scene, (self.link.x + self.link.ox, self.link.y + self.link.oy)) #moves player to scene            
+        link = get_object(self.game, self.link)
+        actor.relocate(link.scene, (link.x + link.ox, link.y + link.oy)) #moves player to scene            
 
     def enter_link(self, actor=None, block=True):
         """ exit the portal's link """
         if actor == None: actor = self.game.player
-        actor.goto((self.link.x + self.link.sx, self.link.y + self.link.sy), ignore=True, block=block) #walk into scene        
-        self._post_arrive(self.link, actor)           
+        link = get_object(self.game, self.link)
+        actor.goto((link.x + link.sx, link.y + link.sy), ignore=True, block=block) #walk into scene        
+        self._post_arrive(link, actor)
 
     def enter_here(self, actor=None, block=True):
         """ exit the portal's link """
@@ -2534,17 +2557,18 @@ class Portal(Actor, metaclass=use_on_events):
         if actor == None:
             log.warning("No actor available for this portal")
             return
-        if not self.link:
+        link = get_object(self.game, self.link)
+        if not link:
             self.game.player.says("It doesn't look like that goes anywhere.")
             if logging: log.error("portal %s has no link"%self.name)
             return
-        if self.link.scene == None:
+        if link.scene == None:
             if logging: log.error("Unable to travel through portal %s"%self.name)
         else:
-            if logging: log.info("Portal - actor %s goes from scene %s to %s"%(actor.name, self.scene.name, self.link.scene.name))
+            if logging: log.info("Portal - actor %s goes from scene %s to %s"%(actor.name, self.scene.name, link.scene.name))
         self.exit_here(actor, block=block)
         self.relocate_link(actor)
-        self.game.camera.scene(self.link.scene) #change the scene
+        self.game.camera.scene(link.scene) #change the scene
         self.enter_link(actor, block=block)
 
 
@@ -3071,6 +3095,12 @@ class Text(Item):
             self._label_offset.text = text
 
     display_text = property(get_display_text, set_display_text)
+
+    def fog_display_text(self, actor):
+        actor = get_object(self.game, actor)
+        actor_name = actor.name if actor else None
+        fog_text = self._fog_display_text if self._fog_display_text else self.display_text
+        return self.display_text if self.actor.has_met(self.name) else fog_text
 
     @property
     def w(self):
@@ -4201,11 +4231,12 @@ class Game(metaclass=use_on_events):
                 if obj.collide(x,y) and (obj.allow_interact or obj.allow_use or obj.allow_look):
                     t = obj.name if obj.display_text == None else obj.display_text
                     if isinstance(obj, Portal):
-                        if self.settings.portal_exploration and obj.link and obj.link.scene:
-                            if obj.link.scene.name not in self.visited:
+                        link = get_object(self, obj.link)
+                        if self.settings.portal_exploration and link and link.scene:
+                            if link.scene.name not in self.visited:
                                 t = "To the unknown."
                             else:
-                                t = "To %s"%(obj.link.scene.name) if obj.link.scene.display_text in [None, ""] else "To %s"%(obj.link.scene.display_text)
+                                t = "To %s"%(link.scene.name) if link.scene.display_text in [None, ""] else "To %s"%(link.scene.display_text)
                         if not self.settings.show_portal_text: t = ""                        
 
                     if isinstance(obj, Portal) and self.mouse_mode != MOUSE_USE: #hover over portal
