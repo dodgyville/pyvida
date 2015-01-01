@@ -355,7 +355,7 @@ def scene_search(game, scene, target): #are scenes connected via portals?
     for obj_name in scene._objects:
         i = get_object(game, obj_name)
         if isinstance(i, Portal): #if portal and has link, follow that portal
-            link = get_object(self.game, i.link)
+            link = get_object(game, i.link)
             if link and link.scene not in scene_path:
                 found_target = scene_search(game, link.scene, target)
                 if found_target != False: 
@@ -2004,7 +2004,6 @@ class Actor(object, metaclass=use_on_events):
             log.error("on_continues clearing after duration not complete yet")
 
     def on_says(self, text, *args, **kwargs):
-        print("AK",args, kwargs)
         items = self._says(text, *args, **kwargs)
         if self.game._headless:  #headless mode skips sound and visuals
             items[0].trigger_interact() #auto-close the on_says
