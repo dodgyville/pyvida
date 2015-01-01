@@ -1447,6 +1447,13 @@ class Actor(object, metaclass=use_on_events):
             if not self._sprite: return None #if still no sprite, return None
         return self._sprite.height
 
+    def fog_display_text(self, actor):
+        actor = get_object(self.game, actor)
+        actor_name = actor.name if actor else None
+        display_text = self.display_text if self.display_text else self.name
+        fog_text = self._fog_display_text if self._fog_display_text else display_text
+        return display_text if self.has_met(actor_name) else fog_text
+
     def _get_text_details(self, font=None, size=None, wrap=None):
         """ get a dict of details about the speech of this object """
         kwargs = {}
@@ -3095,12 +3102,6 @@ class Text(Item):
 
     display_text = property(get_display_text, set_display_text)
 
-    def fog_display_text(self, actor):
-        actor = get_object(self.game, actor)
-        actor_name = actor.name if actor else None
-        fog_text = self._fog_display_text if self._fog_display_text else self.display_text
-        return self.display_text if self.actor.has_met(self.name) else fog_text
-
     @property
     def w(self):
         w = self._label.content_width if self._label else self._width
@@ -4126,6 +4127,7 @@ class Game(metaclass=use_on_events):
     def on_key_press(self, symbol, modifiers):
         global use_effect
         game = self
+        player = self.player
 
         if symbol == pyglet.window.key.F1:
 #            edit_object(self, list(self.scene._objects.values()), 0)
