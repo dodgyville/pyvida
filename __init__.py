@@ -702,7 +702,8 @@ def get_function(game, basic, obj=None):
     if type(script) == tuple:
         script = script[1]  # ungroup @answer fns
     if not script and callable(basic): 
-        script = basic #basic function is already a function so fall back to that
+        # basic function is already a function so fall back to that
+        script = basic 
     return script
 
 
@@ -6067,7 +6068,8 @@ class Game(metaclass=use_on_events):
             duration = 0.1  # skip delay on splash when editing
         name = "Untitled scene" if not image else image
         scene = Scene(name, game=self)
-        if image: scene._set_background(image)
+        if image:
+            scene._set_background(image)
         for i in scene._layer:
             i.z = 1.0
         self.busy += 1  # set Game object to busy (only time this happens?)
