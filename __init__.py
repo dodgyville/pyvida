@@ -1792,6 +1792,7 @@ class Actor(object, metaclass=use_on_events):
 
     @property
     def clickable_area(self):
+        """ Clickable area is the area on the set that is clickable, unscaled. """
         return self._clickable_area.move(self.x + self.ax, self.y + self.ay)
 
     @property
