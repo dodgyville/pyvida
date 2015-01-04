@@ -462,7 +462,7 @@ class EventTest(unittest.TestCase):
 
         #clear last on_says event
         self.game.update(0, single_event=True) #remove the says step, finish the on_gets
-        self.assertEqual(self.actor.busy, 0) #actor should be free
+        self.assertEqual(self.actor.busy, 1) #actor should be free
         self.assertEqual([x[0].__name__ for x in self.game._events], []) #empty event queue
 
 
