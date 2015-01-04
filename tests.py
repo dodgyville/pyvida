@@ -293,18 +293,18 @@ class EventTest(unittest.TestCase):
         self.assertEqual(self.game._event_index, 1)
         self.assertEqual(self.game._waiting, True)
         self.assertEqual(self.actor._busy, True)
-        self.assertEqual(len(self.game._modals), 2)
+        self.assertEqual(len(self.game._modals), 3) #msgbox, text, portrait, [no OK button]
 
         self.game.update(0, single_event=True) #should still be blocking as user has done nothing
 
         self.assertEqual(self.game._event_index, 1)
         self.assertEqual(self.game._waiting, True)
         self.assertEqual(self.actor._busy, True)
-        self.assertEqual(len(self.game._modals), 2)
+        self.assertEqual(len(self.game._modals), 3) #msgbox, text, portrait, [no OK button]
 
         #finish the on_says event, the next on_says should not have started yet
-
-        self.game._modals[0].trigger_interact() #finish the on says
+        obj = get_object(self.game, self.game._modals[0])
+        obj.trigger_interact() #finish the on says
 
         self.assertEqual(len(self.game._modals), 0) #should be gone
         self.assertEqual(self.actor._busy, False) #actor should be free
@@ -316,9 +316,10 @@ class EventTest(unittest.TestCase):
         self.assertEqual(self.game._event_index, 1)
         self.assertTrue(self.game._waiting)
         self.assertTrue(self.actor._busy)
-        self.assertEqual(len(self.game._modals), 2)
+        self.assertEqual(len(self.game._modals), 3)
 
-        self.game._modals[0].trigger_interact() #finish the on says
+        obj = get_object(self.game, self.game._modals[0])
+        obj.trigger_interact() #finish the on says
 
         self.game.update(0, single_event=True) #trigger the next on_says, everything should be waiting again
 
@@ -362,15 +363,18 @@ class EventTest(unittest.TestCase):
         self.assertEqual(len(self.game._modals), 0)
 
         self.game.update(0, single_event=True) #start on_asks
-        self.assertEqual(len(self.game._modals), 4) #no OK button, so msgbox, statement, two options
+        self.assertEqual(len(self.game._modals), 5) #no OK button, so msgbox, statement, two options, portrait
         self.assertEqual([x[0].__name__ for x in self.game._events], ['on_asks'])
 
         self.game.update(0, single_event=True) #start on_asks
         self.assertEqual([x[0].__name__ for x in self.game._events], ['on_asks'])
- 
-        self.game._modals[2].trigger_interact() #first option
+        import pdb; pdb.set_trace()
+
+        obj = get_object(self.game, self.game._modals[3]) 
+        obj.trigger_interact() #first option
 
         self.game.update(0, single_event=True) #finish on_asks, start on_says
+        import pdb; pdb.set_trace()
     
         self.assertEqual([x[0].__name__ for x in self.game._events], ['on_says'])
 

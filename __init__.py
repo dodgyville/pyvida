@@ -637,7 +637,7 @@ def option_answer_callback(game, btn, player):
     game._remove(game._modals)
     game._modals = []  # empty modals
     if btn.response_callback:
-        fn = get_function(game, btn.response_callback, btn)
+        fn = btn.response_callback if callable(btn.response_callback) else get_function(game, btn.response_callback, btn)
         if not fn:
             import pdb
             pdb.set_trace()
@@ -1238,9 +1238,6 @@ def close_on_says(game, obj, player):
     """ Close an actor's msgbox and associted items """
     # REMOVE ITEMS from obj.items instead
     print("CLOSE ON SAYS")
-    import pdb
-    pdb.set_trace()
-
     for item in obj.tmp_items:
         if item in game._modals:
             game._modals.remove(item)
@@ -3536,6 +3533,7 @@ class Text(Item):
         self._clickable_area = Rect(
             0, 0, self._label.content_width, self._label.content_height)
 
+        wrap = self.wrap if self.wrap > 0 else 1 #don't allow 0 width labels
         tmp = pyglet.text.Label(self._display_text,
                                 font_name=font_name,
                                 font_size=size,
@@ -3563,13 +3561,13 @@ class Text(Item):
             self._text_index = len(self._display_text)
 
         self._animated_text = self._display_text[:self._text_index]
-        print("WRAP", self.wrap)
+        wrap = self.wrap if self.wrap > 0 else 1 #don't allow 0 width labels
         self._label = pyglet.text.Label(self._animated_text,
                                         font_name=self.font_name,
                                         font_size=self.size,
                                         color=c,
                                         multiline=True,
-                                        width=self.wrap,
+                                        width=wrap,
                                         x=self.x, y=self.y,
                                         anchor_x='left', anchor_y='top')
 
@@ -3579,7 +3577,7 @@ class Text(Item):
                                                    font_size=self.size,
                                                    color=(0, 0, 0, 255),
                                                    multiline=True,
-                                                   width=self.wrap,
+                                                   width=wrap,
                                                    x=self.x + self.offset, y=self.y - self.offset,
                                                    anchor_x='left', anchor_y='top')
 
