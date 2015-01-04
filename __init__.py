@@ -703,7 +703,7 @@ def get_function(game, basic, obj=None):
         script = script[1]  # ungroup @answer fns
     if not script and callable(basic): 
         # basic function is already a function so fall back to that
-        script = basic 
+        script = basic
     return script
 
 
