@@ -263,6 +263,7 @@ class EventTest(unittest.TestCase):
         self.scene = Scene("_test_scene")
         self.item = Item("test_item")
         self.game.add([self.scene, self.actor, self.msgbox, self.ok, self.item])
+        self.game.scene = self.scene
 
     def test_relocate(self):
         self.actor.relocate(self.scene)
@@ -348,10 +349,11 @@ class EventTest(unittest.TestCase):
         self.assertEqual(self.game._event_index, 1)
         self.assertTrue(self.game._waiting) #waiting for modals to clear
         self.assertTrue(self.actor._busy) #waiting for modals to clear
-        self.assertEqual(len(self.game._modals), 2) #no OK button
+        self.assertEqual(len(self.game._modals), 3) #no OK button, so msgbox, portrait and text
 
         #need to trip the modals
-        self.game._modals[0].trigger_interact()
+        obj = get_object(self.game, self.game._modals[0]) 
+        obj.trigger_interact()
 
         self.game.update(0) #finish the on_says and start and fininsh on_relocate
         self.assertEqual(len(self.game._modals), 0) #on_says cleared
@@ -375,13 +377,11 @@ class EventTest(unittest.TestCase):
 
         self.game.update(0, single_event=True) #start on_asks
         self.assertEqual([x[0].__name__ for x in self.game._events], ['on_asks'])
-        import pdb; pdb.set_trace()
 
         obj = get_object(self.game, self.game._modals[3]) 
         obj.trigger_interact() #first option
 
         self.game.update(0, single_event=True) #finish on_asks, start on_says
-        import pdb; pdb.set_trace()
     
         self.assertEqual([x[0].__name__ for x in self.game._events], ['on_says'])
 
@@ -742,7 +742,6 @@ class PortalTest(unittest.TestCase):
         for i in range(0,11): #finish first goto
             self.game.update(0, single_event=True)
 #            self.assertAlmostEqual(self.actor.y, 200+(i+1)*self.actor._goto_dy)
-        import pdb; pdb.set_trace()
         self.assertEqual([x[0].__name__ for x in self.game._events],['on_goto', 'on_scene', 'on_pan', 'on_relocate', 'on_goto'])
 
 class SaveTest(unittest.TestCase):

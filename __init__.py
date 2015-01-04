@@ -6067,7 +6067,7 @@ class Game(metaclass=use_on_events):
             duration = 0.1  # skip delay on splash when editing
         name = "Untitled scene" if not image else image
         scene = Scene(name, game=self)
-        scene._set_background(image)
+        if image: scene._set_background(image)
         for i in scene._layer:
             i.z = 1.0
         self.busy += 1  # set Game object to busy (only time this happens?)
