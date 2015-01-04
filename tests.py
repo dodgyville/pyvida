@@ -2,7 +2,7 @@
 python3 -m unittest tests.SaveTest
 """
 
-import unittest, pickle, sys
+import unittest, pickle, sys, tempfile
 
 from __init__ import *
 
@@ -201,6 +201,7 @@ class ActorScaleTest(unittest.TestCase):
         self.game.settings = Settings()
         self.actor = Actor("_test_actor").smart(self.game)
         self.actor.x, self.actor.y = 500,1000
+        self.actor.ax, self.actor.ay = 0,0
         self.game.add(self.actor)
 
 
@@ -754,9 +755,10 @@ class SaveTest(unittest.TestCase):
         self.game.add([self.scene, self.actor])
 
     def test_pickle(self):
-        with open('saves/actor.pickle', 'wb') as f:
+        d = tempfile.TemporaryDirectory()
+        with open(os.path.join(d.name, 'actor.pickle'), 'wb') as f:
             pickle.dump(self.actor, f)    
-        with open('saves/actor.pickle', 'rb') as f:
+        with open(os.path.join(d.name,'actor.pickle'), 'rb') as f:
             actor = pickle.load(f)
         self.assertEqual(self.actor.name, "_test_actor")
         self.assertEqual(actor.name, "_test_actor")
