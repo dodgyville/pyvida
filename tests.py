@@ -579,7 +579,7 @@ class WalkthroughTest(unittest.TestCase):
         self.game._walkthrough_target = 4  #our target
 
         self.game.update(0, single_event=True) #do the description step
-        self.assertEqual(len(self.game._events), 0) #no events, so walkthrough could keep going
+        self.assertEqual(len(self.game._events), 1) #no events, so walkthrough could keep going
 
         self.game.update(0, single_event=True) #do the location test
         self.game.update(0, single_event=True) #do the interact that triggers the on_asks
