@@ -637,7 +637,8 @@ def option_answer_callback(game, btn, player):
     game._remove(game._modals)
     game._modals = []  # empty modals
     if btn.response_callback:
-        fn = btn.response_callback if callable(btn.response_callback) else get_function(game, btn.response_callback, btn)
+        fn = btn.response_callback if callable(
+            btn.response_callback) else get_function(game, btn.response_callback, btn)
         if not fn:
             import pdb
             pdb.set_trace()
@@ -3533,7 +3534,7 @@ class Text(Item):
         self._clickable_area = Rect(
             0, 0, self._label.content_width, self._label.content_height)
 
-        wrap = self.wrap if self.wrap > 0 else 1 #don't allow 0 width labels
+        wrap = self.wrap if self.wrap > 0 else 1  # don't allow 0 width labels
         tmp = pyglet.text.Label(self._display_text,
                                 font_name=font_name,
                                 font_size=size,
@@ -3561,7 +3562,7 @@ class Text(Item):
             self._text_index = len(self._display_text)
 
         self._animated_text = self._display_text[:self._text_index]
-        wrap = self.wrap if self.wrap > 0 else 1 #don't allow 0 width labels
+        wrap = self.wrap if self.wrap > 0 else 1  # don't allow 0 width labels
         self._label = pyglet.text.Label(self._animated_text,
                                         font_name=self.font_name,
                                         font_size=self.size,
