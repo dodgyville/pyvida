@@ -701,7 +701,7 @@ def get_function(game, basic, obj=None):
             break
     if type(script) == tuple:
         script = script[1]  # ungroup @answer fns
-    if not script and callable(basic): 
+    if not script and callable(basic):
         # basic function is already a function so fall back to that
         script = basic
     return script
