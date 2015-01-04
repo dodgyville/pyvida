@@ -676,9 +676,11 @@ def get_function(game, basic, obj=None):
         log.error("get_function called without a function name to search for")
         return basic  # empty call to script
     if hasattr(basic, "__call__"):
-        basic = basic.__name__
+        basic_name = basic.__name__
+    else:
+        basic_name = basic
     if obj:
-        fn = getattr(obj, basic, None)
+        fn = getattr(obj, basic_name, None)
         if fn and hasattr(fn, "__name__"):
             return fn
 
@@ -691,14 +693,16 @@ def get_function(game, basic, obj=None):
     for m in modules:
         if m not in sys.modules:
             continue
-        if hasattr(sys.modules[m], basic):
-            script = getattr(sys.modules[m], basic)
+        if hasattr(sys.modules[m], basic_name):
+            script = getattr(sys.modules[m], basic_name)
             break
-        elif hasattr(sys.modules[m], basic.lower()):
-            script = getattr(sys.modules[m], basic.lower())
+        elif hasattr(sys.modules[m], basic_name.lower()):
+            script = getattr(sys.modules[m], basic_name.lower())
             break
     if type(script) == tuple:
         script = script[1]  # ungroup @answer fns
+    if not script and callable(basic): 
+        script = basic #basic function is already a function so fall back to that
     return script
 
 
