@@ -551,10 +551,10 @@ def option_mouse_motion(game, btn, player, *args, **kwargs2):
     btn._label.color = (255,255,255,255)
     
 def option_answer_callback(game, btn, player):
-    """ Called when the option is selected """
+    """ Called when the option is selected in on_asks """
     creator = get_object(game, btn.tmp_creator)
     creator.busy -= 1 #no longer busy, so game can stop waiting
-    if logging: log.info("%s has finished on_asks by selecting %s, so decrement self.busy to %s."%(creator.name, btn.display_text, creator.busy))
+    if logging: log.info("%s has finished on_asks by selecting %s, so decrement %s.busy to %s."%(creator.name, btn.display_text, creator.name, creator.busy))
     remember = (creator.name, btn.question, btn.display_text)
     if remember not in game._selected_options: game._selected_options.append(remember)
 
@@ -1086,9 +1086,12 @@ Classes
 def close_on_says(game, obj, player):
     """ Close an actor's msgbox and associted items """
     #REMOVE ITEMS from obj.items instead
+    print("CLOSE ON SAYS")
+    import pdb; pdb.set_trace()
+
     for item in obj.tmp_items:
         if item in game._modals: game._modals.remove(item)
-    actor = get_object(game, obj.tmp_actor)
+    actor = get_object(game, obj.tmp_creator)
     actor.busy -= 1
     if logging: log.info("%s has finished on_says (%s), so decrement self.busy to %i."%(actor.name, obj.tmp_text, actor.busy))
 
@@ -1179,7 +1182,6 @@ class Actor(object, metaclass=use_on_events):
         self._tint = None
         self.set_editable()
 
-
     def unload_assets(self, unload_actions=False): #actor.unload
         """ Unload graphic assets """
         if self._sprite: self._sprite.delete()
@@ -1240,6 +1242,7 @@ class Actor(object, metaclass=use_on_events):
     def get_busy(self):
         return self._busy
     def set_busy(self, v):
+        log.debug("set %s.busy = %i"%(self.name, v))
         self._busy = v
     busy = property(get_busy, set_busy)
 
@@ -1920,6 +1923,7 @@ class Actor(object, metaclass=use_on_events):
     def on_animation_end_once(self):
         """ When an animation has been called once only """
         self.busy -= 1
+        if logging: log.info("%s has finished on_animation_end_once, so decrement %s.busy to %i."%(self.name, self.name, self.busy))
         self._do(self._next_action)
 
     def on_frames(self, num_frames):
@@ -1953,7 +1957,9 @@ class Actor(object, metaclass=use_on_events):
         if logging: log.info("%s has started on_asks."%(self.name))
         name = self.display_text if self.display_text else self.name
         if self.game._output_walkthrough: print("%s says \"%s\"."%(name, args[0]))
+        log.info("%s.busy = %i"%(self.name, self.busy))
         items = self._says(statement, **kwargs) 
+        log.info("%s.busy = %i"%(self.name, self.busy))
         label = None
         for item in items:
             if isinstance(item, Text): label=item
@@ -1999,7 +2005,7 @@ class Actor(object, metaclass=use_on_events):
         def _close_on_continues(game, obj, player): #close speech after continues.
             self.game._modals.remove(label.name)
             self.busy -= 1
-            if logging: log.info("%s has finished on_continues (%s), so decrement self.busy to %i."%(self.name, text, self.busy))
+            if logging: log.info("%s has finished on_continues (%s), so decrement %s.busy to %i."%(self.name, text, self.name, self.busy))
         label.interact = _close_on_continues
         self.busy += 1
         self.game._add(label)
@@ -2090,7 +2096,7 @@ class Actor(object, metaclass=use_on_events):
         for obj in items:
             obj.interact = close_on_says
             obj.tmp_items = [x.name for x in items]
-            obj.tmp_actor = self.name
+            obj.tmp_creator = self.name
             obj.tmp_text = text
             self.game.add_modal(obj)
 #        self.game._modals.extend([x.name for x in items])
@@ -2277,6 +2283,8 @@ class Actor(object, metaclass=use_on_events):
         def finish_idle(dt, start):
             print("Finished idling",dt, start, datetime.now())
             self.busy -= 1
+            if logging: log.info("%s has finished on_idle (%s), so decrement %s.busy to %i."%(self.name, start, self.name, self.busy))
+
         if self.game and not self.game._headless:
             pyglet.clock.schedule_once(finish_idle, seconds, datetime.now())
         else:
@@ -4169,6 +4177,10 @@ class Game(metaclass=use_on_events):
         if symbol == pyglet.window.key.F10:
             fn = get_function(self, "debug_cutscene")
             fn(game)
+        if symbol == pyglet.window.key.F12:
+            self._event = None
+            self._events = []
+
 
 #            self.player.rescale(3)
  #           self.player.relocate(destination=(700,1600))
@@ -4870,10 +4882,10 @@ class Game(metaclass=use_on_events):
                 #if, after running the event, the obj is not busy, then it's OK to do the next event immediately.
                 if obj.busy == 0:
                     safe_to_call_again = True
+                    log.debug("Game not busy, events not busy, and the current object is not busy, so do another event (%s)"%(len(self._events)))
                     return safe_to_call_again
-                    print("Game not busy, events not busy, and the current object is not busy, so do another event", len(self._events),depth)
                 if obj.busy < 0:
-                    print("obj.busy below zero, this should never happen.")
+                    log.error("obj.busy below zero, this should never happen.")
                     import pdb; pdb.set_trace()
             #if self._event_index<len(self._events)-1: self._event_index += 1
         #auto trigger an event from the walkthrough if needed and nothing else is happening

@@ -6,6 +6,15 @@ import unittest, pickle, sys
 
 from __init__ import *
 
+import logging
+
+logger = logging.getLogger()
+logger.level = logging.DEBUG
+#logger.addHandler(logging.StreamHandler(sys.stdout))
+handler = logging.handlers.RotatingFileHandler("pyvida_tests.log", maxBytes=2000000, backupCount=5)
+handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+logger.addHandler(handler)
+
 RESOLUTION_X = 1000
 RESOLUTION_Y = 1000
 RESOLUTION = (RESOLUTION_X, RESOLUTION_Y)
@@ -379,7 +388,8 @@ class EventTest(unittest.TestCase):
         self.game.update(0, single_event=True) #finish the relocate, starts on_says
 
         #need to trip the modals
-        self.game._modals[0].trigger_interact()
+        obj = get_object(self.game, self.game._modals[0])
+        obj.trigger_interact()
         self.game.update(0, single_event=True) #finish the on_says and start and fininsh on_relocate
 
         self.assertEqual([x[0].__name__ for x in self.game._events], ['on_clean', 'on_relocate', 'on_relocate'])
@@ -398,7 +408,7 @@ class EventTest(unittest.TestCase):
 
         self.game.splash(None, initial)
         self.assertFalse(self.game._waiting) #nothing has happened yet
-        self.assertFalse(self.game._busy)
+        self.assertFalse(self.game.busy)
 
         self.assertEqual([x[0].__name__ for x in self.game._events], ['on_splash'])
 
