@@ -263,6 +263,7 @@ class EventTest(unittest.TestCase):
         self.scene = Scene("_test_scene")
         self.item = Item("test_item")
         self.game.add([self.scene, self.actor, self.msgbox, self.ok, self.item])
+        self.scene._add(self.actor)
         self.game.scene = self.scene
 
     def test_relocate(self):
@@ -547,6 +548,7 @@ class WalkthroughTest(unittest.TestCase):
         self.game._headless = True
         self.game.add([self.scene, self.actor, self.msgbox, self.ok])
         self.game.camera._scene(self.scene)
+        self.scene._add(self.actor)
 
         @answer("Hello World")
         def answer0(game, btn, player):

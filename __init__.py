@@ -1243,7 +1243,6 @@ Classes
 def close_on_says(game, obj, player):
     """ Close an actor's msgbox and associted items """
     # REMOVE ITEMS from obj.items instead
-    print("CLOSE ON SAYS")
     for item in obj.tmp_items:
         if item in game._modals:
             game._modals.remove(item)
@@ -2361,7 +2360,7 @@ class Actor(object, metaclass=use_on_events):
 
     def _says(self, text, action="portrait", font=None, size=None, using=None, position=None, delay=0.01, step=3, ok="ok"):
         # do high contrast if requested and available
-        print("%s on says %s" % (self.name, text))
+        log.info("%s on says %s" % (self.name, text))
         background = using if using else None
         high_contrast = "%s_high_contrast" % ("msgbox" if not using else using)
         myd = os.path.join(self.game.directory_items, high_contrast)
@@ -3371,7 +3370,7 @@ class Scene(metaclass=use_on_events):
                 obj.unload_assets(unload_actions=True)
 
     def _unload_layer(self):
-        log.error("TODO: Scene unload not done yet")
+        log.warning("TODO: Scene unload not done yet")
 #        for l in self._layer:
 #            l.unload()
 
@@ -3976,7 +3975,6 @@ class Camera(metaclass=use_on_events):  # the view manager
             self.game._resident.remove(scene.name)
         self.game._resident.append(scene.name)
         unload = self.game._resident[:-6]  # unload older scenes
-        print("RESIDENT", self.game._resident, unload)
         if len(unload) > 0:
             for unload_scene in unload:
                 s = get_object(self.game, unload_scene)
