@@ -3813,6 +3813,8 @@ class MenuManager(metaclass=use_on_events):
     def _show(self):
         for obj_name in self.game._menu:
             obj = get_object(self.game, obj_name)
+            if not obj:
+                import pdb; pdb.set_trace()
             obj._usage(draw=True, interact=True)
         if logging:
             log.debug("show menu using place %s" %
@@ -5213,7 +5215,9 @@ class Game(metaclass=use_on_events):
 #            print('MENU', obj.name, obj.x, obj.y)
             x += dx
             y += dy
-        return new_menu
+        for x in new_menu:
+            if x.name == None: import pdb; pdb.set_trace()
+        return [x.name for x in new_menu]
 
     def on_menu_from_factory(self, menu, items):
         self._menu_from_factory(menu, items)
