@@ -576,12 +576,6 @@ def get_object(game, obj):
             if obj in [i.name, i.display_text]:
                 robj = i
                 return i
-        # last resort, check the menu for items added to the menu but not the
-        # game
-        for i in game._menu:
-            if obj in [i.name, i.display_text]:
-                robj = i
-                return i
     return robj
 
 
@@ -1429,8 +1423,7 @@ class Actor(object, metaclass=use_on_events):
     def get_busy(self):
         return self._busy
 
-    def set_busy(self, v):
-        log.debug("set %s.busy = %i" % (self.name, v))
+    def set_busy(self, v):     
         self._busy = v
     busy = property(get_busy, set_busy)
 
@@ -2285,9 +2278,9 @@ class Actor(object, metaclass=use_on_events):
         name = self.display_text if self.display_text else self.name
         if self.game._output_walkthrough:
             print("%s says \"%s\"." % (name, args[0]))
-        log.info("%s.busy = %i" % (self.name, self.busy))
+        log.info("on_ask before _says: %s.busy = %i" % (self.name, self.busy))
         items = self._says(statement, **kwargs)
-        log.info("%s.busy = %i" % (self.name, self.busy))
+        log.info("on_ask after _says: %s.busy = %i" % (self.name, self.busy))
         label = None
         for item in items:
             if isinstance(item, Text):
@@ -3818,21 +3811,20 @@ class MenuManager(metaclass=use_on_events):
         self._show()
 
     def _show(self):
-        for obj in self.game._menu:
+        for obj_name in self.game._menu:
+            obj = get_object(self.game, obj_name)
             obj._usage(draw=True, interact=True)
         if logging:
             log.debug("show menu using place %s" %
-                      [x.name for x in self.game._menu])
+                      [x for x in self.game._menu])
 
     def on_remove(self, menu_items=None):
         if not menu_items:
             menu_items = self.game._menu
         if type(menu_items) not in [tuple, list]:
             menu_items = [menu_items]
-        for i in menu_items:
-            if type(i) in [str]:
-                i = self.game.items[i]
-            if i in self.game._menu:
+        for i_name in menu_items:
+            if i_name in self.game._menu:
                 self.game._menu.remove(i)
 
     def _hide(self, menu_items=None):
@@ -3841,13 +3833,12 @@ class MenuManager(metaclass=use_on_events):
             menu_items = self.game._menu
         if type(menu_items) not in [tuple, list]:
             menu_items = [menu_items]
-        for i in menu_items:
-            if type(i) in [str]:
-                i = self.game.items[i]
+        for i_name in menu_items:
+            i = get_object(self.game, i_name)
             i._usage(draw=False, interact=False)
         if logging:
             log.debug("hide menu using place %s" %
-                      [x.name for x in self.game._menu])
+                      [x for x in self.game._menu])
 
     def on_hide(self, menu_items=None):
         self._hide(menu_items=menu_items)
@@ -3864,7 +3855,7 @@ class MenuManager(metaclass=use_on_events):
         """ push this menu to the list of menus and clear the current menu """
         if logging:
             log.debug("push menu %s, %s" %
-                      ([x.name for x in self.game._menu], self.game._menus))
+                      ([x for x in self.game._menu], self.game._menus))
 #        if self.game._menu:
         self.game._menus.append(self.game._menu)
         self.game._menu = []
@@ -3874,7 +3865,7 @@ class MenuManager(metaclass=use_on_events):
         if self.game._menus:
             self.game._menu = self.game._menus.pop()
         if logging:
-            log.debug("pop menu %s" % [x.name for x in self.game._menu])
+            log.debug("pop menu %s" % [x for x in self.game._menu])
 
     def on_clear(self, menu_items=None):
         """ clear current menu """
@@ -3884,9 +3875,8 @@ class MenuManager(metaclass=use_on_events):
             if not hasattr(menu_items, '__iter__'):
                 menu_items = [menu_items]
             for i in menu_items:
-                obj = get_object(self.game, i)
-                if obj in self.game._menu:
-                    self.game._menu.remove(obj)
+                if i in self.game._menu:
+                    self.game._menu.remove(i)
 
 
 class Camera(metaclass=use_on_events):  # the view manager
@@ -4852,7 +4842,11 @@ class Game(metaclass=use_on_events):
             return
         if len(self._modals) == 0:
             menu_collide = False
-            for obj in self._menu:
+            for obj_name in self._menu:
+                obj = get_object(self, obj_name)
+                if not obj:
+                    log.warning("Menu object %s not found in Game items or actors"%obj_name)
+                    return
                 if obj.collide(ox, oy):  # absolute screen values
                     self.mouse_cursor = MOUSE_CROSSHAIR
                     if obj._actions and "over" in obj._actions and (obj.allow_interact or obj.allow_use or obj.allow_look):
@@ -4972,7 +4966,8 @@ class Game(metaclass=use_on_events):
             return
 
         # try menu events
-        for obj in self._menu:
+        for obj_name in self._menu:
+            obj = get_object(self, obj_name)
             if obj.collide(ax, ay):
                 user_trigger_interact(self, obj)
                 return
@@ -5526,7 +5521,8 @@ class Game(metaclass=use_on_events):
                 if o.display_text == walkthrough[1]:
                     obj = o
             if not obj:
-                for o in self._menu:
+                for o_name in self._menu:
+                    o = get_object(self, o_name)
                     if walkthrough[1] in [o.display_text, o.name]:
                         obj = o
             obj = get_object(self, walkthrough[1]) if not obj else obj
@@ -5537,7 +5533,7 @@ class Game(metaclass=use_on_events):
                 return
             # if not in same scene as camera, and not in modals or menu, log
             # the error
-            if self.scene and self.scene != obj.scene and obj.name not in self._modals and obj not in self._menu:
+            if self.scene and self.scene != obj.scene and obj.name not in self._modals and obj.name not in self._menu:
                 log.error("{} not in scene {}, it's on {}".format(
                     walkthrough[1], self.scene.name, obj.scene.name if obj.scene else "no scene"))
             if self.player:
@@ -5681,6 +5677,8 @@ class Game(metaclass=use_on_events):
         items_to_update = []
         for items in items_list:
             for item in items:  # _to_update:
+                if isinstance(item, str): #try to find object
+                    item = get_object(self, item)
                 if item not in items_to_update:
                     items_to_update.append(item)
         for item in items_to_update:  # _to_update:
@@ -5752,7 +5750,8 @@ class Game(metaclass=use_on_events):
         if self._info_object.display_text != "":
             self._info_object.pyglet_draw(absolute=False)
 
-        for item in self._menu:
+        for item_name in self._menu:
+            item = get_object(self, item_name)
             item.game = self
             item.pyglet_draw(absolute=True)
 
@@ -6104,15 +6103,14 @@ class Game(metaclass=use_on_events):
         args = list(args)
         args.reverse()
         for i in args:
-            if type(i) not in [str]:
-                i = i.name
-            if i in self._items.keys():
-                self._menu.append(self._items[i])
+            obj = get_object(self, i)
+            if obj:
+                self._menu.append(obj.name)
             else:
                 if logging:
                     log.error("Menu item %s not found in Item collection" % i)
         if logging:
-            log.debug("set menu to %s" % [x.name for x in self._menu])
+            log.debug("set menu to %s" % [x for x in self._menu])
 
 """
 Editor stuff
@@ -6360,7 +6358,7 @@ class MyTkApp(threading.Thread):
             edit_object_script(self.game, mitem)
         row += 1
         tk.Label(group, text="Edit menu item:").grid(column=1, row=row)
-        menu = [x.name for x in self.game._menu if type(x.name) == str]
+        menu = [x for x in self.game._menu]
         menu.sort()
         option = tk.OptionMenu(
             group, menu_item, *menu, command=edit_menu_item).grid(column=2, row=row)
