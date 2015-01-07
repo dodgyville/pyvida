@@ -1591,7 +1591,7 @@ class Actor(object, metaclass=use_on_events):
             sf = 1.0  # snap to full size
  #       print("setting scale for %s to %f"%(self.name, sf))
         self.scale = sf
-        if "scale" in self._tk_edit:
+        if hasattr(self, "_tk_edit") and "scale" in self._tk_edit:
             self._tk_edit["scale"].delete(0, 100)
             self._tk_edit["scale"].insert(0, sf)
 
@@ -2122,7 +2122,7 @@ class Actor(object, metaclass=use_on_events):
             w, h = self._sprite.width, self._sprite.height
             self._clickable_area = Rect(0, 0, w, h)
             if logging:
-                log.debug("Setting %s _clickable area to %s" %
+                log.debug("smart guestimating %s _clickable area to %s" %
                           (self.name, self._clickable_area))
         else:
             if not isinstance(self, Portal):
@@ -5025,7 +5025,7 @@ class Game(metaclass=use_on_events):
                 y -= dy
                 self._editing_point_set[0](x)
                 self._editing_point_set[1](y)
-                if self._editing_label in self._editing._tk_edit:
+                if hasattr(self._editing, "_tk_edit") and self._editing_label in self._editing._tk_edit:
                     print("Edit", self._editing_label,
                           self._editing._tk_edit[self._editing_label][0])
                     self._editing._tk_edit[
@@ -5064,7 +5064,7 @@ class Game(metaclass=use_on_events):
                     self._editing._clickable_mask = None  # clear mask
                 setattr(self._editing, self._editing_point_set, r2)
 
-            else:
+            else: #editing a point
                 self._editing_point_set(x)
 
     def add_arguments(self):
@@ -5495,6 +5495,7 @@ class Game(metaclass=use_on_events):
         if self._walkthrough_index > self._walkthrough_target or self._walkthrough_index > len(self._walkthrough):
             if self._headless:
                 self._headless = False
+                print("FINISHED WALKTHROUGH")
             log.info("FINISHED WALKTHROUGH")
             if self._walkthrough_target_name:
                 save_game(
@@ -5648,8 +5649,9 @@ class Game(metaclass=use_on_events):
                 # OK to do the next event immediately.
                 if obj.busy == 0:
                     safe_to_call_again = True
-                    log.debug("Game not busy, events not busy, and the current object is not busy, so do another event (%s)" % (
-                        len(self._events)))
+                    if len(self._events)<5 or len(self._events)%10 == 0:
+                        log.debug("Game not busy, events not busy, and the current object is not busy, so do another event (%s)" % (
+                            len(self._events)))
                     return safe_to_call_again
                 if obj.busy < 0:
                     log.error("obj.busy below zero, this should never happen.")
@@ -5990,6 +5992,9 @@ class Game(metaclass=use_on_events):
                                     0] / 2 else game.resolution[0] + 150
                             oy = obj.sy
                         f.write('    %s.reout((%i, %i))\n' % (slug, ox, oy))
+                    if isinstance(obj, Emitter): # reset emitter to new settings
+                        f.write('    %s.reset()\n' % (slug))
+
                 else:  # the player object
                     f.write('    #%s = game._actors["%s"]\n' % (slug, name))
                     f.write('    #%s.reanchor((%i, %i))\n' %
@@ -6934,6 +6939,14 @@ def edit_bool(game, btn, player):
     set_attrs(not get_attrs())
 
 
+def edit_camera_btn(game, btn, player):
+    game._editing = game.scene
+    game._editing_point_set = (
+        game.scene.set_x, game.scene.set_y)
+    game._editing_point_get = (
+        game.scene.get_x, game.scene.get_y)
+
+
 def edit_scene_btn(game, btn, player):
     print("select scene")
 
@@ -6950,7 +6963,7 @@ def edit_object(game, obj):
 
 def edit_save_state(game, btn, player):
     state_name = input("Save name (without directory or .py)")
-    if state_name is None:
+    if state_name in [None, "", "\n"]:
         return
     else:
         game._save_state(state_name)
@@ -6958,7 +6971,7 @@ def edit_save_state(game, btn, player):
 
 def edit_load_state(game, btn, player):
     state_name = input("Load state (without directory or .py)")
-    if state_name is None:
+    if state_name in [None, "", "\n"]:
         return
     else:
         print("STATE_NAME", state_name)
@@ -7047,6 +7060,11 @@ def pyglet_editor(game):
     x, y = 0, 5
     opt = Text("Scene: %s" % game.scene.name, pos=(x, y), size=size,
                offset=offset, game=game, interact=edit_scene_btn)
+    game._edit_menu.append(opt)
+
+    x += 130
+    opt = Text("Camera", pos=(x, y), size=size,
+               offset=offset, game=game, interact=edit_camera_btn)
     game._edit_menu.append(opt)
 
     # scene navigation
