@@ -4405,6 +4405,7 @@ def save_game_pickle(game, fname):
 #                for fn_name in ["_interact", "_look", "_drag", "_mouse_motion", "_mouse_none", "_collection_select", "collide"]:
 #                    if hasattr(o, fn_name) and type(getattr(o, fn_name)) == str: setattr(o, fn_name, get_function(game, fn_name))
                 # restore textified methods
+                """
                 for k, v in o.__dict__.items():
                     if isinstance(v, Actor):
                         print("WARNING: Value of %s.%s is based on Actor class (%s). This attribute may not pickle properly" % (
@@ -4412,15 +4413,18 @@ def save_game_pickle(game, fname):
                     # assume string is a function name. Slightly dangerous. TODO check if text values clash with reserved functions
                     # Also, some variables are strings that may clash with
                     # methods (eg Actor._idle is always a string) so ignore
-                    if type(v) == str and hasattr(o, v) and k not in ["_idle", "_action", "_next_action"]:
+                    if type(v) == str and hasattr(o, v) and k not in ["_idle", "_action", "_next_action", "name"]:
                         fn = get_function(game, v, o)
+                        if fn == None:
+                            log.warning("Pickle tried to 
 #                        print("untextifying the variable",k,"looking for function named",v,"for",o.name,"... found" if fn else "... NOT FOUND")
                         o.__dict__[k] = fn
-
+                """
                 if hasattr(o, "create_label"):
                     o.create_label()
                 if hasattr(o, "set_editable"):
                     o.set_editable()
+    log.warning("POST PICKLE inventory %s"%game.inventory.name)
 
 
 def load_game_pickle(game, fname, meta_only=False):
@@ -4457,6 +4461,7 @@ def load_game_pickle(game, fname, meta_only=False):
             for module_name in game._modules:
                 __import__(module_name)  # load now
             game.reload_modules()  # reload now to refresh existing references
+    log.warning("POST UNPICKLE inventory %s"%(game.inventory.name))
     return meta
 
 
@@ -4633,7 +4638,7 @@ class Game(metaclass=use_on_events):
         self._create_from_walkthrough = False
         # engine will try and continue after encountering exception
         self._catch_exceptions = True
-        self._pyglet_gui_batch = pyglet.graphics.Batch()
+#        self._pyglet_gui_batch = pyglet.graphics.Batch()
 
         self._allow_editing = ENABLE_EDITOR
         self._editing = None
@@ -4855,8 +4860,8 @@ class Game(metaclass=use_on_events):
                         obj._do("over")
 
                     if obj._mouse_motion and not menu_collide:
-                        obj._mouse_motion(
-                            self.game, obj, self.game.player, x, y, dx, dy, ox, oy)
+                        fn = get_function(self, obj._mouse_motion, obj)
+                        fn(self.game, obj, self.game.player, x, y, dx, dy, ox, oy)
                     menu_collide = True
                 else:  # unhover over menu item
                     if obj.action and obj.action.name == "over" and (obj.allow_interact or obj.allow_use or obj.allow_look):
@@ -5181,7 +5186,6 @@ class Game(metaclass=use_on_events):
                 setattr(obj, k, v)
  #               if k == "key": obj.key = get_keycode(v)
 # if "text" in kwargs.keys(): obj.update_text() #force update on MenuText
-
             self._add(obj)
             new_menu.append(obj)
             w, h = obj.clickable_area.w, obj.clickable_area.h
@@ -5215,9 +5219,9 @@ class Game(metaclass=use_on_events):
 #            print('MENU', obj.name, obj.x, obj.y)
             x += dx
             y += dy
-        for x in new_menu:
-            if x.name == None: import pdb; pdb.set_trace()
-        return [x.name for x in new_menu] # if x.name != None] #XXX for debug only, remove None named objects
+        m = [x.name for x in new_menu]
+        log.info("menu from factory creates %s"%m)
+        return m
 
     def on_menu_from_factory(self, menu, items):
         self._menu_from_factory(menu, items)
