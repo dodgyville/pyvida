@@ -7036,6 +7036,9 @@ def close_editor(game, btn, player):
     if game._editing:
         game._editing.show_debug = False
         game._editing = None  # switch off editor
+    for o in game.editor._edit_object_menu:
+        if o in game._edit_menu:
+            game._edit_menu.remove(o)
     game.editor = None
     game._edit_window.close()
     game._edit_window = None
@@ -7062,7 +7065,7 @@ def pyglet_editor(game):
                offset=offset, game=game, interact=edit_scene_btn)
     game._edit_menu.append(opt)
 
-    x += 130
+    x += 160
     opt = Text("Camera", pos=(x, y), size=size,
                offset=offset, game=game, interact=edit_camera_btn)
     game._edit_menu.append(opt)
