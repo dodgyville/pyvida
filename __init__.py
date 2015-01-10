@@ -4761,6 +4761,16 @@ class Game(metaclass=use_on_events):
         global use_effect
         game = self
         player = self.player
+        if game.editor and game.editor.obj:
+            """ editor, editing a point, allow arrow keys """
+            if symbol == pyglet.window.key.UP:
+                game.editor.obj.y -= 1
+            if symbol == pyglet.window.key.DOWN:
+                game.editor.obj.y += 1
+            if symbol == pyglet.window.key.LEFT:
+                game.editor.obj.x -= 1
+            if symbol == pyglet.window.key.RIGHT:
+                game.editor.obj.x += 1
 
         if symbol == pyglet.window.key.F1:
             #            edit_object(self, list(self.scene._objects.values()), 0)
