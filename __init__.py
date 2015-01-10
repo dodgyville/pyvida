@@ -2619,10 +2619,6 @@ class Actor(object, metaclass=use_on_events):
         self._do(action)
 
     def on_do_once(self, action, next_action="idle"):
-        if self.name == "aterminal_background":
-            print(next_action)
-            import pdb
-            pdb.set_trace()
         self._do(action, self.on_animation_end_once)
         self._next_action = next_action
         self.busy += 1
