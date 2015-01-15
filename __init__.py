@@ -628,8 +628,12 @@ def option_answer_callback(game, btn, player):
 
     # remove modals from game (mostly so we don't have to pickle the knotty
     # little bastard custom callbacks!)
-    game._remove(game._modals)
+    game._remove(creator.tmp_items)
+    game._remove(creator.tmp_modals)
     game._modals = []  # empty modals
+    creator.tmp_items = None
+    creator.tmp_modals = None
+
     if btn.response_callback:
         fn = btn.response_callback if callable(
             btn.response_callback) else get_function(game, btn.response_callback, btn)
@@ -1238,11 +1242,14 @@ Classes
 def close_on_says(game, obj, player):
     """ Close an actor's msgbox and associted items """
     # REMOVE ITEMS from obj.items instead
-    for item in obj.tmp_items:
+    actor = get_object(game, obj.tmp_creator)
+    for item in actor.tmp_modals:
         if item in game._modals:
             game._modals.remove(item)
-    actor = get_object(game, obj.tmp_creator)
+    game._remove(actor.tmp_items) #remove temporary items from game
     actor.busy -= 1
+    actor.tmp_items = None
+    actor.tmp_modals = None
     if logging:
         log.info("%s has finished on_says (%s), so decrement self.busy to %i." % (
             actor.name, obj.tmp_text, actor.busy))
@@ -2317,6 +2324,8 @@ class Actor(object, metaclass=use_on_events):
             opt._mouse_none = option_mouse_none
             opt._mouse_motion = option_mouse_motion
             opt.response_callback = callback
+            self.tmp_items.append(opt.name) #created by _says
+            self.tmp_modals.append(opt.name)
             self.game._add(opt)
             self.game._modals.append(opt.name)
 
@@ -2441,11 +2450,12 @@ class Actor(object, metaclass=use_on_events):
 
         for obj in items:
             obj.interact = close_on_says
-            obj.tmp_items = [x.name for x in items]
             obj.tmp_creator = self.name
             obj.tmp_text = text
             self.game.add_modal(obj)
 #        self.game._modals.extend([x.name for x in items])
+        self.tmp_modals = [x.name for x in items]
+        self.tmp_items = [label.name]
         return items
 
     def _forget(self, fact):
@@ -4358,8 +4368,8 @@ Game class
 def restore_object(game, obj):
     """ Call after restoring an object from a pickle """
     obj.game = game
-    if hasattr(o, "create_label"):
-        o.create_label()
+    if hasattr(obj, "create_label"):
+        obj.create_label()
     if hasattr(obj, "set_editable"):
         obj.set_editable()
 
@@ -4439,7 +4449,10 @@ def load_game_pickle(game, fname, meta_only=False):
             if player_info["scene"]:
                 game.camera._scene(player_info["scene"])
             for module_name in game._modules:
-                __import__(module_name)  # load now
+                try:
+                    __import__(module_name)  # load now
+                except ImportError:
+                    log.error("Unable to import {}".format(module_name))
             game.reload_modules()  # reload now to refresh existing references
     log.warning("POST UNPICKLE inventory %s"%(game.inventory.name))
     return meta
@@ -4585,6 +4598,7 @@ class Game(metaclass=use_on_events):
         self.event_count = 0
         # function to call after each event (useful for some game logic)
         self.event_callback = None
+        self.postload_callback = None #hook to call after game load
 
         self._selected_options = []  # keep track of convo trees
         self.visited = []  # list of scene names visited
@@ -6042,6 +6056,9 @@ class Game(metaclass=use_on_events):
 
     def on_load_game(self, fname):
         load_game(self, fname)
+        if self.postload_callback:
+            self.postload_callback(self)
+
 
     def on_wait(self):
         """ Wait for all scripting events to finish """
