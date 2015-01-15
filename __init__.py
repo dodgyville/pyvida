@@ -990,18 +990,19 @@ class Action(object):
     def load_assets(self, game):
         #        log.debug("LOAD ASSETS %s %s"%(self.actor, self.name))
         self._loaded = True
+        actor = get_object(game, self.actor)
         if game:
             self.game = game
         image = load_image(self._image)
         if not image:
             log.error("Load action {} assets for actor {} has not loaded an image".format(
-                self.name, getattr(self.actor, "name", self.actor)))
+                self.name, getattr(actor, "name", actor)))
             return
         image_seq = pyglet.image.ImageGrid(image, 1, self.num_of_frames)
         frames = []
         if game == None:
             log.error("Load assets for {} has no game object".format(
-                getattr(self.actor, "name", self.actor)))
+                getattr(actor, "name", actor)))
         # TODO: generate ping poing, reverse effects here
         for frame in image_seq:
             frames.append(pyglet.image.AnimationFrame(
@@ -2331,7 +2332,8 @@ class Actor(object, metaclass=use_on_events):
 
         # close speech after continues.
         def _close_on_continues(game, obj, player):
-            self.game._modals.remove(label.name)
+            game._modals.remove(label.name)
+            game._remove(label)
             self.busy -= 1
             if logging:
                 log.info("%s has finished on_continues (%s), so decrement %s.busy to %i." % (
@@ -4353,6 +4355,14 @@ def user_trigger_look(game, obj):
 Game class
 """
 
+def restore_object(game, obj):
+    """ Call after restoring an object from a pickle """
+    obj.game = game
+    if hasattr(o, "create_label"):
+        o.create_label()
+    if hasattr(obj, "set_editable"):
+        obj.set_editable()
+
 
 def save_game_pickle(game, fname):
     log.info("Saving game to %s" % fname)
@@ -4396,30 +4406,7 @@ def save_game_pickle(game, fname):
             pickle.dump(objects, f)
             # restore game object and editables that were cleansed for pickle
             for o in objects.values():
-                o.game = game
-#                for fn_name in ["_mouse_motion", "_mouse_none", "_collection_select"]:
-#                for fn_name in ["_interact", "_look", "_drag", "_mouse_motion", "_mouse_none", "_collection_select", "collide"]:
-#                    if hasattr(o, fn_name) and type(getattr(o, fn_name)) == str: setattr(o, fn_name, get_function(game, fn_name))
-                # restore textified methods
-                """
-                for k, v in o.__dict__.items():
-                    if isinstance(v, Actor):
-                        print("WARNING: Value of %s.%s is based on Actor class (%s). This attribute may not pickle properly" % (
-                            o.name, k, v))
-                    # assume string is a function name. Slightly dangerous. TODO check if text values clash with reserved functions
-                    # Also, some variables are strings that may clash with
-                    # methods (eg Actor._idle is always a string) so ignore
-                    if type(v) == str and hasattr(o, v) and k not in ["_idle", "_action", "_next_action", "name"]:
-                        fn = get_function(game, v, o)
-                        if fn == None:
-                            log.warning("Pickle tried to 
-#                        print("untextifying the variable",k,"looking for function named",v,"for",o.name,"... found" if fn else "... NOT FOUND")
-                        o.__dict__[k] = fn
-                """
-                if hasattr(o, "create_label"):
-                    o.create_label()
-                if hasattr(o, "set_editable"):
-                    o.set_editable()
+                restore_object(game, o)
     log.warning("POST PICKLE inventory %s"%game.inventory.name)
 
 
@@ -4444,10 +4431,7 @@ def load_game_pickle(game, fname, meta_only=False):
             # restore game object and editable info
             for objects in [game._actors.values(), game._items.values(), game._scenes.values()]:
                 for o in objects:
-                    o.game = game
-                    if hasattr(o, "set_editable"):
-                        o.set_editable()
-#                    if hasattr(o, "link"): print("Portal",o.name," has scene",o.scene)
+                    restore_object(game, o)
 
             # change camera to scene
             if player_info["player"]:
