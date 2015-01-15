@@ -3,6 +3,8 @@ python3 -m unittest tests.SaveTest
 """
 
 import unittest, pickle, sys, tempfile
+import gc, glob
+import resource
 
 from __init__ import *
 
@@ -788,6 +790,132 @@ class SaveTest(unittest.TestCase):
             actor = pickle.load(f)
         self.assertEqual(self.actor.name, "_test_actor")
         self.assertEqual(actor.name, "_test_actor")
+
+class AssetTest(unittest.TestCase):
+    """ Test for memory leak in our load image, load assets and unload assets code """
+    def setUp(self):
+        self.game = Game("Unit Tests", fps=60, afps=16, resolution=RESOLUTION)
+        self.game.settings = Settings()
+        self.actor = Actor("_test_actor").smart(self.game)
+        self.scene = Scene("_test_scene")
+        self.game.player = self.actor
+        self.game.add([self.scene, self.actor])
+
+    def test_load_image(self):
+        fname = "data/scenes/_test_scene_large/background.png"
+        load_image(fname)
+        start_mem = None
+        for i in range(0, 20):
+            load_image(fname)
+            mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1000
+            if start_mem == None: start_mem = mem
+            self.assertLessEqual(mem, start_mem)
+            print(start_mem, mem)
+
+    def test_load_assets(self):
+        mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1000
+        print(mem)
+        item = Item("test") #.smart(self.game, using="data/items/_test_item")
+        action = Action("idle")
+        item._actions["idle1"] = action
+        action.actor = item
+        action._image = "data/items/_test_assets/idle1.png"
+        action.num_of_frames = 20
+        self.game.add(item)
+        for i in range(0, 20):
+            start_mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1000
+            print("pre",start_mem)
+        high_mem = None
+        for i in range(0, 20):
+            action.load_assets(self.game, force=True)
+            self.assertNotEqual(action._animation, None)
+            self.assertEqual(item._sprite, None)
+            mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1000
+            print("HIGH",mem)
+            if high_mem == None: high_mem = mem
+            action.unload_assets()
+            self.assertEqual(action._animation, None)
+            self.assertEqual(item._sprite, None)
+            low_mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1000
+            print(start_mem,  mem, low_mem)
+            self.assertEqual(start_mem, low_mem)
+
+def get_memory():
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1000
+
+
+def load_asset(fname, num_of_frames):
+    image = load_image(fname)
+    print("m1",get_memory())
+    image_seq = pyglet.image.ImageGrid(image, 1, num_of_frames)
+    print("m2",get_memory())
+    frames = []
+    for frame in image_seq:
+        frames.append(pyglet.image.AnimationFrame(frame, 1 / 16))
+    print("m3",get_memory())
+    _animation = pyglet.image.Animation(frames)
+    print("m4",get_memory())
+    return
+
+
+class PygletTest(unittest.TestCase):
+    def test_load(self):
+        def get_memory():
+            return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1000
+        print("Start", get_memory())
+        for fname in glob.glob("data/items/_test_assets/*.png"):
+            image = pyglet.image.load(fname)        
+            print("after loading",fname,get_memory())
+        image = None
+        gc.collect()
+        print("Memory after setting image to None and calling gc.collect()",get_memory())
+
+    def test_load_heavy(self):
+        def get_memory():
+            return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1000
+        print("Start", get_memory())
+        for fname in glob.glob("../data/*/*/*.png"):
+            image = pyglet.image.load(fname)        
+            print("after loading",fname,get_memory())
+        image = None
+        gc.collect()
+        print("Memory after setting image to None and calling gc.collect()",get_memory())
+
+    def test_actor_smart(self):
+        def get_memory():
+            return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1000
+        game = Game("Unit Tests", fps=60, afps=16, resolution=RESOLUTION)
+        game.settings = Settings()
+        game.directory_portals = os.path.join("..", DIRECTORY_PORTALS)
+        game.directory_items = os.path.join("..", DIRECTORY_ITEMS)
+        game.directory_scenes = os.path.join("..", DIRECTORY_SCENES)
+        game.directory_actors = os.path.join("..", DIRECTORY_ACTORS)
+        game.directory_emitters = os.path.join("..", DIRECTORY_EMITTERS)
+        game.directory_interface = os.path.join("..", DIRECTORY_INTERFACE)
+        sys.path.append("/home/luke/Projects/spaceout-pleasure")
+        print("Start", get_memory())
+        for obj_cls in [Actor, Item, Emitter, Portal, Scene]:
+            dname = "directory_%ss" % obj_cls.__name__.lower()
+            if not os.path.exists(getattr(game, dname)):
+                continue  # skip directory if non-existent
+            for name in os.listdir(getattr(game, dname)):
+                a = obj_cls(name)
+                game._add(a)
+                try:
+                    a.smart(game)
+                except KeyError:
+                    print("skip %s"%name)
+                    
+        print("End", get_memory())
+
+
+    def test_assets(self):
+        for i in range(0, 10):
+            print("\nm0",get_memory())
+            load_asset("data/items/_test_assets/idle1.png", 20)
+            load_asset("data/items/_test_assets/right.png", 8)
+            load_asset("data/items/_test_assets/left.png", 8)
+#            gc.collect()
 
 if __name__ == '__main__':
     unittest.main()
