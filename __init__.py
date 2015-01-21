@@ -2290,6 +2290,9 @@ class Actor(object, metaclass=use_on_events):
         items = self._says(statement, **kwargs)
         log.info("on_ask after _says: %s.busy = %i" % (self.name, self.busy))
         label = None
+        if len(args) == 0:
+            log.error("No arguments sent to %s on_ask, skipping" % (self.name))
+            return
         for item in items:
             if isinstance(item, Text):
                 label = item
