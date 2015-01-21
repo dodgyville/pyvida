@@ -3378,8 +3378,10 @@ class Scene(metaclass=use_on_events):
     def _load_layer(self, element):
         fname = os.path.splitext(os.path.basename(element))[0]
         sdir = os.path.dirname(element)
+
         f = self.game._add(
-            Item("%s_%s" % (self.name, fname)).smart(self.game, image=element))
+            Item("%s_%s" % (self.name, fname)).smart(self.game, image=element), replace=True)
+        ff = f
         self._layer.append(f)  # add layer items as items
         return f
 
@@ -3387,7 +3389,7 @@ class Scene(metaclass=use_on_events):
         sdir = os.path.join(
             os.getcwd(), os.path.join(game.directory_scenes, self.name))
         wildcard = wildcard if wildcard else os.path.join(sdir, "*.png")
-
+        self._layer = [] #free up old layers
         for element in glob.glob(wildcard):  # add layers
             fname = os.path.splitext(os.path.basename(element))[0]
             details_filename = os.path.join(sdir, fname + ".details")
@@ -4619,6 +4621,7 @@ class Game(metaclass=use_on_events):
         self._walkthrough_target = 0  # our target
         # if auto-creating a savefile for this walkthrough
         self._walkthrough_target_name = None
+        self._walkthrough_start_name = None #fast load from a save file
 
         # TODO: for jumping back to a previous state in the game (WIP)
         self._walkthrough_stored_state = None
@@ -5108,7 +5111,7 @@ class Game(metaclass=use_on_events):
         self.parser.add_argument("-r", "--resolution", dest="resolution",
                                  help="Force engine to use resolution WxH or (w,h) (recommended (1600,900))")
         self.parser.add_argument(
-            "-s", "--step", dest="target_step", help="Jump to step in walkthrough")
+            "-s", "--step", dest="target_step", nargs='+', help="Jump to step in walkthrough (optional 2nd argument means fast load 1st and regenerate 2nd)")
         self.parser.add_argument("-t", "--text", action="store_true", dest="text",
                                  help="Play game in text mode (for players with disabilities who use text-to-speech output)", default=False)
         self.parser.add_argument("-w", "--walkthrough", action="store_true", dest="output_walkthrough",
@@ -5443,14 +5446,22 @@ class Game(metaclass=use_on_events):
             self.mixer._force_mute = True
         # switch on test runner to step through walkthrough
         if options.target_step:
-            if options.target_step.isdigit():
+            first_step = options.target_step[0]
+            last_step = options.target_step[1] if len(options.target_step) == 2 else None
+            if first_step.isdigit():
                 # automatically run to <step> in walkthrough
                 self._walkthrough_target = int(options.target_step)
             else:  # use a label
                 for i, x in enumerate(self._walkthrough):
-                    if x[-1] == options.target_step:
+                    if x[-1] == first_step:
+                        self._walkthrough_start_name = x[-1]
+                        if not last_step: 
+                            self._walkthrough_target = i + 1
+                    elif last_step and x[-1] == last_step:
                         self._walkthrough_target_name = x[-1]
                         self._walkthrough_target = i + 1
+            if not last_step:
+                self._walkthrough_target_name = self._walkthrough_start_name
         if options.build:
             self._build = True
         if options.allow_editor:
