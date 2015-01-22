@@ -2812,13 +2812,16 @@ class Actor(object, metaclass=use_on_events):
                                 log.warning("%s default use script missing: def %s(game, %s, %s)" % (
                                     scene.name, basic, actee.lower(), actor.lower()))
 
+    def _cancel_goto(self):
+        self._goto_x, self._goto_y = None, None
+        self._goto_dx, self._goto_dy = 0, 0
+
     def _calculate_goto(self, destination, block=False):
         self._goto_x, self._goto_y = destination
         x, y = self._goto_x - self.x, self._goto_y - self.y
         distance = math.hypot(x, y)
         if -5 < distance < 5:
-            self._goto_x, self._goto_y = None, None
-            self._goto_dx, self._goto_dy = 0, 0
+            self._cancel_goto()
             return  # already there
         # how far we can travel along the distance in one update
         d = self.action.speed / distance
@@ -4992,9 +4995,17 @@ class Game(metaclass=use_on_events):
         if len(self._menu) > 0 and self._menu_modal:
             return  # menu is in modal mode so block other objects
 
-        # finally, try scene objects
-        if len(self._events) > 0:
+        # finally, try scene objects or allow a plain walk to be interrupted.
+        if len(self._events) > 1:
             return
+        if len(self._events) == 1:
+            # if the only event is a goto to a uninteresting point, clear it.
+            if self._events[0][0].__name__ == "on_goto":
+                self.player._finished_goto()
+                self.player.busy -= 1
+                self.player._cancel_goto()
+            else:
+                return
         for obj_name in self.scene._objects:
             obj = get_object(self, obj_name)
             if obj.collide(x, y) and (obj.allow_interact or obj.allow_use or obj.allow_look) and obj.allow_draw:
