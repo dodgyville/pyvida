@@ -4057,7 +4057,7 @@ class Camera(metaclass=use_on_events):  # the view manager
     def on_shake_stop(self):
         self._shake_x, self._shake_y = 0, 0
 
-    def on_fade_out(self, seconds=3):
+    def on_fade_out(self, seconds=3): #camera.fade
         items = self.game.player._says("FADE OUT", None)
         if self.game._headless:  # headless mode skips sound and visuals
             items[0].trigger_interact()  # auto-close the on_says
