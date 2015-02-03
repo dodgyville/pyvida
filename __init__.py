@@ -1243,9 +1243,12 @@ def close_on_says(game, obj, player):
     """ Close an actor's msgbox and associted items """
     # REMOVE ITEMS from obj.items instead
     actor = get_object(game, obj.tmp_creator)
-    for item in actor.tmp_modals:
-        if item in game._modals:
-            game._modals.remove(item)
+    try:
+        for item in actor.tmp_modals:
+            if item in game._modals:
+                game._modals.remove(item)
+    except:
+        import pdb;pdb.set_trace()
     game._remove(actor.tmp_items) #remove temporary items from game
     actor.busy -= 1
     actor.tmp_items = None
@@ -1600,8 +1603,12 @@ class Actor(object, metaclass=use_on_events):
  #       print("setting scale for %s to %f"%(self.name, sf))
         self.scale = sf
         if hasattr(self, "_tk_edit") and "scale" in self._tk_edit:
-            self._tk_edit["scale"].delete(0, 100)
-            self._tk_edit["scale"].insert(0, sf)
+            try:
+                self._tk_edit["scale"].delete(0, 100)
+                self._tk_edit["scale"].insert(0, sf)
+            except RuntimeError:
+                print("thread clash, ignoring")
+                pass
 
     def get_editing_save(self):
         return self._editing_save
@@ -2163,7 +2170,6 @@ class Actor(object, metaclass=use_on_events):
                 pass
             self.game = game #restore game object
         """
-
         self._load_scripts()  # start watching the module for this actor
         return self
 
@@ -4058,10 +4064,13 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._shake_x, self._shake_y = 0, 0
 
     def on_fade_out(self, seconds=3): #camera.fade
-        items = self.game.player._says("FADE OUT", None)
         if self.game._headless:  # headless mode skips sound and visuals
-            items[0].trigger_interact()  # auto-close the on_says
-        return
+            return
+
+ #       items = self.game.player._says("FADE OUT", None)
+#        if self.game._headless:  # headless mode skips sound and visuals
+#            items[0].trigger_interact()  # auto-close the on_says
+#        return
         d = pyglet.resource.get_script_home()
         mask = pyglet.image.load(os.path.join(d, 'data/special/black.png'))
 #        mask = pyglet.image.codecs.gdkpixbuf2.GdkPixbuf2ImageDecoder().decode(open("data/special/black.png", "rb"), "data/special/black.png")
@@ -4075,10 +4084,11 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._overlay_fx = FX_FADE_OUT
 
     def on_fade_in(self, seconds=3):
-        items = self.game.player._says("FADE IN", None)
+     #   items = self.game.player._says("FADE IN", None)
         if self.game._headless:  # headless mode skips sound and visuals
-            items[0].trigger_interact()  # auto-close the on_says
-        return
+            return
+#            items[0].trigger_interact()  # auto-close the on_says
+    #    return
         d = pyglet.resource.get_script_home()
         mask = pyglet.image.load(os.path.join(d, 'data/special/black.png'))
         self._overlay = pyglet.sprite.Sprite(mask, 0, 0)
@@ -5462,6 +5472,14 @@ class Game(metaclass=use_on_events):
         if options.target_step:
             first_step = options.target_step[0]
             last_step = options.target_step[1] if len(options.target_step) == 2 else None
+            if last_step: #run through walkthrough to that step and do game load, then continue to second target
+                for i, x in enumerate(self._walkthrough):
+                    if x[1] == last_step:
+                        self._walkthrough_index += 1
+                        load_game(self, os.path.join("saves", "%s.save"%first_step))
+                        first_step = last_step
+                        print("Continuing to",first_step)
+            
             if first_step.isdigit():
                 # automatically run to <step> in walkthrough
                 self._walkthrough_target = int(options.target_step)
@@ -5471,9 +5489,6 @@ class Game(metaclass=use_on_events):
                         self._walkthrough_start_name = x[-1]
                         if not last_step: 
                             self._walkthrough_target = i + 1
-                    elif last_step and x[-1] == last_step:
-                        self._walkthrough_target_name = x[-1]
-                        self._walkthrough_target = i + 1
             if not last_step:
                 self._walkthrough_target_name = self._walkthrough_start_name
         if options.build:
@@ -6728,7 +6743,7 @@ class ObjEditText(Text):
                 r = self.get_attrs()
                 try:
                     result = "%0.3f" % float(r)
-                except TypeError:
+                except (TypeError, ValueError):
                     result = "%s" % r
                 if r:
                     self.display_text = "%s: %s" % (self.label, result)
