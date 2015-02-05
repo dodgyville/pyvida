@@ -1603,12 +1603,14 @@ class Actor(object, metaclass=use_on_events):
  #       print("setting scale for %s to %f"%(self.name, sf))
         self.scale = sf
         if hasattr(self, "_tk_edit") and "scale" in self._tk_edit:
+            """ Oh, you're not thread safe? Well here's a """
             try:
                 self._tk_edit["scale"].delete(0, 100)
                 self._tk_edit["scale"].insert(0, sf)
             except RuntimeError:
                 print("thread clash, ignoring")
                 pass
+            """ that says otherwise."""
 
     def get_editing_save(self):
         return self._editing_save
@@ -5057,8 +5059,6 @@ class Game(metaclass=use_on_events):
                 self._editing_point_set[0](x)
                 self._editing_point_set[1](y)
                 if hasattr(self._editing, "_tk_edit") and self._editing_label in self._editing._tk_edit:
-                    print("Edit", self._editing_label,
-                          self._editing._tk_edit[self._editing_label][0])
                     self._editing._tk_edit[
                         self._editing_label][0].delete(0, 100)
                     self._editing._tk_edit[self._editing_label][0].insert(0, x)
