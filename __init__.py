@@ -323,7 +323,7 @@ COLOURS = {
 GLOBALS (yuck)
 """
 _pyglet_fonts = {DEFAULT_MENU_FONT: "bitstream vera sans"}
-
+_resources = {} #graphical assets for the game, #w,h,Sprite|None
 
 """
 Testing utilities
@@ -936,13 +936,27 @@ class Motion(object):
         return self
 
 
+def set_resource(key, w=False, h=False, resource=False):
+    """ If w|h|resource != False, update the value in _resources[key] """
+    ow, oh, oresource = _resources[key] if key in _resources else (0, 0, None)
+    ow = w if w != False else ow
+    oh = h if h != False else oh
+    if resource == None and isinstance(oresource,  pyglet.sprite.Sprite): #delete sprite
+        oresource.delete()
+    oresource = resource if resource != False else oresource
+    _resources[key] = (ow, oh, oresource)
+        
+def get_resource(key):
+    r = _resources[key] if key in _resources else (0, 0, None)
+    return r
+
+
 class Action(object):
 
     def __init__(self, name):
         self.name = name
         self.actor = None
         self.game = None
-#        self._sprite = None
         self.speed = 10  # speed if used in pathplanning
         # arc zone this action can be used for in pathplanning
         self.angle_start = 0
@@ -959,7 +973,9 @@ class Action(object):
         return self.__dict__
 
     def draw(self):
-        self._sprite.draw()
+        #XXX is this code used, or should it be a pass or even removed?
+        import pdb; pdb.set_trace()
+        self.resource.draw()
 
     def smart(self, game, actor=None, filename=None):  # action.smart
         # load the image and slice info if necessary
@@ -983,17 +999,20 @@ class Action(object):
 #        self.load_assets(game)
         return self
 
+    @property
+    def resource_name(self): #action.load
+        """ The key name for this action's graphic resources in _resources"""
+        actor_name = getattr(self.actor, "name", self.actor) if self.actor else "unknown_actor"
+        return "%s_%s"%(slugify(actor_name), slugify(self.name))
+
     def unload_assets(self):  # action.unload
         #        log.debug("UNLOAD ASSETS %s %s"%(self.actor, self.name))
-        self._animation = None
         self.game = None
         self.actor = getattr(
-            self.actor, "name", self.actor) if self.actor else None
-        self._loaded = False
+            self.actor, "name", self.actor) if self.actor else "unknown_actor"
+        set_resource(self.resource_name, resource=None)
 
-    def load_assets(self, game):
-        #        log.debug("LOAD ASSETS %s %s"%(self.actor, self.name))
-        self._loaded = True
+    def load_assets(self, game): #action.load
         actor = get_object(game, self.actor)
         if game:
             self.game = game
@@ -1011,7 +1030,7 @@ class Action(object):
         for frame in image_seq:
             frames.append(pyglet.image.AnimationFrame(
                 frame, 1 / getattr(game, "default_actor_fps", DEFAULT_ACTOR_FPS)))
-        self._animation = pyglet.image.Animation(frames)
+        set_resource(self.resource_name, resource = pyglet.image.Animation(frames))
 
 
 class Rect(object):
@@ -1355,23 +1374,43 @@ class Actor(object, metaclass=use_on_events):
         # don't process any more events for this actor until busy is False,
         # will block all events if game._waiting = True
         self.busy = 0
-        self._sprite = None
         self._batch = None
 #        self._events = []
 
         self._tint = None
         self.set_editable()
 
-    def unload_assets(self, unload_actions=False):  # actor.unload
+    def unload_assets(self):  # actor.unload
         """ Unload graphic assets """
-        if self._sprite:
-            self._sprite.delete()
-        self._sprite = None  # gets reloaded when needed
         self._tk_edit = {}
         self._clickable_mask = None
-        if unload_actions:
-            for action in self._actions.values():
-                action.unload_assets()
+        for action in self._actions.values():
+            action.unload_assets()      
+        set_resource(self.resource_name, resource=None)
+
+    def load_assets(self, game, **kwargs): #actor.load_assets
+        self.game = game
+        #load actions
+        for action in self._actions.values():
+            action.load_assets(game)
+
+        #create sprite
+        action = self.action
+        action_animation = get_resource(action.resource_name) 
+        if not action_animation:
+            return
+        sprite = pyglet.sprite.Sprite(action_animation[-1], **kwargs)
+        if self._tint:
+            sprite.color = self._tint
+        if self._scale:
+            sprite.scale = self.scale
+        if self.rotate:
+            sprite.rotation = self.rotate
+        # jump to end
+        if self.game and self.game._headless and isinstance(sprite.image, pyglet.image.Animation):
+            sprite._frame_index = len(sprite.image.frames)
+        set_resource(self.resource_name, w=sprite.width,h=sprite.height, resource=sprite)
+        return sprite
 
     def __getstate__(self):
         """ Prepare the object for pickling """
@@ -1440,9 +1479,6 @@ class Actor(object, metaclass=use_on_events):
 
     def get_action(self):
         action = self._actions.get(self._action, None)
-        if action and action._animation == None:
-            action.load_assets(self.game)
-            self.create_sprite(action)
         return action
 
     def set_action(self, v):
@@ -1460,7 +1496,7 @@ class Actor(object, metaclass=use_on_events):
 
     @property
     def viewable(self):
-        if self._sprite:
+        if self.resource:
             return True
         return False
 
@@ -1469,16 +1505,16 @@ class Actor(object, metaclass=use_on_events):
             Useful for rotating Actors around an anchor point
             But message
         """
-        if isinstance(self._sprite._animation, pyglet.image.Animation):
-            for f in self._sprite._animation.frames:
+        if isinstance(self.resource._animation, pyglet.image.Animation):
+            for f in self.resource._animation.frames:
                 f.image.anchor_x = x
                 f.image.anchor_y = y
         else:
-            self._sprite._animation.anchor_x = self._ax
-            self._sprite._animation.anchor_y = self._ay
-        if self._sprite:
-            self._sprite.anchor_x = x
-            self._sprite.anchor_y = y
+            self.resource._animation.anchor_x = self._ax
+            self.resource._animation.anchor_y = self._ay
+        if self.resource:
+            self.resource.anchor_x = x
+            self.resource.anchor_y = y
         import pdb
         pdb.set_trace()
 #        if self._image:
@@ -1486,13 +1522,13 @@ class Actor(object, metaclass=use_on_events):
 #            self._image.anchor_y = y
 
     def update_anchor(self):
-        if isinstance(self._sprite._animation, pyglet.image.Animation):
+        if isinstance(self.resource._animation, pyglet.image.Animation):
             for f in _sprite._animation:
                 f.image.anchor_x = self._ax
                 f.image.anchor_y = self._ay
         else:
-            self._sprite._animation.anchor_x = self._ax
-            self._sprite._animation.anchor_y = self._ay
+            self.resource._animation.anchor_x = self._ax
+            self.resource._animation.anchor_y = self._ay
 
     def get_x(self):
         return self._x
@@ -1521,7 +1557,7 @@ class Actor(object, metaclass=use_on_events):
 
     def set_ax(self, v):
         self._ax = v // self._scale
-       # if self._sprite: self._sprite.anchor_x = self._ax  - self.x
+       # if self.resource: self.resource.anchor_x = self._ax  - self.x
         return
     ax = property(get_ax, set_ax)
 
@@ -1530,7 +1566,7 @@ class Actor(object, metaclass=use_on_events):
 
     def set_ay(self, v):
         self._ay = v // self._scale
-       # if self._sprite: self._sprite.anchor_y = self._ay - self.y
+       # if self.resource: self.resource.anchor_y = self._ay - self.y
         return
     ay = property(get_ay, set_ay)
 
@@ -1580,8 +1616,9 @@ class Actor(object, metaclass=use_on_events):
         return self._scale
 
     def set_scale(self, v):
-        if self._sprite:
-            self._sprite.scale = v
+        sprite = get_resource(self.resource_name)[-1]
+        if sprite:
+            sprite.scale = v
         if self._clickable_area:
             self._clickable_area.scale = v
 #        if self._clickable_mask: self._clickable_mask.scale = v
@@ -1626,8 +1663,8 @@ class Actor(object, metaclass=use_on_events):
         return self._rotate
 
     def set_rotate(self, v):
-        if self._sprite:
-            self._sprite.rotation = v
+        if self.resource:
+            self.resource.rotation = v
 #        if self._clickable_area: self._clickable_area.scale = v
         if self._clickable_mask:
             self._clickable_mask.rotation = v
@@ -1682,30 +1719,24 @@ class Actor(object, metaclass=use_on_events):
 
     def set_alpha(self, v):
         self._opacity = v
-        if self._sprite:
-            self._sprite.opacity = self._opacity
+        if self.resource:
+            self.resource.opacity = self._opacity
 
     def get_alpha(self):
         return self._opacity
     alpha = property(get_alpha, set_alpha)
 
     @property
+    def resource(self):
+        return get_resource(self.resource_name)[-1]
+
+    @property
     def w(self):
-        if not self._sprite:
-            if self._action:
-                self._do(self._action)  # load asset
-            if not self._sprite:
-                return None  # if still no sprite, return None
-        return self._sprite.width
+        return get_resource(self.resource_name)[0]
 
     @property
     def h(self):
-        if not self._sprite:
-            if self._action:
-                self._do(self._action)  # load asset
-            if not self._sprite:
-                return None  # if still no sprite, return None
-        return self._sprite.height
+        return get_resource(self.resource_name)[1]
 
     def fog_display_text(self, actor):
         actor = get_object(self.game, actor)
@@ -1768,8 +1799,8 @@ class Actor(object, metaclass=use_on_events):
                         log.info("%s has finished on_fade_in, so decrement self.busy to %i." % (
                             self.name, self.busy))
 
-            if self._sprite:
-                self._sprite.opacity = self._opacity
+            if self.resource:
+                self.resource.opacity = self._opacity
 
         if self._goto_x != None:
             self.x = self.x + self._goto_dx
@@ -2135,12 +2166,10 @@ class Actor(object, metaclass=use_on_events):
             self._tx, self._ty = int(self.w + 10), int(self.h)
 
         # guessestimate the clickable mask for this actor
-        if self._sprite:
-            w, h = self._sprite.width, self._sprite.height
-            self._clickable_area = Rect(0, 0, w, h)
-            if logging:
-                log.debug("smart guestimating %s _clickable area to %s" %
-                          (self.name, self._clickable_area))
+        self._clickable_area = Rect(0, 0, self.w, self.h)
+        if logging:
+            log.debug("smart guestimating %s _clickable area to %s" %
+                      (self.name, self._clickable_area))
         else:
             if not isinstance(self, Portal):
                 if logging:
@@ -2178,16 +2207,17 @@ class Actor(object, metaclass=use_on_events):
     def pyglet_draw(self, absolute=False, force=False):  # actor.draw
         if self.game and self.game._headless and not force:
             return
-        if self.game and self.action and self.action._loaded == False:
-            self.action.load_assets(self.game)
-        if self._sprite and self.allow_draw:
+#        if self.game and self.action and self.action._loaded == False:
+#            self.action.load_assets(self.game)
+        sprite = get_resource(self.resource_name)[-1]
+        if sprite and self.allow_draw:
             x, y = self.x, self.y
             if self._parent:
                 x += self._parent.x
                 y += self._parent.y
 
             x = x + self.ax
-            y = self.game.resolution[1] - y - self.ay - self._sprite.height
+            y = self.game.resolution[1] - y - self.ay - sprite.height
 
             # displace for camera
             if not absolute and self.game.scene:
@@ -2200,19 +2230,19 @@ class Actor(object, metaclass=use_on_events):
                                  self.game.camera._shake_y)
 
             pyglet.gl.glTranslatef(self._scroll_dx, 0.0, 0.0)
-            self._sprite.position = (int(x), int(y))
+            sprite.position = (int(x), int(y))
             if self._scroll_dx != 0 and self._scroll_dx + self.w < self.game.resolution[0]:
-                self._sprite.position = (int(x + self.w), int(y))
+                sprite.position = (int(x + self.w), int(y))
             if self._scroll_dx != 0 and x > 0:
-                self._sprite.position = (int(x - self.w), int(y))
+                sprite.position = (int(x - self.w), int(y))
             if not self._batch:
-                self._sprite.draw()
+                sprite.draw()
             # draw extra tiles if needed
             if self._scroll_dx != 0 and self._scroll_mode == SCROLL_TILE_HORIZONTAL:
-                if self._sprite.x > 0:
-                    self._sprite.x -= (self.w - 2)
+                if sprite.x > 0:
+                    sprite.x -= (self.w - 2)
                     if not self._batch:
-                        self._sprite.draw()
+                        sprite.draw()
             pyglet.gl.glTranslatef(-self._scroll_dx, 0.0, 0.0)
 
         if self.show_debug:
@@ -2248,8 +2278,8 @@ class Actor(object, metaclass=use_on_events):
 #        log.warning("This function seems to not do anything")
         pass
 #        self.busy -= 1
-#        if self._sprite and self._sprite._animation:
-#            frame = self._sprite._animation.frames[self._sprite._frame_index]
+#        if self.resource and self.resource._animation:
+#            frame = self.resource._animation.frames[self.resource._frame_index]
 
     def on_animation_end_once(self):
         """ When an animation has been called once only """
@@ -2261,10 +2291,10 @@ class Actor(object, metaclass=use_on_events):
 
     def on_frames(self, num_frames):
         """ Advance the current action <num_frames> frames """
-        if not self._sprite:
+        if not self.resource:
             return
-        self._sprite._frame_index = (
-            self._sprite._frame_index + num_frames) % len(self._sprite._animation.frames)
+        self.resource._frame_index = (
+            self.resource._frame_index + num_frames) % len(self.resource._animation.frames)
 
     def on_asks(self, statement, *args, **kwargs):
         """ A queuing function. Display a speech bubble with text and several replies, and wait for player to pick one.
@@ -2598,31 +2628,22 @@ class Actor(object, metaclass=use_on_events):
 
         # action if isinstance(action, Action) else self._actions[action]
         action = getattr(action, "name", action)
-        if self._sprite:
-            self._sprite.delete()
         self._action = action
 
         # TODO: group sprites in batches and OrderedGroups
         kwargs = {}
 #        if self.game and self.game._pyglet_batch: kwargs["batch"] = self.game._pyglet_batch
-        self.create_sprite(self.action, **kwargs)
+        sprite = self.load_assets(self.game)
         callback = self.on_animation_end if callback == None else callback
-        if self._sprite:
-            self._sprite.on_animation_end = callback
+        if sprite:
+            sprite.on_animation_end = callback
 
-    def create_sprite(self, action, **kwargs):
-        if not action._animation:
-            return
-        self._sprite = pyglet.sprite.Sprite(action._animation, **kwargs)
-        if self._tint:
-            self._sprite.color = self._tint
-        if self._scale:
-            self._sprite.scale = self.scale
-        if self.rotate:
-            self._sprite.rotation = self.rotate
-        # jump to end
-        if self.game and self.game._headless and isinstance(self._sprite.image, pyglet.image.Animation):
-            self._sprite._frame_index = len(self._sprite.image.frames)
+    @property
+    def resource_name(self):
+        """ The key name for this actor's graphic resource in _resources"""
+        return slugify(self.name)
+
+#    def create_sprite(self, action, **kwargs):
 
     def on_motion(self, motion=None, mode=MOTION_LOOP):
         """ Clear all existing motions and do just one motion. """
@@ -2659,8 +2680,8 @@ class Actor(object, metaclass=use_on_events):
         self._tint = rgb
         if rgb == None:
             rgb = (0, 0, 0)  # (255, 255, 255)
-        if self._sprite:
-            self._sprite.color = rgb
+        if self.resource:
+            self.resource.color = rgb
 
     def on_idle(self, seconds):
         """ delay processing the next event for this actor """
@@ -3133,7 +3154,7 @@ class Emitter(Item, metaclass=use_on_events):
             self._update_particle(dt, p)
 
     def pyglet_draw(self, absolute=False, force=False):  # emitter.draw
-        #        if self._sprite and self._allow_draw: return
+        #        if self.resource and self._allow_draw: return
         if self.game and self.game._headless and not force:
             return
 
@@ -3152,7 +3173,7 @@ class Emitter(Item, metaclass=use_on_events):
                 y += self._parent.y
 
             x = x + self.ax
-            y = self.game.resolution[1] - y - self.ay - self._sprite.height
+            y = self.game.resolution[1] - y - self.ay - self.resource.height
 
             # displace for camera
             if not absolute and self.game.scene:
@@ -3164,8 +3185,8 @@ class Emitter(Item, metaclass=use_on_events):
                     y += randint(-self.game.camera._shake_y,
                                  self.game.camera._shake_y)
 
-            self._sprite.position = (int(x), int(y))
-            self._sprite.draw()
+            self.resource.position = (int(x), int(y))
+            self.resource.draw()
 
             """
             img = self.action.image(p.action_index)
@@ -3382,7 +3403,7 @@ class Scene(metaclass=use_on_events):
             obj = get_object(self.game, obj_name)
             log.debug("UNLOAD obj %s %s" % (obj_name, obj))
             if obj:
-                obj.unload_assets(unload_actions=True)
+                obj.unload_assets()
 
     def _unload_layer(self):
         log.warning("TODO: Scene unload not done yet")
@@ -3774,9 +3795,9 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
 
         super().pyglet_draw(absolute=absolute)  # actor.draw
         # , self.y #self.padding[0], self.padding[1] #item padding
-        x, y = self._sprite.x + \
-            self.padding[0], self._sprite.y + \
-            self._sprite.height - self.padding[1]
+        x, y = self.resource.x + \
+            self.padding[0], self.resource.y + \
+            self.resource.height - self.padding[1]
         w = self.clickable_area.w
         dx, dy = self.tile_size
         for obj_name in self._objects:
@@ -3786,7 +3807,7 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
                     "Unable to draw collection item %s, not found in Game object" % obj_name)
                 continue
             obj.get_action()
-            sprite = obj._sprite if obj._sprite else getattr(
+            sprite = obj.resource if obj.resource else getattr(
                 obj, "_label", None)
             if sprite:
                 sw, sh = getattr(sprite, "content_width", sprite.width), getattr(
@@ -3817,7 +3838,7 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
                 rectangle(self.game, obj._cr, colour=(
                     255, 255, 255, 255), fill=False, label=False, absolute=False)
             if x + self.tile_size[0] > self.dimensions[0]:
-                x = self._sprite.x + self.padding[0]
+                x = self.resource.x + self.padding[0]
                 y -= (self.tile_size[1] + self.padding[1])
             else:
                 x += (self.tile_size[0] + self.padding[0])
@@ -4309,9 +4330,6 @@ class Factory(object):
     def _create_object(self, name):
         obj = copy.copy(self.template)
         obj.__dict__ = copy.copy(self.template.__dict__)
-        if obj._sprite:
-            obj._sprite.delete()
-        obj._sprite = None  # clear the pyglet Sprite from the copy
         # reload the pyglet actions for this object
         obj._smart_actions(self.game)
         obj.name = name
@@ -4694,6 +4712,10 @@ class Game(metaclass=use_on_events):
         pyglet.clock.set_fps_limit(self.fps)
         self.fps_clock = pyglet.clock.ClockDisplay()
 
+    def close(self):
+        """ Close this window """
+        self._window.close() #will free up pyglet memory
+
     def _monitor_scripts(self, dt):
         modified_modules = self.check_modules()
         if modified_modules:
@@ -4797,7 +4819,7 @@ class Game(metaclass=use_on_events):
             pdb.set_trace()
 
         if symbol == pyglet.window.key.F3: 
-            pass
+            game.menu.show()
 
         if symbol == pyglet.window.key.F4:
             print("RELOADED MODULES")
