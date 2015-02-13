@@ -936,8 +936,11 @@ class Motion(object):
         return self
 
 
-def set_resource(key, w=False, h=False, resource=False):
+def set_resource(key, w=False, h=False, resource=False, subkey=None):
     """ If w|h|resource != False, update the value in _resources[key] """
+    print("set_resource",key,subkey)
+#    if key == "menu_exit_game_over": import pdb; pdb.set_trace()
+    if subkey: key = "%s_%s"%(key, subkey)
     ow, oh, oresource = _resources[key] if key in _resources else (0, 0, None)
     ow = w if w != False else ow
     oh = h if h != False else oh
@@ -946,10 +949,10 @@ def set_resource(key, w=False, h=False, resource=False):
     oresource = resource if resource != False else oresource
     _resources[key] = (ow, oh, oresource)
         
-def get_resource(key):
+def get_resource(key, subkey=None):
+    if subkey: key = "%s_%s"%(key, subkey)
     r = _resources[key] if key in _resources else (0, 0, None)
     return r
-
 
 class Action(object):
 
@@ -968,15 +971,13 @@ class Action(object):
         self.w, self.h = 0, 0
         self._loaded = False
 
-    def __getstate__(self):
-        self.unload_assets()
-        return self.__dict__
+#    def __getstate__(self):
+#        self.unload_assets()
+#        return self.__dict__
 
     def draw(self):
-        #XXX is this code used, or should it be a pass or even removed?
-        import pdb; pdb.set_trace()
-        self.resource.draw()
-
+        pass
+ 
     def smart(self, game, actor=None, filename=None):  # action.smart
         # load the image and slice info if necessary
         self.actor = actor if actor else self.actor
@@ -1396,6 +1397,8 @@ class Actor(object, metaclass=use_on_events):
 
         #create sprite
         action = self.action
+        if not action: return
+            
         action_animation = get_resource(action.resource_name) 
         if not action_animation:
             return
@@ -1420,8 +1423,6 @@ class Actor(object, metaclass=use_on_events):
             if hasattr(fn, "__name__"):
                 setattr(self, fn_name, fn.__name__)
 
-        self.unload_assets()
-
         game = self.game
         self.game = None  # re-populated after load
         self._editable = []  # re-populated after load
@@ -1437,9 +1438,6 @@ class Actor(object, metaclass=use_on_events):
                     import pdb
                     pdb.set_trace()
         return self.__dict__
-
-#    def __setstate__(self, d):
-#        self.__dict__ = d
 
     def set_editable(self):
         """ Set which attributes are editable in the editor """
@@ -2045,6 +2043,10 @@ class Actor(object, metaclass=use_on_events):
         if self.game.player:
             self.game.player.says(choice(c))
 
+    def guess_clickable_area(self):
+        """ guessing cLickable only works if assets are loaded, not likely during smart load """
+        self._clickable_area = Rect(0, 0, self.w, self.h)
+
     def _smart_motions(self, game, exclude=[]):
         """ smart load the motions """
         motions = glob.glob(os.path.join(self._directory, "*.motion"))
@@ -2153,9 +2155,10 @@ class Actor(object, metaclass=use_on_events):
         self._smart_actions(game)  # load the actions
         self._smart_motions(game)  # load the motions
 
+
         if len(self._actions) > 0:  # do an action by default
-            self._do(
-                idle if idle in self._actions else list(self._actions.keys())[0])
+            action = idle if idle in self._actions else list(self._actions.keys())[0]
+            self._do(action)
 
         if isinstance(self, Actor) and not isinstance(self, Item) and self.action and self.action.name == idle:
             self._ax = -int(self.w / 2)
@@ -2181,7 +2184,8 @@ class Actor(object, metaclass=use_on_events):
         filepath = os.path.join(
             myd, "%s.defaults" % slugify(self.name).lower())
         if os.path.isfile(filepath):
-            actor_defaults = json.loads(open(filepath).read())
+            with open(filepath, 'r') as f:
+                actor_defaults = json.loads(f.read())
             for key, val in actor_defaults.items():
                 if key == "font_colour":
                     if type(val) == list:
@@ -2633,10 +2637,14 @@ class Actor(object, metaclass=use_on_events):
         # TODO: group sprites in batches and OrderedGroups
         kwargs = {}
 #        if self.game and self.game._pyglet_batch: kwargs["batch"] = self.game._pyglet_batch
-        sprite = self.load_assets(self.game)
+        sprite = self.resource
         callback = self.on_animation_end if callback == None else callback
         if sprite:
             sprite.on_animation_end = callback
+        else:
+            log.warning("Unable to assign callback to action %s in object %s as resource not loaded" %
+                      (action, self.name))
+            
 
     @property
     def resource_name(self):
@@ -3393,15 +3401,23 @@ class Scene(metaclass=use_on_events):
         filepath = os.path.join(
             sdir, "%s.defaults" % slugify(self.name).lower())
         if os.path.isfile(filepath):
-            object_defaults = json.loads(open(filepath).read())
+            with open(filepath, 'r') as f:
+                object_defaults = json.loads(f.read())
             for key, val in object_defaults.items():
                 self.__dict__[key] = val
         return self
 
+    def load_assets(self): #scene.load
+        print("LOAD ASSETS FOR SCENE",self.name,self._objects)
+        for obj_name in self._objects:
+            obj = get_object(self.game, obj_name)
+            if obj:
+                obj.load_assets(self.game)
+
     def unload_assets(self):  # scene.unload
         for obj_name in self._objects:
             obj = get_object(self.game, obj_name)
-            log.debug("UNLOAD obj %s %s" % (obj_name, obj))
+            log.debug("UNLOAD ASSETS for obj %s %s" % (obj_name, obj))
             if obj:
                 obj.unload_assets()
 
@@ -3432,7 +3448,8 @@ class Scene(metaclass=use_on_events):
             if os.path.isfile(details_filename):
                 f = self._load_layer(element)
                 try:
-                    data = open(details_filename).read()
+                    with open(details_filename, 'r') as f:
+                        data = f.read()
                     layer_defaults = json.loads(data)
                     for key, val in layer_defaults.items():
                         if type(val) is str:
@@ -3543,8 +3560,6 @@ class Text(Item):
         delay : How fast to display chunks of the text
         step : How many characters to advance during delayed display
         """
-        self._label = None
-        self._label_offset = None
         self.format_text = None  # function for formatting text for display
         super().__init__(name, interact=interact, look=look)
 
@@ -3575,7 +3590,7 @@ class Text(Item):
         self.create_label()
 
         self._clickable_area = Rect(
-            0, 0, self._label.content_width, self._label.content_height)
+            0, 0, self.resource.content_width, self.resource.content_height)
 
         wrap = self.wrap if self.wrap > 0 else 1  # don't allow 0 width labels
         tmp = pyglet.text.Label(self._display_text,
@@ -3589,9 +3604,12 @@ class Text(Item):
 
     def __getstate__(self):
         self.__dict__ = super().__getstate__()
-        self._label = None
-        self._label_offset = None
         return self.__dict__
+
+    @property
+    def resource_offset(self):
+        return get_resource(self.resource_name, subkey="offset")[-1]
+
 
     def create_label(self):
         c = self.colour
@@ -3606,7 +3624,7 @@ class Text(Item):
 
         self._animated_text = self._display_text[:self._text_index]
         wrap = self.wrap if self.wrap > 0 else 1  # don't allow 0 width labels
-        self._label = pyglet.text.Label(self._animated_text,
+        label = pyglet.text.Label(self._animated_text,
                                         font_name=self.font_name,
                                         font_size=self.size,
                                         color=c,
@@ -3614,9 +3632,10 @@ class Text(Item):
                                         width=wrap,
                                         x=self.x, y=self.y,
                                         anchor_x='left', anchor_y='top')
+        set_resource(self.resource_name, resource=label)
 
         if self.offset:
-            self._label_offset = pyglet.text.Label(self._animated_text,
+            label_offset = pyglet.text.Label(self._animated_text,
                                                    font_name=self.font_name,
                                                    font_size=self.size,
                                                    color=(0, 0, 0, 255),
@@ -3624,36 +3643,35 @@ class Text(Item):
                                                    width=wrap,
                                                    x=self.x + self.offset, y=self.y - self.offset,
                                                    anchor_x='left', anchor_y='top')
+            set_resource(self.resource_name, resource=label_offset, subkey="offset")
 
     def get_display_text(self):
         return self._display_text
 
     def set_display_text(self, v):
+        if not v: return
         self._display_text = v
-        # this feels like one level of abstraction too far.
-        if self.format_text:
-            # if the previous line was too abstracted then this is ridiculous!
+        #if there are special display requirements for this text, format it here
+        if self.format_text: 
             fn = get_function(self.game, self.format_text, self)
             text = fn(v)
         else:
             text = v
-        if self._label:
-            self._label.text = text
-        if self._label_offset:
-            self._label_offset.text = text
+        if self.resource:
+            self.resource.text = text
+        if self.resource_offset:
+            self.resource_offset.text = text
 
     display_text = property(get_display_text, set_display_text)
 
     @property
     def w(self):
-        w = self._label.content_width if self._label else self._width
-#        if not w:
-#            import pdb; pdb.set_trace()
+        w = self.resource.content_width if self.resource else self._width
         return w
 
     @property
     def h(self):
-        v = self._height if self._height else self._label.content_height
+        v = self._height if self._height else self.resource.content_height
         return v
 
     def _animate_text(self, dt):
@@ -3663,10 +3681,10 @@ class Text(Item):
         else:
             self._text_index += self.step
             self._animated_text = self.display_text[:self._text_index]
-            if self._label:
-                self._label.text = self._animated_text
-            if self._label_offset:
-                self._label_offset.text = self._animated_text
+            if self.resource:
+                self.resource.text = self._animated_text
+            if self.resource_offset:
+                self.resource_offset.text = self._animated_text
 
     def pyglet_draw(self, absolute=False):  # text draw
         if self.game and self.game._headless:
@@ -3675,8 +3693,10 @@ class Text(Item):
         if not self.allow_draw:
             return
 
-        if not self._label:
-            self.create_label()
+        if not self.resource:
+            log.warning(
+                "Unable to draw Text %s as resource is not loaded" % self.name)
+            return
 
         if not self.game:
             log.warning(
@@ -3693,16 +3713,15 @@ class Text(Item):
             y -= self.game.scene.y * self.z
 
         x, y = x - self.ax, self.game.resolution[1] - y + self.ay
-        if self._label_offset:  # draw offset first
-            self._label_offset.x, self._label_offset.y = int(
+        if self.resource_offset:  # draw offset first
+            self.resource_offset.x, self.resource_offset.y = int(
                 x + self.offset), int(y - self.offset)
-            self._label_offset.draw()
+            self.resource_offset.draw()
 
-        self._label.x, self._label.y = int(x), int(y)
-        self._label.draw()
+        self.resource.x, self.resource.y = int(x), int(y)
+        self.resource.draw()
         if self.show_debug:
             self.debug_pyglet_draw()
-
 
 class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
 
@@ -4007,10 +4026,15 @@ class Camera(metaclass=use_on_events):  # the view manager
             scene.x, scene.y = camera_point
         if scene.name not in self.game.visited:
             self.game.visited.append(scene.name)  # remember scenes visited
-        # unload assets from older scenes
+        
+        #if scene already loaded in memory, push to front of resident queue
         if scene.name in self.game._resident:
             self.game._resident.remove(scene.name)
+        else: #else assume scene is unloaded and load the assets for it
+             scene.load_assets() 
         self.game._resident.append(scene.name)
+
+        # unload assets from older scenes 
         unload = self.game._resident[:-6]  # unload older scenes
         if len(unload) > 0:
             for unload_scene in unload:
@@ -5239,6 +5263,8 @@ class Game(metaclass=use_on_events):
                 obj.game = self
                 obj.interact = item[1]  # set callback
             kwargs = item[2] if len(item) > 2 else {}
+            obj.load_assets(self)
+            obj.guess_clickable_area()
             for k, v in kwargs.items():
                 setattr(obj, k, v)
  #               if k == "key": obj.key = get_keycode(v)
@@ -5552,7 +5578,7 @@ class Game(metaclass=use_on_events):
     def _process_walkthrough(self):
         """ Do a step in the walkthrough """
 #        if self._walkthrough_index == 77: import pdb; pdb.set_trace()
-        if len(self._walkthrough) == 0 or self._walkthrough_index >= len(self._walkthrough):
+        if len(self._walkthrough) == 0 or self._walkthrough_index >= len(self._walkthrough) or self._walkthrough_target==0:
             return  # no walkthrough
         walkthrough = self._walkthrough[self._walkthrough_index]
         try:
@@ -6191,6 +6217,7 @@ class Game(metaclass=use_on_events):
         for i in args:
             obj = get_object(self, i)
             if obj:
+                obj.load_assets(self)
                 self._menu.append(obj.name)
             else:
                 if logging:

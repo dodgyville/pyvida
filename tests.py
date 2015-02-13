@@ -109,8 +109,8 @@ class ActorTest(unittest.TestCase):
         self.assertEqual(self.actor.x, 100)
         self.assertEqual(self.actor.y, 100)
         self.actor.pyglet_draw()
-        self.assertEqual(self.actor._sprite.x, 100)
-        self.assertEqual(self.actor._sprite.y, RESOLUTION_Y - self.actor.y - self.actor._sprite.height)
+        self.assertEqual(self.actor.resource.x, 100)
+        self.assertEqual(self.actor.resource.y, RESOLUTION_Y - self.actor.y - self.actor.resource.height)
 
     def test_anchor(self):
         self.actor.x, self.actor.y = 100,100
@@ -123,8 +123,8 @@ class ActorTest(unittest.TestCase):
         self.assertEqual(self.actor._ay, -100)
         
         self.actor.pyglet_draw()
-        self.assertEqual(self.actor._sprite.x, 75)
-        self.assertEqual(self.actor._sprite.y, RESOLUTION_Y - self.actor.y - self.actor._sprite.height - self.actor.ay)
+        self.assertEqual(self.actor.resource.x, 75)
+        self.assertEqual(self.actor.resource.y, RESOLUTION_Y - self.actor.y - self.actor.resource.height - self.actor.ay)
 
 
     def test_clickable_area(self):
@@ -829,13 +829,13 @@ class AssetTest(unittest.TestCase):
         for i in range(0, 20):
             action.load_assets(self.game, force=True)
             self.assertNotEqual(action._animation, None)
-            self.assertEqual(item._sprite, None)
+            self.assertEqual(item.resource, None)
             mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1000
             print("HIGH",mem)
             if high_mem == None: high_mem = mem
             action.unload_assets()
             self.assertEqual(action._animation, None)
-            self.assertEqual(item._sprite, None)
+            self.assertEqual(item.resource, None)
             low_mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1000
             print(start_mem,  mem, low_mem)
             self.assertEqual(start_mem, low_mem)
@@ -846,15 +846,11 @@ def get_memory():
 
 def load_asset(fname, num_of_frames):
     image = load_image(fname)
-    print("m1",get_memory())
     image_seq = pyglet.image.ImageGrid(image, 1, num_of_frames)
-    print("m2",get_memory())
     frames = []
     for frame in image_seq:
         frames.append(pyglet.image.AnimationFrame(frame, 1 / 16))
-    print("m3",get_memory())
     _animation = pyglet.image.Animation(frames)
-    print("m4",get_memory())
     return
 
 
@@ -865,23 +861,20 @@ class PygletTest(unittest.TestCase):
         print("Start", get_memory())
         for fname in glob.glob("data/items/_test_assets/*.png"):
             image = pyglet.image.load(fname)        
-            print("after loading",fname,get_memory())
         image = None
         gc.collect()
         print("Memory after setting image to None and calling gc.collect()",get_memory())
 
-    def test_load_heavy(self):
+    def _test_load_heavy(self, unload=False):
         def get_memory():
             return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1000
         print("Start", get_memory())
         for fname in glob.glob("../data/*/*/*.png"):
             image = pyglet.image.load(fname)        
-            print("after loading",fname,get_memory())
         image = None
         gc.collect()
         print("Memory after setting image to None and calling gc.collect()",get_memory())
 
-    def test_actor_smart(self):
         def get_memory():
             return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1000
         game = Game("Unit Tests", fps=60, afps=16, resolution=RESOLUTION)
@@ -893,7 +886,7 @@ class PygletTest(unittest.TestCase):
         game.directory_emitters = os.path.join("..", DIRECTORY_EMITTERS)
         game.directory_interface = os.path.join("..", DIRECTORY_INTERFACE)
         sys.path.append("/home/luke/Projects/spaceout-pleasure")
-        print("Start", get_memory())
+        print("Start smart load on directories", get_memory())
         for obj_cls in [Actor, Item, Emitter, Portal, Scene]:
             dname = "directory_%ss" % obj_cls.__name__.lower()
             if not os.path.exists(getattr(game, dname)):
@@ -905,13 +898,20 @@ class PygletTest(unittest.TestCase):
                     a.smart(game)
                 except KeyError:
                     print("skip %s"%name)
-                    
+                if unload:
+                    a.unload_assets()
         print("End", get_memory())
+
+
+    def test_actor_smart(self):
+        self._test_load_heavy()
+
+    def test_actor_smart_unload(self):
+        self._test_load_heavy(unload=True)
 
 
     def test_assets(self):
         for i in range(0, 10):
-            print("\nm0",get_memory())
             load_asset("data/items/_test_assets/idle1.png", 20)
             load_asset("data/items/_test_assets/right.png", 8)
             load_asset("data/items/_test_assets/left.png", 8)
