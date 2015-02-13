@@ -971,9 +971,11 @@ class Action(object):
         self.w, self.h = 0, 0
         self._loaded = False
 
-#    def __getstate__(self):
-#        self.unload_assets()
-#        return self.__dict__
+    def __getstate__(self):
+        self.game = None
+        self.actor = getattr(
+            self.actor, "name", self.actor) if self.actor else "unknown_actor"
+        return self.__dict__
 
     def draw(self):
         pass
@@ -1006,11 +1008,12 @@ class Action(object):
         actor_name = getattr(self.actor, "name", self.actor) if self.actor else "unknown_actor"
         return "%s_%s"%(slugify(actor_name), slugify(self.name))
 
+    @property
+    def resource(self):
+        return get_resource(self.resource_name)[-1]
+
     def unload_assets(self):  # action.unload
         #        log.debug("UNLOAD ASSETS %s %s"%(self.actor, self.name))
-        self.game = None
-        self.actor = getattr(
-            self.actor, "name", self.actor) if self.actor else "unknown_actor"
         set_resource(self.resource_name, resource=None)
 
     def load_assets(self, game): #action.load
@@ -1395,14 +1398,20 @@ class Actor(object, metaclass=use_on_events):
         for action in self._actions.values():
             action.load_assets(game)
 
+        return self.switch_asset(self.action)
+
+    def switch_asset(self, action, **kwargs):
+        """ Switch this Actor's main resource to the requestion action """
         #create sprite
-        action = self.action
+
         if not action: return
             
-        action_animation = get_resource(action.resource_name) 
+        action_animation = action.resource 
         if not action_animation:
             return
-        sprite = pyglet.sprite.Sprite(action_animation[-1], **kwargs)
+        set_resource(self.resource_name, resource=None) #free up the old asset
+
+        sprite = pyglet.sprite.Sprite(action_animation, **kwargs)
         if self._tint:
             sprite.color = self._tint
         if self._scale:
@@ -2168,7 +2177,7 @@ class Actor(object, metaclass=use_on_events):
             # text when using POSITION_TEXT
             self._tx, self._ty = int(self.w + 10), int(self.h)
 
-        # guessestimate the clickable mask for this actor
+        # guessestimate the clickable mask for this actor (at this point this might always be 0,0,0,0?)
         self._clickable_area = Rect(0, 0, self.w, self.h)
         if logging:
             log.debug("smart guestimating %s _clickable area to %s" %
@@ -2633,6 +2642,8 @@ class Actor(object, metaclass=use_on_events):
         # action if isinstance(action, Action) else self._actions[action]
         action = getattr(action, "name", action)
         self._action = action
+
+        self.switch_asset(self._actions[action]) #create the asset to the new action's
 
         # TODO: group sprites in batches and OrderedGroups
         kwargs = {}
@@ -4927,6 +4938,7 @@ class Game(metaclass=use_on_events):
                     return
                 if obj.collide(ox, oy):  # absolute screen values
                     self.mouse_cursor = MOUSE_CROSSHAIR
+
                     if obj._actions and "over" in obj._actions and (obj.allow_interact or obj.allow_use or obj.allow_look):
                         obj._do("over")
 
