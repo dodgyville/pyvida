@@ -323,7 +323,7 @@ COLOURS = {
 GLOBALS (yuck)
 """
 _pyglet_fonts = {DEFAULT_MENU_FONT: "bitstream vera sans"}
-_resources = {} #graphical assets for the game, #w,h,Sprite|None
+_resources = {} #graphical assets for the game, #w,h,animation_callback|None, Sprite|None
 
 """
 Testing utilities
@@ -936,22 +936,23 @@ class Motion(object):
         return self
 
 
-def set_resource(key, w=False, h=False, resource=False, subkey=None):
+def set_resource(key, w=False, h=False, callback=False, resource=False, subkey=None):
     """ If w|h|resource != False, update the value in _resources[key] """
     print("set_resource",key,subkey)
 #    if key == "menu_exit_game_over": import pdb; pdb.set_trace()
     if subkey: key = "%s_%s"%(key, subkey)
-    ow, oh, oresource = _resources[key] if key in _resources else (0, 0, None)
+    ow, oh, ocallback, oresource = _resources[key] if key in _resources else (0, 0, None, None)
     ow = w if w != False else ow
     oh = h if h != False else oh
+    ocallback = callback if callback != False else ocallback
     if resource == None and isinstance(oresource,  pyglet.sprite.Sprite): #delete sprite
         oresource.delete()
     oresource = resource if resource != False else oresource
-    _resources[key] = (ow, oh, oresource)
+    _resources[key] = (ow, oh, ocallback, oresource)
         
 def get_resource(key, subkey=None):
     if subkey: key = "%s_%s"%(key, subkey)
-    r = _resources[key] if key in _resources else (0, 0, None)
+    r = _resources[key] if key in _resources else (0, 0, None, None)
     return r
 
 class Action(object):
@@ -1003,7 +1004,7 @@ class Action(object):
         return self
 
     @property
-    def resource_name(self): #action.load
+    def resource_name(self): 
         """ The key name for this action's graphic resources in _resources"""
         actor_name = getattr(self.actor, "name", self.actor) if self.actor else "unknown_actor"
         return "%s_%s"%(slugify(actor_name), slugify(self.name))
@@ -1406,10 +1407,14 @@ class Actor(object, metaclass=use_on_events):
 
         if not action: return
             
+
+        #get the animation and the callback for this action
         action_animation = action.resource 
+        sprite_callback = get_resource(action.resource_name)[2]
         if not action_animation:
+            set_resource(self.resource_name, callback=sprite_callback) #make the sprite callback available if assets are later loader
             return
-        set_resource(self.resource_name, resource=None) #free up the old asset
+        set_resource(self.resource_name, callback=None, resource=None) #free up the old asset
 
         sprite = pyglet.sprite.Sprite(action_animation, **kwargs)
         if self._tint:
@@ -1418,10 +1423,14 @@ class Actor(object, metaclass=use_on_events):
             sprite.scale = self.scale
         if self.rotate:
             sprite.rotation = self.rotate
+        sprite.on_animation_end = sprite_callback
+
         # jump to end
         if self.game and self.game._headless and isinstance(sprite.image, pyglet.image.Animation):
             sprite._frame_index = len(sprite.image.frames)
-        set_resource(self.resource_name, w=sprite.width,h=sprite.height, resource=sprite)
+
+        set_resource(self.resource_name, w=sprite.width,h=sprite.height, callback=sprite_callback, resource=sprite)
+
         return sprite
 
     def __getstate__(self):
@@ -2428,8 +2437,11 @@ class Actor(object, metaclass=use_on_events):
         if not msgbox:  # assume using is a file
             msgbox = self.game.add(
                 Item("msgbox").smart(self.game, using=using, assets=True))
+        msgbox.load_assets(self.game)
+
         if ok:
             ok = self.game.add(Item(ok).smart(self.game, assets=True))
+            ok.load_assets(self.game)
 
         kwargs = self._get_text_details(font=font, size=size)
         # position 10% off the bottom
@@ -2458,8 +2470,9 @@ class Actor(object, metaclass=use_on_events):
         if action != None:
             portrait = Item("_portrait")
             portrait.game = self.game
-            portrait._actions["idle"] = action
-            portrait._do("idle")
+            portrait._actions[action.name] = action
+            portrait.load_assets(self.game)
+            portrait._do(action.name)
             portrait = self.game.add(portrait)
 #            portrait_x, portrait_y = 5, 5 #top corner for portrait offset
  #           portrait_w, portrait_h = portrait.w, portrait.h
@@ -2638,23 +2651,31 @@ class Actor(object, metaclass=use_on_events):
         # new action for this Actor
         if isinstance(action, Action) and action.name not in self._actions:
             self._actions[action.name] = action
+        else:
+            action = self._actions[action]
+
+        #store the callback in resources
+        callback = self.on_animation_end if callback == None else callback
+        set_resource(action.resource_name, callback=callback)
 
         # action if isinstance(action, Action) else self._actions[action]
         action = getattr(action, "name", action)
         self._action = action
 
+        if action not in self._actions:
+            import pdb; pdb.set_trace()
         self.switch_asset(self._actions[action]) #create the asset to the new action's
 
         # TODO: group sprites in batches and OrderedGroups
         kwargs = {}
 #        if self.game and self.game._pyglet_batch: kwargs["batch"] = self.game._pyglet_batch
         sprite = self.resource
-        callback = self.on_animation_end if callback == None else callback
         if sprite:
             sprite.on_animation_end = callback
         else:
-            log.warning("Unable to assign callback to action %s in object %s as resource not loaded" %
-                      (action, self.name))
+            w = "Unable to assign callback to action %s in object %s as resource not loaded"%(action, self.name)
+            log.warning(w)
+            print(w)
             
 
     @property
