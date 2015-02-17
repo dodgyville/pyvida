@@ -607,12 +607,12 @@ class answer(object):
 def option_mouse_none(game, btn, player, *args, **kwargs2):
     """ When not hovering over this option """
     r, g, b = btn.colour  # kwargs["colour"]
-    btn._label.color = (r, g, b, 255)
+    btn.resource.color = (r, g, b, 255)
 
 
 def option_mouse_motion(game, btn, player, *args, **kwargs2):
     """ When hovering over this answer """
-    btn._label.color = (255, 255, 255, 255)
+    btn.resource.color = (255, 255, 255, 255)
 
 
 def option_answer_callback(game, btn, player):
@@ -719,7 +719,6 @@ def use_on_events(name, bases, dic):
     """ create a small method for each "on_<x>" queue function """
     for queue_method in [x for x in dic.keys() if x[:3] == 'on_']:
         qname = queue_method[3:]
-#        if logging: log.debug("class %s has queue function %s available"%(name.lower(), qname))
         dic[qname] = create_event(dic[queue_method])
     return type(name, bases, dic)
 
@@ -938,8 +937,6 @@ class Motion(object):
 
 def set_resource(key, w=False, h=False, callback=False, resource=False, subkey=None):
     """ If w|h|resource != False, update the value in _resources[key] """
-    print("set_resource",key,subkey)
-#    if key == "menu_exit_game_over": import pdb; pdb.set_trace()
     if subkey: key = "%s_%s"%(key, subkey)
     ow, oh, ocallback, oresource = _resources[key] if key in _resources else (0, 0, None, None)
     ow = w if w != False else ow
@@ -2673,9 +2670,9 @@ class Actor(object, metaclass=use_on_events):
         if sprite:
             sprite.on_animation_end = callback
         else:
-            w = "Unable to assign callback to action %s in object %s as resource not loaded"%(action, self.name)
+#            set_resource(.resource_name, callback=callback)
+            w = "Resource for action %s in object %s not loaded, so store callback in resources"%(action, self.name)
             log.warning(w)
-            print(w)
             
 
     @property
@@ -4483,6 +4480,7 @@ def save_game_pickle(game, fname):
         pickle.dump(game.visited, f)
         pickle.dump(game._modules, f)
         pickle.dump(game._sys_paths, f)
+        pickle.dump(game._resident, f)
 
         PYVIDA_CLASSES = [
             Actor, Item, Scene, Portal, Text, Emitter, Collection]
@@ -4492,8 +4490,7 @@ def save_game_pickle(game, fname):
             objects_to_pickle = []
             for o in objects.values():  # test objects
                 if o.__class__ not in PYVIDA_CLASSES:
-                    print(
-                        "warning: Pickling {}, a NON-PYVIDA CLASS {}".format(o.name, o.__class__))
+                    log.warning("Pickling {}, a NON-PYVIDA CLASS {}".format(o.name, o.__class__))
 #                    continue
                 try:
                     pickle.dumps(o)
@@ -4511,6 +4508,7 @@ def save_game_pickle(game, fname):
             # restore game object and editables that were cleansed for pickle
             for o in objects.values():
                 restore_object(game, o)
+
     log.warning("POST PICKLE inventory %s"%game.inventory.name)
 
 
@@ -4528,6 +4526,7 @@ def load_game_pickle(game, fname, meta_only=False):
             game._modules = pickle.load(f)
             game._sys_paths = pickle.load(f)
             sys.path.extend(game._sys_paths)
+            game._resident = pickle.load(f)
             game._actors = pickle.load(f)
             game._items = pickle.load(f)
             game._scenes = pickle.load(f)
@@ -4536,6 +4535,10 @@ def load_game_pickle(game, fname, meta_only=False):
             for objects in [game._actors.values(), game._items.values(), game._scenes.values()]:
                 for o in objects:
                     restore_object(game, o)
+
+            for scene in game._resident:
+                scene = get_object(game, scene)
+                scene.load_assets()
 
             # change camera to scene
             if player_info["player"]:
@@ -6142,8 +6145,10 @@ class Game(metaclass=use_on_events):
                     f.write(
                         '    scene.scales["actors"] = %0.2f\n' % (obj.scale))
 
-    def load_state(self, scene, state):
-        self._load_state(scene, state)
+    def load_state(self, scene, state, load_assets=False):
+        scene = self._load_state(scene, state)
+        if load_assets:
+            scene.load_assets()
 
     def _load_state(self, scene, state):
         """ a queuing function, not a queued function (ie it adds events but is not one """
@@ -6171,10 +6176,12 @@ class Game(metaclass=use_on_events):
             scene._last_state = sfname
 #            execfile("somefile.py", global_vars, local_vars)
             with open(sfname) as f:
-                code = compile(f.read(), sfname, 'exec')
+                data = f.read()
+                code = compile(data, sfname, 'exec')
                 exec(code, variables)
 
             variables['load_state'](self, scene)
+        return scene
 
     def on_save_game(self, fname):
         save_game(self, fname)
