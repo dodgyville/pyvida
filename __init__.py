@@ -323,7 +323,7 @@ COLOURS = {
 GLOBALS (yuck)
 """
 _pyglet_fonts = {DEFAULT_MENU_FONT: "bitstream vera sans"}
-_resources = {} #graphical assets for the game, #w,h,animation_callback|None, Sprite|None
+_resources = {} #graphical assets for the game, #w,h, Sprite|None
 
 """
 Testing utilities
@@ -935,21 +935,20 @@ class Motion(object):
         return self
 
 
-def set_resource(key, w=False, h=False, callback=False, resource=False, subkey=None):
+def set_resource(key, w=False, h=False, resource=False, subkey=None):
     """ If w|h|resource != False, update the value in _resources[key] """
     if subkey: key = "%s_%s"%(key, subkey)
-    ow, oh, ocallback, oresource = _resources[key] if key in _resources else (0, 0, None, None)
+    ow, oh, oresource = _resources[key] if key in _resources else (0, 0, None)
     ow = w if w != False else ow
     oh = h if h != False else oh
-    ocallback = callback if callback != False else ocallback
     if resource == None and isinstance(oresource,  pyglet.sprite.Sprite): #delete sprite
         oresource.delete()
     oresource = resource if resource != False else oresource
-    _resources[key] = (ow, oh, ocallback, oresource)
+    _resources[key] = (ow, oh, oresource)
         
 def get_resource(key, subkey=None):
     if subkey: key = "%s_%s"%(key, subkey)
-    r = _resources[key] if key in _resources else (0, 0, None, None)
+    r = _resources[key] if key in _resources else (0, 0, None)
     return r
 
 class Action(object):
@@ -1324,6 +1323,7 @@ class Actor(object, metaclass=use_on_events):
 
         self._scale = 1.0
         self._rotate = 0
+        self._pyglet_animation_callback = None #when an animation ends, this function will be called
 
         # can override name for game.info display text
         self.display_text = display_text
@@ -1407,11 +1407,17 @@ class Actor(object, metaclass=use_on_events):
 
         #get the animation and the callback for this action
         action_animation = action.resource 
-        sprite_callback = get_resource(action.resource_name)[2]
+
         if not action_animation:
-            set_resource(self.resource_name, callback=sprite_callback) #make the sprite callback available if assets are later loader
             return
-        set_resource(self.resource_name, callback=None, resource=None) #free up the old asset
+        set_resource(self.resource_name,  resource=None) #free up the old asset
+
+        sprite_callback = get_function(self.game, self._pyglet_animation_callback, obj=self)
+
+        if self.game and self.game._headless:
+            sprite_callback()
+            print("skip load of %s"%self.name)
+            return
 
         sprite = pyglet.sprite.Sprite(action_animation, **kwargs)
         if self._tint:
@@ -1426,7 +1432,7 @@ class Actor(object, metaclass=use_on_events):
         if self.game and self.game._headless and isinstance(sprite.image, pyglet.image.Animation):
             sprite._frame_index = len(sprite.image.frames)
 
-        set_resource(self.resource_name, w=sprite.width,h=sprite.height, callback=sprite_callback, resource=sprite)
+        set_resource(self.resource_name, w=sprite.width,h=sprite.height, resource=sprite)
 
         return sprite
 
@@ -2648,12 +2654,12 @@ class Actor(object, metaclass=use_on_events):
         # new action for this Actor
         if isinstance(action, Action) and action.name not in self._actions:
             self._actions[action.name] = action
-        else:
+        elif type(action) == str:
             action = self._actions[action]
-
+    
         #store the callback in resources
-        callback = self.on_animation_end if callback == None else callback
-        set_resource(action.resource_name, callback=callback)
+        callback = "on_animation_end" if callback == None else getattr(callback, "__name__", callback)
+        self._pyglet_animation_callback = callback
 
         # action if isinstance(action, Action) else self._actions[action]
         action = getattr(action, "name", action)
@@ -2666,6 +2672,8 @@ class Actor(object, metaclass=use_on_events):
         # TODO: group sprites in batches and OrderedGroups
         kwargs = {}
 #        if self.game and self.game._pyglet_batch: kwargs["batch"] = self.game._pyglet_batch
+        """
+
         sprite = self.resource
         if sprite:
             sprite.on_animation_end = callback
@@ -2673,7 +2681,7 @@ class Actor(object, metaclass=use_on_events):
 #            set_resource(.resource_name, callback=callback)
             w = "Resource for action %s in object %s not loaded, so store callback in resources"%(action, self.name)
             log.warning(w)
-            
+        """ 
 
     @property
     def resource_name(self):
@@ -3442,6 +3450,8 @@ class Scene(metaclass=use_on_events):
             obj = get_object(self.game, obj_name)
             if obj:
                 obj.load_assets(self.game)
+        for obj in self._layer:
+            obj.load_assets(self.game)
 
     def unload_assets(self):  # scene.unload
         for obj_name in self._objects:
@@ -4020,8 +4030,8 @@ class Camera(metaclass=use_on_events):  # the view manager
 
     def _scene(self, scene, camera_point=None):
         """ change the current scene """
-        if self.game.scene:  # unload background when not in use
-            self.game.scene._unload_layer()
+#        if self.game.scene:  # unload background when not in use
+#            self.game.scene._unload_layer()
         game = self.game
         if scene == None:
             if logging:
@@ -4536,9 +4546,23 @@ def load_game_pickle(game, fname, meta_only=False):
                 for o in objects:
                     restore_object(game, o)
 
+
+            #switch off headless mode to force graphical assets of most recently
+            #accessed scenes to load.        
+            headless = game._headless
+            game._headless = False
             for scene in game._resident:
                 scene = get_object(game, scene)
-                scene.load_assets()
+                if scene:
+                    scene.load_assets()
+                else:
+                    print("Scene is resident but not in Game, this should not be possible.")
+                    import pdb; pdb.set_trace()
+            for menu_item in game._menu:
+                obj = get_object(game, menu_item)
+                obj.load_assets(game)
+
+            game._headless = headless
 
             # change camera to scene
             if player_info["player"]:
@@ -5627,6 +5651,7 @@ class Game(metaclass=use_on_events):
         if self._walkthrough_index > self._walkthrough_target or self._walkthrough_index > len(self._walkthrough):
             if self._headless:
                 self._headless = False
+                self.scene.load_assets()
                 print("FINISHED WALKTHROUGH")
             log.info("FINISHED WALKTHROUGH")
             if self._walkthrough_target_name:
