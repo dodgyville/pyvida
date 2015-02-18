@@ -1416,7 +1416,6 @@ class Actor(object, metaclass=use_on_events):
 
         if self.game and self.game._headless:
             sprite_callback()
-            print("skip load of %s"%self.name)
             return
 
         sprite = pyglet.sprite.Sprite(action_animation, **kwargs)
@@ -3454,6 +3453,7 @@ class Scene(metaclass=use_on_events):
             obj.load_assets(self.game)
 
     def unload_assets(self):  # scene.unload
+        print("UNLOAD ASSETS FOR SCENE",self.name,self._objects)
         for obj_name in self._objects:
             obj = get_object(self.game, obj_name)
             log.debug("UNLOAD ASSETS for obj %s %s" % (obj_name, obj))
@@ -3780,6 +3780,13 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         self.dimensions = dimensions
         self.tile_size = tile_size
 
+    def load_assets(self, game): #collection.load
+        super().load_assets(game)
+        for obj_name in self._objects:
+            obj = get_object(game, obj_name)
+            obj.load_assets(game)
+
+
     def on_empty(self):
         self._objects = []
         self._sorted_objects = None
@@ -3850,6 +3857,7 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
     def pyglet_draw(self, absolute=True):
         if self.game and self.game._headless:
             return
+        if not self.resource: return
 
         super().pyglet_draw(absolute=absolute)  # actor.draw
         # , self.y #self.padding[0], self.padding[1] #item padding
@@ -4551,13 +4559,12 @@ def load_game_pickle(game, fname, meta_only=False):
             #accessed scenes to load.        
             headless = game._headless
             game._headless = False
-            for scene in game._resident:
-                scene = get_object(game, scene)
+            for scene_name in game._resident:
+                scene = get_object(game, scene_name)
                 if scene:
                     scene.load_assets()
                 else:
-                    print("Scene is resident but not in Game, this should not be possible.")
-                    import pdb; pdb.set_trace()
+                    log.warning("Pickle load: scene %s is resident but not actually in Game, "%scene_name)
             for menu_item in game._menu:
                 obj = get_object(game, menu_item)
                 obj.load_assets(game)
