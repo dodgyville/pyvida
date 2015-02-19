@@ -3468,7 +3468,6 @@ class Scene(metaclass=use_on_events):
     def _load_layer(self, element):
         fname = os.path.splitext(os.path.basename(element))[0]
         sdir = os.path.dirname(element)
-
         f = self.game._add(
             Item("%s_%s" % (self.name, fname)).smart(self.game, image=element), replace=True)
         ff = f
@@ -3485,7 +3484,7 @@ class Scene(metaclass=use_on_events):
             details_filename = os.path.join(sdir, fname + ".details")
             # find a details file for each element
             if os.path.isfile(details_filename):
-                f = self._load_layer(element)
+                layer = self._load_layer(element)
                 try:
                     with open(details_filename, 'r') as f:
                         data = f.read()
@@ -3501,7 +3500,7 @@ class Scene(metaclass=use_on_events):
                                 l = val[1:-1].split(",")
                                 # convert to tuple.
                                 val = float(l[0].strip()), float(l[1].strip())
-                        f.__dict__[key] = val
+                        layer.__dict__[key] = val
                 except ValueError:
                     log.error("Unable to load details from %s" %
                               details_filename)
@@ -6426,6 +6425,7 @@ class MyTkApp(threading.Thread):
             new_scene = get_object(self.game, sname)
             self.app.objects = objects = new_scene._objects
             self.game.camera._scene(new_scene)
+            new_scene.load_assets() 
             self.index = 0
             if len(objects) > 0:
                 self.game._editing = get_object(self.game, objects[self.index])
@@ -6545,8 +6545,9 @@ class MyTkApp(threading.Thread):
         tk.Label(group, text="Edit menu item:").grid(column=1, row=row)
         menu = [x for x in self.game._menu]
         menu.sort()
-        option = tk.OptionMenu(
-            group, menu_item, *menu, command=edit_menu_item).grid(column=2, row=row)
+        if len(menu)>0:
+            option = tk.OptionMenu(
+                group, menu_item, *menu, command=edit_menu_item).grid(column=2, row=row)
 
         row += 1
 
