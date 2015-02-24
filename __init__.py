@@ -1435,8 +1435,8 @@ class Actor(object, metaclass=use_on_events):
 
         return sprite
 
-    def __getstate__(self):
-        """ Prepare the object for pickling """
+    def __getstate__(self): #actor.getstate
+        """ Prepare the object for pickling """ 
         # functions that are probably on the object so search them first.
         for fn_name in ["_interact", "_look", "_drag", "_mouse_motion", "_mouse_none", "_collection_select"]:
             fn = getattr(self, fn_name)
@@ -3443,6 +3443,7 @@ class Scene(metaclass=use_on_events):
                 self.__dict__[key] = val
         return self
 
+
     def load_assets(self): #scene.load
         print("LOAD ASSETS FOR SCENE",self.name,self._objects)
         for obj_name in self._objects:
@@ -3465,14 +3466,25 @@ class Scene(metaclass=use_on_events):
 #        for l in self._layer:
 #            l.unload()
 
+    def _save_layers(self):
+        sdir = os.path.join(
+            os.getcwd(), os.path.join(game.directory_scenes, self.name))
+        wildcard = wildcard if wildcard else os.path.join(sdir, "*.png")
+        self._layer = [] #free up old layers
+        for element in self._layer:  # add layers
+            fname = os.path.splitext(os.path.basename(element))[0]
+            import pdb; pdb.set_trace()
+#            with open(os.path.join(sdir, fname + ".details")) as f:
+#                pass
+
+
     def _load_layer(self, element):
         fname = os.path.splitext(os.path.basename(element))[0]
         sdir = os.path.dirname(element)
-        f = self.game._add(
+        layer = self.game._add(
             Item("%s_%s" % (self.name, fname)).smart(self.game, image=element), replace=True)
-        ff = f
-        self._layer.append(f)  # add layer items as items
-        return f
+        self._layer.append(layer)  # add layer items as items
+        return layer
 
     def _load_layers(self, game, wildcard=None):
         sdir = os.path.join(
@@ -5657,6 +5669,7 @@ class Game(metaclass=use_on_events):
         if self._walkthrough_index > self._walkthrough_target or self._walkthrough_index > len(self._walkthrough):
             if self._headless:
                 self._headless = False
+                self._resident = [] # force refresh on scenes assets that may not have loaded during headless mode
                 self.scene.load_assets()
                 print("FINISHED WALKTHROUGH")
             log.info("FINISHED WALKTHROUGH")
@@ -6599,12 +6612,17 @@ class MyTkApp(threading.Thread):
         def initial_state(*args, **kwargs):
             self.game.load_state(self.game.scene, "initial")
 
+        def save_layers(*args, **kwargs):
+            self.game.scene._save_layers()
+
         self.state_save_button = tk.Button(
             group, text='save state', command=save_state).grid(column=0, row=row)
         self.state_load_button = tk.Button(
             group, text='load state', command=load_state).grid(column=1, row=row)
         self.state_initial_button = tk.Button(
             group, text='initial state', command=initial_state).grid(column=2, row=row)
+        self.layer_save_button = tk.Button(
+            group, text='save layers', command=save_layers).grid(column=2, row=row)
 
         row += 1
 
@@ -6613,6 +6631,8 @@ class MyTkApp(threading.Thread):
             old_obj = get_object(self.game, self.obj)
             if old_obj:
                 old_obj.show_debug = False
+            if obj._editable == [] and hasattr(obj, "set_editable"):
+                obj.set_editable()
             self.obj = obj
             obj.show_debug = True
             self.editor_label.grid_forget()
@@ -6622,7 +6642,7 @@ class MyTkApp(threading.Thread):
 #            self.edit_button["text"] = obj.name
 
         def _navigate(delta):
-            objects = self.game.scene._objects
+            objects = self.game.scene._objects + self.game.scene._layer
             num_objects = len(objects)
             if num_objects == 0:
                 print("No objects in scene")
