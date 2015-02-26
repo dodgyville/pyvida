@@ -1014,9 +1014,13 @@ class Action(object):
         set_resource(self.resource_name, resource=None)
 
     def load_assets(self, game): #action.load
-        actor = get_object(game, self.actor)
         if game:
             self.game = game
+        else:
+            log.error("Load action {} assets for actor {} has no game object".format(
+                self.name, getattr(self.actor, "name", self.actor)))
+            return
+        actor = get_object(game, self.actor)
         image = load_image(self._image)
         if not image:
             log.error("Load action {} assets for actor {} has not loaded an image".format(
@@ -1392,6 +1396,7 @@ class Actor(object, metaclass=use_on_events):
 
     def load_assets(self, game, **kwargs): #actor.load_assets
         self.game = game
+        if not game: import pdb; pdb.set_trace()
         #load actions
         for action in self._actions.values():
             action.load_assets(game)
@@ -2692,9 +2697,11 @@ class Actor(object, metaclass=use_on_events):
     def on_motion(self, motion=None, mode=MOTION_LOOP):
         """ Clear all existing motions and do just one motion. """
         motion = self._motions.get(
-            motion, None) if motion in self._motions.keys() else motion
+            motion, None) if motion in self._motions.keys() else None
         if motion:
             motion.mode = mode
+        else:
+            log.warning("Unable to find motion for actor %s"%(self.name))
         motion = [motion] if motion else []
         self._applied_motions = motion
 
@@ -3444,8 +3451,9 @@ class Scene(metaclass=use_on_events):
         return self
 
 
-    def load_assets(self): #scene.load
+    def load_assets(self, game): #scene.load
         print("LOAD ASSETS FOR SCENE",self.name,self._objects)
+        if not self.game: self.game = game
         for obj_name in self._objects:
             obj = get_object(self.game, obj_name)
             if obj:
@@ -4023,9 +4031,10 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._ambient_sound = None
 
     def _update(self, dt, obj=None):
-        if self._goto_x != None:
+        if self.game.scene:
             self.game.scene.x = self.game.scene.x + self._goto_dx
             self.game.scene.y = self.game.scene.y + self._goto_dy
+        if self._goto_x != None:
             speed = self._speed
             target = Rect(self._goto_x, self._goto_y, int(
                 speed * 1.2), int(speed * 1.2)).move(-int(speed * 0.6), -int(speed * 0.6))
@@ -4089,7 +4098,8 @@ class Camera(metaclass=use_on_events):  # the view manager
         if scene.name in self.game._resident:
             self.game._resident.remove(scene.name)
         else: #else assume scene is unloaded and load the assets for it
-             scene.load_assets() 
+             scene.load_assets(self.game)
+        if not scene.game: scene.game = self.game
         self.game._resident.append(scene.name)
 
         # unload assets from older scenes 
@@ -4167,6 +4177,11 @@ class Camera(metaclass=use_on_events):  # the view manager
 
     def on_shake_stop(self):
         self._shake_x, self._shake_y = 0, 0
+
+    def on_drift(self, dx=0, dy=0):
+        """ start a permanent non-blocking movement in the camera """
+        self._goto_dx = dx
+        self._goto_dy = dy
 
     def on_fade_out(self, seconds=3): #camera.fade
         if self.game._headless:  # headless mode skips sound and visuals
@@ -4537,6 +4552,9 @@ def save_game_pickle(game, fname):
             # restore game object and editables that were cleansed for pickle
             for o in objects.values():
                 restore_object(game, o)
+        for o in game._resident:
+            scene = get_object(game, o)
+            if scene: restore_object(game, scene)
 
     log.warning("POST PICKLE inventory %s"%game.inventory.name)
 
@@ -4573,7 +4591,7 @@ def load_game_pickle(game, fname, meta_only=False):
             for scene_name in game._resident:
                 scene = get_object(game, scene_name)
                 if scene:
-                    scene.load_assets()
+                    scene.load_assets(game)
                 else:
                     log.warning("Pickle load: scene %s is resident but not actually in Game, "%scene_name)
             for menu_item in game._menu:
@@ -5670,7 +5688,9 @@ class Game(metaclass=use_on_events):
             if self._headless:
                 self._headless = False
                 self._resident = [] # force refresh on scenes assets that may not have loaded during headless mode
-                self.scene.load_assets()
+                self.scene.load_assets(self)
+                if self.player: 
+                    self.player.load_assets(self)
                 print("FINISHED WALKTHROUGH")
             log.info("FINISHED WALKTHROUGH")
             if self._walkthrough_target_name:
@@ -6192,7 +6212,7 @@ class Game(metaclass=use_on_events):
     def load_state(self, scene, state, load_assets=False):
         scene = self._load_state(scene, state)
         if load_assets:
-            scene.load_assets()
+            scene.load_assets(self)
 
     def _load_state(self, scene, state):
         """ a queuing function, not a queued function (ie it adds events but is not one """
@@ -6423,6 +6443,7 @@ class MyTkApp(threading.Thread):
         self.index = 0
         self.start()
         self.scene = None  # self.game.scene
+        self.editor_label = None
 
     def create_navigator_widgets(self):
         row = self.rows
@@ -6438,7 +6459,7 @@ class MyTkApp(threading.Thread):
             new_scene = get_object(self.game, sname)
             self.app.objects = objects = new_scene._objects
             self.game.camera._scene(new_scene)
-            new_scene.load_assets() 
+            new_scene.load_assets(self.game)
             self.index = 0
             if len(objects) > 0:
                 self.game._editing = get_object(self.game, objects[self.index])
@@ -6622,7 +6643,7 @@ class MyTkApp(threading.Thread):
         self.state_initial_button = tk.Button(
             group, text='initial state', command=initial_state).grid(column=2, row=row)
         self.layer_save_button = tk.Button(
-            group, text='save layers', command=save_layers).grid(column=2, row=row)
+            group, text='save layers', command=save_layers).grid(column=3, row=row)
 
         row += 1
 
@@ -6635,8 +6656,9 @@ class MyTkApp(threading.Thread):
                 obj.set_editable()
             self.obj = obj
             obj.show_debug = True
-            self.editor_label.grid_forget()
-            self.editor_label.destroy()
+            if self.editor_label:
+                self.editor_label.grid_forget()
+                self.editor_label.destroy()
 #            self.editor_label["text"] = obj.name
             self.create_editor_widgets()
 #            self.edit_button["text"] = obj.name
