@@ -6511,7 +6511,9 @@ class MyTkApp(threading.Thread):
                     "Add Object",
                     "Unable to find %s in list of game objects" % d.result,
                 )
-
+            obj.load_assets(self.game)
+            if obj.clickable_area.w == 0 and obj.clickable_area.h == 0:
+                obj.guess_clickable_area()
             self.game.scene._add(obj)
             _set_edit_object(obj)
 
