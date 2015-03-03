@@ -2070,7 +2070,10 @@ class Actor(object, metaclass=use_on_events):
 
     def guess_clickable_area(self):
         """ guessing cLickable only works if assets are loaded, not likely during smart load """
-        self._clickable_area = Rect(0, 0, self.w, self.h)
+        if self.w == 0:
+            self._clickable_area = DEFAULT_CLICKABLE = Rect(0, 0, 70, 110)
+        else:
+            self._clickable_area = Rect(0, 0, self.w, self.h)
 
     def _smart_motions(self, game, exclude=[]):
         """ smart load the motions """
@@ -5223,7 +5226,7 @@ class Game(metaclass=use_on_events):
                 editing_index = None
                 y = self.h - y
                 # possible select new point
-                for i, pt in enumerate([(r.left, r.top), (r.right, r.bottom)]):
+                for i, pt in enumerate([(r.right, r.bottom), (r.left, r.top)]): #reverse to allow resize
                     dist = math.sqrt((pt[0] - x) ** 2 + (pt[1] - y) ** 2)
                     if dist < closest_distance:
                         editing_index = i
@@ -6359,10 +6362,11 @@ def edit_object_script(game, obj):
     slug = slugify(obj.name).lower()
     search_fns = ["def interact_%s(game, %s, player):" % (
         slug, slug), "def look_%s(game, %s, player):" % (slug, slug)]
-    for i in list(game.player.inventory.keys()):
-        slug2 = slugify(i).lower()
-        search_fns.append("def %s_use_%s(game, %s, %s):" %
-                          (slug, slug2, slug, slug2))
+    if not isinstance(obj, Portal):
+        for i in list(game.player.inventory.keys()):
+            slug2 = slugify(i).lower()
+            search_fns.append("def %s_use_%s(game, %s, %s):" %
+                              (slug, slug2, slug, slug2))
     new_fns = []
     with open(fname, "a") as f:
         for fn in search_fns:
