@@ -5226,9 +5226,9 @@ class Game(metaclass=use_on_events):
                 editing_index = None
                 y = self.h - y
                 # possible select new point
-                for i, pt in enumerate([(r.right, r.bottom), (r.left, r.top)]): #reverse to allow resize
+                for i, pt in enumerate([(r.left, r.top), (r.right, r.bottom)]):
                     dist = math.sqrt((pt[0] - x) ** 2 + (pt[1] - y) ** 2)
-                    if dist < closest_distance:
+                    if dist <= closest_distance:
                         editing_index = i
                         closest_distance = dist
                 if editing_index == None:
