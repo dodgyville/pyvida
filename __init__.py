@@ -5169,7 +5169,7 @@ class Game(metaclass=use_on_events):
                 # if wanting to interact or use an object go to it. If engine
                 # says to go to object for look, do that too.
                 if (self.mouse_mode != MOUSE_LOOK or GOTO_LOOK) and (obj.allow_interact or obj.allow_use or obj.allow_look):
-                    if self.player.name in self.scene._objects and self.player != obj:
+                    if self.player and self.player.name in self.scene._objects and self.player != obj:
                         self.player.goto(obj, block=True)
                 if button & pyglet.window.mouse.RIGHT:
                     if obj.allow_look:
