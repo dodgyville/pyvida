@@ -2,17 +2,23 @@
 Python3 
 """
 import copy
+import gc
 import glob
+import imghdr
 import imp
 import json
 import math
-import pyglet
 import os
+import pickle
+import pyglet
+import resource
+import struct
 import subprocess
 import sys
+import threading
 import time
-import gc
-import resource
+import traceback
+
 from argparse import ArgumentParser
 from collections import Iterable
 from datetime import datetime
@@ -23,12 +29,6 @@ import tkinter as tk
 import tkinter.filedialog
 import tkinter.simpledialog
 import tkinter.messagebox
-
-import threading
-import traceback
-#import dill as pickle
-import pickle
-import json
 
 from pyglet.image.codecs.png import PNGImageDecoder
 
@@ -445,6 +445,43 @@ if logging:
 """
 Utilities
 """
+
+#get PNG image size info without loading into video memory
+#courtesy Fred the Fantastic - http://stackoverflow.com/questions/8032642/how-to-obtain-image-size-using-standard-python-class-without-using-external-lib
+def get_image_size(fname):
+    '''Determine the image type of fhandle and return its size.
+    from draco'''
+    fhandle = open(fname, 'rb')
+    head = fhandle.read(24)
+    if len(head) != 24:
+        return
+    if imghdr.what(fname) == 'png':
+        check = struct.unpack('>i', head[4:8])[0]
+        if check != 0x0d0a1a0a:
+            return
+        width, height = struct.unpack('>ii', head[16:24])
+    elif imghdr.what(fname) == 'gif':
+        width, height = struct.unpack('<HH', head[6:10])
+    elif imghdr.what(fname) == 'jpeg':
+        try:
+            fhandle.seek(0) # Read 0xff next
+            size = 2
+            ftype = 0
+            while not 0xc0 <= ftype <= 0xcf:
+                fhandle.seek(size, 1)
+                byte = fhandle.read(1)
+                while ord(byte) == 0xff:
+                    byte = fhandle.read(1)
+                ftype = ord(byte)
+                size = struct.unpack('>H', fhandle.read(2))[0] - 2
+            # We are at a SOFn block
+            fhandle.seek(1, 1)  # Skip `precision' byte.
+            height, width = struct.unpack('>HH', fhandle.read(4))
+        except Exception: #IGNORE:W0703
+            return
+    else:
+        return
+    return width, height
 
 
 def deslugify(txt):
@@ -965,7 +1002,7 @@ class Action(object):
         self.num_of_frames = 0
         self._animation = None
         self._image = None
-        self.w, self.h = 0, 0
+#        self.w, self.h = 0, 0
         self._loaded = False
 
     def __getstate__(self):
@@ -973,6 +1010,24 @@ class Action(object):
         self.actor = getattr(
             self.actor, "name", self.actor) if self.actor else "unknown_actor"
         return self.__dict__
+
+    @property
+    def resource_name(self): 
+        """ The key name for this action's graphic resources in _resources"""
+        actor_name = getattr(self.actor, "name", self.actor) if self.actor else "unknown_actor"
+        return "%s_%s"%(slugify(actor_name), slugify(self.name))
+
+    @property
+    def resource(self):
+        return get_resource(self.resource_name)[-1]
+
+    @property
+    def w(self):
+        return get_resource(self.resource_name)[0]
+
+    @property
+    def h(self):
+        return get_resource(self.resource_name)[1]
 
     def draw(self):
         pass
@@ -985,7 +1040,8 @@ class Action(object):
         montage_fname = fname + ".montage"
         self._image = filename
         if not os.path.isfile(montage_fname):
-            num, w, h = 1, 0, 0
+            w,h = get_image_size(filename)
+            num = 1 #single frame animation
         else:
             with open(montage_fname, "r") as f:
                 try:
@@ -995,19 +1051,10 @@ class Action(object):
                         log.error("Can't read values in %s (%s)" %
                                   (self.name, montage_fname))
                     num, w, h = 0, 0, 0
-        self.num_of_frames, self.w, self.h = num, w, h
+        self.num_of_frames = num
+        set_resource(self.resource_name, w=w, h=h)
 #        self.load_assets(game)
         return self
-
-    @property
-    def resource_name(self): 
-        """ The key name for this action's graphic resources in _resources"""
-        actor_name = getattr(self.actor, "name", self.actor) if self.actor else "unknown_actor"
-        return "%s_%s"%(slugify(actor_name), slugify(self.name))
-
-    @property
-    def resource(self):
-        return get_resource(self.resource_name)[-1]
 
     def unload_assets(self):  # action.unload
         #        log.debug("UNLOAD ASSETS %s %s"%(self.actor, self.name))
@@ -1404,11 +1451,13 @@ class Actor(object, metaclass=use_on_events):
         return self.switch_asset(self.action)
 
     def switch_asset(self, action, **kwargs):
-        """ Switch this Actor's main resource to the requestion action """
+        """ Switch this Actor's main resource to the requested action """
         #create sprite
 
         if not action: return
-            
+
+        #fill in the w and h even if we don't need the graphical asset
+        set_resource(self.resource_name, w=action.w,h=action.h)
 
         #get the animation and the callback for this action
         action_animation = action.resource 
@@ -3948,6 +3997,7 @@ class MenuManager(metaclass=use_on_events):
             obj = get_object(self.game, obj_name)
             if not obj: #XXX temp disable missing menu items
                 continue
+            obj.load_assets(self.game)
             obj._usage(draw=True, interact=True)
         if logging:
             log.debug("show menu using place %s" %
@@ -4600,6 +4650,11 @@ def load_game_pickle(game, fname, meta_only=False):
             for menu_item in game._menu:
                 obj = get_object(game, menu_item)
                 obj.load_assets(game)
+            for menu in game._menus:
+                for menu_item in game._menu:
+                    obj = get_object(game, menu_item)
+                    obj.load_assets(game)
+            
 
             game._headless = headless
 
@@ -5284,7 +5339,7 @@ class Game(metaclass=use_on_events):
         self.parser.add_argument("-r", "--resolution", dest="resolution",
                                  help="Force engine to use resolution WxH or (w,h) (recommended (1600,900))")
         self.parser.add_argument(
-            "-s", "--step", dest="target_step", nargs='+', help="Jump to step in walkthrough (optional 2nd argument means fast load 1st and regenerate 2nd)")
+            "-s", "--step", dest="target_step", nargs='+', help="Jump to step in walkthrough")
         self.parser.add_argument("-t", "--text", action="store_true", dest="text",
                                  help="Play game in text mode (for players with disabilities who use text-to-speech output)", default=False)
         self.parser.add_argument("-w", "--walkthrough", action="store_true", dest="output_walkthrough",
