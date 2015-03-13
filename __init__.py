@@ -2916,6 +2916,7 @@ class Actor(object, metaclass=use_on_events):
     # actor.relocate
     def _relocate(self, scene=None, destination=None, scale=None):
         if scene:
+            import pdb; pdb.set_trace()
             if self.scene:  # remove from current scene
                 self.scene._remove(self)
             scene = get_object(self.game, scene)
@@ -4103,6 +4104,9 @@ class Camera(metaclass=use_on_events):  # the view manager
             complete = (time.time() - self._overlay_start) / duration
             if complete > 1:
                 complete = 1
+                #if this was blocking, release it.
+                if self.busy>0: self.busy = 0
+
             if self._overlay_fx == FX_FADE_OUT:
                 self._overlay.opacity = round(255 * complete)
             elif self._overlay_fx == FX_FADE_IN:
@@ -4236,7 +4240,7 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._goto_dx = dx
         self._goto_dy = dy
 
-    def on_fade_out(self, seconds=3): #camera.fade
+    def on_fade_out(self, seconds=3, block=False): #camera.fade
         if self.game._headless:  # headless mode skips sound and visuals
             return
 
@@ -4255,8 +4259,11 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._overlay_start = time.time()
         self._overlay_end = time.time() + seconds
         self._overlay_fx = FX_FADE_OUT
+        if block:
+            self.game._waiting = True
+            self.busy += 1
 
-    def on_fade_in(self, seconds=3):
+    def on_fade_in(self, seconds=3, block=False):
      #   items = self.game.player._says("FADE IN", None)
         if self.game._headless:  # headless mode skips sound and visuals
             return
@@ -4269,6 +4276,9 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._overlay_start = time.time()
         self._overlay_end = time.time() + seconds
         self._overlay_fx = FX_FADE_IN
+        if block:
+            self.game._waiting = True
+            self.busy += 1
 
     def on_off(self):
         pass
