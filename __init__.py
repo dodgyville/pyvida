@@ -1059,6 +1059,7 @@ class Action(object):
     def unload_assets(self):  # action.unload
         #        log.debug("UNLOAD ASSETS %s %s"%(self.actor, self.name))
         set_resource(self.resource_name, resource=None)
+        self._loaded = False
 
     def load_assets(self, game): #action.load
         if game:
@@ -1083,6 +1084,7 @@ class Action(object):
             frames.append(pyglet.image.AnimationFrame(
                 frame, 1 / getattr(game, "default_actor_fps", DEFAULT_ACTOR_FPS)))
         set_resource(self.resource_name, resource = pyglet.image.Animation(frames))
+        self._loaded = True
 
 
 class Rect(object):
@@ -1336,7 +1338,7 @@ class Actor(object, metaclass=use_on_events):
         self.name = name
         self._actions = {}
         self._action = None
-        self._next_action = "idle"  # for use by do_once
+        self._next_action = "idle"  # for use by do_once and goto
         self._motions = {}
         self._applied_motions = []  # list of motions applied at the moment
         # list of activities (fn, (*args)) to loop through - good for
@@ -1895,8 +1897,8 @@ class Actor(object, metaclass=use_on_events):
                             self.name, self.name, self.busy))
                     self._goto_x, self._goto_y = None, None
                     self._goto_dx, self._goto_dy = 0, 0
-                    if "idle" in self._actions.keys():
-                        self._do("idle")
+                    if self._next_action in self._actions.keys():
+                        self._do(self._next_action)
          #   else:
           #      print("missed",target,self.x, self.y)
         # apply motions
@@ -2915,8 +2917,9 @@ class Actor(object, metaclass=use_on_events):
 
     # actor.relocate
     def _relocate(self, scene=None, destination=None, scale=None):
+        if self.action and self.action._loaded == False and self.game and not self.game._headless:
+            self.load_assets(self.game)
         if scene:
-            import pdb; pdb.set_trace()
             if self.scene:  # remove from current scene
                 self.scene._remove(self)
             scene = get_object(self.game, scene)
@@ -5824,8 +5827,9 @@ class Game(metaclass=use_on_events):
             obj = get_object(self, walkthrough[1])
             if self.scene:
                 scene = scene_search(self, self.scene, obj.name.upper())
-                if scene != False:
-                    scene._add(self.player)
+                if scene != False: #found a new scene
+                    self.scene._remove(self.player) #remove from current scene
+                    scene._add(self.player) #add to next scene
                     if logging:
                         log.info("TEST SUITE: Player goes %s" %
                                  ([x.name for x in scene_path]))
@@ -6427,7 +6431,7 @@ def edit_object_script(game, obj):
     slug = slugify(obj.name).lower()
     search_fns = ["def interact_%s(game, %s, player):" % (
         slug, slug), "def look_%s(game, %s, player):" % (slug, slug)]
-    if not isinstance(obj, Portal):
+    if not isinstance(obj, Portal) and game.player:
         for i in list(game.player.inventory.keys()):
             slug2 = slugify(i).lower()
             search_fns.append("def %s_use_%s(game, %s, %s):" %
@@ -6890,8 +6894,11 @@ class MyTkApp(threading.Thread):
 
         def change_idle(*args, **kwargs):
             self.obj.idle_stand = request_idle.get()
-        actions = [x.name for x in self.game.player._actions.values()]
-        actions.sort()
+        if self.game.player:
+            actions = [x.name for x in self.game.player._actions.values()]
+            actions.sort()
+        else:
+            actions = []
         if len(actions) > 0:
             tk.Label(group, text="Requested player action on stand:").grid(
                 column=0, row=row)
