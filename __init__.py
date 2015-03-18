@@ -4284,10 +4284,13 @@ class Camera(metaclass=use_on_events):  # the view manager
             self.busy += 1
 
     def on_off(self):
-        pass
+        d = pyglet.resource.get_script_home()
+        mask = pyglet.image.load(os.path.join(d, 'data/special/black.png'))
+        self._overlay = pyglet.sprite.Sprite(mask, 0, 0)
+        self._overlay_end = time.time() + 60*60*24*365*100 #one hundred yeaaaaars
 
     def on_on(self):
-        pass
+        self._overlay = None
 
     def on_pan(self, left=False, right=False, top=False, bottom=False, speed=None):
         """ Convenience method for panning camera to left, right, top and/or bottom of scene, left OR right OR Neither AND top OR bottom Or Neither """
