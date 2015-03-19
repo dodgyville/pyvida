@@ -2670,11 +2670,11 @@ class Actor(object, metaclass=use_on_events):
 
     def _loses(self, item):
         """ remove item from inventory """
-        item = get_object(self.game, item)
-        if item in self.inventory.values():
-            del self.inventory[item.name]
+        obj = get_object(self.game, item)
+        if obj in self.inventory.values():
+            del self.inventory[obj.name]
         else:
-            log.error("Item %s not in inventory" % item.name)
+            log.error("Item %s not in inventory" % getattr(item, "name", item))
 
     def on_loses(self, item):
         self._loses(item)
