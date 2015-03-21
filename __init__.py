@@ -1890,7 +1890,11 @@ class Actor(object, metaclass=use_on_events):
                     point = get_point(self.game, destination, self)
                     self._calculate_goto(self, point)
                 else:
-                    self._finished_goto()
+                    finished_fn = get_function(self.game, self._finished_goto, self)
+                    if not finished_fn:
+                        log.error("Unable to find finish goto function %s for %s"%(self._finished_goto, self.name))
+                    else:
+                        finished_fn(self)
                     self.busy -= 1
                     if logging:
                         log.info("%s has finished on_goto by arriving at point, so decrement %s.busy to %s." % (
@@ -3508,7 +3512,6 @@ class Scene(metaclass=use_on_events):
 
 
     def load_assets(self, game): #scene.load
-        print("LOAD ASSETS FOR SCENE",self.name,self._objects)
         if not self.game: self.game = game
         for obj_name in self._objects:
             obj = get_object(self.game, obj_name)
@@ -3518,7 +3521,6 @@ class Scene(metaclass=use_on_events):
             obj.load_assets(self.game)
 
     def unload_assets(self):  # scene.unload
-        print("UNLOAD ASSETS FOR SCENE",self.name,self._objects)
         for obj_name in self._objects:
             obj = get_object(self.game, obj_name)
             log.debug("UNLOAD ASSETS for obj %s %s" % (obj_name, obj))
@@ -3978,7 +3980,7 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
                     final_x, self.game.resolution[1] - final_y - sh, sw, sh)
                 rectangle(self.game, obj._cr, colour=(
                     255, 255, 255, 255), fill=False, label=False, absolute=False)
-            if x + self.tile_size[0] > self.dimensions[0]:
+            if x + self.tile_size[0] > x+self.dimensions[0]:
                 x = self.resource.x + self.padding[0]
                 y -= (self.tile_size[1] + self.padding[1])
             else:
@@ -5963,6 +5965,9 @@ class Game(metaclass=use_on_events):
                 if item not in items_to_update:
                     items_to_update.append(item)
         for item in items_to_update:  # _to_update:
+            if item == None: 
+                log.error("Some item(s) in scene %s are None, which is odd."%self.name)
+                continue
             item.game = self
             if hasattr(item, "_update"):
                 item._update(dt, obj=item)
@@ -6015,8 +6020,11 @@ class Game(metaclass=use_on_events):
             for obj_name in self.scene._objects:
                 scene_objects.append(get_object(self, obj_name))
         # - x._parent.y if x._parent else 0
-        objects = sorted(scene_objects, key=lambda x: x.y, reverse=False)
-        objects = sorted(objects, key=lambda x: x.z, reverse=False)
+        try:
+            objects = sorted(scene_objects, key=lambda x: x.y, reverse=False)
+            objects = sorted(objects, key=lambda x: x.z, reverse=False)
+        except AttributeError:
+            import pdb; pdb.set_trace()
         for item in objects:
             item.pyglet_draw(absolute=False)
 
