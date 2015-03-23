@@ -398,7 +398,7 @@ def scene_search(game, scene, target):  # are scenes connected via portals?
     for obj_name in scene._objects:
         i = get_object(game, obj_name)
         if isinstance(i, Portal):  # if portal and has link, follow that portal
-            link = get_object(game, i.link)
+            link = get_object(game, i._link)
             if link and link.scene not in scene_path:
                 found_target = scene_search(game, link.scene, target)
                 if found_target != False:
@@ -1411,6 +1411,7 @@ class Actor(object, metaclass=use_on_events):
 
         self._interact = interact  # special queuing function for interacts
         self._look = look  # override queuing function for look
+        self._finished_goto = None #override function when goto has finished
         # allow drag if not None, function will be called when item is released
         # after being dragged
         self._drag = drag
@@ -1840,10 +1841,6 @@ class Actor(object, metaclass=use_on_events):
             kwargs["size"] = self.game.font_speech_size
         return kwargs
 
-    def _finished_goto(self):
-        """ Called when goto finishes """
-        pass
-
     def _update(self, dt, obj=None):  # actor._update, use obj to override self
         self._scroll_dx += self.scroll[0]
         if self.w and self._scroll_dx < -self.w:
@@ -1890,11 +1887,12 @@ class Actor(object, metaclass=use_on_events):
                     point = get_point(self.game, destination, self)
                     self._calculate_goto(self, point)
                 else:
-                    finished_fn = get_function(self.game, self._finished_goto, self)
-                    if not finished_fn:
-                        log.error("Unable to find finish goto function %s for %s"%(self._finished_goto, self.name))
-                    else:
-                        finished_fn(self)
+                    if self._finished_goto:
+                        finished_fn = get_function(self.game, self._finished_goto, self)
+                        if not finished_fn:
+                            log.error("Unable to find finish goto function %s for %s"%(self._finished_goto, self.name))
+                        else:
+                            finished_fn(self)
                     self.busy -= 1
                     if logging:
                         log.info("%s has finished on_goto by arriving at point, so decrement %s.busy to %s." % (
@@ -2410,7 +2408,7 @@ class Actor(object, metaclass=use_on_events):
             log.info("%s has started on_asks." % (self.name))
         name = self.display_text if self.display_text else self.name
         if self.game._output_walkthrough:
-            print("%s says \"%s\"." % (name, args[0]))
+            print("%s says \"%s\"" % (name, statement))
         log.info("on_ask before _says: %s.busy = %i" % (self.name, self.busy))
         items = self._says(statement, **kwargs)
         log.info("on_ask after _says: %s.busy = %i" % (self.name, self.busy))
@@ -2656,9 +2654,11 @@ class Actor(object, metaclass=use_on_events):
 
   #      name = self.display_text if self.display_text else self.name
  #       item_name = item.display_text if item.display_text else item.name
-#        if self.game and self.game.output_walkthrough and self.game.trunk_step: print("%s gets %s."%(name, item_name))
 
         name = item.display_text if item.display_text else item.name
+
+        if self.game and self.game._output_walkthrough: print("%s gets %s."%(self.name, name))
+
         if self.game and self == self.game.player:
             text = "%s added to your inventory!" % name
         else:
@@ -2797,7 +2797,6 @@ class Actor(object, metaclass=use_on_events):
         self.busy += 1
 
         def finish_idle(dt, start):
-            print("Finished idling", dt, start, datetime.now())
             self.busy -= 1
             if logging:
                 log.info("%s has finished on_idle (%s), so decrement %s.busy to %i." % (
@@ -3019,13 +3018,17 @@ class Portal(Actor, metaclass=use_on_events):
         super().__init__(*args, **kwargs)
         self._ox, self._oy = 0, 0  # out point for this portal
 #        self.interact = self._interact_default
-        self.link = None  # the connecting Portal
+        self._link = None  # the connecting Portal
 
 #    def __getstate__(self):
 #        """ Prepare the object for pickling """
 #        self.__dict__ = super().__getstate__()
 #        if self.link.scene
 #        return self.__dict__
+
+    @property
+    def link(self):
+        return get_object(self.game, self._link)
 
     def debug_pyglet_draw(self, absolute=False):
         super().debug_pyglet_draw(absolute=absolute)
@@ -3046,7 +3049,7 @@ class Portal(Actor, metaclass=use_on_events):
         if len(links) > 1:  # name format matches guess
             guess_link = "%s_to_%s" % (links[1].lower(), links[0].lower())
         if guess_link and guess_link in self.game._items:
-            self.link = self.game._items[
+            self._link = self.game._items[
                 guess_link].name if self.game._items[guess_link] else None
         else:
             if logging:
@@ -3116,7 +3119,7 @@ class Portal(Actor, metaclass=use_on_events):
         """ Relocate actor to this portal's link's out point """
         if actor == None:
             actor = self.game.player
-        link = get_object(self.game, self.link)
+        link = get_object(self.game, self._link)
         # moves player to scene
         actor.relocate(link.scene, (link.x + link.ox, link.y + link.oy))
 
@@ -3124,7 +3127,7 @@ class Portal(Actor, metaclass=use_on_events):
         """ exit the portal's link """
         if actor == None:
             actor = self.game.player
-        link = get_object(self.game, self.link)
+        link = get_object(self.game, self._link)
         # walk into scene
         actor.goto(
             (link.x + link.sx, link.y + link.sy), ignore=True, block=block)
@@ -3150,7 +3153,7 @@ class Portal(Actor, metaclass=use_on_events):
         if actor == None:
             log.warning("No actor available for this portal")
             return
-        link = get_object(self.game, self.link)
+        link = get_object(self.game, self._link)
         if not link:
             self.game.player.says("It doesn't look like that goes anywhere.")
             if logging:
@@ -3663,7 +3666,6 @@ class Scene(metaclass=use_on_events):
             obj._opacity_target = 0
             obj._opacity_delta = (
                 obj._opacity_target - obj._opacity) / (self.game.fps * seconds)
-            print(obj._opacity_delta)
 
     def pyglet_draw(self, absolute=False):  # scene.draw (not used)
         pass
@@ -4175,8 +4177,8 @@ class Camera(metaclass=use_on_events):  # the view manager
                     s.unload_assets()
                 self.game._resident.remove(unload_scene)
                 gc.collect()  # force garbage collection
-                print("Finished collect", resource.getrusage(
-                    resource.RUSAGE_SELF).ru_maxrss / 1000)
+#                print("Finished collect", resource.getrusage(
+#                    resource.RUSAGE_SELF).ru_maxrss / 1000)
         if logging:
             log.debug("changing scene to %s" % scene.name)
         if self.game and self.game._headless:
@@ -4863,6 +4865,7 @@ class Game(metaclass=use_on_events):
         self._build = False
 
         self._output_walkthrough = False
+        self._trunk_step = False
         self._create_from_walkthrough = False
         # engine will try and continue after encountering exception
         self._catch_exceptions = True
@@ -4919,10 +4922,10 @@ class Game(metaclass=use_on_events):
     def __getattr__(self, a):  # game.__getattr__
         # only called as a last resort, so possibly set up a queue function
         if a == "actors":
-            print("game.actors deprecated, update")
+            log.warning("game.actors deprecated, update")
             return self._actors
         if a == "items":
-            print("game.items deprecated, update")
+            log.warning("game.items deprecated, update")
             return self._items
         q = getattr(self, "on_%s" % a, None) if a[:3] != "on_" else None
         if q:
@@ -5128,7 +5131,7 @@ class Game(metaclass=use_on_events):
                 if obj.collide(x, y) and (obj.allow_interact or obj.allow_use or obj.allow_look):
                     t = obj.name if obj.display_text == None else obj.display_text
                     if isinstance(obj, Portal):
-                        link = get_object(self, obj.link)
+                        link = get_object(self, obj._link)
                         if self.settings.portal_exploration and link and link.scene:
                             if link.scene.name not in self.visited:
                                 t = "To the unknown."
@@ -5178,8 +5181,6 @@ class Game(metaclass=use_on_events):
                 """Same place, same button"""
                 if time.clock() - self.last_mouse_release[-1] < 0.2:
                     if self.player and self.player._goto_x != None:
-                        print("Double-click, jump!", self.player._x,
-                              self.player._y, self.player._goto_x, self.player._goto_y)
                         self.player._x, self.player._y = self.player._goto_x, self.player._goto_y
                         self.player._goto_dx, self.player._goto_dy = 0, 0
                         return
@@ -5231,7 +5232,12 @@ class Game(metaclass=use_on_events):
         if len(self._events) == 1:
             # if the only event is a goto to a uninteresting point, clear it.
             if self._events[0][0].__name__ == "on_goto":
-                self.player._finished_goto()
+                if self.player._finished_goto:
+                    finished_fn = get_function(game, self.player._finished_goto, self.player)
+                    if finished_fn:
+                        finished_fn(self)
+                    else:
+                        import pdb; pdb.set_trace()
                 self.player.busy -= 1
                 self.player._cancel_goto()
             else:
@@ -5591,10 +5597,8 @@ class Game(metaclass=use_on_events):
             player = self._actors[player]
         if player:
             self.player = player
-        print("SIZE OF EVENT QUEUE B", len(self._events))
 
         if use_quick_load:  # save quick load file
-            print("SIZE OF EVENT QUEUE:", len(self._events), "QUEUE SAVEGAME")
             # use the on_save queuing method to allow all load_states to finish
             self.save_game(use_quick_load)
 
@@ -5692,6 +5696,11 @@ class Game(metaclass=use_on_events):
         options = self.parser.parse_args()
         if options.mute == True:
             self.mixer._force_mute = True
+        if options.output_walkthrough == True:
+            self._output_walkthrough = True
+            print("Walkthrough for %s"%self.name)
+            t = datetime.now().strftime("%d-%m-%y")
+            print("Created %s, updated %s"%(t,t))
         # switch on test runner to step through walkthrough
         if options.target_step:
             first_step = options.target_step[0]
@@ -5790,6 +5799,13 @@ class Game(metaclass=use_on_events):
 #            if len(walkthrough) ==  3: human_readable_name = walkthrough[-1]
 #        elif function_name in ["use"]:
 #            if len(walkthrough) ==  4: human_readable_name = walkthrough[-1]
+        actor_name = walkthrough[1]
+        if actor_name[0] == "*": #an optional, non-trunk step
+            self._trunk_step = False
+            actor_name = actor_name[1:]
+        else:
+            self._trunk_step = True
+
         if function_name == "savepoint":
             human_readable_name = walkthrough[-1]
         elif function_name == "interact":
@@ -5799,16 +5815,16 @@ class Game(metaclass=use_on_events):
             obj = None
             for name in self._modals:
                 o = get_object(self, name)
-                if o.display_text == walkthrough[1]:
+                if o.display_text == actor_name:
                     obj = o
             if not obj:
                 for o_name in self._menu:
                     o = get_object(self, o_name)
-                    if walkthrough[1] in [o.display_text, o.name]:
+                    if actor_name in [o.display_text, o.name]:
                         obj = o
-            obj = get_object(self, walkthrough[1]) if not obj else obj
+            obj = get_object(self, actor_name) if not obj else obj
             if not obj:
-                log.error("Unable to find %s in game" % walkthrough[1])
+                log.error("Unable to find %s in game" % actor_name)
                 self._walkthrough_target = 0
                 self._headless = False
                 return
@@ -5820,16 +5836,49 @@ class Game(metaclass=use_on_events):
             if self.player:
                 self.player.x, self.player.y = obj.x + obj.sx, obj.y + obj.sy
             x, y = obj.clickable_area.center
+            #output text for a walkthrough if -w enabled
+            if self._trunk_step and self._output_walkthrough: 
+                if obj.name in self._actors.keys():
+                    verbs = ["Talk to", "Interact with"]
+                else: #item or portal
+                    verbs = ["Click on the"]
+                if obj.name in self._modals: #probably in modals
+                    verbs = ["Select"]
+                if obj.name in self._menu:
+                    verbs = ["From the menu, select"]
+
+                name = obj.display_text if obj.display_text else obj.name
+
+                if isinstance(obj, Portal):
+                    if not obj.link.scene:
+                        print("Portal %s's link %s doesn't seem to go anywhere."%(obj.name, obj.link.name))
+                    else:
+                        name = obj.link.scene.display_text if obj.link.scene.display_text else obj.link.scene.name
+                        print("Go to %s."%name)
+                elif obj:
+                    if hasattr(obj, "tmp_creator"):
+                        print("%s \"%s\""%(choice(verbs), name))
+                    else:
+                        txt = "%s %s."%(choice(verbs), name)
+                        print(txt.replace("..", "."))
+                else: #probably modal select text
+                    print("Select \"%s\""%name)
+
+            #trigger the interact                
             user_trigger_interact(self, obj)
         elif function_name == "use":
             obj = get_object(self, walkthrough[2])
-            subject = get_object(self, walkthrough[1])
+            obj_name = obj.display_text if obj.display_text else obj.name
+            subject = get_object(self, actor_name)
+            subject_name = subject.display_text if subject.display_text else subject.name
+            if self._trunk_step and self._output_walkthrough: 
+                print("Use %s on %s."%(obj_name, subject_name))
             subject.trigger_use(obj)
         elif function_name == "goto":
             # expand the goto request into a sequence of portal requests
             global scene_path
             scene_path = []
-            obj = get_object(self, walkthrough[1])
+            obj = get_object(self, actor_name)
             if self.scene:
                 scene = scene_search(self, self.scene, obj.name.upper())
                 if scene != False: #found a new scene
@@ -5839,7 +5888,7 @@ class Game(metaclass=use_on_events):
                         log.info("TEST SUITE: Player goes %s" %
                                  ([x.name for x in scene_path]))
                     name = scene.display_text if scene.display_text else scene.name
-                    #if game.trunk_step and game.output_walkthrough: print("Go to %s."%(name))
+                    if self._trunk_step and self._output_walkthrough: print("Go to %s."%(name))
                     self.camera.scene(scene)
                 else:
                     if logging:
@@ -5849,14 +5898,19 @@ class Game(metaclass=use_on_events):
                 if logging:
                     log.error("Going from no scene to scene %s" % obj.name)
         elif function_name == "description":
-            pass
+            if self._trunk_step and self._output_walkthrough: 
+                print(actor_name)
+        elif function_name == "look":
+            if self._trunk_step and self._output_walkthrough: print("Look at %s."%(actor_name))
         elif function_name == "location":
-            scene = get_object(self, walkthrough[1])
+            scene = get_object(self, actor_name)
             if not scene:
-                log.error("Unable to find scene %s" % walkthrough[1])
+                log.error("Unable to find scene %s" % actor_name)
             elif self.scene != scene:
                 log.error("Location check: Should be on scene {}, instead camera is on {}".format(
                     scene.name, self.scene.name))
+        else:
+            print("UNABLE TO PROCESS %s"%function_name)
         if human_readable_name:
             save_game(self, "saves/{}.save".format(human_readable_name))
 
@@ -6083,8 +6137,6 @@ class Game(metaclass=use_on_events):
                 self._items.pop(name)
             elif name in self._scenes.keys():
                 self._scenes.pop(name)
-            else:
-                print("Unable to find", name, "in game")
 
     def remove(self, objects):  # game.remove (not an event driven function)
         return self._remove(objects)
@@ -6701,7 +6753,6 @@ class MyTkApp(threading.Thread):
             if fname is None:
                 return
             else:
-                print("SAVE STATE")
                 state_name = os.path.splitext(os.path.basename(fname))[0]
                 self.game._save_state(state_name)
 
@@ -6713,7 +6764,6 @@ class MyTkApp(threading.Thread):
                 return
             else:
                 state_name = os.path.splitext(os.path.basename(fname))[0]
-                print("STATE_NAME", state_name)
                 self.game.load_state(self.game.scene, state_name)
 
         def initial_state(*args, **kwargs):
@@ -6825,7 +6875,6 @@ class MyTkApp(threading.Thread):
         def toggle_bools(*args, **kwargs):
             """ Updates all bools that are being tracked """
             for editing, v in self._editing_bool.items():
-                print(editing, v.get())
                 for editable in self.obj._editable:
                     # this is what we want to edit now.
                     if editing == editable[0]:
@@ -6886,7 +6935,6 @@ class MyTkApp(threading.Thread):
         # XXX editor can only apply one motion at a time, should probably use a
         # checkbox list or something
         def apply_motion_btn(*args, **kwargs):
-            print("APPLY", self.obj._motions, action.get())
             self.obj.motion(action.get())
 
         actions = [x.name for x in self.obj._actions.values()]
