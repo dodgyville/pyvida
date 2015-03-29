@@ -571,8 +571,10 @@ def load_image(fname, convert_alpha=False, eight_bit=False):
 
 def get_font(game, filename, fontname):
     pyglet.font.add_file(filename)
-    f = pyglet.font.load(fontname)
-    return f
+    font = pyglet.font.load(fontname)
+    if fontname.lower() not in font._memory_fonts.keys():
+        log.error("Font %s appeared to not load, fontname must match name in TTF file. Real name might be in: %s"%(fontname, font._memory_fonts.keys()))
+    return font
 
 
 def get_point(game, destination, actor=None):
@@ -1384,7 +1386,7 @@ class Actor(object, metaclass=use_on_events):
         # if the player hasn't met this Actor use these "fog of war" variables.
         self._fog_display_text = None
 
-        self.font_speech = None  # use default font (from game)
+        self.font_speech = None  # use default font if None (from game), else filename key for _pyglet_fonts
         self.font_speech_size = None  # use default font size (from game)
         self.font_colour = None  # use default
 
@@ -2273,6 +2275,11 @@ class Actor(object, metaclass=use_on_events):
                         val = tuple(val)
                     elif val in COLOURS:
                         val = COLOURS[val]
+                if key == "font_speech":
+                    font_name = os.path.splitext(os.path.basename(val))[0]
+                    game.add_font(val, font_name)
+                    self.font_speech = val
+
                 self.__dict__[key] = val
 
         """ XXX per actor quickload disabled in favour single game quickload, which I'm testing at the moment
@@ -3704,7 +3711,6 @@ class Text(Item):
         self.size = size
         self.font_name = font_name
         self.wrap = wrap
-
         self.create_label()
 
         self._clickable_area = Rect(
@@ -3750,6 +3756,7 @@ class Text(Item):
                                         width=wrap,
                                         x=self.x, y=self.y,
                                         anchor_x='left', anchor_y='top')
+
         set_resource(self.resource_name, resource=label)
 
         if self.offset:
@@ -3940,9 +3947,12 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
 
         super().pyglet_draw(absolute=absolute)  # actor.draw
         # , self.y #self.padding[0], self.padding[1] #item padding
-        x, y = self.resource.x + \
-            self.padding[0], self.resource.y + \
-            self.resource.height - self.padding[1]
+#        x, y = self.resource.x + \
+ #           self.padding[0], self.resource.y + \
+ #           self.resource.height - self.padding[1]
+
+        x, y = self.x + self.padding[0], self.y + self.padding[1]
+
         w = self.clickable_area.w
         dx, dy = self.tile_size
         for obj_name in self._objects:
@@ -3972,19 +3982,25 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
                 if hasattr(sprite, "scale"):
                     old_scale = sprite.scale
                     sprite.scale = scale
-                final_x, final_y = int(x), int(y - sh)
-                sprite.x, sprite.y = final_x, final_y
+                final_x, final_y = int(x), int(y)
+                sprite.x, sprite.y = final_x, self.game.resolution[1] - final_y
+                #pyglet seems to render Labels and Sprites at x,y differently, so compensate.
+                if isinstance(sprite, pyglet.text.Label):
+                    pass
+                else:
+                    sprite.y -= sh
                 sprite.draw()
                 if hasattr(sprite, "scale"):
                     sprite.scale = old_scale
                 # temporary collection values, stored for collection
                 obj._cr = Rect(
-                    final_x, self.game.resolution[1] - final_y - sh, sw, sh)
+                    final_x,  final_y, sw, sh)
+#                    final_x, self.game.resolution[1] - final_y, sw, sh)
                 rectangle(self.game, obj._cr, colour=(
                     255, 255, 255, 255), fill=False, label=False, absolute=False)
             if x + self.tile_size[0] > x+self.dimensions[0]:
                 x = self.resource.x + self.padding[0]
-                y -= (self.tile_size[1] + self.padding[1])
+                y += (self.tile_size[1] + self.padding[1])
             else:
                 x += (self.tile_size[0] + self.padding[0])
 
@@ -4539,7 +4555,7 @@ def advance_help_index(game):
             game._help_index += 1
     if game._help_index >= len(game._walkthrough):
         game._help_index = len(game._walkthrough) - 1
-    print("Waiting for user to trigger", game._walkthrough[game._help_index])
+#    print("Waiting for user to trigger", game._walkthrough[game._help_index])
 
 
 def user_trigger_interact(game, obj):
@@ -4549,8 +4565,10 @@ def user_trigger_interact(game, obj):
         if game.event_callback:
             game.event_callback(game)
     function_name = game._walkthrough[game._help_index][0].__name__
-    if game._walkthrough and function_name == "interact":
-        advance_help_index(game)
+#XXX It should be possible to track where a user is in relation to the walkthrough here
+#However, it's a low priority for me at the moment.
+#    if game._walkthrough and function_name == "interact":
+#        advance_help_index(game)
 
 
 def user_trigger_use(game, subject, obj):
@@ -4590,6 +4608,7 @@ def save_game_pickle(game, fname):
         # dump info about the player, including history
         pickle.dump(game.get_player_info, f)
         pickle.dump(game.storage, f)
+        pickle.dump(_pyglet_fonts, f)
 
         pickle.dump(game._menu, f)
         pickle.dump(game._menus, f)
@@ -4633,11 +4652,13 @@ def save_game_pickle(game, fname):
 
 
 def load_game_pickle(game, fname, meta_only=False):
+    global _pyglet_fonts
     with open(fname, "rb") as f:
         meta = pickle.load(f)
         if not meta_only:
             player_info = pickle.load(f)
             game.storage = pickle.load(f)
+            _pyglet_fonts = pickle.load(f)
 
             game._menu = pickle.load(f)
             game._menus = pickle.load(f)
@@ -4677,6 +4698,10 @@ def load_game_pickle(game, fname, meta_only=False):
             
 
             game._headless = headless
+
+            # load pyglet fonts
+            for k, v in _pyglet_fonts.items():
+                game.add_font(k, v)
 
             # change camera to scene
             if player_info["player"]:
@@ -4748,6 +4773,7 @@ def fit_to_screen(screen, resolution):
 class Game(metaclass=use_on_events):
 
     def __init__(self, name="Untitled Game", version="v1.0", engine=VERSION_MAJOR, fullscreen=DEFAULT_FULLSCREEN, resolution=DEFAULT_RESOLUTION, fps=DEFAULT_FPS, afps=DEFAULT_ACTOR_FPS, projectsettings=None, scale=1.0):
+        self.debug_collection = False
 
         self.name = name
         self.fps = fps
@@ -5026,9 +5052,9 @@ class Game(metaclass=use_on_events):
             self._allow_editing = False
 
         if symbol == pyglet.window.key.F5:
-            self.camera.fade_out()
+            game.camera.scene("phelm") if game.scene.name == "aqueue" else game.camera.scene("aqueue")
         if symbol == pyglet.window.key.F6:
-            self.camera.fade_in()
+            self.debug_collection = True
 
         if symbol == pyglet.window.key.F7:  # start recording
             # ffmpeg -r 16 -pattern_type glob -i '*.png' -c:v libx264 out.mp4
@@ -5153,7 +5179,7 @@ class Game(metaclass=use_on_events):
                     return
 
         # Not over any thing of importance
-        self._info_object.display_text = ""  # clear info
+        self._info_object.display_text = " "  # clear info
         self.mouse_cursor = MOUSE_POINTER  # reset mouse pointer
 
     def on_mouse_press(self, x, y, button, modifiers):
@@ -5907,7 +5933,7 @@ class Game(metaclass=use_on_events):
             if not scene:
                 log.error("Unable to find scene %s" % actor_name)
             elif self.scene != scene:
-                log.error("Location check: Should be on scene {}, instead camera is on {}".format(
+                log.warning("Location check: Should be on scene {}, instead camera is on {}".format(
                     scene.name, self.scene.name))
         else:
             print("UNABLE TO PROCESS %s"%function_name)
@@ -6110,6 +6136,8 @@ class Game(metaclass=use_on_events):
         # and hasattr(self._mouse_object, "pyglet_draw"):
         if self._mouse_object:
             self._mouse_object.x, self._mouse_object.y = self.mouse_position
+            self._mouse_object.x -= self._mouse_object.w//2
+            self._mouse_object.y -= self._mouse_object.h//2
             self._mouse_object.pyglet_draw()
 
         if self.game.camera._overlay:
