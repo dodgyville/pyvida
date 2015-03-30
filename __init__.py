@@ -570,10 +570,15 @@ def load_image(fname, convert_alpha=False, eight_bit=False):
 
 
 def get_font(game, filename, fontname):
-    pyglet.font.add_file(filename)
-    font = pyglet.font.load(fontname)
-    if fontname.lower() not in font._memory_fonts.keys():
-        log.error("Font %s appeared to not load, fontname must match name in TTF file. Real name might be in: %s"%(fontname, font._memory_fonts.keys()))
+    # XXX should fallback to pyvida subdirectories if not in game subdirectory
+    try:
+        pyglet.font.add_file(filename)
+        font = pyglet.font.load(fontname)
+        fonts = [x[0] for x in font._memory_fonts.keys()]
+        if fontname.lower() not in fonts:
+            log.error("Font %s appeared to not load, fontname must match name in TTF file. Real name might be in: %s"%(fontname, font._memory_fonts.keys()))
+    except FileNotFoundError:
+        font = None
     return font
 
 
@@ -6793,9 +6798,11 @@ class MyTkApp(threading.Thread):
             else:
                 state_name = os.path.splitext(os.path.basename(fname))[0]
                 self.game.load_state(self.game.scene, state_name)
+                self.game.scene.add(self.game.player)
 
         def initial_state(*args, **kwargs):
             self.game.load_state(self.game.scene, "initial")
+            self.game.scene.add(self.game.player)
 
         def save_layers(*args, **kwargs):
             self.game.scene._save_layers()
