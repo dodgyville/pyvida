@@ -5940,6 +5940,9 @@ class Game(metaclass=use_on_events):
             elif self.scene != scene:
                 log.warning("Location check: Should be on scene {}, instead camera is on {}".format(
                     scene.name, self.scene.name))
+        elif function_name == "has":
+            if not self.player.has(actor_name):
+                log.warning("Player should have %s but it is not in player's inventory."%actor_name)
         else:
             print("UNABLE TO PROCESS %s"%function_name)
         if human_readable_name:
