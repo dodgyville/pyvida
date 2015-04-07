@@ -2314,6 +2314,8 @@ class Actor(object, metaclass=use_on_events):
                 y += self._parent.y
 
             x = x + self.ax
+            if not self.game:
+                print(self.name,"has no game object")
             y = self.game.resolution[1] - y - self.ay - sprite.height
 
             # displace for camera
@@ -3673,8 +3675,9 @@ class Scene(metaclass=use_on_events):
     def on_fade_objects(self, objects=[], seconds=3, fx=FX_FADE_OUT, block=False):
         """ fade the requested objects """
         log.warning("scene.fade_objects can only fade out")
-        log.info("fading out %s" % [o.name for o in objects])
-        for obj in objects:
+        log.info("fading out %s" % [o for o in objects])
+        for obj_name in objects:
+            obj = get_object(self.game, obj_name)
             obj._opacity_target = 0
             obj._opacity_delta = (
                 obj._opacity_target - obj._opacity) / (self.game.fps * seconds)
@@ -5057,7 +5060,18 @@ class Game(metaclass=use_on_events):
             self._allow_editing = False
 
         if symbol == pyglet.window.key.F5:
-            game.camera.scene("phelm") if game.scene.name == "aqueue" else game.camera.scene("aqueue")
+            from scripts.general import show_credits
+            try:
+                show_credits(self, self.player, "void")
+            except:
+                log.error("Exception in %s" % script.__name__)
+                print("\nError running %s\n" % script.__name__)
+                if traceback:
+                    traceback.print_exc(file=sys.stdout)
+                print("\n\n")
+
+
+            #game.camera.scene("phelm") if game.scene.name == "aqueue" else game.camera.scene("aqueue")
         if symbol == pyglet.window.key.F6:
             self.debug_collection = True
 
@@ -6246,6 +6260,7 @@ class Game(metaclass=use_on_events):
 
     def on_menu_modal(self, modal=True):
         """ Set if the menu is currently in modal mode (ie non-menu events are blocked """
+        print("Modal menus set to",modal)
         self._menu_modal = modal
 
     def set_interact(self, actor, fn):  # game.set_interact
