@@ -1510,6 +1510,7 @@ class Actor(object, metaclass=use_on_events):
         game = self.game
         self.game = None  # re-populated after load
         self._editable = []  # re-populated after load
+        self._tk_edit = {} #undo any editor
         # PROBLEM values:
         self.uses = {}
         for k, v in self.__dict__.items():
@@ -3436,6 +3437,7 @@ class Scene(metaclass=use_on_events):
         self.busy = 0
         self._music_filename = None
         self._ambient_filename = None
+        self._last_load_state = None #used by editor
 
         # used by camera
         self._x, self._y = 0.0, 0.0
@@ -3742,6 +3744,8 @@ class Text(Item):
     def resource_offset(self):
         return get_resource(self.resource_name, subkey="offset")[-1]
 
+    def load_assets(self, game):
+        return self.create_label()
 
     def create_label(self):
         c = self.colour
@@ -3880,7 +3884,6 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
             obj = get_object(game, obj_name)
             obj.load_assets(game)
 
-
     def on_empty(self):
         self._objects = []
         self._sorted_objects = None
@@ -3935,6 +3938,7 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
     def _interact_default(self, game, collection, player):
         # XXX should use game.mouse_press or whatever it's calleed
         # the object selected in the collection
+        self._sorted_objects = None #rebuild the sorted objects list
         obj = self.get_object((self.mx, self.my))
         # does this object have a special inventory function?
         if obj and obj._collection_select:
@@ -5924,6 +5928,9 @@ class Game(metaclass=use_on_events):
             global scene_path
             scene_path = []
             obj = get_object(self, actor_name)
+
+            if self._trunk_step and self._output_walkthrough: print("Go to %s."%(actor_name))
+
             if self.scene:
                 scene = scene_search(self, self.scene, obj.name.upper())
                 if scene != False: #found a new scene
@@ -6431,6 +6438,7 @@ class Game(metaclass=use_on_events):
                 exec(code, variables)
 
             variables['load_state'](self, scene)
+        self._last_load_state = state
         return scene
 
     def on_save_game(self, fname):
