@@ -2877,6 +2877,9 @@ class Actor(object, metaclass=use_on_events):
 
                 player.show()
         """
+        self._opacity_delta = 0
+        self._opacity_target = 255
+        self.alpha = self._opacity_target 
         self._usage(draw=True, update=True)  # switch everything on
 
     def on_fade_in(self, action=None, seconds=3, block=False):  # actor.fade_in
