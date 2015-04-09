@@ -4198,7 +4198,8 @@ class Camera(metaclass=use_on_events):  # the view manager
         self.game._resident.append(scene.name)
 
         # unload assets from older scenes 
-        unload = self.game._resident[:-6]  # unload older scenes
+        KEEP_SCENES_RESIDENT = 10
+        unload = self.game._resident[:-KEEP_SCENES_RESIDENT]  # unload older scenes
         if len(unload) > 0:
             for unload_scene in unload:
                 s = get_object(self.game, unload_scene)
@@ -4880,7 +4881,8 @@ class Game(metaclass=use_on_events):
         self.visited = []  # list of scene names visited
         # list of scenes recently visited, unload assets for scenes that
         # haven't been visited for a while
-        self._resident = []
+        self._resident = [] #scenes to keep in memory
+        
 
         #editor and walkthrough
         self.editor = None  # pyglet-based editor
