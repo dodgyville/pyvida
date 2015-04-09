@@ -11,7 +11,6 @@ import math
 import os
 import pickle
 import pyglet
-import resource
 import struct
 import subprocess
 import sys
@@ -579,6 +578,8 @@ def get_font(game, filename, fontname):
             log.error("Font %s appeared to not load, fontname must match name in TTF file. Real name might be in: %s"%(fontname, font._memory_fonts.keys()))
     except FileNotFoundError:
         font = None
+    except AttributeError:
+        pass
     return font
 
 
@@ -1510,6 +1511,7 @@ class Actor(object, metaclass=use_on_events):
         game = self.game
         self.game = None  # re-populated after load
         self._editable = []  # re-populated after load
+
         self._tk_edit = {} #undo any editor
         # PROBLEM values:
         self.uses = {}
@@ -4203,14 +4205,11 @@ class Camera(metaclass=use_on_events):  # the view manager
         if len(unload) > 0:
             for unload_scene in unload:
                 s = get_object(self.game, unload_scene)
-                log.debug("Unload scene %s %s %s" % (
-                    unload_scene, s, resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1000))
+                log.debug("Unload scene %s" % (unload_scene))
                 if s:
                     s.unload_assets()
                 self.game._resident.remove(unload_scene)
                 gc.collect()  # force garbage collection
-#                print("Finished collect", resource.getrusage(
-#                    resource.RUSAGE_SELF).ru_maxrss / 1000)
         if logging:
             log.debug("changing scene to %s" % scene.name)
         if self.game and self.game._headless:
@@ -5098,8 +5097,6 @@ class Game(metaclass=use_on_events):
         if symbol == pyglet.window.key.F9:
             ship_arrives_at_planet = get_function(
                 self, "ship_arrives_at_planet")
-            print("MEMORY USAGE", resource.getrusage(
-                resource.RUSAGE_SELF).ru_maxrss / 1000)
             ship_arrives_at_planet(game)
         if symbol == pyglet.window.key.F10:
             fn = get_function(self, "debug_cutscene")
@@ -5748,6 +5745,7 @@ class Game(metaclass=use_on_events):
     def run(self, splash=None, callback=None, icon=None):
         # event_loop.run()
         options = self.parser.parse_args()
+        self.mixer._force_mute = True #XXX sound disabled for first draft
         if options.mute == True:
             self.mixer._force_mute = True
         if options.output_walkthrough == True:
