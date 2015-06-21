@@ -2768,21 +2768,23 @@ class Actor(object, metaclass=use_on_events):
         return slugify(self.name)
 
 #    def create_sprite(self, action, **kwargs):
-
-    def on_motion(self, motion=None, mode=MOTION_LOOP):
-        """ Clear all existing motions and do just one motion. """
+    def _do_motion(self, motion, mode):
         motion = self._motions.get(
             motion, None) if motion in self._motions.keys() else None
         if motion:
             motion.mode = mode
         else:
             log.warning("Unable to find motion for actor %s"%(self.name))
+        return motion
+
+    def on_motion(self, motion=None, mode=MOTION_LOOP):
+        """ Clear all existing motions and do just one motion. """
+        motion = self._do_motion(motion, mode)
         motion = [motion] if motion else []
         self._applied_motions = motion
 
     def on_add_motion(self, motion, mode=MOTION_LOOP):
-        motion = self._motions.get(
-            motion, None) if motion in self._motions.keys() else motion
+        motion = self._do_motion(motion, mode)
         self._applied_motions.append(motion)
 
     def on_do(self, action):
