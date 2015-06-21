@@ -4252,9 +4252,9 @@ class Camera(metaclass=use_on_events):  # the view manager
                 camera_point = (self.game.resolution[0] - scene.w, scene.y)
             elif camera_point == CENTER:
                 camera_point = (
-                    (scene.w - game.resolution[0]) / 2, (scene.h - game.resolution[1]) / 2)
+                    (scene.w - self.game.resolution[0]) / 2, (scene.h - self.game.resolution[1]) / 2)
             elif camera_point == BOTTOM:
-                camera_point = (scene.x, scene.h)
+                camera_point = (0, -scene.h + self.game.resolution[1])
             elif camera_point == TOP:
                 camera_point = (scene.x, 0)
         self._scene(scene, camera_point)
@@ -4278,7 +4278,10 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._goto_dx = dx
         self._goto_dy = dy
 
-    def on_fade_out(self, seconds=3, block=False): #camera.fade
+    def on_fade_out(self, seconds=3, colour="black", block=False): #camera.fade
+        """
+        colour can only be black|white
+        """
         if self.game._headless:  # headless mode skips sound and visuals
             return
 
@@ -4287,7 +4290,10 @@ class Camera(metaclass=use_on_events):  # the view manager
 #            items[0].trigger_interact()  # auto-close the on_says
 #        return
         d = pyglet.resource.get_script_home()
-        mask = pyglet.image.load(os.path.join(d, 'data/special/black.png'))
+        if colour == "black":
+            mask = pyglet.image.load(os.path.join(d, 'data/special/black.png'))
+        else:
+            mask = pyglet.image.load(os.path.join(d, 'data/special/white.png'))
 #        mask = pyglet.image.codecs.gdkpixbuf2.GdkPixbuf2ImageDecoder().decode(open("data/special/black.png", "rb"), "data/special/black.png")
 #        bugs in pyglet 1.2 is killing me on this kind of stuff gah
 #        mask = pyglet.image.SolidColorImagePattern((0, 0, 0, 255))
@@ -4301,14 +4307,17 @@ class Camera(metaclass=use_on_events):  # the view manager
             self.game._waiting = True
             self.busy += 1
 
-    def on_fade_in(self, seconds=3, block=False):
+    def on_fade_in(self, seconds=3, colour="black", block=False):
      #   items = self.game.player._says("FADE IN", None)
         if self.game._headless:  # headless mode skips sound and visuals
             return
 #            items[0].trigger_interact()  # auto-close the on_says
     #    return
         d = pyglet.resource.get_script_home()
-        mask = pyglet.image.load(os.path.join(d, 'data/special/black.png'))
+        if colour == "black":
+            mask = pyglet.image.load(os.path.join(d, 'data/special/black.png'))
+        else:
+            mask = pyglet.image.load(os.path.join(d, 'data/special/white.png'))
         self._overlay = pyglet.sprite.Sprite(mask, 0, 0)
         self._overlay.opacity = 255
         self._overlay_start = time.time()
@@ -4327,13 +4336,15 @@ class Camera(metaclass=use_on_events):  # the view manager
     def on_on(self):
         self._overlay = None
 
-    def on_pan(self, left=False, right=False, top=False, bottom=False, speed=None):
+    def on_pan(self, left=False, right=False, top=False, bottom=False, percent_vertical=False, speed=None):
         """ Convenience method for panning camera to left, right, top and/or bottom of scene, left OR right OR Neither AND top OR bottom Or Neither """
         x = 0 if left else self.game.scene.x
         x = self.game.resolution[0] - self.game.scene.w if right else x
 
         y = 0 if top else self.game.scene.y
         y = self.game.resolution[1] - self.game.scene.h if bottom else y
+
+        y = self.game.resolution[1] - self.game.scene.h*percent_vertical if percent_vertical else y
 
         self._goto((x, y), speed)
 
