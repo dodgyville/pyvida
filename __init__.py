@@ -930,6 +930,7 @@ class Motion(object):
         self.default = MOTION_LOOP
         self.mode = self.default
         self.index = 0  # where in the motion we currently are
+        self.blocking = False #block events from firing
 
     def __getstate__(self):
         self.game = None
@@ -942,6 +943,11 @@ class Motion(object):
             return True
         if self.mode == MOTION_ONCE and self.index == num_deltas:
             self.index = 0
+            if self.blocking is True: #finished blocking the actor
+                actor.busy -= 1 
+                if logging:
+                    log.info("%s has finished motion %s, so decrementing self.busy to %s." % (
+                        actor.name, self.name, actor.busy))
             return False
         d = self.deltas[self.index % num_deltas]
         actor.x += d[0]
@@ -2768,23 +2774,31 @@ class Actor(object, metaclass=use_on_events):
         return slugify(self.name)
 
 #    def create_sprite(self, action, **kwargs):
-    def _do_motion(self, motion, mode):
+    def _do_motion(self, motion, mode, block=False):
         motion = self._motions.get(
             motion, None) if motion in self._motions.keys() else None
         if motion:
             motion.mode = mode
+            motion.blocking = block
+            if block is True:
+                self.busy += 1
+                self.game._waiting = True #make game wait
+                if logging:
+                    log.info("%s has started motion %s, so incrementing self.busy to %s." % (
+                        self.name, motion.name, self.busy))
+
         else:
             log.warning("Unable to find motion for actor %s"%(self.name))
         return motion
 
-    def on_motion(self, motion=None, mode=MOTION_LOOP):
+    def on_motion(self, motion=None, mode=MOTION_LOOP, block=False):
         """ Clear all existing motions and do just one motion. """
-        motion = self._do_motion(motion, mode)
+        motion = self._do_motion(motion, mode, block)
         motion = [motion] if motion else []
         self._applied_motions = motion
 
-    def on_add_motion(self, motion, mode=MOTION_LOOP):
-        motion = self._do_motion(motion, mode)
+    def on_add_motion(self, motion, mode=MOTION_LOOP, block=False):
+        motion = self._do_motion(motion, mode, block)
         self._applied_motions.append(motion)
 
     def on_do(self, action):

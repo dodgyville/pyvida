@@ -48,7 +48,16 @@ Please refer to the documentation in pyvida/docs
 
 ### Developer ###
 
-You can contribute to pyvida by cloning the github repository
+You can contribute to pyvida by cloning the github repository.
+
+To make a scripting event, on your class add a:
+
+def on_<event>(self) method.
+    self.busy += 1 # to make the event block the next event for that actor
+    self.game._waiting = True  # to make the event block all other events in the game.
+
+
+
 
 ### Tests ###
 
