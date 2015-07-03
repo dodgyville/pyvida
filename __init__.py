@@ -2730,12 +2730,12 @@ class Actor(object, metaclass=use_on_events):
         return True if actor in self._met else met
 
     def _do(self, action, callback=None):
-        """ Callback is called when animation ends """
+        """ Callback is called when animation ends, returns False if action not found """
         myA = action
         if type(action) == str and action not in self._actions.keys():
             log.error("Unable to find action %s in object %s" %
                       (action, self.name))
-            return
+            return False
         # new action for this Actor
         if isinstance(action, Action) and action.name not in self._actions:
             self._actions[action.name] = action
@@ -2757,6 +2757,7 @@ class Actor(object, metaclass=use_on_events):
         # TODO: group sprites in batches and OrderedGroups
         kwargs = {}
 #        if self.game and self.game._pyglet_batch: kwargs["batch"] = self.game._pyglet_batch
+        return True
         """
 
         sprite = self.resource
@@ -2805,9 +2806,10 @@ class Actor(object, metaclass=use_on_events):
         self._do(action)
 
     def on_do_once(self, action, next_action="idle"):
-        self._do(action, self.on_animation_end_once)
-        self._next_action = next_action
-        self.busy += 1
+        result = self._do(action, self.on_animation_end_once)
+        if result:
+            self._next_action = next_action
+            self.busy += 1
 
     def on_remove(self):
         """ Remove from scene """
@@ -5794,7 +5796,7 @@ class Game(metaclass=use_on_events):
             
             if first_step.isdigit():
                 # automatically run to <step> in walkthrough
-                self._walkthrough_target = int(options.target_step)
+                self._walkthrough_target = int(first_step)
             else:  # use a label
                 for i, x in enumerate(self._walkthrough):
                     if x[-1] == first_step:
