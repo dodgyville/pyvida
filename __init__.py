@@ -29,6 +29,13 @@ import tkinter.filedialog
 import tkinter.simpledialog
 import tkinter.messagebox
 
+from pyglet_gui.theme import Theme
+from pyglet_gui.gui import Label
+from pyglet_gui.manager import Manager
+from pyglet_gui.buttons import Button, OneTimeButton, Checkbox
+from pyglet_gui.containers import VerticalContainer, HorizontalContainer
+from pyglet_gui.option_selectors import Dropdown
+
 from pyglet.image.codecs.png import PNGImageDecoder
 
 # TODO better handling of loading/unloading assets
@@ -136,11 +143,12 @@ COLLIDE_NEVER = 1  # never collide (used by on_asks)
 SCROLL_TILE_SIMPLE = 0
 SCROLL_TILE_HORIZONTAL = 1
 
-# MOTION TYPES
-MOTION_LOOP = 0
-MOTION_ONCE = 1
-MOTION_PINGPONG = 2
-MOTION_REVERSE = 3
+# MOTION AND ACTION TYPES
+LOOP = 0
+ONCE = 1
+PINGPONG = 2
+REVERSE = 3
+MANUAL = 4 #user sets the frame index
 
 # EMITTER BEHAVIOURS
 BEHAVIOUR_CYCLE = 0  # continiously on
@@ -927,7 +935,7 @@ class Motion(object):
         self._filename = None
         # (x,y,z,rotate,scale) NOTE: scale is absolute, not a delta
         self.deltas = []
-        self.default = MOTION_LOOP
+        self.default = LOOP
         self.mode = self.default
         self.index = 0  # where in the motion we currently are
         self.blocking = False #block events from firing
@@ -941,7 +949,7 @@ class Motion(object):
         num_deltas = len(self.deltas)
         if len(self.deltas) < self.index % num_deltas:
             return True
-        if self.mode == MOTION_ONCE and self.index == num_deltas:
+        if self.mode == ONCE and self.index == num_deltas:
             self.index = 0
             if self.blocking is True: #finished blocking the actor
                 actor.busy -= 1 
@@ -1003,7 +1011,6 @@ def get_resource(key, subkey=None):
     return r
 
 class Action(object):
-
     def __init__(self, name):
         self.name = name
         self.actor = None
@@ -1018,6 +1025,9 @@ class Action(object):
         self._image = None
 #        self.w, self.h = 0, 0
         self._loaded = False
+        self.default = LOOP
+        self.mode = self.default
+        self._manual_frame = 0 #used by MANUAL mode to lock animation at a single frame
 
     def __getstate__(self):
         self.game = None
@@ -2317,6 +2327,10 @@ class Actor(object, metaclass=use_on_events):
 #            self.action.load_assets(self.game)
         sprite = get_resource(self.resource_name)[-1]
         if sprite and self.allow_draw:
+            #if action mode is manual (static), force the frame index to the manual frame
+            if self.action.mode == MANUAL:
+                sprite._frame_index = self.action._manual_frame
+
             x, y = self.x, self.y
             if self._parent:
                 x += self._parent.x
@@ -2396,6 +2410,13 @@ class Actor(object, metaclass=use_on_events):
             log.info("%s has finished on_animation_end_once, so decrement %s.busy to %i." % (
                 self.name, self.name, self.busy))
         self._do(self._next_action)
+
+    def on_frame(self, index):
+        """ Take the current action resource to the frame index (ie jump to a different spot in the animation) """
+        if self.action and self.action.mode == MANUAL:
+            self.action._manual_index = index
+        if self.resource:
+            self.resource._frame_index = index
 
     def on_frames(self, num_frames):
         """ Advance the current action <num_frames> frames """
@@ -2729,7 +2750,7 @@ class Actor(object, metaclass=use_on_events):
         actor = actor.name if actor else actor
         return True if actor in self._met else met
 
-    def _do(self, action, callback=None):
+    def _do(self, action, callback=None, mode=LOOP):
         """ Callback is called when animation ends, returns False if action not found """
         myA = action
         if type(action) == str and action not in self._actions.keys():
@@ -2753,6 +2774,7 @@ class Actor(object, metaclass=use_on_events):
         if action not in self._actions:
             import pdb; pdb.set_trace()
         self.switch_asset(self._actions[action]) #create the asset to the new action's
+        self._actions[action].mode = mode
 
         # TODO: group sprites in batches and OrderedGroups
         kwargs = {}
@@ -2792,21 +2814,21 @@ class Actor(object, metaclass=use_on_events):
             log.warning("Unable to find motion for actor %s"%(self.name))
         return motion
 
-    def on_motion(self, motion=None, mode=MOTION_LOOP, block=False):
+    def on_motion(self, motion=None, mode=LOOP, block=False):
         """ Clear all existing motions and do just one motion. """
         motion = self._do_motion(motion, mode, block)
         motion = [motion] if motion else []
         self._applied_motions = motion
 
-    def on_add_motion(self, motion, mode=MOTION_LOOP, block=False):
+    def on_add_motion(self, motion, mode=LOOP, block=False):
         motion = self._do_motion(motion, mode, block)
         self._applied_motions.append(motion)
 
-    def on_do(self, action):
-        self._do(action)
+    def on_do(self, action, mode=LOOP):
+        self._do(action, mode=mode)
 
-    def on_do_once(self, action, next_action="idle"):
-        result = self._do(action, self.on_animation_end_once)
+    def on_do_once(self, action, next_action="idle", mode=LOOP):
+        result = self._do(action, self.on_animation_end_once, mode=mode)
         if result:
             self._next_action = next_action
             self.busy += 1
@@ -4888,6 +4910,7 @@ class Game(metaclass=use_on_events):
         self._window.on_mouse_drag = self.on_mouse_drag
         self.last_mouse_release = None  # track for double clicks
         self._pyglet_batches = []
+        self._gui_batch = pyglet.graphics.Batch()
 
         # event handling
         # If true, don't process any new events until the existing ones are no
@@ -5081,6 +5104,7 @@ class Game(metaclass=use_on_events):
         if symbol == pyglet.window.key.F1:
             #            edit_object(self, list(self.scene._objects.values()), 0)
             #            self.menu_from_factory("editor", MENU_EDITOR)
+#            editor_pgui(self)
             editor(self)
         if symbol == pyglet.window.key.F2:
             print("edit_script(game, obj) will open the editor for an object")
@@ -5614,7 +5638,6 @@ class Game(metaclass=use_on_events):
             self._progress_bar_index = 0
             self._progress_bar_count = 0
             update_progress_bar(self.game, self)
-            print("PROGRESS")
 
         portals = []
         # estimate size of all loads
@@ -6193,6 +6216,8 @@ class Game(metaclass=use_on_events):
 #            if modal:
             modal.game = self
             modal.pyglet_draw(absolute=True)
+
+        self._gui_batch.draw()
 
         # and hasattr(self._mouse_object, "pyglet_draw"):
         if self._mouse_object:
@@ -7106,4 +7131,78 @@ class MyTkApp(threading.Thread):
 
 def editor(game):
     app = MyTkApp(game)
+
+def editor_pgui(game):
+    theme = Theme({"font": "Lucida Grande",
+    "font_size": 12,
+    "text_color": [255, 255, 255, 255],
+    "gui_color": [255, 0, 0, 255],
+    "dropdown": {
+        "pulldown": {
+            "image": {
+            "source": "pulldown.png",
+            "frame": [3, 3, 10, 10],
+            "padding": [4, 4, 4, 4]
+            }
+        },
+        "image": {
+            "source": "dropdown.png",
+            "frame": [4, 8, 20, 5],
+            "padding": [6, 10, 6, 10]
+        }
+    },
+
+    "button": {
+        "down": {
+            "image": {
+            "source": "button-down.png",
+            "frame": [6, 6, 3, 3],
+            "padding": [12, 12, 4, 2]
+            },
+        "text_color": [0, 0, 0, 255]
+        },
+        "up": {
+            "image": {
+            "source": "button.png",
+            "frame": [6, 6, 3, 3],
+            "padding": [12, 12, 4, 2]
+            }
+        }
+    },
+    "checkbox": {
+        "checked": {
+            "image": {
+            "source": "checkbox-checked.png"
+            }
+        },
+        "unchecked": {
+            "image": {
+            "source": "checkbox.png"
+            }
+        }
+        }
+    }, resources_path='/home/luke/Projects/pyglet-gui/theme/')
+
+    # just to print something to the console, is optional.
+    def callback(is_pressed):
+        print('Button was pressed to state', is_pressed)
+
+    label = Label('Hello world')
+    button = Button('Hello world', on_press=callback)
+
+    navbar = [("current scene", Dropdown), 
+            ("New Actor", Button),
+            ("New Item", Button),
+            ("New Portal", Button),
+            ("Import Object", Button),
+            ("Add Object", Button),
+            ]
+
+    Manager(VerticalContainer([
+        Button(label="Persistent button"),
+        OneTimeButton(label="One time button"),
+        Checkbox(label="Checkbox")]),
+        window=game._window,
+        batch=game._gui_batch,
+        theme=theme)
 
