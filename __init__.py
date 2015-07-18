@@ -2827,7 +2827,7 @@ class Actor(object, metaclass=use_on_events):
     def on_do(self, action, mode=LOOP):
         self._do(action, mode=mode)
 
-    def on_do_once(self, action, next_action="idle", mode=LOOP):
+    def on_do_once(self, action, next_action="idle", mode=LOOP, block=False):
         result = self._do(action, self.on_animation_end_once, mode=mode)
         if result:
             self._next_action = next_action
@@ -5807,6 +5807,8 @@ class Game(metaclass=use_on_events):
             print("Created %s, updated %s"%(t,t))
         # switch on test runner to step through walkthrough
         if options.target_step:
+            if not options.headless:
+                print("WARNING: steps will not progress unless in headles mode -H")
             first_step = options.target_step[0]
             last_step = options.target_step[1] if len(options.target_step) == 2 else None
             if last_step: #run through walkthrough to that step and do game load, then continue to second target
