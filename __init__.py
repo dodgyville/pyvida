@@ -1200,7 +1200,6 @@ def crosshair(game, point, colour, absolute=False):
     pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x - 5, y, x + 5, y)))
 
     pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0)  # undo alpha for pyglet drawing
-
     label = pyglet.text.Label("{0}, {1}".format(x, game.resolution[1] - y),
                               font_name='Arial',
                               font_size=10,
@@ -1209,6 +1208,16 @@ def crosshair(game, point, colour, absolute=False):
                               anchor_x='left', anchor_y='center')
     label.draw()
     return point
+
+def coords(game, x,y):
+    pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0)  # undo alpha for pyglet drawing
+    label = pyglet.text.Label("{0}, {1}".format(x, game.resolution[1] - y),
+                              font_name='Arial',
+                              font_size=10,
+                              color=(255,255,0,255),
+                              x=x + 6, y=game.resolution[1] - y+6,
+                              anchor_x='left', anchor_y='center')
+    label.draw()
 
 
 def rectangle(game, rect, colour=(255, 255, 255, 255), fill=False, label=True, absolute=False):
@@ -2828,6 +2837,8 @@ class Actor(object, metaclass=use_on_events):
         self._do(action, mode=mode)
 
     def on_do_once(self, action, next_action="idle", mode=LOOP, block=False):
+        print("Luke, this is here to remind you to fix walkthroughs and also make do_once follow block=True")
+#        import pdb; pdb.set_trace()
         result = self._do(action, self.on_animation_end_once, mode=mode)
         if result:
             self._next_action = next_action
@@ -5105,7 +5116,7 @@ class Game(metaclass=use_on_events):
             #            edit_object(self, list(self.scene._objects.values()), 0)
             #            self.menu_from_factory("editor", MENU_EDITOR)
 #            editor_pgui(self)
-            editor(self)
+            self.editor = editor(self)
         if symbol == pyglet.window.key.F2:
             print("edit_script(game, obj) will open the editor for an object")
             import pdb
@@ -6228,6 +6239,10 @@ class Game(metaclass=use_on_events):
             self._mouse_object.y -= self._mouse_object.h//2
             self._mouse_object.pyglet_draw()
 
+        if self.editor: #draw mouse coords at mouse pos
+            coords(self, *self.mouse_position)
+
+
         if self.game.camera._overlay:
             self.game.camera._overlay.draw()
 
@@ -6857,6 +6872,7 @@ class MyTkApp(threading.Thread):
             if self.game._editing:
                 self.game._editing.show_debug = False
                 self.game._editing = None  # switch off editor
+            self.game.editor = None
             self.app.destroy()
 
         self.close_button = tk.Button(
@@ -7133,6 +7149,7 @@ class MyTkApp(threading.Thread):
 
 def editor(game):
     app = MyTkApp(game)
+    return app
 
 def editor_pgui(game):
     theme = Theme({"font": "Lucida Grande",
