@@ -3370,6 +3370,7 @@ class Emitter(Item, metaclass=use_on_events):
                     y += randint(-self.game.camera._shake_y,
                                  self.game.camera._shake_y)
 
+            self.resource._frame_index = p.action_index%self.action.num_of_frames
             self.resource.position = (int(x), int(y))
             self.resource.draw()
 
@@ -4175,10 +4176,18 @@ class Camera(metaclass=use_on_events):  # the view manager
         self.busy = 0
         self._ambient_sound = None
 
+        self._motion = []
+        self._motion_index = 0
+
     def _update(self, dt, obj=None):
         if self.game.scene:
             self.game.scene.x = self.game.scene.x + self._goto_dx
             self.game.scene.y = self.game.scene.y + self._goto_dy
+            if len(self._motion)> 0:
+                x,y= self._motion[self._motion_index%len(self._motion)]
+                self.game.scene.x += x 
+                self.game.scene.y += y
+                self._motion_index_index += 1
         if self._goto_x != None:
             speed = self._speed
             target = Rect(self._goto_x, self._goto_y, int(
@@ -4323,6 +4332,11 @@ class Camera(metaclass=use_on_events):  # the view manager
 
     def on_shake_stop(self):
         self._shake_x, self._shake_y = 0, 0
+
+    def on_motion(self, motion=[]):
+        # a list of x,y displacement values
+        self._motion = motion
+
 
     def on_drift(self, dx=0, dy=0):
         """ start a permanent non-blocking movement in the camera """
