@@ -38,7 +38,11 @@ from pyglet_gui.containers import VerticalContainer, HorizontalContainer
 from pyglet_gui.option_selectors import Dropdown
 """
 
+from pyglet.gl import *
+
 from pyglet.image.codecs.png import PNGImageDecoder
+
+
 
 # TODO better handling of loading/unloading assets
 
@@ -911,7 +915,6 @@ class Settings(object):
 
 
 class MotionDelta(object):
-
     def __init__(self):
         self.x = 0
         self.y = 0
@@ -4473,9 +4476,15 @@ class Mixer(metaclass=use_on_events):  # the sound manager
         self._force_mute = False  # override settings
         self._music_callback = None  # callback for when music ends
 
-        self._player = pyglet.media.Player()
+        self._music_player = pyglet.media.Player()
+        self._sfx_player = pyglet.media.Player()
 
-    def _music_play(self, fname=None, loops=-1):
+        #for fade in, fade out
+        self._sfx_volume = 1.0
+        self._sfx_volume_target = None
+        self._sfx_volume_step = 0
+
+    def _music_play(self, fname=None, description=None, loops=-1):
         if self._force_mute:
             return
         if fname:
@@ -4486,19 +4495,24 @@ class Mixer(metaclass=use_on_events):  # the sound manager
                 self._music_fname = fname
             else:
                 log.warning("Music file %s missing." % fname)
-                self._player.pause()
+                self._music_player.pause()
                 return
         self.music_index = 0  # reset music counter
         if not self.game._headless:
-            self._player.queue(music)
-            self._player.play()
-#            self._player.on_eos = self._
+            self._music_player.queue(music)
+            self._music_player.eos_action = 'loop'
+            if self._music_player.playing == True: #go to next song
+                self._music_player.next_source()
+            self._music_player.play()
 
-    def on_music_play(self, fname=None, loops=-1):
+#            self._music_player.on_eos = self._
+
+    def on_music_play(self, fname=None, description=None, loops=-1):
+        """ Description is for subtitles """
         self._music_play(fname=fname, loops=loops)
 
     def _music_fade_out(self):
-        self._player.pause()
+        self._music_player.pause()
 
     def _music_fade_in(self):
         if logging:
@@ -4506,7 +4520,7 @@ class Mixer(metaclass=use_on_events):  # the sound manager
         if self._force_mute:
             return
         try:
-            self._player.play()
+            self._music_player.play()
         except:
             pass
 
@@ -4517,14 +4531,31 @@ class Mixer(metaclass=use_on_events):  # the sound manager
         self._music_fade_in()
 
     def _music_stop(self):
-        self._player.pause()
+        self._music_player.pause()
+        self._music_player.next_source()
 
     def on_music_stop(self):
         self._music_stop()
 
     def on_music_volume(self, val):
         """ val 0.0 - 1.0 """
-        self._player.volume = val
+        self._music_player.volume = val
+
+    def on_sfx_volume(self, val):
+        """ val 0.0 - 1.0 """
+        self._sfx_player.volume = self._sfx_volume = val
+
+    def on_sfx_fade(self, val, duration=2):
+        fps = self.game.fps if self.game else DEFAULT_FPS 
+        self._sfx_volume_target = val
+        self._sfx_volume_step = (val - self.sfx_volume)/fps
+
+    def _update(self, dt, obj=None):
+        """ Called by game.update to handle fades and effects """
+        log.warning("FADING NOT DONE YET")
+        if self._sfx_volume_target: #fade the volume up or down
+            if self._sfx_volume_target < self._sfx_volume: #it's too hot to work on this today!
+                self._sfx_volume_step
 
     def _sfx_play(self, fname=None, description=None, loops=0, fade_music=False, store=None):
         """
@@ -4549,6 +4580,13 @@ class Mixer(metaclass=use_on_events):  # the sound manager
 
             if os.path.exists(fname):
                 log.info("Loading sfx file %s" % fname)
+#                log.warning("Creating an sfx player in memory but probably never going to release it")
+#                sfx_player = pyglet.media.Player()
+#                self._sfx_players.append(sfx_player)
+#                sound = pyglet.resource.media(sfx, streaming=False)
+                sfx = pyglet.media.load(fname)
+                self._sfx_player.queue(sfx)
+                self._sfx_player.play()
 #                if pygame.mixer:
 #                    sfx = pygame.mixer.Sound(fname)
 #                    if self.game.settings: sfx.set_volume(self.game.settings.sfx_volume)
@@ -4569,12 +4607,14 @@ class Mixer(metaclass=use_on_events):  # the sound manager
         self._sfx_play(fname, description, loops, fade_music, store)
 
     def on_sfx_stop(self, sfx=None):
+        self._sfx_player.pause()
+        self._sfx_player.next_source()
         #if sfx: sfx.stop()
         pass
 
     def on_music_finish(self, callback=None):
         """ Set a callback function for when the music finishes playing """
-        self._player.on_eos = callback
+        self._music_player.on_eos = callback
 
 
 """
@@ -5824,7 +5864,7 @@ class Game(metaclass=use_on_events):
     def run(self, splash=None, callback=None, icon=None):
         # event_loop.run()
         options = self.parser.parse_args()
-        self.mixer._force_mute = True #XXX sound disabled for first draft
+#        self.mixer._force_mute = True #XXX sound disabled for first draft
         if options.mute == True:
             self.mixer._force_mute = True
         if options.output_walkthrough == True:
@@ -6134,6 +6174,9 @@ class Game(metaclass=use_on_events):
     def update(self, dt, single_event=False):  # game.update
         """ Run update on scene objects """
         scene_objects = []
+        fn = get_function(self, "game_update") #special update function game can use
+        if fn:
+            fn(self, dt, single_event)
 
 #        dt = self.fps #time passed (in miliseconds)
         if self.scene:
