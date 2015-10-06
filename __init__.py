@@ -29,12 +29,14 @@ import tkinter.filedialog
 import tkinter.simpledialog
 import tkinter.messagebox
 
+"""
 from pyglet_gui.theme import Theme
 from pyglet_gui.gui import Label
 from pyglet_gui.manager import Manager
 from pyglet_gui.buttons import Button, OneTimeButton, Checkbox
 from pyglet_gui.containers import VerticalContainer, HorizontalContainer
 from pyglet_gui.option_selectors import Dropdown
+"""
 
 from pyglet.image.codecs.png import PNGImageDecoder
 
