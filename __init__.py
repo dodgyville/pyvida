@@ -4696,6 +4696,7 @@ def user_trigger_interact(game, obj):
         if game.event_callback:
             game.event_callback(game)
     function_name = game._walkthrough[game._help_index][0].__name__
+
 #XXX It should be possible to track where a user is in relation to the walkthrough here
 #However, it's a low priority for me at the moment.
 #    if game._walkthrough and function_name == "interact":
@@ -5896,6 +5897,7 @@ class Game(metaclass=use_on_events):
             if not last_step:
                 self._walkthrough_target_name = self._walkthrough_start_name
         if options.build:
+            print("fresh build")
             self._build = True
         if options.allow_editor:
             print("enabled editor")
