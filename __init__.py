@@ -914,11 +914,11 @@ class Settings(object):
 
 class MotionDelta(object):
     def __init__(self):
-        self.x = 0
-        self.y = 0
-        self.z = 0
-        self.r = 0
-        self.scale = 1.0
+        self.x = None
+        self.y = None
+        self.z = None
+        self.r = None
+        self.scale = None
 
     @property
     def flat(self):
@@ -961,11 +961,11 @@ class Motion(object):
                         actor.name, self.name, actor.busy))
             return False
         d = self.deltas[self.index % num_deltas]
-        actor.x += d[0]
-        actor.y += d[1]
-        actor.z += d[2]
-        actor.rotate += d[3]
-        actor.scale = d[4]
+        actor.x += d[0] if d[0] != None else 0
+        actor.y += d[1] if d[1] != None else 0
+        actor.z += d[2] if d[2] != None else 0
+        actor.rotate += d[3] if d[3] != None else 0
+        if d[4] != None: actor.scale = d[4] 
         self.index += 1
         return True
 
@@ -1525,7 +1525,6 @@ class Actor(object, metaclass=use_on_events):
             sprite._frame_index = len(sprite.image.frames)
 
         set_resource(self.resource_name, w=sprite.width,h=sprite.height, resource=sprite)
-
         return sprite
 
     def __getstate__(self): #actor.getstate
@@ -4106,7 +4105,7 @@ class MenuManager(metaclass=use_on_events):
             menu_items = [menu_items]
         for i_name in menu_items:
             if i_name in self.game._menu:
-                self.game._menu.remove(i)
+                self.game._menu.remove(i_name)
 
     def _hide(self, menu_items=None):
         """ hide the menu (all or partial)"""
