@@ -2855,12 +2855,15 @@ class Actor(object, metaclass=use_on_events):
         print("set speed for %s" % self.action.name)
         self.action.speed = speed
 
-    def on_tint(self, rgb):
+    def _set_tint(self, rgb):
         self._tint = rgb
         if rgb == None:
             rgb = (0, 0, 0)  # (255, 255, 255)
         if self.resource:
             self.resource.color = rgb
+
+    def on_tint(self, rgb):
+        self._set_tint(rgb)
 
     def on_idle(self, seconds):
         """ delay processing the next event for this actor """
@@ -3743,6 +3746,14 @@ class Scene(metaclass=use_on_events):
             obj._opacity_delta = (
                 obj._opacity_target - obj._opacity) / (self.game.fps * seconds)
 
+    def on_music(self, filename):
+        """ What music to play on entering the scene? """
+        self._music_filename = filename
+
+    def on_ambient(self, filename):
+        """ What ambient sound to play on entering the scene? """
+        self._ambient_filename = filename
+
     def pyglet_draw(self, absolute=False):  # scene.draw (not used)
         pass
 
@@ -4098,7 +4109,7 @@ class MenuManager(metaclass=use_on_events):
             log.debug("show menu using place %s" %
                       [x for x in self.game._menu])
 
-    def on_remove(self, menu_items=None):
+    def _remove(self, menu_items=None):
         if not menu_items:
             menu_items = self.game._menu
         if type(menu_items) not in [tuple, list]:
@@ -4106,6 +4117,9 @@ class MenuManager(metaclass=use_on_events):
         for i_name in menu_items:
             if i_name in self.game._menu:
                 self.game._menu.remove(i_name)
+
+    def on_remove(self, menu_items=None):
+        self._remove(menu_items)
 
     def _hide(self, menu_items=None):
         """ hide the menu (all or partial)"""
@@ -4286,6 +4300,8 @@ class Camera(metaclass=use_on_events):  # the view manager
 #            else:
 #                if logging: log.warning("No background for scene %s"%self.game.scene.name)
         # start music for this scene
+        if scene._music_filename:
+            self.game.mixer.music_play(scene._music_filename)
  #       self._play_scene_music()
 #        if game.scene._ambient_filename:
 #            self._ambient_sound = self.game.mixer._sfx_play(game.scene._ambient_filename, loops=-1)
