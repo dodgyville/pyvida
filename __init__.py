@@ -916,11 +916,11 @@ class Settings(object):
 
 class MotionDelta(object):
     def __init__(self):
-        self.x = 0
-        self.y = 0
-        self.z = 0
-        self.r = 0
-        self.scale = 1.0
+        self.x = None
+        self.y = None
+        self.z = None
+        self.r = None
+        self.scale = None
 
     @property
     def flat(self):
@@ -963,11 +963,11 @@ class Motion(object):
                         actor.name, self.name, actor.busy))
             return False
         d = self.deltas[self.index % num_deltas]
-        actor.x += d[0]
-        actor.y += d[1]
-        actor.z += d[2]
-        actor.rotate += d[3]
-        actor.scale = d[4]
+        actor.x += d[0] if d[0] != None else 0
+        actor.y += d[1] if d[1] != None else 0
+        actor.z += d[2] if d[2] != None else 0
+        actor.rotate += d[3] if d[3] != None else 0
+        if d[4] != None: actor.scale = d[4] 
         self.index += 1
         return True
 
@@ -1527,7 +1527,6 @@ class Actor(object, metaclass=use_on_events):
             sprite._frame_index = len(sprite.image.frames)
 
         set_resource(self.resource_name, w=sprite.width,h=sprite.height, resource=sprite)
-
         return sprite
 
     def __getstate__(self): #actor.getstate
@@ -2858,12 +2857,15 @@ class Actor(object, metaclass=use_on_events):
         print("set speed for %s" % self.action.name)
         self.action.speed = speed
 
-    def on_tint(self, rgb):
+    def _set_tint(self, rgb):
         self._tint = rgb
         if rgb == None:
             rgb = (0, 0, 0)  # (255, 255, 255)
         if self.resource:
             self.resource.color = rgb
+
+    def on_tint(self, rgb):
+        self._set_tint(rgb)
 
     def on_idle(self, seconds):
         """ delay processing the next event for this actor """
@@ -3746,6 +3748,14 @@ class Scene(metaclass=use_on_events):
             obj._opacity_delta = (
                 obj._opacity_target - obj._opacity) / (self.game.fps * seconds)
 
+    def on_music(self, filename):
+        """ What music to play on entering the scene? """
+        self._music_filename = filename
+
+    def on_ambient(self, filename):
+        """ What ambient sound to play on entering the scene? """
+        self._ambient_filename = filename
+
     def pyglet_draw(self, absolute=False):  # scene.draw (not used)
         pass
 
@@ -4101,14 +4111,17 @@ class MenuManager(metaclass=use_on_events):
             log.debug("show menu using place %s" %
                       [x for x in self.game._menu])
 
-    def on_remove(self, menu_items=None):
+    def _remove(self, menu_items=None):
         if not menu_items:
             menu_items = self.game._menu
         if type(menu_items) not in [tuple, list]:
             menu_items = [menu_items]
         for i_name in menu_items:
             if i_name in self.game._menu:
-                self.game._menu.remove(i)
+                self.game._menu.remove(i_name)
+
+    def on_remove(self, menu_items=None):
+        self._remove(menu_items)
 
     def _hide(self, menu_items=None):
         """ hide the menu (all or partial)"""
@@ -4289,6 +4302,8 @@ class Camera(metaclass=use_on_events):  # the view manager
 #            else:
 #                if logging: log.warning("No background for scene %s"%self.game.scene.name)
         # start music for this scene
+        if scene._music_filename:
+            self.game.mixer.music_play(scene._music_filename)
  #       self._play_scene_music()
 #        if game.scene._ambient_filename:
 #            self._ambient_sound = self.game.mixer._sfx_play(game.scene._ambient_filename, loops=-1)
@@ -4698,6 +4713,7 @@ def user_trigger_interact(game, obj):
         if game.event_callback:
             game.event_callback(game)
     function_name = game._walkthrough[game._help_index][0].__name__
+
 #XXX It should be possible to track where a user is in relation to the walkthrough here
 #However, it's a low priority for me at the moment.
 #    if game._walkthrough and function_name == "interact":
@@ -5898,6 +5914,7 @@ class Game(metaclass=use_on_events):
             if not last_step:
                 self._walkthrough_target_name = self._walkthrough_start_name
         if options.build:
+            print("fresh build")
             self._build = True
         if options.allow_editor:
             print("enabled editor")
