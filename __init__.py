@@ -5285,7 +5285,7 @@ class Game(metaclass=use_on_events):
                     log.warning("Menu object %s not found in Game items or actors"%obj_name)
                     return
                 if obj.collide(ox, oy):  # absolute screen values
-                    self.mouse_cursor = MOUSE_CROSSHAIR
+                    self.mouse_cursor = MOUSE_CROSSHAIR if self.mouse_cursor == MOUSE_POINTER else self.mouse_cursor
 
                     if obj._actions and "over" in obj._actions and (obj.allow_interact or obj.allow_use or obj.allow_look):
                         obj._do("over")
@@ -5326,12 +5326,13 @@ class Game(metaclass=use_on_events):
                         if not self.settings.show_portal_text:
                             t = ""
 
-                    # hover over portal
-                    if isinstance(obj, Portal) and self.mouse_mode != MOUSE_USE:
-                        self.mouse_cursor = MOUSE_LEFT if obj._x < self.resolution[
-                            0] / 2 else MOUSE_RIGHT
-                    else:
-                        self.mouse_cursor = MOUSE_CROSSHAIR
+                    if self.mouse_mode != MOUSE_LOOK: #change cursor if not in look mode
+                        # hover over portal
+                        if isinstance(obj, Portal) and self.mouse_mode != MOUSE_USE:
+                            self.mouse_cursor = MOUSE_LEFT if obj._x < self.resolution[
+                                0] / 2 else MOUSE_RIGHT
+                        else: # change to pointer
+                            self.mouse_cursor = MOUSE_CROSSHAIR
 
                     self.info(
                         t, obj.x + obj.nx, obj.y + obj.ny, obj.display_text_align)
@@ -5339,7 +5340,7 @@ class Game(metaclass=use_on_events):
 
         # Not over any thing of importance
         self._info_object.display_text = " "  # clear info
-        self.mouse_cursor = MOUSE_POINTER  # reset mouse pointer
+        self.mouse_cursor = MOUSE_POINTER if self.mouse_mode != MOUSE_LOOK else self.mouse_cursor # reset mouse pointer
 
     def on_mouse_press(self, x, y, button, modifiers):
         """ If the mouse is over an object with a down action, switch to that action """
@@ -5435,7 +5436,7 @@ class Game(metaclass=use_on_events):
                 if (self.mouse_mode != MOUSE_LOOK or GOTO_LOOK) and (obj.allow_interact or obj.allow_use or obj.allow_look):
                     if self.player and self.player.name in self.scene._objects and self.player != obj:
                         self.player.goto(obj, block=True)
-                if button & pyglet.window.mouse.RIGHT:
+                if button & pyglet.window.mouse.RIGHT or self.mouse_mode == MOUSE_LOOK:
                     if obj.allow_look:
                         user_trigger_look(self, obj)
                 else:
@@ -6403,6 +6404,11 @@ class Game(metaclass=use_on_events):
                 if os.path.isfile(myf):
                     image = load_image(myf, convert_alpha=True)
             self.mouse_cursors[key] = image
+
+    def _add_mouse_cursor(self, key, filename):
+        if os.path.isfile(filename):
+            image = load_image(filename, convert_alpha=True)
+        self.mouse_cursors[key] = image
 
     def add_font(self, filename, fontname):
         font = get_font(self, filename, fontname)
