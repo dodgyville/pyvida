@@ -1683,17 +1683,17 @@ class Actor(object, metaclass=use_on_events):
     ay = property(get_ay, set_ay)
 
     def get_tx(self):
-        return self._tx
+        return self._tx * self._scale
 
     def set_tx(self, v):
-        self._tx = v
+        self._tx = v // self._scale
     tx = property(get_tx, set_tx)
 
     def get_ty(self):
-        return self._ty
+        return self._ty * self._scale
 
     def set_ty(self, v):
-        self._ty = v
+        self._ty = v // self._scale
     ty = property(get_ty, set_ty)
 
     def get_nx(self):
@@ -2510,6 +2510,18 @@ class Actor(object, metaclass=use_on_events):
             self.game._add(opt)
             self.game._modals.append(opt.name)
 
+    def _continues(self, text, delay=0.01, step=3, size=13, duration=None):
+        kwargs = self._get_text_details()
+        label = Text(text, delay=delay, step=step, size=size, **kwargs)
+        label.game = self.game
+        label._usage(True, True, False, False, False)
+#        label.fullscreen(True)
+        label.x, label.y = self.x + self.tx, self.y - self.ty
+#        self.busy += 1
+        self.game._add(label)
+        self.game.scene._add(label.name)
+        return label
+
     def on_continues(self, text, delay=0.01, step=3, duration=None):
         """
         duration: auto-clear after <duration> seconds or if duration == None, use user input.
@@ -2904,7 +2916,7 @@ class Actor(object, metaclass=use_on_events):
         self._set(("sx", "sy"), point)
 
     def on_retext(self, point):
-        self._set(["tx", "ty"], point)
+        self._set(["_tx", "_ty"], point)
 
     def on_rename(self, point):
         self._set(["_nx", "_ny"], point)
@@ -4497,6 +4509,22 @@ class Mixer(metaclass=use_on_events):  # the sound manager
         self._sfx_volume_target = None
         self._sfx_volume_step = 0
 
+    def __getstate__(self): #actor.getstate
+        """ Prepare the object for pickling """ 
+        self._music_player = None
+        self._sfx_player = None
+        self.game = None
+        return dict(self.__dict__)
+
+    def __setstate__(self, d):
+        """ Used by load game to restore the current music settings """
+        self.__dict__.update(d)   # update attributes
+        self._music_player = pyglet.media.Player()
+        self._sfx_player = pyglet.media.Player()
+
+    def _load(self):
+        self._music_play(self._music_fname)
+
     def _music_play(self, fname=None, description=None, loops=-1):
         if self._force_mute:
             return
@@ -4755,8 +4783,10 @@ def save_game_pickle(game, fname):
         # dump info about the player, including history
         pickle.dump(game.get_player_info, f)
         pickle.dump(game.storage, f)
+        mixer1, mixer2 = game.mixer._music_player, game.mixer._sfx_player
+        pickle.dump(game.mixer, f)
+        game.mixer._music_player, game.mixer._sfx_player, game.mixer.game = mixer1, mixer2, game
         pickle.dump(_pyglet_fonts, f)
-
         pickle.dump(game._menu, f)
         pickle.dump(game._menus, f)
         pickle.dump(game._modals, f)
@@ -4805,6 +4835,8 @@ def load_game_pickle(game, fname, meta_only=False):
         if not meta_only:
             player_info = pickle.load(f)
             game.storage = pickle.load(f)
+            game.mixer = pickle.load(f)
+            game.mixer.game = game #restore mixer
             _pyglet_fonts = pickle.load(f)
 
             game._menu = pickle.load(f)
@@ -4893,7 +4925,7 @@ def save_game(game, fname):
 
 def load_game(game, fname):
     load_game_pickle(game, fname)
-
+    game.mixer._load()
 
 def fit_to_screen(screen, resolution):
     # given a screen size and the game's resolution, return a screen size and
@@ -6094,6 +6126,9 @@ class Game(metaclass=use_on_events):
                 print(actor_name)
         elif function_name == "look":
             if self._trunk_step and self._output_walkthrough: print("Look at %s."%(actor_name))
+            obj = get_object(self, actor_name)
+            #trigger the look
+            if obj: user_trigger_look(self, obj)
         elif function_name == "location":
             scene = get_object(self, actor_name)
             if not scene:
