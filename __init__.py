@@ -2305,7 +2305,12 @@ class Actor(object, metaclass=use_on_events):
             myd, "%s.defaults" % slugify(self.name).lower())
         if os.path.isfile(filepath):
             with open(filepath, 'r') as f:
-                actor_defaults = json.loads(f.read())
+                try:
+                    actor_defaults = json.loads(f.read())
+                except ValueError:
+                    print("unable to load %s.defaults"%self.name)
+                    if logging: log.error("Error loading %s.defaults"%self.name)
+                    actor_defaults = {}
             for key, val in actor_defaults.items():
                 if key == "font_colour":
                     if type(val) == list:
