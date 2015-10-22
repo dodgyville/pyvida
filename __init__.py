@@ -83,6 +83,7 @@ BACKEND = PYGLET12
 # pyglet has (0,0) in bottom left, we want it in the bottom right
 COORDINATE_MODIFIER = -1
 
+#Engine behaviour
 HIDE_MOUSE = True  # start with mouse hidden, first splash will turn it back on
 DEFAULT_FULLSCREEN = False  # switch game to fullscreen or not
 # show "unknown" on portal links before first visit there
@@ -90,6 +91,8 @@ DEFAULT_EXPLORATION = True
 DEFAULT_PORTAL_TEXT = True  # show portal text
 # GOTO_LOOK = True  #should player walk to object when looking at it
 GOTO_LOOK = False
+ALLOW_USE_ON_PLAYER = True #when "using" an object, allow the player actor to an option
+
 
 DEFAULT_RESOLUTION = (1920, 1080)
 DEFAULT_FPS = 60
@@ -549,7 +552,6 @@ def set_interacts(game, actors, slug=None, full=None):
     log.debug("set interacts %s %s %s" % (actors, slug, full))
     return _set_function(game, actors, slug, "interact", full)
 
-
 def set_looks(game, actors, slug=None, full=None):
     return _set_function(game, actors, slug, "look", full)
 
@@ -987,6 +989,8 @@ class Motion(object):
                 for line in data[1:]:
                     if line[0] == "#":
                         continue  # allow comments after metadata
+                    if line == "\n": #skip empty lines
+                        continue
                     m = MotionDelta()
                     d = line.strip().split(",")
                     for i, key in enumerate(meta):
@@ -1376,7 +1380,7 @@ class Actor(object, metaclass=use_on_events):
         self.name = name
         self._actions = {}
         self._action = None
-        self._next_action = "idle"  # for use by do_once and goto
+        self._next_action = "idle"  # for use by do_once and goto and move
         self._motions = {}
         self._applied_motions = []  # list of motions applied at the moment
         # list of activities (fn, (*args)) to loop through - good for
@@ -1796,6 +1800,14 @@ class Actor(object, metaclass=use_on_events):
         return self._interact
     interact = property(get_interact, set_interact)
 
+    def set_look(self, v):
+        self._look = v
+
+    def get_look(self):
+        return self._look
+    look = property(get_look, set_look)
+
+
     def set_allow_draw(self, v):
         self._allow_draw = v
 
@@ -2109,7 +2121,11 @@ class Actor(object, metaclass=use_on_events):
             log.debug("Player looks at %s" % self.name)
         self.game.mouse_mode = MOUSE_INTERACT  # reset mouse mode
         if self._look:  # if user has supplied a look override
-            self._look(self.game, self, self.game.player)
+            script = get_function(self.game, self._look)
+            if script:
+                script(self.game, self, self.game.player)
+            else:
+                log.error("no look script for %s found called %s" % (self.name, self._look))
         else:  # else, search several namespaces or use a default
             basic = "look_%s" % slugify(self.name)
             script = get_function(self.game, basic)
@@ -3082,8 +3098,10 @@ class Actor(object, metaclass=use_on_events):
                     "%s has request game to wait for goto to finish, so game.waiting to True." % (self.name))
             self.game._waiting = True
 
-    def on_move(self, displacement, ignore=False, block=False):
+    def on_move(self, displacement, ignore=False, block=False, next_action=None):
         """ Move Actor relative to its current position """
+        if next_action:
+            self._next_action = next_action
         self._goto(
             (self.x + displacement[0], self.y + displacement[1]), ignore, block)
 
@@ -5343,7 +5361,10 @@ class Game(metaclass=use_on_events):
             if len(self._menu) > 0 and self._menu_modal:
                 return  # menu is in modal mode so block other objects
 
-            for obj_name in self.scene._objects:
+            scene_objects = copy.copy(self.scene._objects)
+            if ALLOW_USE_ON_PLAYER and self.player: #add player object
+                scene_objects.append(self.player.name)
+            for obj_name in scene_objects:
                 obj = get_object(self, obj_name)
                 if not obj.allow_draw:
                     continue
@@ -5352,7 +5373,8 @@ class Game(metaclass=use_on_events):
                         fn = get_function(self, obj._mouse_motion, obj)
                         fn(self.game, obj, self.game.player,
                            x, y, dx, dy, ox, oy)
-                if obj.collide(x, y) and (obj.allow_interact or obj.allow_use or obj.allow_look):
+                allow_hover = (obj.allow_interact or obj.allow_use or obj.allow_look) or (ALLOW_USE_ON_PLAYER and self.player and self.mouse_mode == MOUSE_USE)
+                if obj.collide(x, y) and allow_hover:
                     t = obj.name if obj.display_text == None else obj.display_text
                     if isinstance(obj, Portal):
                         link = get_object(self, obj._link)
@@ -5469,7 +5491,8 @@ class Game(metaclass=use_on_events):
                 return
         for obj_name in self.scene._objects:
             obj = get_object(self, obj_name)
-            if obj.collide(x, y) and (obj.allow_interact or obj.allow_use or obj.allow_look) and obj.allow_draw:
+            allow_use = (obj.allow_draw and (obj.allow_interact or obj.allow_use or obj.allow_look)) or (ALLOW_USE_ON_PLAYER and self.player and self.player == obj)
+            if obj.collide(x, y) and allow_use:
                 # if wanting to interact or use an object go to it. If engine
                 # says to go to object for look, do that too.
                 if (self.mouse_mode != MOUSE_LOOK or GOTO_LOOK) and (obj.allow_interact or obj.allow_use or obj.allow_look):
@@ -5479,7 +5502,9 @@ class Game(metaclass=use_on_events):
                     if obj.allow_look:
                         user_trigger_look(self, obj)
                 else:
-                    if self.mouse_mode == MOUSE_USE and self._mouse_object and obj.allow_use:
+                    #allow use if object allows use, or in special case where engine allows use on the player actor
+                    allow_final_use = (obj.allow_use) or (ALLOW_USE_ON_PLAYER and self.player and self.player == obj)
+                    if self.mouse_mode == MOUSE_USE and self._mouse_object and allow_final_use:
                         user_trigger_use(self, obj, self._mouse_object)
                         self._mouse_object = None
                     elif obj.allow_interact:
@@ -6470,6 +6495,12 @@ class Game(metaclass=use_on_events):
         """ helper function for setting interact on an actor """
         actor = get_object(self, actor)
         actor.interact = fn
+
+    def set_look(self, actor, fn):  # game.set_look
+        """ helper function for setting look on an actor """
+        actor = get_object(self, actor)
+        actor.look = fn
+
 
     def _save_state(self, state=""):
         game = self
