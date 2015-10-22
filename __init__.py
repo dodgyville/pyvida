@@ -92,7 +92,7 @@ DEFAULT_PORTAL_TEXT = True  # show portal text
 # GOTO_LOOK = True  #should player walk to object when looking at it
 GOTO_LOOK = False
 ALLOW_USE_ON_PLAYER = True #when "using" an object, allow the player actor to an option
-
+ALLOW_SILENT_ACHIEVEMENTS = True #don't break immersion by displaying achievements the moment player earns them
 
 DEFAULT_RESOLUTION = (1920, 1080)
 DEFAULT_FPS = 60
@@ -831,6 +831,36 @@ def update_progress_bar(game, obj):
 Classes
 """
 
+class Achievement(object):
+    def __init__(self, slug, name, description, filename):
+        self.slug = slug
+        self.name = name
+        self.description = description
+        self.filename = filename
+        self.date = None
+        self.version = None
+
+class AchievementManager(object):
+    """ Basic achievement system, hopefully to plug into Steam and other services one day """
+    def __init__(self):
+        self._achievements = {}
+        self.granted = {}
+
+    def register(self, game, slug, name, description, filename):
+        """ Register an achievement """
+        if slug not in self._achievements:
+            self._achievements[slug] = Achievement(slug, name, description, filename)
+
+    def grant(self, game, slug):
+        """ Grant an achievement to the player """
+        if slug in self.granted: return #already granted
+        new_achievement = copy.copy(self._achievements[slug])
+        new_achievement.date = datetime.now()
+        new_achievement.version = game.version
+        self.granted[slug] = new_achievement
+        if not game.settings.silent_achievements:
+            game.player.says("Achievement unlocked: %s\n%s"%(new_achievement.name, new_achievement.description))
+
 
 class Storage(object):
 
@@ -882,6 +912,9 @@ class Settings(object):
         self.stereoscopic = False  # display game in stereoscopic (3D)
         self.hardware_accelerate = False
         self.backend = BACKEND
+
+        self.achievements = AchievementManager()
+        self.silent_achievements = ALLOW_SILENT_ACHIEVEMENTS
 
         self.high_contrast = False
         # use this font to override main font (good for using dsylexic-friendly
@@ -4951,6 +4984,22 @@ def save_game(game, fname):
 def load_game(game, fname):
     load_game_pickle(game, fname)
     game.mixer._load()
+
+
+def save_settings(game, fname):
+    """ save the game settings (eg volume, accessibilty options) """
+    with open(fname, 'wb') as f:
+        # dump some metadata (eg date, title, etc)
+        pickle.dump(game.settings, f)
+
+def load_or_create_settings(game, fname):
+    """ load the game settings (eg volume, accessibilty options) """
+    if not os.path.isfile(fname): #settings file not available, create new object
+        game.settings = Settings()
+        return False
+    with open(fname, "rb") as f:
+        game.settings = pickle.load(f)
+    return True
 
 def fit_to_screen(screen, resolution):
     # given a screen size and the game's resolution, return a screen size and
