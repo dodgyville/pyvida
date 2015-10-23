@@ -3060,6 +3060,10 @@ class Actor(object, metaclass=use_on_events):
         self._relocate(
             self.scene, (self.x - displacement[0], self.y - displacement[1]))
 
+    def on_rotation(self, r):
+        """ set rotation """
+        self.rotate = r
+
     # actor.relocate
     def on_relocate(self, scene=None, destination=None, scale=None):
         self._relocate(scene, destination, scale)
