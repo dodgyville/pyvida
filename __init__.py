@@ -2758,20 +2758,22 @@ class Actor(object, metaclass=use_on_events):
         item = get_object(self.game, item)
         return True if item in self.inventory.values() else False
 
-    def _gets(self, item, remove=True):
+    def _gets(self, item, remove=True, collection="collection"):
         item = get_object(self.game, item)
         if item:
             log.info("Actor %s gets: %s" % (self.name, item.name))
-        if hasattr(item, "_actions") and "collection" in item._actions.keys():
-            item.do("collection")
+        if collection and hasattr(item, "_actions") and collection in item._actions.keys():
+            item._do(collection)
+            item.load_assets(self.game)
         self.inventory[item.name] = item
+        item.scale = 1.0 #scale to normal size for inventory
         if remove == True and item.scene:
             item.scene._remove(item)
         return item
 
-    def on_gets(self, item, remove=True, ok="ok", action="portrait"):
+    def on_gets(self, item, remove=True, ok="ok", action="portrait", collection="collection"):
         """ add item to inventory, remove from scene if remove == True """
-        item = self._gets(item, remove)
+        item = self._gets(item, remove, collection)
         if item == None:
             return
 
@@ -4113,7 +4115,7 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
                 log.error(
                     "Unable to draw collection item %s, not found in Game object" % obj_name)
                 continue
-            obj.get_action()
+#            obj.get_action()
             sprite = obj.resource if obj.resource else getattr(
                 obj, "_label", None)
             if sprite:
@@ -4134,7 +4136,7 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
                 if hasattr(sprite, "scale"):
                     old_scale = sprite.scale
                     sprite.scale = scale
-                final_x, final_y = int(x), int(y)
+                final_x, final_y = int(x) + (dx/2) - (sw/2), int(y)+ (dy/2) - (sh/2)
                 sprite.x, sprite.y = final_x, self.game.resolution[1] - final_y
                 #pyglet seems to render Labels and Sprites at x,y differently, so compensate.
                 if isinstance(sprite, pyglet.text.Label):
@@ -5422,7 +5424,7 @@ class Game(metaclass=use_on_events):
                         fn = get_function(self, obj._mouse_motion, obj)
                         fn(self.game, obj, self.game.player,
                            x, y, dx, dy, ox, oy)
-                allow_hover = (obj.allow_interact or obj.allow_use or obj.allow_look) or (ALLOW_USE_ON_PLAYER and self.player and self.mouse_mode == MOUSE_USE)
+                allow_hover = (obj.allow_interact or obj.allow_use or obj.allow_look) or (ALLOW_USE_ON_PLAYER and self.player and self.mouse_mode == MOUSE_USE and self.player == obj)
                 if obj.collide(x, y) and allow_hover:
                     t = obj.name if obj.display_text == None else obj.display_text
                     if isinstance(obj, Portal):
@@ -6426,6 +6428,8 @@ class Game(metaclass=use_on_events):
         # and hasattr(self._mouse_object, "pyglet_draw"):
         if self._mouse_object:
             self._mouse_object.x, self._mouse_object.y = self.mouse_position
+            self._mouse_object.x -= self._mouse_object.ax #cancel out anchor
+            self._mouse_object.y -= self._mouse_object.ay #cancel out anchor
             self._mouse_object.x -= self._mouse_object.w//2
             self._mouse_object.y -= self._mouse_object.h//2
             self._mouse_object.pyglet_draw()
