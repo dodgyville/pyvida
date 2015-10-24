@@ -4798,6 +4798,10 @@ def advance_help_index(game):
 
 def user_trigger_interact(game, obj):
     obj.trigger_interact()
+    if game._walkthrough_output and obj.name not in ["msgbox"]:
+        name = obj.name if obj.display_text == obj.name else obj.display_text
+        print('    [interact, "%s"],'%name)
+
     if not game.editor:
         game.event_count += 1
         if game.event_callback:
@@ -4813,6 +4817,9 @@ def user_trigger_interact(game, obj):
 def user_trigger_use(game, subject, obj):
     """ use obj on subject """
     subject.trigger_use(obj)
+    if game._walkthrough_output:
+        print('    [use, "%s", "%s"],'%(subject.name, obj.name))
+
     if not game.editor:
         game.event_count += 1
         if game.event_callback:
@@ -4821,6 +4828,9 @@ def user_trigger_use(game, subject, obj):
 
 def user_trigger_look(game, obj):
     obj.trigger_look()
+    if game._walkthrough_output:
+        print('    [look, "%s"],'%obj.name)
+
     if not game.editor:
         game.event_count += 1
         if game.event_callback:
@@ -5142,6 +5152,7 @@ class Game(metaclass=use_on_events):
         # if auto-creating a savefile for this walkthrough
         self._walkthrough_target_name = None
         self._walkthrough_start_name = None #fast load from a save file
+        self._walkthrough_output = False #output the current interactions as a walkthrough (toggle with F11)
 
         # TODO: for jumping back to a previous state in the game (WIP)
         self._walkthrough_stored_state = None
@@ -5347,6 +5358,12 @@ class Game(metaclass=use_on_events):
         if symbol == pyglet.window.key.F10:
             fn = get_function(self, "debug_cutscene")
             fn(game)
+        if symbol == pyglet.window.key.F11:
+            if self._walkthrough_output == False:
+                self.player.says("Recording walkthrough")
+            else:
+                self.player.says("Turned off record walkthrough")
+            self._walkthrough_output = not self._walkthrough_output
         if symbol == pyglet.window.key.F12:
             self._event = None
             self._events = []
