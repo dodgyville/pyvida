@@ -4799,7 +4799,7 @@ def advance_help_index(game):
 def user_trigger_interact(game, obj):
     obj.trigger_interact()
     if game._walkthrough_output and obj.name not in ["msgbox"]:
-        name = obj.name if obj.display_text == obj.name else obj.display_text
+        name = obj.display_text if obj.name[:6] == "option" else obj.name
         print('    [interact, "%s"],'%name)
 
     if not game.editor:
@@ -4945,11 +4945,9 @@ def load_game_pickle(game, fname, meta_only=False):
                 obj = get_object(game, menu_item)
                 obj.load_assets(game)
             for menu in game._menus:
-                for menu_item in game._menu:
+                for menu_item in menu:
                     obj = get_object(game, menu_item)
-                    obj.load_assets(game)
-            
-
+                    obj.load_assets(game)          
             game._headless = headless
 
             # load pyglet fonts
