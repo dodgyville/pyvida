@@ -2470,6 +2470,7 @@ class Actor(object, metaclass=use_on_events):
 #        if self.resource and self.resource._animation:
 #            frame = self.resource._animation.frames[self.resource._frame_index]
 
+
     def on_animation_end_once(self):
         """ When an animation has been called once only """
         self.busy -= 1
@@ -2477,6 +2478,9 @@ class Actor(object, metaclass=use_on_events):
             log.info("%s has finished on_animation_end_once, so decrement %s.busy to %i." % (
                 self.name, self.name, self.busy))
         self._do(self._next_action)
+
+#    def self.on_animation_end_once_block(self):
+#        """ Identical to end animation once, except also remove block on game. """
 
     def on_frame(self, index):
         """ Take the current action resource to the frame index (ie jump to a different spot in the animation) """
@@ -2832,7 +2836,8 @@ class Actor(object, metaclass=use_on_events):
         return True if actor in self._met else met
 
     def _do(self, action, callback=None, mode=LOOP):
-        """ Callback is called when animation ends, returns False if action not found """
+        """ Callback is called when animation ends, returns False if action not found 
+        """
         myA = action
         if type(action) == str and action not in self._actions.keys():
             log.error("Unable to find action %s in object %s" %
@@ -2909,9 +2914,13 @@ class Actor(object, metaclass=use_on_events):
         self._do(action, mode=mode)
 
     def on_do_once(self, action, next_action="idle", mode=LOOP, block=False):
-        print("Luke, this is here to remind you to fix walkthroughs and also make do_once follow block=True")
+#        print("Luke, this is here to remind you to fix walkthroughs and also make do_once follow block=True")
+#        log.info("do_once does not follow block=True
 #        import pdb; pdb.set_trace()
-        result = self._do(action, self.on_animation_end_once, mode=mode)
+        callback = self.on_animation_end_once #if not block else self.on_animation_end_once_block
+        result = self._do(action, callback, mode=mode)
+        if block:
+            self.game._waiting = True
         if result:
             self._next_action = next_action
             self.busy += 1
@@ -6013,7 +6022,7 @@ class Game(metaclass=use_on_events):
     def run(self, splash=None, callback=None, icon=None):
         # event_loop.run()
         options = self.parser.parse_args()
-#        self.mixer._force_mute = True #XXX sound disabled for first draft
+#        self.mixer._force_mute =  #XXX sound disabled for first draft
         if options.mute == True:
             self.mixer._force_mute = True
         if options.output_walkthrough == True:
