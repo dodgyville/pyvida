@@ -956,10 +956,11 @@ class MotionDelta(object):
         self.z = None
         self.r = None
         self.scale = None
+        self.f = None #frame of the animation of the action
 
     @property
     def flat(self):
-        return self.x, self.y, self.z, self.r, self.scale
+        return self.x, self.y, self.z, self.r, self.scale, self.f
 
 
 class Motion(object):
@@ -1003,6 +1004,10 @@ class Motion(object):
         actor.z += d[2] if d[2] != None else 0
         actor.rotate += d[3] if d[3] != None else 0
         if d[4] != None: actor.scale = d[4] 
+        if d[5] != None: 
+            actor._frame(int(d[5]))
+            if actor.action.mode != MANUAL:
+                print("warning: %s action %s not in manual mode, so motion %s frame requests fighting with auto frame advance"%(actor.name, actor.action.name, self.name))
         self.index += 1
         return True
 
@@ -1069,7 +1074,7 @@ class Action(object):
         self._loaded = False
         self.default = LOOP
         self.mode = self.default
-        self._manual_frame = 0 #used by MANUAL mode to lock animation at a single frame
+        self._manual_index = 0 #used by MANUAL mode to lock animation at a single frame
 
     def __getstate__(self):
         self.game = None
@@ -2396,7 +2401,7 @@ class Actor(object, metaclass=use_on_events):
         if sprite and self.allow_draw:
             #if action mode is manual (static), force the frame index to the manual frame
             if self.action.mode == MANUAL:
-                sprite._frame_index = self.action._manual_frame
+                sprite._frame_index = self.action._manual_index
 
             x, y = self.x, self.y
             if self._parent:
@@ -2482,12 +2487,15 @@ class Actor(object, metaclass=use_on_events):
 #    def self.on_animation_end_once_block(self):
 #        """ Identical to end animation once, except also remove block on game. """
 
-    def on_frame(self, index):
+    def _frame(self, index):
         """ Take the current action resource to the frame index (ie jump to a different spot in the animation) """
         if self.action and self.action.mode == MANUAL:
             self.action._manual_index = index
         if self.resource:
             self.resource._frame_index = index
+
+    def on_frame(self, index):
+        self._frame(index)
 
     def on_frames(self, num_frames):
         """ Advance the current action <num_frames> frames """
@@ -5510,6 +5518,7 @@ class Game(metaclass=use_on_events):
                         self.player._x, self.player._y = self.player._goto_x, self.player._goto_y
                         self.player._goto_dx, self.player._goto_dy = 0, 0
                         return
+        self._info_object.display_text = " " #clear hover text
 
         self.last_mouse_release = (x, y, button, time.time())
 
