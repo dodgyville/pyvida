@@ -20,7 +20,7 @@ MAX_WIDTH = 16384
 
 def make_contact_sheet(fnames,(ncols,nrows), (photow,photoh),
                        (marl,mart,marr,marb),
-                       padding, reverse):
+                       padding, reverse, flip):
     """\
     Make a contact sheet from a group of filenames:
 
@@ -67,6 +67,8 @@ def make_contact_sheet(fnames,(ncols,nrows), (photow,photoh),
        fnames.reverse()
     for f in fnames:
         img = Image.open(f)
+        if flip==True:
+            img = img.transpose(Image.FLIP_LEFT_RIGHT)
     # Insert each thumb:
         w,h = img.size
         left = marl + icol*(photow+padding)+((photow-w)/2)
@@ -87,11 +89,12 @@ def make_contact_sheet(fnames,(ncols,nrows), (photow,photoh),
 
 
 def super_montage():
-    print "montager v1.1 - by Luke Miller - 22/10/2011"
+    print "montager v1.2 - by Luke Miller - 26/10/2015"
     usage = "usage: montager out_file file_list\nAlso outputs a small .montage file describing the images.\nFor use with vidaG, to compile animations into single file.";
     print "NOTE: Provided AS IS, no warranty for use!";
     parser = OptionParser()
     parser.add_option("-r", "--reverse", action="store_true", dest="reverse", help="Reverse file list", default=False)
+    parser.add_option("-f", "--flip", action="store_true", dest="flip", help="Flip the images left-right", default=False)
     (options, args) = parser.parse_args()
     if len(args) < 2:
      	print usage
@@ -127,7 +130,7 @@ def super_montage():
 
     padding = 0
     
-    inew = make_contact_sheet(files,(ncols,nrows),photo,margins,padding,options.reverse)
+    inew = make_contact_sheet(files,(ncols,nrows),photo,margins,padding,options.reverse,options.flip)
     inew.save(ofname)
 
     name, ext = os.path.splitext(ofname)
