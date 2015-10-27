@@ -58,6 +58,8 @@ except ImportError:
     logging = None
 
 
+benchmark_events = datetime.now()
+
 """
 Constants
 """
@@ -2897,12 +2899,15 @@ class Actor(object, metaclass=use_on_events):
         if motion:
             motion.mode = mode
             motion.blocking = block
-            if block is True:
+            if block is True and self.game._headless is False:
                 self.busy += 1
                 self.game._waiting = True #make game wait
                 if logging:
                     log.info("%s has started motion %s, so incrementing self.busy to %s." % (
                         self.name, motion.name, self.busy))
+            if self.game._headless is True and mode==ONCE:
+                pass
+                log.warning("XXX: headless mode should apply full motion at once.")
 
         else:
             log.warning("Unable to find motion for actor %s"%(self.name))
@@ -4921,6 +4926,15 @@ def save_game_pickle(game, fname):
 
     log.warning("POST PICKLE inventory %s"%game.inventory.name)
 
+def load_menu_assets(game):
+    for menu_item in game._menu:
+        obj = get_object(game, menu_item)
+        obj.load_assets(game)
+    for menu in game._menus:
+        for menu_item in menu:
+            obj = get_object(game, menu_item)
+            obj.load_assets(game)
+
 
 def load_game_pickle(game, fname, meta_only=False):
     global _pyglet_fonts
@@ -4961,13 +4975,7 @@ def load_game_pickle(game, fname, meta_only=False):
                     scene.load_assets(game)
                 else:
                     log.warning("Pickle load: scene %s is resident but not actually in Game, "%scene_name)
-            for menu_item in game._menu:
-                obj = get_object(game, menu_item)
-                obj.load_assets(game)
-            for menu in game._menus:
-                for menu_item in menu:
-                    obj = get_object(game, menu_item)
-                    obj.load_assets(game)          
+            load_menu_assets(game)
             game._headless = headless
 
             # load pyglet fonts
@@ -6106,6 +6114,10 @@ class Game(metaclass=use_on_events):
         if len(self._walkthrough) == 0 or self._walkthrough_index >= len(self._walkthrough) or self._walkthrough_target==0:
             return  # no walkthrough
         walkthrough = self._walkthrough[self._walkthrough_index]
+        global benchmark_events
+        t = datetime.now() - benchmark_events
+        print("doing step",walkthrough, t.seconds)
+        benchmark_events = datetime.now()
         try:
             function_name = walkthrough[0].__name__
         except:
@@ -6118,8 +6130,9 @@ class Game(metaclass=use_on_events):
                 self._headless = False
                 self._resident = [] # force refresh on scenes assets that may not have loaded during headless mode
                 self.scene.load_assets(self)
-                if self.player: 
+                if self.player:
                     self.player.load_assets(self)
+                load_menu_assets(self)
                 print("FINISHED WALKTHROUGH")
             log.info("FINISHED WALKTHROUGH")
             if self._walkthrough_target_name:
