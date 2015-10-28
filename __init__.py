@@ -1227,7 +1227,7 @@ class Rect(object):
         return (randint(self.x, self.x + self.w), randint(self.y, self.y + self.h))
 
 
-def crosshair(game, point, colour, absolute=False):
+def crosshair(game, point, colour, absolute=False, txt=""):
 
     fcolour = fColour(colour)
 
@@ -1249,7 +1249,7 @@ def crosshair(game, point, colour, absolute=False):
     pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x - 5, y, x + 5, y)))
 
     pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0)  # undo alpha for pyglet drawing
-    label = pyglet.text.Label("{0}, {1}".format(x, game.resolution[1] - y),
+    label = pyglet.text.Label("{0} {1}, {1}".format(txt, x, game.resolution[1] - y),
                               font_name='Arial',
                               font_size=10,
                               color=colour,
@@ -1258,7 +1258,7 @@ def crosshair(game, point, colour, absolute=False):
     label.draw()
     return point
 
-def coords(game, x,y):
+def coords(game, txt, x,y):
     pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0)  # undo alpha for pyglet drawing
     label = pyglet.text.Label("{0}, {1}".format(x, game.resolution[1] - y),
                               font_name='Arial',
@@ -1615,6 +1615,8 @@ class Actor(object, metaclass=use_on_events):
             ("scale", self.get_scale, self.adjust_scale_x, float),
             ("interact", self.get_interact, self.set_interact, str),
             ("clickable area", "clickable_area", "_clickable_area", Rect),
+            ("solid area", "solid_area", "_solid_area", Rect),
+
             # ( "allow_update", "allow_use", "allow_interact", "allow_look"]
             ("allow draw", self.get_allow_draw, self.set_allow_draw, bool),
             # ( "allow_update", "allow_use", "allow_interact", "allow_look"]
@@ -2449,13 +2451,13 @@ class Actor(object, metaclass=use_on_events):
         self._debugs = []
         #position = green
         self._debugs.append(
-            crosshair(self.game, (self.x, self.y), (0, 255, 0, 255), absolute=absolute))
+            crosshair(self.game, (self.x, self.y), (0, 255, 0, 255), absolute=absolute, txt="x,y"))
         #anchor - blue
         self._debugs.append(crosshair(
-            self.game, (self.x + self.ax, self.y + self.ay), (0, 0, 255, 255), absolute=absolute))
+            self.game, (self.x + self.ax, self.y + self.ay), (0, 0, 255, 255), absolute=absolute, txt="anchor"))
         # stand point - pink
         self._debugs.append(crosshair(
-            self.game, (self.x + self.sx, self.y + self.sy), (255, 200, 200, 255), absolute=absolute))
+            self.game, (self.x + self.sx, self.y + self.sy), (255, 200, 200, 255), absolute=absolute, txt="stand"))
         # name point - yellow
         self._debugs.append(crosshair(
             self.game, (self.x + self.nx, self.y + self.ny), (255, 220, 80, 255), absolute=absolute))
@@ -6488,7 +6490,7 @@ class Game(metaclass=use_on_events):
             self._mouse_object.pyglet_draw()
 
         if self.editor: #draw mouse coords at mouse pos
-            coords(self, *self.mouse_position)
+            coords(self, "mouse", *self.mouse_position)
 
 
         if self.game.camera._overlay:
