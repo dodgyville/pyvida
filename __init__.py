@@ -1616,7 +1616,6 @@ class Actor(object, metaclass=use_on_events):
             ("interact", self.get_interact, self.set_interact, str),
             ("clickable area", "clickable_area", "_clickable_area", Rect),
             ("solid area", "solid_area", "_solid_area", Rect),
-
             # ( "allow_update", "allow_use", "allow_interact", "allow_look"]
             ("allow draw", self.get_allow_draw, self.set_allow_draw, bool),
             # ( "allow_update", "allow_use", "allow_interact", "allow_look"]
@@ -5172,6 +5171,7 @@ class Game(metaclass=use_on_events):
         self._edit_window = None
         self._edit_menu = []  # the items to draw on the second window
         self._edit_index = 0
+        self._selector = False #is the editor in selector mode?
         self._modules = {}
         self._sys_paths = []  # file paths to dynamically loaded modules
         self._walkthrough = []
@@ -5543,7 +5543,18 @@ class Game(metaclass=use_on_events):
             x -= self.scene.x  # displaced by camera
             y += self.scene.y
 
+        y = self.game.resolution[1] - y  # invert y-axis if needed
+        ay = self.game.resolution[1] - ay
+
         # we are editing something, so don't interact with objects
+        if self.editor and self._selector: #select an object
+            for obj_name in self.scene._objects:
+                obj = get_object(self, obj_name)
+                if obj.collide(x, y):
+                    self.editor.set_edit_object(obj)
+                    self._selector = False #turn off selector
+                    return
+
         if self._editing and self._editing_point_set:
             return
 
@@ -5551,8 +5562,6 @@ class Game(metaclass=use_on_events):
             self._drag._drag(self, self._drag, self.player)
             self._drag = None
 
-        y = self.game.resolution[1] - y  # invert y-axis if needed
-        ay = self.game.resolution[1] - ay
 
         # modals are absolute (they aren't displaced by camera)
         for name in self._modals:
@@ -6975,6 +6984,23 @@ class MyTkApp(threading.Thread):
         self.scene = None  # self.game.scene
         self.editor_label = None
 
+
+    def set_edit_object(self, obj):
+        obj = get_object(self.game, obj)
+        old_obj = get_object(self.game, self.obj)
+        if old_obj:
+            old_obj.show_debug = False
+        if obj._editable == [] and hasattr(obj, "set_editable"):
+            obj.set_editable()
+        self.obj = obj
+        obj.show_debug = True
+        if self.editor_label:
+            self.editor_label.grid_forget()
+            self.editor_label.destroy()
+#            self.editor_label["text"] = obj.name
+        self.create_editor_widgets()
+#            self.edit_button["text"] = obj.name
+
     def create_navigator_widgets(self):
         row = self.rows
         group = tk.LabelFrame(self.app, text="Navigator", padx=5, pady=5)
@@ -7027,7 +7053,7 @@ class MyTkApp(threading.Thread):
             self.game.add(obj)
             self.game.scene.add(obj)
             self.app.objects = self.game.scene._objects
-            _set_edit_object(obj)
+            self.set_edit_object(obj)
 
         def add_object():
             d = ObjectSelectDialog(self.game, "Add to scene")
@@ -7045,7 +7071,7 @@ class MyTkApp(threading.Thread):
             if obj.clickable_area.w == 0 and obj.clickable_area.h == 0:
                 obj.guess_clickable_area()
             self.game.scene._add(obj)
-            _set_edit_object(obj)
+            self.set_edit_object(obj)
 
         def new_actor():
             d = tk.simpledialog.askstring("New Actor", "Name:")
@@ -7180,22 +7206,6 @@ class MyTkApp(threading.Thread):
 
         row += 1
 
-        def _set_edit_object(obj):
-            obj = get_object(self.game, obj)
-            old_obj = get_object(self.game, self.obj)
-            if old_obj:
-                old_obj.show_debug = False
-            if obj._editable == [] and hasattr(obj, "set_editable"):
-                obj.set_editable()
-            self.obj = obj
-            obj.show_debug = True
-            if self.editor_label:
-                self.editor_label.grid_forget()
-                self.editor_label.destroy()
-#            self.editor_label["text"] = obj.name
-            self.create_editor_widgets()
-#            self.edit_button["text"] = obj.name
-
         def _navigate(delta):
             objects = self.game.scene._objects + self.game.scene._layer
             num_objects = len(objects)
@@ -7211,7 +7221,7 @@ class MyTkApp(threading.Thread):
             if self.index >= num_objects:
                 self.index = 0
             obj = objects[self.index]
-            _set_edit_object(obj)
+            self.set_edit_object(obj)
 
         def prev():
             _navigate(-1)  # decrement navigation
@@ -7219,12 +7229,22 @@ class MyTkApp(threading.Thread):
         def next():
             _navigate(1)  # increment navigation
 
+
+        def selector():
+            """ The next click on the game window will select an object
+            in the editor.
+            :return:
+            """
+            self.game._selector = True
+
         self.prev_button = tk.Button(
             group, text='<-', command=prev).grid(column=0, row=row)
 #        self.edit_button = tk.Button(group, text='Edit', command=self.create_editor)
 #        self.edit_button.grid(column=1, row=row)
         self.next_button = tk.Button(
             group, text='->', command=next).grid(column=2, row=row)
+        self.selector_button = tk.Button(
+            group, text='selector', command=selector).grid(column=3, row=row)
 
         self.rows = row
 
