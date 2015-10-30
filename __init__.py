@@ -5601,6 +5601,7 @@ class Game(metaclass=use_on_events):
                 return
         for obj_name in self.scene._objects:
             obj = get_object(self, obj_name)
+            if self.mouse_mode == MOUSE_USE and self._mouse_object == obj: continue #can't use item on self
             allow_use = (obj.allow_draw and (obj.allow_interact or obj.allow_use or obj.allow_look)) or (ALLOW_USE_ON_PLAYER and self.player and self.player == obj)
             if obj.collide(x, y) and allow_use:
                 # if wanting to interact or use an object go to it. If engine
@@ -7189,8 +7190,9 @@ class MyTkApp(threading.Thread):
                 self.game.scene.add(self.game.player)
 
         def initial_state(*args, **kwargs):
+            player_in_scene = self.game.player.name in self.game.scene._objects
             self.game.load_state(self.game.scene, "initial")
-            self.game.scene.add(self.game.player)
+            if player_in_scene: self.game.scene.add(self.game.player)
 
         def save_layers(*args, **kwargs):
             self.game.scene._save_layers()
