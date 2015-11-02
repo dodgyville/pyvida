@@ -959,10 +959,11 @@ class MotionDelta(object):
         self.r = None
         self.scale = None
         self.f = None #frame of the animation of the action
+        self.alpha = None
 
     @property
     def flat(self):
-        return self.x, self.y, self.z, self.r, self.scale, self.f
+        return self.x, self.y, self.z, self.r, self.scale, self.f, self.alpha
 
 
 class Motion(object):
@@ -1010,6 +1011,7 @@ class Motion(object):
             actor._frame(int(d[5]))
             if actor.action.mode != MANUAL:
                 print("warning: %s action %s not in manual mode, so motion %s frame requests fighting with auto frame advance"%(actor.name, actor.action.name, self.name))
+        if d[6] != None: actor.alpha = d[6] 
         self.index += 1
         return True
 
