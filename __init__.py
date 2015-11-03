@@ -1009,8 +1009,8 @@ class Motion(object):
         if d[4] != None: actor.scale = d[4] 
         if d[5] != None: 
             actor._frame(int(d[5]))
-            if actor.action.mode != MANUAL:
-                print("warning: %s action %s not in manual mode, so motion %s frame requests fighting with auto frame advance"%(actor.name, actor.action.name, self.name))
+#            if actor.action.mode != MANUAL:
+#                print("warning: %s action %s not in manual mode, so motion %s frame requests fighting with auto frame advance"%(actor.name, actor.action.name, self.name))
         if d[6] != None: actor.alpha = d[6] 
         self.index += 1
         return True
