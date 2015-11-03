@@ -2142,6 +2142,12 @@ class Actor(object, metaclass=use_on_events):
                          (basic, override_name))
         script = get_function(self.game, basic)
 
+        #if no script, try to find a default catch all scripts
+        #for the actee or the actor
+        default = "use_%s_on_default" % (slug_actor)
+        script = script if script else get_function(self.game, default)
+        default = "use_on_%s_default" % (slug_actee)
+        script = script if script else get_function(self.game, default)
         if script:
             if logging:
                 log.debug("Call use script (%s)" % basic)
@@ -6909,7 +6915,10 @@ def edit_object_script(game, obj):
         script = f.read()
     slug = slugify(obj.name).lower()
     search_fns = ["def interact_%s(game, %s, player):" % (
-        slug, slug), "def look_%s(game, %s, player):" % (slug, slug)]
+        slug, slug), "def look_%s(game, %s, player):" % (slug, slug),
+                  "def use_on_%s_default(game, %s, obj):" % (slug, slug),
+                  "def use_%s_on_default(game, obj, %s):" % (slug, slug),
+                  ]
     if not isinstance(obj, Portal) and game.player:
         for i in list(game.player.inventory.keys()):
             slug2 = slugify(i).lower()
