@@ -3400,6 +3400,7 @@ class Emitter(Item, metaclass=use_on_events):
         # self._solid_area = Rect(0,0,0,0) #used for the spawn area
         self.test_terminate = test_terminate
 
+
     @property
     def summary(self):
         fields = ["name", "number", "frames", "direction", "fov", "speed", "acceleration", "size_start",
@@ -3467,7 +3468,8 @@ class Emitter(Item, metaclass=use_on_events):
                 y += self._parent.y
 
             x = x + self.ax
-            y = self.game.resolution[1] - y - self.ay - self.resource.height
+            h = 1 if self.resource is None else self.resource.height
+            y = self.game.resolution[1] - y - self.ay - h
 
             # displace for camera
             if not absolute and self.game.scene:
@@ -3479,9 +3481,10 @@ class Emitter(Item, metaclass=use_on_events):
                     y += randint(-self.game.camera._shake_y,
                                  self.game.camera._shake_y)
 
-            self.resource._frame_index = p.action_index%self.action.num_of_frames
-            self.resource.position = (int(x), int(y))
-            self.resource.draw()
+            if self.resource is not None:
+                self.resource._frame_index = p.action_index%self.action.num_of_frames
+                self.resource.position = (int(x), int(y))
+                self.resource.draw()
 
             """
             img = self.action.image(p.action_index)
@@ -4405,7 +4408,7 @@ class Camera(metaclass=use_on_events):  # the view manager
 #                if logging: log.warning("No background for scene %s"%self.game.scene.name)
         # start music for this scene
         if scene._music_filename:
-            self.game.mixer.music_play(scene._music_filename)
+            self.game.mixer._music_play(scene._music_filename)
  #       self._play_scene_music()
 #        if game.scene._ambient_filename:
 #            self._ambient_sound = self.game.mixer._sfx_play(game.scene._ambient_filename, loops=-1)
@@ -5424,7 +5427,9 @@ class Game(metaclass=use_on_events):
         modal_collide = False
         for name in self._modals:
             obj = get_object(self, name)
-            if obj.collide(ox, oy):  # absolute screen values
+            allow_collide = True if (obj.allow_look or obj.allow_use) \
+                else False
+            if obj.collide(ox, oy) and allow_collide:  # absolute screen values
                 self.mouse_cursor = MOUSE_CROSSHAIR
                 if obj._mouse_motion and not modal_collide:
                     fn = get_function(self, obj._mouse_motion, obj)
@@ -5443,7 +5448,9 @@ class Game(metaclass=use_on_events):
                 if not obj:
                     log.warning("Menu object %s not found in Game items or actors"%obj_name)
                     return
-                if obj.collide(ox, oy):  # absolute screen values
+                allow_collide = True if (obj.allow_look or obj.allow_use) \
+                    else False
+                if obj.collide(ox, oy) and allow_collide:  # absolute screen values
                     self.mouse_cursor = MOUSE_CROSSHAIR if self.mouse_cursor == MOUSE_POINTER else self.mouse_cursor
 
                     if obj._actions and "over" in obj._actions and (obj.allow_interact or obj.allow_use or obj.allow_look):
@@ -6184,6 +6191,9 @@ class Game(metaclass=use_on_events):
             modifiers = 0
             # check modals and menu first for text options
             obj = None
+            if len(self._modals)>0 and actor_name not in self._modals:
+                log.warning("interact with {} but modals haven't been cleared"
+                            .format(actor_name))
             for name in self._modals:
                 o = get_object(self, name)
                 if o.display_text == actor_name:
