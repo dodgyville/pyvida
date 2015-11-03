@@ -4457,6 +4457,13 @@ class Camera(metaclass=use_on_events):  # the view manager
             if postcamera_fn:
                 postcamera_fn(self.game, scene, self.game.player)
 
+    def on_player_scene(self):
+        """ Switch the current player scene. Useful because game.player.scene
+        may change by the time the camera change scene event is called.
+        :return:
+        """
+        self._scene(self.game.player.scene)
+
     def on_shake(self, xy=0, x=None, y=None):
         self._shake_x = x if x else xy
         self._shake_y = y if y else xy
