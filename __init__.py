@@ -5287,6 +5287,23 @@ class Game(metaclass=use_on_events):
         raise AttributeError
 #        return self.__getattribute__(self, a)
 
+    def set_headless_value(self, v):
+        self._headless = v
+        if self._headless is True: #speed up
+            pyglet.clock.unschedule(self.update)
+            pyglet.clock.schedule_interval(self.update, 1 / 100)
+            pyglet.clock.set_fps_limit(100)
+        else:
+            pyglet.clock.unschedule(self.update)
+            pyglet.clock.schedule_interval(self.update, 1 / self.default_actor_fps)
+            pyglet.clock.set_fps_limit(self.fps)
+
+    def get_headless_value(self):
+        return self._headless
+
+    headless = property(get_headless_value, set_headless_value)
+
+
     @property
     def w(self):
         return self._window.get_size()[0]
@@ -6161,7 +6178,7 @@ class Game(metaclass=use_on_events):
 
         if self._walkthrough_index > self._walkthrough_target or self._walkthrough_index > len(self._walkthrough):
             if self._headless:
-                self._headless = False
+                self.headless = False
                 self._resident = [] # force refresh on scenes assets that may not have loaded during headless mode
                 self.scene.load_assets(self)
                 if self.player:
@@ -6220,7 +6237,7 @@ class Game(metaclass=use_on_events):
             if not obj:
                 log.error("Unable to find %s in game" % actor_name)
                 self._walkthrough_target = 0
-                self._headless = False
+                self.headless = False
                 return
             # if not in same scene as camera, and not in modals or menu, log
             # the error
@@ -6873,7 +6890,7 @@ class Game(metaclass=use_on_events):
         obj._relocate(scene, destination)
 
     def on_set_headless(self, v):
-        self._headless = v
+        self.headless = v
 
     def on_set_menu(self, *args, clear=False):
         """ add the items in args to the menu

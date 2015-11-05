@@ -95,6 +95,8 @@ def super_montage():
     parser = OptionParser()
     parser.add_option("-r", "--reverse", action="store_true", dest="reverse", help="Reverse file list", default=False)
     parser.add_option("-f", "--flip", action="store_true", dest="flip", help="Flip the images left-right", default=False)
+    parser.add_option("-s", "--speed", dest="speed", help="Change speed of animation by repeating/skipping frames", default=1, metavar="SPEED")
+
     (options, args) = parser.parse_args()
     if len(args) < 2:
      	print usage
@@ -109,8 +111,15 @@ def super_montage():
     files = args[1:]
     mwidth=0
     mheight=0
+    speed = float(options.speed)
+    if speed < 1: #slow down
+        speed = int(1//speed)
+        files = [[x]*speed for x in files]
+        files = [item for sublist in files for item in sublist]
+    elif speed > 1: #speed up
+        files = files[0::int(speed)]
     for fname in files:
-	m = Image.open(fname) #get info from first image.
+        m = Image.open(fname) #get info from first image.
         if m.size[0] > mwidth: mwidth=m.size[0] #store the widest image value
         if m.size[1] > mheight: mheight=m.size[1] #store the tallest image value
     ncols = len(files)%(MAX_WIDTH/mwidth)
