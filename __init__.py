@@ -3873,7 +3873,10 @@ class Scene(metaclass=use_on_events):
 
 class Text(Item):
 
-    def __init__(self, name, pos=(0, 0), display_text=None, colour=(255, 255, 255, 255), font=None, size=26, wrap=800, offset=None, interact=None, look=None, delay=0, step=2, game=None):
+    def __init__(self, name, pos=(0, 0), display_text=None,
+                 colour=(255, 255, 255, 255), font=None, size=26, wrap=800,
+                 offset=None, interact=None, look=None, delay=0, step=2,
+                 game=None):
         """
         delay : How fast to display chunks of the text
         step : How many characters to advance during delayed display
@@ -3996,7 +3999,7 @@ class Text(Item):
 
     def _animate_text(self, dt):
         """ called by the clock at regular intervals """
-        if self._text_index == len(self.display_text):
+        if self._text_index >= len(self.display_text):
             pyglet.clock.unschedule(self._animate_text)
         else:
             self._text_index += self.step
@@ -5820,16 +5823,13 @@ class Game(metaclass=use_on_events):
         total_h = 0
         positions = []
         if factory.layout == SPACEOUT:
-            y = self.resolution[1] - 130
-            x = 10
-            dx = 130
-            positions = [(x, x),
+            x, y = 20, self.resolution[1] - 100
+            dx = 180
+            fx = self.resolution[0] - 300
+            positions = [
                          (x, y),
-                         (x + dx, y),
-                         (x + dx * 2, y),
-                         (x + dx * 3, y),
-                         (x + dx * 4, y),
-                         (x + dx * 5, y),
+                         (fx, y),
+                         (fx + dx, y),
                          ]
         for i, item in enumerate(items):
             if item[0] in self._items.keys():
