@@ -5824,8 +5824,8 @@ class Game(metaclass=use_on_events):
         positions = []
         if factory.layout == SPACEOUT:
             x, y = 20, self.resolution[1] - 100
-            dx = 180
-            fx = self.resolution[0] - 300
+            dx = 120
+            fx = self.resolution[0] - 220
             positions = [
                          (x, y),
                          (fx, y),
