@@ -14,7 +14,8 @@ from math import ceil
 from optparse import OptionParser
 
 
-MAX_WIDTH = 16384
+MAX_WIDTH = 16384 #pyvida limit
+MAX_WIDTH = 163840
 
 
 

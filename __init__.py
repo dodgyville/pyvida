@@ -41,7 +41,7 @@ from pyglet_gui.option_selectors import Dropdown
 from pyglet.gl import *
 
 from pyglet.image.codecs.png import PNGImageDecoder
-
+import pyglet.window.mouse
 
 
 # TODO better handling of loading/unloading assets
@@ -85,7 +85,7 @@ BACKEND = PYGLET12
 # pyglet has (0,0) in bottom left, we want it in the bottom right
 COORDINATE_MODIFIER = -1
 
-#Engine behaviour
+# Engine behaviour
 HIDE_MOUSE = True  # start with mouse hidden, first splash will turn it back on
 DEFAULT_FULLSCREEN = False  # switch game to fullscreen or not
 # show "unknown" on portal links before first visit there
@@ -93,6 +93,7 @@ DEFAULT_EXPLORATION = True
 DEFAULT_PORTAL_TEXT = True  # show portal text
 # GOTO_LOOK = True  #should player walk to object when looking at it
 GOTO_LOOK = False
+
 ALLOW_USE_ON_PLAYER = True #when "using" an object, allow the player actor to an option
 ALLOW_SILENT_ACHIEVEMENTS = True #don't break immersion by displaying achievements the moment player earns them
 
@@ -159,7 +160,7 @@ LOOP = 0
 ONCE = 1
 PINGPONG = 2
 REVERSE = 3
-MANUAL = 4 #user sets the frame index
+MANUAL = 4  #user sets the frame index
 
 # EMITTER BEHAVIOURS
 BEHAVIOUR_CYCLE = 0  # continiously on
@@ -560,6 +561,7 @@ def set_looks(game, actors, slug=None, full=None):
 
 def get_available_languages():
     """ Return a list of available locale names """
+    language = "en-AU"
     languages = glob.glob("data/locale/*")
     languages = [os.path.basename(x) for x in languages if os.path.isdir(x)]
     languages.sort()
@@ -683,7 +685,8 @@ def option_answer_callback(game, btn, player):
     creator = get_object(game, btn.tmp_creator)
     creator.busy -= 1  # no longer busy, so game can stop waiting
     if logging:
-        log.info("%s has finished on_asks by selecting %s, so decrement %s.busy to %s." % (
+        log.info("%s has finished on_asks by selecting %s, so decrement %s.busy"
+                 " to %s." % (
             creator.name, btn.display_text, creator.name, creator.busy))
     remember = (creator.name, btn.question, btn.display_text)
     if remember not in game._selected_options:
@@ -699,7 +702,8 @@ def option_answer_callback(game, btn, player):
 
     if btn.response_callback:
         fn = btn.response_callback if callable(
-            btn.response_callback) else get_function(game, btn.response_callback, btn)
+            btn.response_callback) else get_function(game,
+                                                     btn.response_callback, btn)
         if not fn:
             import pdb
             pdb.set_trace()
@@ -730,7 +734,8 @@ def get_smart_directory(game, obj):
 def get_function(game, basic, obj=None):
     """ 
         Search memory for a function that matches this name 
-        Also search any modules in game._modules (eg used when cProfile has taken control of __main__ )
+        Also search any modules in game._modules (eg used when cProfile has
+        taken control of __main__ )
         If obj provided then also search that object
     """
     if not basic:
@@ -788,7 +793,8 @@ def use_on_events(name, bases, dic):
 
 def open_editor(game, filepath, track=True):
     """
-        Open a text editor to edit fname, used by the editor when editing scripts
+        Open a text editor to edit fname, used by the editor when editing
+        scripts
 
         track -- add to game._modules for tracking and reloading
     """
@@ -819,7 +825,8 @@ def open_editor(game, filepath, track=True):
 
 
 def update_progress_bar(game, obj):
-    """ During smart loads the game may wish to have an onscreen progress bar, here it gets called """
+    """ During smart loads the game may wish to have an onscreen progress bar,
+    here it gets called """
     if game._progress_bar_renderer:
         game._window.set_mouse_visible(False)
         game._window.dispatch_events()
@@ -843,7 +850,8 @@ class Achievement(object):
         self.version = None
 
 class AchievementManager(object):
-    """ Basic achievement system, hopefully to plug into Steam and other services one day """
+    """ Basic achievement system, hopefully to plug into Steam and other
+    services one day """
     def __init__(self):
         self._achievements = {}
         self.granted = {}
@@ -861,12 +869,13 @@ class AchievementManager(object):
         new_achievement.version = game.version
         self.granted[slug] = new_achievement
         if not game.settings.silent_achievements:
-            game.player.says("Achievement unlocked: %s\n%s"%(new_achievement.name, new_achievement.description))
+            game.player.says("Achievement unlocked: %s\n%s"%(
+                new_achievement.name, new_achievement.description))
 
 
 class Storage(object):
 
-    """ Per game data that the developer wants stored with the save game file """
+    """ Per game data that the developer wants stored with the save game file"""
 
     def __init__(self):
         pass
@@ -989,7 +998,8 @@ class Motion(object):
         return self.__dict__
 
     def apply_to_actor(self, actor):
-        """ Apply the current frame to the actor and increment index, return False to delete the motion """
+        """ Apply the current frame to the actor and increment index, return
+        False to delete the motion """
         num_deltas = len(self.deltas)
         if len(self.deltas) < self.index % num_deltas:
             return True
@@ -998,7 +1008,8 @@ class Motion(object):
             if self.blocking is True: #finished blocking the actor
                 actor.busy -= 1 
                 if logging:
-                    log.info("%s has finished motion %s, so decrementing self.busy to %s." % (
+                    log.info("%s has finished motion %s, so decrementing "
+                             "self.busy to %s." % (
                         actor.name, self.name, actor.busy))
             return False
         d = self.deltas[self.index % num_deltas]
@@ -1010,7 +1021,9 @@ class Motion(object):
         if d[5] != None: 
             actor._frame(int(d[5]))
 #            if actor.action.mode != MANUAL:
-#                print("warning: %s action %s not in manual mode, so motion %s frame requests fighting with auto frame advance"%(actor.name, actor.action.name, self.name))
+#                print("warning: %s action %s not in manual mode, so motion %s "
+#                      "frame requests fighting with auto frame advance"%
+#                      (actor.name, actor.action.name, self.name))
         if d[6] != None: actor.alpha = d[6] 
         self.index += 1
         return True
@@ -1684,7 +1697,7 @@ class Actor(object, metaclass=use_on_events):
 
     def update_anchor(self):
         if isinstance(self.resource._animation, pyglet.image.Animation):
-            for f in _sprite._animation:
+            for f in self._sprite._animation:
                 f.image.anchor_x = self._ax
                 f.image.anchor_y = self._ay
         else:
@@ -2982,7 +2995,7 @@ class Actor(object, metaclass=use_on_events):
         if self.game and not self.game._headless:
             pyglet.clock.schedule_once(finish_idle, seconds, datetime.now())
         else:
-            finished_idle(0, datetime.now())
+            finish_idle(0, datetime.now())
 
     def _set(self, attrs, values):
         for a, v in zip(attrs, values):
@@ -3565,7 +3578,7 @@ class Emitter(Item, metaclass=use_on_events):
         self._reset()
 
 
-class WalkareaManager(object):
+class WalkAreaManager(object):
 
     """ Comptability layer with pyvida4 walkareas """
 
@@ -3624,7 +3637,7 @@ class Scene(metaclass=use_on_events):
         self.description = None  # text for blind users
         self.scales = {}
 
-        self.walkareas = WalkareaManager(self, game)  # pyvida4 compatability
+        self.walkareas = WalkAreaManager(self, game)  # pyvida4 compatability
 
     def __getstate__(self):
         self.game = None
@@ -3728,8 +3741,8 @@ class Scene(metaclass=use_on_events):
 
     def _save_layers(self):
         sdir = os.path.join(
-            os.getcwd(), os.path.join(game.directory_scenes, self.name))
-        wildcard = wildcard if wildcard else os.path.join(sdir, "*.png")
+            os.getcwd(), os.path.join(self.game.directory_scenes, self.name))
+        #wildcard = wildcard if wildcard else os.path.join(sdir, "*.png")
         self._layer = [] #free up old layers
         for element in self._layer:  # add layers
             fname = os.path.splitext(os.path.basename(element))[0]
@@ -4750,6 +4763,7 @@ class Mixer(metaclass=use_on_events):  # the sound manager
             v = None
             # restore music if needed
             if v:
+                channel = 1
                 self._unfade_music = (channel, v)
         if store:
             setattr(self, store, sfx)
@@ -5249,6 +5263,10 @@ class Game(metaclass=use_on_events):
         self.mouse_down = (0, 0)  # last press
         self.mouse_position_raw = (0, 0)  # last known position of mouse
         self.mouse_position = (0, 0)  # last known position of mouse
+        #enable the player's clickable area for one event, useful for interacting
+        #with player object on occasion
+        self._allow_one_player_interaction = False
+
 
         pyglet.clock.schedule_interval(
             self._monitor_scripts, 2)  # keep reloading scripts
@@ -5392,8 +5410,9 @@ class Game(metaclass=use_on_events):
 
         if symbol == pyglet.window.key.F5:
             from scripts.general import show_credits
+            script = show_credits
             try:
-                show_credits(self, self.player, "void")
+                script(self, self.player, "void")
             except:
                 log.error("Exception in %s" % script.__name__)
                 print("\nError running %s\n" % script.__name__)
@@ -5504,7 +5523,8 @@ class Game(metaclass=use_on_events):
                 return  # menu is in modal mode so block other objects
 
             scene_objects = copy.copy(self.scene._objects)
-            if ALLOW_USE_ON_PLAYER and self.player: #add player object
+            if (ALLOW_USE_ON_PLAYER and self.player) or \
+                    (self._allow_one_player_interaction is True): #add player object
                 scene_objects.append(self.player.name)
             for obj_name in scene_objects:
                 obj = get_object(self, obj_name)
@@ -5515,7 +5535,11 @@ class Game(metaclass=use_on_events):
                         fn = get_function(self, obj._mouse_motion, obj)
                         fn(self.game, obj, self.game.player,
                            x, y, dx, dy, ox, oy)
-                allow_hover = (obj.allow_interact or obj.allow_use or obj.allow_look) or (ALLOW_USE_ON_PLAYER and self.player and self.mouse_mode == MOUSE_USE and self.player == obj)
+                # hover over player object if it meets the requirements
+                allow_player_hover = (self.player and self.player == obj) and \
+                                     ((ALLOW_USE_ON_PLAYER and self.mouse_mode == MOUSE_USE) or
+                                     (self._allow_one_player_interaction is True))
+                allow_hover = (obj.allow_interact or obj.allow_use or obj.allow_look) or allow_player_hover
                 if obj.collide(x, y) and allow_hover:
                     t = obj.name if obj.display_text == None else obj.display_text
                     if isinstance(obj, Portal):
@@ -5632,7 +5656,7 @@ class Game(metaclass=use_on_events):
             # if the only event is a goto to a uninteresting point, clear it.
             if self._events[0][0].__name__ == "on_goto":
                 if self.player._finished_goto:
-                    finished_fn = get_function(game, self.player._finished_goto, self.player)
+                    finished_fn = get_function(self, self.player._finished_goto, self.player)
                     if finished_fn:
                         finished_fn(self)
                     else:
@@ -5644,7 +5668,10 @@ class Game(metaclass=use_on_events):
         for obj_name in self.scene._objects:
             obj = get_object(self, obj_name)
             if self.mouse_mode == MOUSE_USE and self._mouse_object == obj: continue #can't use item on self
-            allow_use = (obj.allow_draw and (obj.allow_interact or obj.allow_use or obj.allow_look)) or (ALLOW_USE_ON_PLAYER and self.player and self.player == obj)
+            allow_player_use = (self.player and self.player == obj) and (ALLOW_USE_ON_PLAYER or self._allow_one_player_interaction)
+            allow_use = (obj.allow_draw and (obj.allow_interact or obj.allow_use or obj.allow_look)) or allow_player_use
+            if self._allow_one_player_interaction: #switch off special player interact
+                self._allow_one_player_interaction = False
             if obj.collide(x, y) and allow_use:
                 # if wanting to interact or use an object go to it. If engine
                 # says to go to object for look, do that too.
@@ -5652,11 +5679,11 @@ class Game(metaclass=use_on_events):
                     if self.player and self.player.name in self.scene._objects and self.player != obj:
                         self.player.goto(obj, block=True)
                 if button & pyglet.window.mouse.RIGHT or self.mouse_mode == MOUSE_LOOK:
-                    if obj.allow_look:
+                    if obj.allow_look or allow_player_use:
                         user_trigger_look(self, obj)
                 else:
                     #allow use if object allows use, or in special case where engine allows use on the player actor
-                    allow_final_use = (obj.allow_use) or (ALLOW_USE_ON_PLAYER and self.player and self.player == obj)
+                    allow_final_use = (obj.allow_use) or allow_player_use
                     if self.mouse_mode == MOUSE_USE and self._mouse_object and allow_final_use:
                         user_trigger_use(self, obj, self._mouse_object)
                         self._mouse_object = None
@@ -6889,6 +6916,13 @@ class Game(metaclass=use_on_events):
         destination = get_point(self.game, destination)
         obj._relocate(scene, destination)
 
+    def on_allow_one_player_interaction(self):
+        """ Ignore the allow_use, allow_look, allow_interact rules for the
+        game.player object just once then go back to standard behaviour.
+        :return:
+        """
+        self._allow_one_player_interaction = True
+
     def on_set_headless(self, v):
         self.headless = v
 
@@ -7478,78 +7512,4 @@ class MyTkApp(threading.Thread):
 def editor(game):
     app = MyTkApp(game)
     return app
-
-def editor_pgui(game):
-    theme = Theme({"font": "Lucida Grande",
-    "font_size": 12,
-    "text_color": [255, 255, 255, 255],
-    "gui_color": [255, 0, 0, 255],
-    "dropdown": {
-        "pulldown": {
-            "image": {
-            "source": "pulldown.png",
-            "frame": [3, 3, 10, 10],
-            "padding": [4, 4, 4, 4]
-            }
-        },
-        "image": {
-            "source": "dropdown.png",
-            "frame": [4, 8, 20, 5],
-            "padding": [6, 10, 6, 10]
-        }
-    },
-
-    "button": {
-        "down": {
-            "image": {
-            "source": "button-down.png",
-            "frame": [6, 6, 3, 3],
-            "padding": [12, 12, 4, 2]
-            },
-        "text_color": [0, 0, 0, 255]
-        },
-        "up": {
-            "image": {
-            "source": "button.png",
-            "frame": [6, 6, 3, 3],
-            "padding": [12, 12, 4, 2]
-            }
-        }
-    },
-    "checkbox": {
-        "checked": {
-            "image": {
-            "source": "checkbox-checked.png"
-            }
-        },
-        "unchecked": {
-            "image": {
-            "source": "checkbox.png"
-            }
-        }
-        }
-    }, resources_path='/home/luke/Projects/pyglet-gui/theme/')
-
-    # just to print something to the console, is optional.
-    def callback(is_pressed):
-        print('Button was pressed to state', is_pressed)
-
-    label = Label('Hello world')
-    button = Button('Hello world', on_press=callback)
-
-    navbar = [("current scene", Dropdown), 
-            ("New Actor", Button),
-            ("New Item", Button),
-            ("New Portal", Button),
-            ("Import Object", Button),
-            ("Add Object", Button),
-            ]
-
-    Manager(VerticalContainer([
-        Button(label="Persistent button"),
-        OneTimeButton(label="One time button"),
-        Checkbox(label="Checkbox")]),
-        window=game._window,
-        batch=game._gui_batch,
-        theme=theme)
 
