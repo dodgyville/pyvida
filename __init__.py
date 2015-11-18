@@ -4625,6 +4625,8 @@ class Mixer(metaclass=use_on_events):  # the sound manager
         self._force_mute = False  # override settings
         self._music_callback = None  # callback for when music ends
 
+        self._session_mute = False #mute this session only (resets next load)
+
         self._music_player = pyglet.media.Player()
         self._sfx_player = pyglet.media.Player()
 
@@ -4650,7 +4652,7 @@ class Mixer(metaclass=use_on_events):  # the sound manager
         self._music_play(self._music_fname)
 
     def _music_play(self, fname=None, description=None, loops=-1):
-        if self._force_mute:
+        if self._force_mute or self._session_mute:
             return
         if fname:
             if os.path.exists(fname):
@@ -4713,7 +4715,7 @@ class Mixer(metaclass=use_on_events):  # the sound manager
     def on_sfx_fade(self, val, duration=2):
         fps = self.game.fps if self.game else DEFAULT_FPS 
         self._sfx_volume_target = val
-        self._sfx_volume_step = (val - self.sfx_volume)/fps
+        self._sfx_volume_step = (val - self._sfx_volume)/fps
 
     def _update(self, dt, obj=None):
         """ Called by game.update to handle fades and effects """
@@ -6121,8 +6123,9 @@ class Game(metaclass=use_on_events):
         # event_loop.run()
         options = self.parser.parse_args()
 #        self.mixer._force_mute =  #XXX sound disabled for first draft
+        self.mixer._session_mute = False
         if options.mute == True:
-            self.mixer._force_mute = True
+            self.mixer._session_mute = True
         if options.output_walkthrough == True:
             self._output_walkthrough = True
             print("Walkthrough for %s"%self.name)
@@ -6922,6 +6925,13 @@ class Game(metaclass=use_on_events):
         :return:
         """
         self._allow_one_player_interaction = True
+
+
+    def on_set_mouse_mode(self, v):
+        self.mouse_mode = v
+
+    def on_set_mouse_cursor(self, v):
+        self.mouse_cursor = v
 
     def on_set_headless(self, v):
         self.headless = v
