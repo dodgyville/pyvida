@@ -4089,8 +4089,13 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         self.index = 0
 
     def smart(self, *args, **kwargs):
+        dimensions = None
+        if "dimensions" in kwargs:
+            dimensions = kwargs["dimensions"]
+            del kwargs["dimensions"]
         Item.smart(self, *args, **kwargs)
-        self.dimensions = (self.clickable_area.w, self.clickable_area.h)
+
+        self.dimensions = dimensions if dimensions else (self.clickable_area.w, self.clickable_area.h)
         return self
 
     def on_add(self, obj, callback=None):  # collection.add
