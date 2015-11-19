@@ -3393,7 +3393,10 @@ class Particle(object):
 class Emitter(Item, metaclass=use_on_events):
     #    def __init__(self, name, *args, **kwargs):
 
-    def __init__(self, name, number=10, frames=10, direction=0, fov=0, speed=1, acceleration=(0, 0), size_start=1, size_end=1, alpha_start=1.0, alpha_end=0, random_index=True, random_age=True, test_terminate=terminate_by_frame, behaviour=BEHAVIOUR_CYCLE):
+    def __init__(self, name, number=10, frames=10, direction=0, fov=0, speed=1,
+                 acceleration=(0, 0), size_start=1, size_end=1, alpha_start=1.0,
+                 alpha_end=0, random_index=True, random_age=True,
+                 test_terminate=terminate_by_frame, behaviour=BEHAVIOUR_CYCLE):
         """ This object's solid_mask|solid_area is used for spawning 
             direction: what is the angle of the emitter
             fov: what is the arc of the emitter's 'nozzle'?
@@ -3743,12 +3746,12 @@ class Scene(metaclass=use_on_events):
         sdir = os.path.join(
             os.getcwd(), os.path.join(self.game.directory_scenes, self.name))
         #wildcard = wildcard if wildcard else os.path.join(sdir, "*.png")
+        import pdb; pdb.set_trace()
         self._layer = [] #free up old layers
         for element in self._layer:  # add layers
             fname = os.path.splitext(os.path.basename(element))[0]
-            import pdb; pdb.set_trace()
-#            with open(os.path.join(sdir, fname + ".details")) as f:
-#                pass
+            #with open(os.path.join(sdir, fname + ".details")) as f:
+            #    pass
 
 
     def _load_layer(self, element):
