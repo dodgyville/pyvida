@@ -6875,6 +6875,11 @@ class Game(metaclass=use_on_events):
             self.postload_callback(self)
 
 
+ #   def check_queue(self, event=None, actor=None, actee=None):
+ #       """ Check if the event options request is currently in the queue """
+ #       for e, args, kwargs in self._events:
+            
+
     def on_wait(self):
         """ Wait for all scripting events to finish """
         self._waiting = True
