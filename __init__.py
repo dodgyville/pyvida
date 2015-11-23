@@ -1435,7 +1435,7 @@ class Actor(object, metaclass=use_on_events):
         self.name = name
         self._actions = {}
         self._action = None
-        self._next_action = "idle"  # for use by do_once and goto and move
+        self._next_action = None  # for use by do_once and goto and move
         self._motions = {}
         self._applied_motions = []  # list of motions applied at the moment
         # list of activities (fn, (*args)) to loop through - good for
@@ -1457,6 +1457,7 @@ class Actor(object, metaclass=use_on_events):
         self._goto_points = []  # list of points Actor is walking through
 
         self._opacity = 255
+
         self._opacity_target = None
         self._opacity_delta = 0
         # is opacity change blocking other events
@@ -1901,6 +1902,7 @@ class Actor(object, metaclass=use_on_events):
 
     def set_alpha(self, v):
         self._opacity = v
+
         if self.resource:
             self.resource.opacity = self._opacity
 
@@ -1956,7 +1958,6 @@ class Actor(object, metaclass=use_on_events):
             self._scroll_dx -= self.w
 
         self._scroll_dy += self.scroll[1]  # %self.h
-
         if self._opacity_target != None:
             self._opacity += self._opacity_delta
             if self._opacity_delta < 0 and self._opacity < self._opacity_target:
@@ -2008,6 +2009,9 @@ class Actor(object, metaclass=use_on_events):
                     self._goto_dx, self._goto_dy = 0, 0
                     if self._next_action in self._actions.keys():
                         self._do(self._next_action)
+                        self._next_action = None
+                    else: #try the default
+                        self._do(self._idle)
          #   else:
           #      print("missed",target,self.x, self.y)
         # apply motions
@@ -2507,6 +2511,7 @@ class Actor(object, metaclass=use_on_events):
             log.info("%s has finished on_animation_end_once, so decrement %s.busy to %i." % (
                 self.name, self.name, self.busy))
         self._do(self._next_action)
+        self._next_action = None
 
 #    def self.on_animation_end_once_block(self):
 #        """ Identical to end animation once, except also remove block on game. """
@@ -2951,16 +2956,16 @@ class Actor(object, metaclass=use_on_events):
     def on_do(self, action, mode=LOOP):
         self._do(action, mode=mode)
 
-    def on_do_once(self, action, next_action="idle", mode=LOOP, block=False):
+    def on_do_once(self, action, next_action=None, mode=LOOP, block=False):
 #        print("Luke, this is here to remind you to fix walkthroughs and also make do_once follow block=True")
 #        log.info("do_once does not follow block=True
 #        import pdb; pdb.set_trace()
         callback = self.on_animation_end_once #if not block else self.on_animation_end_once_block
+        self._next_action = next_action if next_action else self._idle
         result = self._do(action, callback, mode=mode)
         if block:
             self.game._waiting = True
         if result:
-            self._next_action = next_action
             self.busy += 1
 
     def on_remove(self):
@@ -3036,6 +3041,9 @@ class Actor(object, metaclass=use_on_events):
     def on_opacity(self, v):
         self.alpha = v
 
+    def _hide(self):
+        self._usage(draw=False, update=False)
+
     def on_hide(self, interactive=False):
         """ A queuing function: hide the actor, including from all click and hover events 
 
@@ -3043,19 +3051,23 @@ class Actor(object, metaclass=use_on_events):
 
             player.hide()
         """
-        self._usage(draw=False, update=False)
+        self._hide()
+
+
+    def _show(self):
+        self._opacity_delta = 0
+        self._opacity_target = 255
+        self.alpha = self._opacity_target 
+        self._usage(draw=True, update=True)  # switch everything on
 
     def on_show(self, interactive=True):
-        """ A queuing function: show the actor, including from all click and hover events 
+        """ A queuing function: show the actor, including from all click and hover events
 
             Example::
 
                 player.show()
         """
-        self._opacity_delta = 0
-        self._opacity_target = 255
-        self.alpha = self._opacity_target 
-        self._usage(draw=True, update=True)  # switch everything on
+        self._show()
 
     def on_fade_in(self, action=None, seconds=3, block=False):  # actor.fade_in
         if action:
@@ -3147,6 +3159,36 @@ class Actor(object, metaclass=use_on_events):
                             if scene_item.allow_use:
                                 log.warning("%s default use script missing: def %s(game, %s, %s)" % (
                                     scene.name, basic, actee.lower(), actor.lower()))
+
+    def set_idle(self, target=None):
+        """ Work out the best idle for this actor based on the target and available idle actions """
+        idle = self._idle #default idle
+        ANGLED_IDLE = [("idle_leftup", (91, 180)),
+                       ("idle_rightup", (-180, -91)),
+                       ("idle_rightdown", (-90, 0)),
+                       ("idle_leftdown", (1, 90)),
+                        (idle, (-180,180)), #default catches all angles
+                       ]
+        if target:
+            obj = get_object(self.game, target)
+            #walk to stand point, compare to actual point
+            x,y = obj.x, obj.y
+            sx, sy = obj.x + obj.sx, obj.y + obj.sy
+            angle = math.atan2((sx-x), (y-sy))
+            angle = math.degrees(angle)
+            print("x=",x)
+            print("y=",y)
+            print("sx=",sx)
+            print("sy=",sy)
+            print(x,sx,y,sy,"angle between",self.name,"and",target.name,"is",angle)
+            for potential_action in ANGLED_IDLE:
+                action_name, angle_range = potential_action
+                lower, higher = angle_range
+                if lower <= angle < higher and action_name in self._actions:
+                    idle = action_name
+                    break
+        self._next_action = idle
+
 
     def _cancel_goto(self):
         self._goto_x, self._goto_y = None, None
@@ -3727,8 +3769,10 @@ class Scene(metaclass=use_on_events):
             obj = get_object(self.game, obj_name)
             if obj:
                 obj.load_assets(self.game)
-        for obj in self._layer:
-            obj.load_assets(self.game)
+        for obj_name in self._layer:
+            obj = get_object(self.game, obj_name)
+            if obj:
+                obj.load_assets(self.game)
 
     def unload_assets(self):  # scene.unload
         for obj_name in self._objects:
@@ -3759,20 +3803,22 @@ class Scene(metaclass=use_on_events):
         sdir = os.path.dirname(element)
         layer = self.game._add(
             Item("%s_%s" % (self.name, fname)).smart(self.game, image=element), replace=True)
-        self._layer.append(layer)  # add layer items as items
+        self._layer.append(layer.name)  # add layer items as items
         return layer
 
     def _load_layers(self, game, wildcard=None):
         sdir = os.path.join(
             os.getcwd(), os.path.join(game.directory_scenes, self.name))
         wildcard = wildcard if wildcard else os.path.join(sdir, "*.png")
-        self._layer = [] #free up old layers
+        self._layer = [] #clear old layers
+        layers = []
         for element in glob.glob(wildcard):  # add layers
             fname = os.path.splitext(os.path.basename(element))[0]
             details_filename = os.path.join(sdir, fname + ".details")
             # find a details file for each element
             if os.path.isfile(details_filename):
                 layer = self._load_layer(element)
+                layers.append(layer)
                 try:
                     with open(details_filename, 'r') as f:
                         data = f.read()
@@ -3793,9 +3839,10 @@ class Scene(metaclass=use_on_events):
                     log.error("Unable to load details from %s" %
                               details_filename)
 
-        self._layer.sort(key=lambda x: x.z)  # sort by z-value
-        if len(self._layer) > 0:  # use the lowest layer as the scene size
-            self._w, self._h = self._layer[0].w, self._layer[0].h
+        layers.sort(key=lambda x: x.z)  # sort by z-value
+        if len(layers) > 0:  # use the lowest layer as the scene size
+            self._w, self._h = layers[0].w, layers[0].h
+        self._layer = [x.name for x in layers] #convert to ordered str list
 
     def on_camera(self, point):
         self.x, self.y = point
@@ -3855,7 +3902,8 @@ class Scene(metaclass=use_on_events):
     def _set_background(self, fname=None):
         #        self._background = [Layer(fname)]
         for i in self._layer:
-            if i.z < 1.0:
+            obj = get_object(self.game, i)
+            if obj.z < 1.0:
                 self._layer.remove(i)
         self._load_layer(fname)
         if fname:
@@ -3874,6 +3922,18 @@ class Scene(metaclass=use_on_events):
             obj._opacity_target = 0
             obj._opacity_delta = (
                 obj._opacity_target - obj._opacity) / (self.game.fps * seconds)
+
+
+    def on_hide_objects(self, objects=[], block=False):
+        for obj_name in objects:
+            obj = get_object(self.game, obj_name)
+            obj._hide()
+
+    def on_show_objects(self, objects=[], block=False):
+        for obj_name in objects:
+            obj = get_object(self.game, obj_name)
+            obj._show()
+
 
     def on_music(self, filename):
         """ What music to play on entering the scene? """
@@ -5447,9 +5507,18 @@ class Game(metaclass=use_on_events):
             print("finished casting")
 
         if symbol == pyglet.window.key.F9:
-            ship_arrives_at_planet = get_function(
-                self, "ship_arrives_at_planet")
-            ship_arrives_at_planet(game)
+            game.camera.scene("elagoon")
+            game.load_state("elagoon", "kiss")
+            #game.elagoon_
+            game.menu.hide()
+            game.flower.remove()
+            game.eden_kiss.display_text = " "
+            game.firework2.do("idle")
+            game.pause(0.3)
+            game.firework2.do("firework")
+            game.player.says("start recording")
+            game.pause(3)
+            game.elagoon_background.fade_out()
         if symbol == pyglet.window.key.F10:
             fn = get_function(self, "debug_cutscene")
             fn(game)
@@ -5688,6 +5757,8 @@ class Game(metaclass=use_on_events):
                 if (self.mouse_mode != MOUSE_LOOK or GOTO_LOOK) and (obj.allow_interact or obj.allow_use or obj.allow_look):
                     if self.player and self.player.name in self.scene._objects and self.player != obj:
                         self.player.goto(obj, block=True)
+                        self.player.set_idle(obj)
+
                 if button & pyglet.window.mouse.RIGHT or self.mouse_mode == MOUSE_LOOK:
                     if obj.allow_look or allow_player_use:
                         user_trigger_look(self, obj)
@@ -5704,6 +5775,7 @@ class Game(metaclass=use_on_events):
         # no objects to interact with, so just go to the point
         if self.player and self.scene and self.player.scene == self.scene:
             self.player.goto((x, y))
+            self.player.set_idle()
 
     def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
         x, y = x / self._scale, y / self._scale  # if window is being scaled
@@ -6468,7 +6540,6 @@ class Game(metaclass=use_on_events):
                 modal_objects.append(get_object(self, obj_name))
 
         layer_objects = self.scene._layer if self.scene else []
-
         # update all the objects in the scene or the event queue.
         items_list = [layer_objects, scene_objects, self._menu, modal_objects, [
             self.camera], [obj[1][0] for obj in self._events], self._edit_menu]
@@ -6523,10 +6594,10 @@ class Game(metaclass=use_on_events):
         # undo alpha for pyglet drawing
         pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0)
         for item in self.scene._layer:
-            # awkward, layers have to be updated in case from save file
-            item.game = self
-            if item.z <= 1.0:
-                item.pyglet_draw(absolute=False)
+            obj = get_object(self, item)
+            obj.game = self
+            if obj.z <= 1.0:
+                obj.pyglet_draw(absolute=False)
             else:
                 break
 
@@ -6548,8 +6619,9 @@ class Game(metaclass=use_on_events):
 
         # draw scene foregrounds (layers with z greater than 1.0)
         for item in self.scene._layer:
-            if item.z > 1.0:
-                item.pyglet_draw(absolute=False)
+            obj = get_object(self, item)
+            if obj.z > 1.0:
+                obj.pyglet_draw(absolute=False)
 
         if self._info_object.display_text != "":
             self._info_object.pyglet_draw(absolute=False)
@@ -6908,7 +6980,8 @@ class Game(metaclass=use_on_events):
         if image:
             scene._set_background(image)
         for i in scene._layer:
-            i.z = 1.0
+            obj = get_object(self, i)
+            obj.z = 1.0
         self.busy += 1  # set Game object to busy (only time this happens?)
         self._waiting = True  # make game wait until splash is finished
         # add scene to game, change over to that scene
