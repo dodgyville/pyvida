@@ -992,6 +992,7 @@ class Motion(object):
         self.mode = self.default
         self.index = 0  # where in the motion we currently are
         self.blocking = False #block events from firing
+        self.destructive = True #apply permanently to actor
 
     def __getstate__(self):
         self.game = None
@@ -1013,8 +1014,12 @@ class Motion(object):
                         actor.name, self.name, actor.busy))
             return False
         d = self.deltas[self.index % num_deltas]
-        actor.x += d[0] if d[0] != None else 0
-        actor.y += d[1] if d[1] != None else 0
+        if self.destructive is True: #apply to actor's actual co-ordinates
+            actor.x += d[0] if d[0] != None else 0
+            actor.y += d[1] if d[1] != None else 0
+        else: #apply only to a temporary visual displacement
+            actor._vx += d[0] if d[0] != None else 0
+            actor._vy += d[1] if d[1] != None else 0
         actor.z += d[2] if d[2] != None else 0
         actor.rotate += d[3] if d[3] != None else 0
         if d[4] != None: actor.scale = d[4] 
@@ -1040,7 +1045,12 @@ class Motion(object):
             with open(fname, "r") as f:
                 # first line is metadata (variable names and default)
                 data = f.readlines()
-                meta = data[0].strip().split(",")
+                meta = data[0]
+                if meta[0] == "*": #flag to set motion to non-destructive
+                    print("motion is non-destructive")
+                    self.destructive=False
+                    meta = meta[1:]
+                meta = meta.strip().split(",")
                 for line in data[1:]:
                     if line[0] == "#":
                         continue  # allow comments after metadata
@@ -1264,7 +1274,7 @@ def crosshair(game, point, colour, absolute=False, txt=""):
     pyglet.graphics.draw(2, pyglet.gl.GL_LINES, ('v2i', (x - 5, y, x + 5, y)))
 
     pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0)  # undo alpha for pyglet drawing
-    label = pyglet.text.Label("{0} {1}, {1}".format(txt, x, game.resolution[1] - y),
+    label = pyglet.text.Label("{0} {1}, {2}".format(txt, x, game.resolution[1] - y),
                               font_name='Arial',
                               font_size=10,
                               color=colour,
@@ -1467,6 +1477,7 @@ class Actor(object, metaclass=use_on_events):
         self._ax, self._ay = 0, 0  # anchor point
         self._nx, self._ny = 0, 0  # displacement point for name
         self._tx, self._ty = 0, 0  # displacement point for text
+        self._vx, self._vy = 0, 0 # temporary visual displacement (used by motions)
         self._parent = None
         # when an actor stands at this actor's stand point, request an idle
         self.idle_stand = None
@@ -1951,6 +1962,7 @@ class Actor(object, metaclass=use_on_events):
         return kwargs
 
     def _update(self, dt, obj=None):  # actor._update, use obj to override self
+        self._vx, self._vy = 0, 0
         self._scroll_dx += self.scroll[0]
         if self.w and self._scroll_dx < -self.w:
             self._scroll_dx += self.w
@@ -2011,7 +2023,7 @@ class Actor(object, metaclass=use_on_events):
                         self._do(self._next_action)
                         self._next_action = None
                     else: #try the default
-                        self._do(self._idle)
+                        self._do(self.default_idle)
          #   else:
           #      print("missed",target,self.x, self.y)
         # apply motions
@@ -2021,6 +2033,15 @@ class Actor(object, metaclass=use_on_events):
                 remove_motions.append(motion)
         for motion in remove_motions:
             self._applied_motions.remove(motion)
+
+    @property
+    def default_idle(self):
+        """  Return the best idle for this actor
+        """
+        idle = self._idle
+        if self.scene and self.scene.default_idle:
+            idle = self.scene.default_idle
+        return idle
 
     @property
     def clickable_area(self):
@@ -2450,7 +2471,9 @@ class Actor(object, metaclass=use_on_events):
                                  self.game.camera._shake_x)
                     y += randint(-self.game.camera._shake_y,
                                  self.game.camera._shake_y)
-
+            #non-destructive motions may only be displacing the sprite.
+            x += self._vx
+            y += self._vy
             pyglet.gl.glTranslatef(self._scroll_dx, 0.0, 0.0)
             sprite.position = (int(x), int(y))
             if self._scroll_dx != 0 and self._scroll_dx + self.w < self.game.resolution[0]:
@@ -2961,7 +2984,7 @@ class Actor(object, metaclass=use_on_events):
 #        log.info("do_once does not follow block=True
 #        import pdb; pdb.set_trace()
         callback = self.on_animation_end_once #if not block else self.on_animation_end_once_block
-        self._next_action = next_action if next_action else self._idle
+        self._next_action = next_action if next_action else self.default_idle
         result = self._do(action, callback, mode=mode)
         if block:
             self.game._waiting = True
@@ -3162,7 +3185,7 @@ class Actor(object, metaclass=use_on_events):
 
     def set_idle(self, target=None):
         """ Work out the best idle for this actor based on the target and available idle actions """
-        idle = self._idle #default idle
+        idle = self.default_idle #default idle
         ANGLED_IDLE = [("idle_leftup", (91, 180)),
                        ("idle_rightup", (-180, -91)),
                        ("idle_rightdown", (-90, 0)),
@@ -3680,6 +3703,7 @@ class Scene(metaclass=use_on_events):
 
         self.display_text = None  # used on portals if not None
         self.description = None  # text for blind users
+        self.default_idle = None #override player._idle for this scene
         self.scales = {}
 
         self.walkareas = WalkAreaManager(self, game)  # pyvida4 compatability
@@ -5507,6 +5531,9 @@ class Game(metaclass=use_on_events):
             print("finished casting")
 
         if symbol == pyglet.window.key.F9:
+            game.player.move((0,0))
+            game.player.standing_still = datetime.now()
+            return
             game.camera.scene("elagoon")
             game.load_state("elagoon", "kiss")
             #game.elagoon_
@@ -6812,6 +6839,9 @@ class Game(metaclass=use_on_events):
             if game.scene._ambient_filename:
                 f.write('    scene.ambient("%s")\n' %
                         game.scene._ambient_filename)
+            if game.scene.default_idle:
+                f.write('    scene.default_idle = "%s"\n' %
+                        game.scene.default_idle)
 #            f.write('    scene._walkareas = [')
 #            for w in game.scene._walkareas:
 #                walkarea = str(w.polygon.vertexarray)
@@ -7329,6 +7359,23 @@ class MyTkApp(threading.Thread):
         tk.Radiobutton(group, text="Camera", command=edit_camera,
                        indicatoron=0, value=1).grid(row=row, column=0)
 
+
+        request_default_idle = tk.StringVar(group)
+
+        def change_default_idle(*args, **kwargs):
+            self.game.scene.default_idle =  request_default_idle.get()
+
+        col = 1
+        actions = list(self.game.player._actions.keys())
+        actions.sort()
+        if len(actions) > 0:
+            tk.Label(group, text="Default player idle for scene:").grid(
+                column=col, row=row)
+            option = tk.OptionMenu(
+                group, request_default_idle, *actions, command=change_default_idle).grid(column=col+1, row=row)
+            #row += 1
+            col += 2
+
         def close_editor(*args, **kwargs):
             if self.obj:
                 self.obj.show_debug = False
@@ -7339,7 +7386,7 @@ class MyTkApp(threading.Thread):
             self.app.destroy()
 
         self.close_button = tk.Button(
-            group, text='close', command=close_editor).grid(column=1, row=row)
+            group, text='close', command=close_editor).grid(column=col, row=row)
 
         row += 1
 
@@ -7558,6 +7605,7 @@ class MyTkApp(threading.Thread):
             option = tk.OptionMenu(
                 group, request_idle, *actions, command=change_idle).grid(column=1, row=row)
             row += 1
+
 
         group = tk.LabelFrame(group, text="Tools", padx=5, pady=5)
         group.grid(padx=10, pady=10)
