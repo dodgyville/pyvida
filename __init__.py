@@ -1294,6 +1294,25 @@ def coords(game, txt, x,y):
     label.draw()
 
 
+#def polygon(points, colour=(255, 255, 255, 255), fill=False):
+#    fcolour = fColour(colour)
+#    pyglet.gl.glColor4f(*fcolour)
+##    points = [item for sublist in [p1, p2, p3, p4] for item in sublist]
+ #   pyglet.graphics.draw(4, pyglet.gl.GL_POLYGON, ('v2i', points))
+ #   pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0)  # undo alpha for pyglet drawing
+
+
+def polygon(points, colors=None):
+    """
+    @param points: A list formatted like [x1, y1, x2, y2...]
+    @param colors: A list formatted like [r1, g1, b1, a1, r2, g2, b2 a2...]
+    """
+    if colors == None:
+        pyglet.graphics.draw(len(points)/2, pyglet.gl.GL_POLYGON,('v2f', points))
+    else:
+        pyglet.graphics.draw(len(points)/2, pyglet.gl.GL_POLYGON,('v2f', points),('c4f', colors))
+
+
 def rectangle(game, rect, colour=(255, 255, 255, 255), fill=False, label=True, absolute=False):
     fcolour = fColour(colour)
     pyglet.gl.glColor4f(*fcolour)
@@ -3957,6 +3976,34 @@ class Scene(metaclass=use_on_events):
         for obj_name in objects:
             obj = get_object(self.game, obj_name)
             obj._show()
+
+    def on_hide(self, objects=None, backgrounds=None, block=False):
+        if objects is None and backgrounds is None: #hide everything
+            objects = self._objects
+            backgrounds = self._layer
+        objects = objects if objects else []
+        backgrounds = backgrounds if backgrounds else []
+        for obj_name in objects:
+            obj = get_object(self.game, obj_name)
+            obj._hide()
+        for obj_name in backgrounds:
+            obj = get_object(self.game, obj_name)
+            obj._hide()
+
+    def on_hide(self, objects=None, backgrounds=None, block=False):
+        if objects is None and backgrounds is None: #hide everything
+            objects = self._objects
+            backgrounds = self._layer
+        objects = objects if objects else self._objects
+        backgrounds = backgrounds if backgrounds else self._layer
+        for obj_name in objects:
+            obj = get_object(self.game, obj_name)
+            obj._hide()
+        for obj_name in backgrounds:
+            obj = get_object(self.game, obj_name)
+            obj._hide()
+
+
 
 
     def on_music(self, filename):
