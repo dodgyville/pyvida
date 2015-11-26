@@ -4694,6 +4694,21 @@ class Camera(metaclass=use_on_events):  # the view manager
     def on_on(self):
         self._overlay = None
 
+    def on_screenshot(self, filename):
+        """ Save the current screen to a file
+        :param filename:
+        :return:
+        """
+        #from PIL import ImageGrab
+        #im = ImageGrab.grab()
+        #im.save(filename)
+        pyglet.image.get_buffer_manager().get_color_buffer().save(filename)
+        from PIL import Image
+        img = Image.open(filename)
+        img = img.convert('RGB') #remove alpha
+        fname, ext = os.path.splitext(filename)
+        img.save(fname+".png")
+
     def on_pan(self, left=False, right=False, top=False, bottom=False, percent_vertical=False, speed=None):
         """ Convenience method for panning camera to left, right, top and/or bottom of scene, left OR right OR Neither AND top OR bottom Or Neither """
         x = 0 if left else self.game.scene.x
@@ -5304,6 +5319,7 @@ class Game(metaclass=use_on_events):
         self._scale = scale
 
 #        config = pyglet.gl.Config(double_buffer=True, vsync=True)
+        #config = pyglet.gl.Config(alpha_size=4)
         self._window = pyglet.window.Window(*resolution)
 
         pyglet.gl.glScalef(scale, scale, scale)
@@ -5578,6 +5594,15 @@ class Game(metaclass=use_on_events):
             print("finished casting")
 
         if symbol == pyglet.window.key.F9:
+            for i in range(1,1000):
+                game.player.generate_world(i)
+                game.menu.clear()
+                game.camera.scene("orbit")
+                d = os.path.join("dev/explore", "planet_%09d.png" %i)
+                game.pause(0.01)
+                game.camera.screenshot(d)
+
+            return
             game.player.move((0,0))
             game.player.standing_still = datetime.now()
             return
