@@ -1565,7 +1565,9 @@ class Actor(object, metaclass=use_on_events):
         self.set_editable()
 
     def unload_assets(self):  # actor.unload
-        """ Unload graphic assets """
+        """ Unload graphic assets
+            TODO: load and unload should probably be queuing functions
+        """
         self._tk_edit = {}
         self._clickable_mask = None
         for action in self._actions.values():
@@ -1580,6 +1582,11 @@ class Actor(object, metaclass=use_on_events):
             action.load_assets(game)
 
         return self.switch_asset(self.action)
+
+
+    def on_refresh_assets(self, game):
+        self.unload_assets()
+        self.load_assets(game)
 
     def switch_asset(self, action, **kwargs):
         """ Switch this Actor's main resource to the requested action """
@@ -1933,8 +1940,12 @@ class Actor(object, metaclass=use_on_events):
     def set_alpha(self, v):
         self._opacity = v
 
-        if self.resource:
+        if isinstance(self, Text) and self.resource:
+            new_colour = (self.resource.color[0], self.resource.color[1], self.resource.color[2], int(self._opacity))
+            self.resource.color = new_colour
+        elif self.resource:
             self.resource.opacity = self._opacity
+
 
     def get_alpha(self):
         return self._opacity
@@ -2009,8 +2020,7 @@ class Actor(object, metaclass=use_on_events):
                         log.info("%s has finished on_fade_in, so decrement self.busy to %i." % (
                             self.name, self.busy))
 
-            if self.resource:
-                self.resource.opacity = self._opacity
+            self.alpha = self._opacity
 
         if self._goto_x != None:
             self.x = self.x + self._goto_dx
@@ -7101,7 +7111,7 @@ class Game(metaclass=use_on_events):
             else:
                 pyglet.clock.schedule_once(splash_finish, duration, self)
 
-    def on_relocate(self, obj, scene, destination):  # game.relocate
+    def on_relocate(self, obj, scene, destination=None):  # game.relocate
         obj = get_object(self.game, obj)
         scene = get_object(self.game, scene)
         destination = get_point(self.game, destination)
