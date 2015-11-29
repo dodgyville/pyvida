@@ -3806,15 +3806,30 @@ class WalkAreaManager(metaclass=use_on_events):
     def get_pt_y(self):
         return self._get_point(y=True)
 
-    def find_nearest_edge(self, x,y):
-        closest = 0
-        closest_distance = 10000
+    def edit_nearest_point(self, x,y):
+        self._edit_waypoint_index = -1
+        self._edit_polygon_index = -1
+
+        closest_polygon = 0
+        closest_distance_polygon = 10000
         for i, pt in enumerate(self._polygon):
             d = distance((x,y), pt)
-            if d < closest_distance:
-                closest = i
-                closest_distance = d
-        return closest
+            if d < closest_distance_polygon:
+                closest_polygon = i
+                closest_distance_polygon = d
+
+        closest_waypoint = 0
+        closest_distance_waypoint = 10000
+        for i, pt in enumerate(self._waypoints):
+            d = distance((x,y), pt)
+            if d < closest_distance_waypoint:
+                closest_waypoint = i
+                closest_distance_waypoint = d
+
+        if closest_distance_waypoint <= closest_distance_polygon:
+            self._edit_waypoint_index = closest_waypoint
+        else:
+            self._edit_polygon_index = closest_polygon
 
     def _update_walkarea(self):
         self._polygon_count = len(self._polygon)
@@ -3834,9 +3849,29 @@ class WalkAreaManager(metaclass=use_on_events):
         if self._edit_polygon_index < 0:
             self._edit_polygon_index = 0
         pt1 = self._polygon[self._edit_polygon_index]
-        pt2 = self._polygon[self._edit_polygon_index+1%len(self._polygon)]
+        pt2 = self._polygon[(self._edit_polygon_index+1)%len(self._polygon)]
         new_pt = pt1[0]+(pt2[0] - pt1[0])//2, pt1[1] + (pt2[1] - pt1[1])//2
-        self._polygon = self._polygon[:self._edit_polygon_index+1] + [new_pt] + self._polygon[self._edit_polygon_index+1:]
+        self._polygon = self._polygon[:self._edit_polygon_index+1] + [new_pt] \
+                        + self._polygon[self._edit_polygon_index+1:]
+        self._update_walkarea()
+
+    def insert_way_point(self):
+        """ Add a new way point after the current index.
+        :return:
+        """
+        if len(self._polygon) == 0:
+            self.on_reset_to_default()
+        if self._edit_waypoint_index < 0:
+            self._edit_waypoint_index = 0
+
+        if len(self._waypoints) <= 1:
+            self._waypoints.append((800,500)) #default position
+        else:
+            pt1 = self._waypoints[self._edit_waypoint_index]
+            pt2 = self._waypoints[(self._edit_waypoint_index+1)%len(self._waypoints)]
+            new_pt = pt1[0]+(pt2[0] - pt1[0])//2, pt1[1] + (pt2[1] - pt1[1])//2
+            self._waypoints = self._waypoints[:self._edit_waypoint_index+1]\
+                              + [new_pt] + self._waypoints[self._edit_waypoint_index+1:]
         self._update_walkarea()
 
     def on_add_waypoint(self, point):
@@ -3847,7 +3882,6 @@ class WalkAreaManager(metaclass=use_on_events):
 
     def on_toggle_editor(self):
         self._editing = not self._editing
-
 
     def on_reset_to_default(self):
         self.on_polygon(DEFAULT_WALKAREA)
@@ -3887,8 +3921,6 @@ class WalkAreaManager(metaclass=use_on_events):
         return safe
 
 
-
-
     def pyglet_draw(self):
         ypts = [self.game.resolution[1] - y for y in self._polygon_y]
         pts = [item for sublist in zip(self._polygon_x, ypts) for item in sublist]
@@ -3897,6 +3929,10 @@ class WalkAreaManager(metaclass=use_on_events):
         colours = list(fColour(colour)) * self._polygon_count
         polygon(self.game, pts, colours)
         for pt in self._polygon:
+            crosshair(self.game, pt, colour)
+
+        colour = (255, 96, 181, 255)
+        for pt in self._waypoints:
             crosshair(self.game, pt, colour)
 
 
@@ -5977,9 +6013,7 @@ class Game(metaclass=use_on_events):
         # if editing walkarea, set the index to the nearest point
         if self._editing:
             if isinstance(self._editing, WalkAreaManager):
-                i = self._editing.find_nearest_edge(x,y)
-                self._editing._edit_polygon_index = i
-                #self._edit_waypoint_index = None
+                self._editing.edit_nearest_point(x, y)
             return
 
         for obj_name in self.scene._objects:
@@ -7758,6 +7792,11 @@ class MyTkApp(threading.Thread):
             if self.game.scene.walkarea:
                 self.game.scene.walkarea.insert_edge_point()
 
+
+        def add_way_point(*args, **kwargs):
+            if self.game.scene.walkarea:
+                self.game.scene.walkarea.insert_way_point()
+
         self.reset_walkarea_button = tk.Button(
             group, text='reset walkarea', command=reset_walkarea).grid(column=1, row=row)
         self.edit_walkarea_button = tk.Button(
@@ -7767,7 +7806,7 @@ class MyTkApp(threading.Thread):
             group, text='add edge point', command=add_edge_point).grid(column=3, row=row)
 
         self.edit_walkarea_button = tk.Button(
-            group, text='add way point', command=edit_walkarea).grid(column=4, row=row)
+            group, text='add way point', command=add_way_point).grid(column=4, row=row)
 
         row += 1
 
