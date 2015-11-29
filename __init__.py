@@ -652,6 +652,22 @@ def collide(rect, x, y):
                 or (y > rect[3] + rect[1]))
 
 
+def valid_goto_point(game, scene, obj, destination):
+    """
+    Check if the target destination is a valid goto potin.
+    :param game:
+    :param scene:
+    :param obj:
+    :param destination:
+    :return:
+    """
+    point = get_point(game, destination, obj)
+    if scene and scene.walkarea:
+        if not scene.walkarea.valid(*point):
+            return False
+    return True
+
+
 class answer(object):
 
     """
@@ -1302,15 +1318,16 @@ def coords(game, txt, x,y):
  #   pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0)  # undo alpha for pyglet drawing
 
 
-def polygon(points, colors=None):
+def polygon(game, points, colors=None, fill=False):
     """
     @param points: A list formatted like [x1, y1, x2, y2...]
     @param colors: A list formatted like [r1, g1, b1, a1, r2, g2, b2 a2...]
     """
+    style = pyglet.gl.GL_LINE_LOOP if fill is False else pyglet.gl.GL_POLYGON
     if colors == None:
-        pyglet.graphics.draw(len(points)/2, pyglet.gl.GL_POLYGON,('v2f', points))
+        pyglet.graphics.draw(len(points)//2, style, ('v2f', points))
     else:
-        pyglet.graphics.draw(len(points)/2, pyglet.gl.GL_POLYGON,('v2f', points),('c4f', colors))
+        pyglet.graphics.draw(len(points)//2, style, ('v2f', points),('c4f', colors))
 
 
 def rectangle(game, rect, colour=(255, 255, 255, 255), fill=False, label=True, absolute=False):
@@ -3675,7 +3692,7 @@ class Emitter(Item, metaclass=use_on_events):
         self._reset()
 
 
-class WalkAreaManager(object):
+class OldWalkAreaManager(object):
 
     """ Comptability layer with pyvida4 walkareas """
 
@@ -3699,7 +3716,7 @@ class WalkAreaManager(object):
 
 
 class WalkArea(object):
-
+    """ Comptability layer with pyvida4 walkareas """
     def __init__(self, *args, **kwargs):
         log.warning("WalkArea deprecated, please update your code")
 
@@ -3710,6 +3727,180 @@ class WalkArea(object):
         return self
 
 
+DEFAULT_WALKAREA = [(100,600),(1500,560),(1520,800),(80,820)]
+
+def distance(pt1, pt2):
+    """
+    :param pt1:
+    :param pt2:
+    :return: distance between two points
+    """
+    dist = math.sqrt( (pt2[0] - pt1[0])**2 + (pt2[1] - pt1[1])**2 )
+    return dist
+
+class WalkAreaManager(metaclass=use_on_events):
+
+    """ Walkarea with waypoints """
+
+    def __init__(self,  scene):
+        self._scene = scene.name
+        self.game = None
+        self._waypoints = []
+        self._polygon = []
+
+        #for fast calculation of collisions
+        self._polygon_count = len(self._polygon)
+        self._polygon_x = []
+        self._polygon_y = []
+
+        self._editing = False
+        self._edit_polygon_index = -1
+        self._edit_waypoint_index = -1
+
+        self.busy = 0
+
+    def _set_point(self, x=None, y=None):
+        i = -1
+        if self._edit_polygon_index >= 0:
+            i = self._edit_polygon_index
+            pts = self._polygon
+            a = "_polygon"
+        elif self._edit_waypoint_index >= 0:
+            i = self._edit_waypoint_index
+            pts = self._waypoints
+            a = "_waypoints"
+        if i >= 0:
+            ox, oy = pts[i]
+            x = x if x else ox
+            y = y if y else oy
+            updated = pts[:i] + [(x,y)] + pts[i+1:]
+            setattr(self, a, updated)
+            self._update_walkarea()
+
+    def _get_point(self, x=False, y=False):
+        i = -1
+        pts = []
+        if self._edit_polygon_index >= 0:
+            i = self._edit_polygon_index
+            pts = self._polygon
+        elif self._edit_waypoint_index >= 0:
+            i = self._edit_waypoint_index
+            pts = self._waypoints
+        if i >= 0:
+            ox, oy = pts[i]
+        if x is True:
+            return ox
+        else:
+            return oy
+
+
+    def set_pt_x(self, v):
+        self._set_point(x=v)
+
+    def set_pt_y(self, v):
+        self._set_point(y=v)
+
+    def get_pt_x(self):
+        return self._get_point(x=True)
+
+    def get_pt_y(self):
+        return self._get_point(y=True)
+
+    def find_nearest_edge(self, x,y):
+        closest = 0
+        closest_distance = 10000
+        for i, pt in enumerate(self._polygon):
+            d = distance((x,y), pt)
+            if d < closest_distance:
+                closest = i
+                closest_distance = d
+        return closest
+
+    def _update_walkarea(self):
+        self._polygon_count = len(self._polygon)
+        self._polygon_x = [float(p[0]) for p in self._polygon]
+        self._polygon_y = [float(p[1]) for p in self._polygon]
+
+    def on_polygon(self, points):
+        self._polygon = points
+        self._update_walkarea()
+
+    def insert_edge_point(self):
+        """ Add a new point after the current index
+        :return:
+        """
+        if len(self._polygon) == 0:
+            self.on_reset_to_default()
+        if self._edit_polygon_index < 0:
+            self._edit_polygon_index = 0
+        pt1 = self._polygon[self._edit_polygon_index]
+        pt2 = self._polygon[self._edit_polygon_index+1%len(self._polygon)]
+        new_pt = pt1[0]+(pt2[0] - pt1[0])//2, pt1[1] + (pt2[1] - pt1[1])//2
+        self._polygon = self._polygon[:self._edit_polygon_index+1] + [new_pt] + self._polygon[self._edit_polygon_index+1:]
+        self._update_walkarea()
+
+    def on_add_waypoint(self, point):
+        self._waypoints.append(point)
+
+    def on_waypoints(self, points):
+        self._waypoints = points
+
+    def on_toggle_editor(self):
+        self._editing = not self._editing
+
+
+    def on_reset_to_default(self):
+        self.on_polygon(DEFAULT_WALKAREA)
+
+    def collide(self, x,y):
+        """ Returns True if the point x,y collides with the polygon """
+        c = False
+        i = 0
+        npol = self._polygon_count
+        j = npol-1
+        xp,yp = self._polygon_x, self._polygon_y
+        while i < npol:
+            if ((((yp[i]<=y) and (y<yp[j])) or
+                ((yp[j]<=y) and(y<yp[i]))) and
+                (x < (xp[j] - xp[i]) * (y - yp[i]) / (yp[j] - yp[i]) + xp[i])):
+                c = not c
+            j = i
+            i += 1
+        return c
+
+    def valid(self, x, y):
+        """ Returns True if the point is safe to walk to
+         1. Check inside polygon
+         2. Check not inside scene's objects' solid area
+        """
+        inside_polygon = self.collide(x,y)
+        outside_solids = True
+
+        if self._scene:
+            scene = get_object(self.game, self._scene)
+            for obj_name in scene._objects:
+                obj = get_object(scene.game, obj_name)
+                if obj.solid_area.collidepoint(x - obj.x, y - obj.y):
+                    outside_solids = False
+                    break
+        safe = True if inside_polygon and outside_solids else False
+        return safe
+
+
+
+
+    def pyglet_draw(self):
+        ypts = [self.game.resolution[1] - y for y in self._polygon_y]
+        pts = [item for sublist in zip(self._polygon_x, ypts) for item in sublist]
+#        polygon(self.game, pts)
+        colour = (24, 169, 181, 255)
+        colours = list(fColour(colour)) * self._polygon_count
+        polygon(self.game, pts, colours)
+        for pt in self._polygon:
+            crosshair(self.game, pt, colour)
+
+
+
 class Scene(metaclass=use_on_events):
 
     def __init__(self, name, game=None):
@@ -3717,7 +3908,7 @@ class Scene(metaclass=use_on_events):
         # assist pickling)
         self._objects = []
         self.name = name
-        self.game = game
+        self._game = game
         self._layer = []
         self.busy = 0
         self._music_filename = None
@@ -3735,7 +3926,10 @@ class Scene(metaclass=use_on_events):
         self.default_idle = None #override player._idle for this scene
         self.scales = {}
 
-        self.walkareas = WalkAreaManager(self, game)  # pyvida4 compatability
+        self.walkarea = WalkAreaManager(self)
+
+
+        self.walkareas = OldWalkAreaManager(self, game)  # pyvida4 compatability
 
     def __getstate__(self):
         self.game = None
@@ -3768,6 +3962,14 @@ class Scene(metaclass=use_on_events):
     def set_h(self, v):
         self._h = v
     h = property(get_h, set_h)
+
+    def get_game(self):
+        return self._game
+
+    def set_game(self, v):
+        self._game = v
+        self.walkarea.game = v
+    game = property(get_game, set_game)
 
     def has(self, obj):
         obj = get_object(self.game, obj)
@@ -3855,7 +4057,8 @@ class Scene(metaclass=use_on_events):
         fname = os.path.splitext(os.path.basename(element))[0]
         sdir = os.path.dirname(element)
         layer = self.game._add(
-            Item("%s_%s" % (self.name, fname)).smart(self.game, image=element), replace=True)
+            Item("%s_%s" % (self.name, fname)).smart(self.game, image=element),
+            replace=True)
         self._layer.append(layer.name)  # add layer items as items
         return layer
 
@@ -3946,7 +4149,8 @@ class Scene(metaclass=use_on_events):
     def on_clean(self, objs=[]):
         check_objects = copy.copy(self._objects)
         for i in check_objects:
-            if i not in objs and not isinstance(i, Portal) and i != self.game.player:
+            if i not in objs and not isinstance(i, Portal) \
+                    and i != self.game.player:
                 self._remove(i)
 
     def on_set_background(self, fname=None):
@@ -5770,6 +5974,14 @@ class Game(metaclass=use_on_events):
 
         self.mouse_down = (x, y)
 
+        # if editing walkarea, set the index to the nearest point
+        if self._editing:
+            if isinstance(self._editing, WalkAreaManager):
+                i = self._editing.find_nearest_edge(x,y)
+                self._editing._edit_polygon_index = i
+                #self._edit_waypoint_index = None
+            return
+
         for obj_name in self.scene._objects:
             obj = get_object(self, obj_name)
             if obj.collide(x, y) and obj._drag:
@@ -5779,7 +5991,7 @@ class Game(metaclass=use_on_events):
         """ Call the correct function depending on what the mouse has clicked on """
         if self.last_mouse_release:  # code courtesy from a stackoverflow entry by Andrew
             if (x, y, button) == self.last_mouse_release[:-1]:
-                """Same place, same button"""
+                """Same place, same button, double click shortcut"""
                 if time.clock() - self.last_mouse_release[-1] < 0.2:
                     if self.player and self.player._goto_x != None:
                         self.player._x, self.player._y = self.player._goto_x, self.player._goto_y
@@ -5840,6 +6052,8 @@ class Game(metaclass=use_on_events):
         # finally, try scene objects or allow a plain walk to be interrupted.
         if len(self._events) > 1:
             return
+
+        potentially_do_idle = False
         if len(self._events) == 1:
             # if the only event is a goto to a uninteresting point, clear it.
             if self._events[0][0].__name__ == "on_goto":
@@ -5851,6 +6065,7 @@ class Game(metaclass=use_on_events):
                         import pdb; pdb.set_trace()
                 self.player.busy -= 1
                 self.player._cancel_goto()
+                potentially_do_idle = True
             else:
                 return
         for obj_name in self.scene._objects:
@@ -5865,8 +6080,9 @@ class Game(metaclass=use_on_events):
                 # says to go to object for look, do that too.
                 if (self.mouse_mode != MOUSE_LOOK or GOTO_LOOK) and (obj.allow_interact or obj.allow_use or obj.allow_look):
                     if self.player and self.player.name in self.scene._objects and self.player != obj:
-                        self.player.goto(obj, block=True)
-                        self.player.set_idle(obj)
+                        if valid_goto_point(self, self.scene, self.player, obj):
+                            self.player.goto(obj, block=True)
+                            self.player.set_idle(obj)
 
                 if button & pyglet.window.mouse.RIGHT or self.mouse_mode == MOUSE_LOOK:
                     if obj.allow_look or allow_player_use:
@@ -5883,8 +6099,14 @@ class Game(metaclass=use_on_events):
 
         # no objects to interact with, so just go to the point
         if self.player and self.scene and self.player.scene == self.scene:
-            self.player.goto((x, y))
-            self.player.set_idle()
+            if valid_goto_point(self, self.scene, self.player, (x,y)):
+                self.player.goto((x, y))
+                self.player.set_idle()
+                return
+
+        if potentially_do_idle:
+            self.player._do(self.player.default_idle)
+
 
     def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
         x, y = x / self._scale, y / self._scale  # if window is being scaled
@@ -5897,8 +6119,8 @@ class Game(metaclass=use_on_events):
         if self._editing and self._editing_point_set:
             # x,y = x, self.resolution[1] - y #invert for pyglet to pyvida
             if hasattr(self._editing_point_get, "__len__") and len(self._editing_point_get) == 2:
-                x, y = self._editing_point_get[
-                    0](), self._editing_point_get[1]()
+                x, y = self._editing_point_get[0](), \
+                       self._editing_point_get[1]()
                 x += dx
                 y -= dy
                 self._editing_point_set[0](x)
@@ -6762,6 +6984,8 @@ class Game(metaclass=use_on_events):
 
         if self.editor: #draw mouse coords at mouse pos
             coords(self, "mouse", *self.mouse_position)
+            if self.scene.walkarea._editing is True:
+                self.scene.walkarea.pyglet_draw()
 
 
         if self.game.camera._overlay:
@@ -6924,11 +7148,9 @@ class Game(metaclass=use_on_events):
             if game.scene.default_idle:
                 f.write('    scene.default_idle = "%s"\n' %
                         game.scene.default_idle)
-#            f.write('    scene._walkareas = [')
-#            for w in game.scene._walkareas:
-#                walkarea = str(w.polygon.vertexarray)
-#                f.write('WalkArea().smart(game, %s),'%(walkarea))
-#            f.write(']\n')
+            if game.scene.walkarea:
+                f.write('    scene.walkarea.polygon(%s)\n'%game.scene.walkarea._polygon)
+                f.write('    scene.walkarea.waypoints(%s)\n'%game.scene.walkarea._waypoints)
             for name in game.scene._objects:
                 obj = get_object(self, name)
                 slug = slugify(name).lower()
@@ -7501,6 +7723,25 @@ class MyTkApp(threading.Thread):
         def save_layers(*args, **kwargs):
             self.game.scene._save_layers()
 
+        def _edit_walkarea(scene):
+            scene.walkarea.on_toggle_editor()
+            if scene.walkarea._editing:
+                self.game._editing = scene.walkarea
+                self.game._editing_point_set = (
+                    scene.walkarea.set_pt_x, scene.walkarea.set_pt_y)
+                self.game._editing_point_get = (
+                    scene.walkarea.get_pt_x, scene.walkarea.get_pt_y)
+                scene.walkarea._edit_polygon_index = 1
+
+
+        def reset_walkarea(*args, **kwargs):
+            if self.game.scene.walkarea is None:
+                self.game.scene.walkarea = WalkAreaManager(self.game.scene)
+            self.game.scene.walkarea.reset_to_default()
+
+        def edit_walkarea(*args, **kwargs):
+            _edit_walkarea(self.game.scene)
+
         self.state_save_button = tk.Button(
             group, text='save state', command=save_state).grid(column=0, row=row)
         self.state_load_button = tk.Button(
@@ -7509,6 +7750,24 @@ class MyTkApp(threading.Thread):
             group, text='initial state', command=initial_state).grid(column=2, row=row)
         self.layer_save_button = tk.Button(
             group, text='save layers', command=save_layers).grid(column=3, row=row)
+
+        row += 1
+
+
+        def add_edge_point(*args, **kwargs):
+            if self.game.scene.walkarea:
+                self.game.scene.walkarea.insert_edge_point()
+
+        self.reset_walkarea_button = tk.Button(
+            group, text='reset walkarea', command=reset_walkarea).grid(column=1, row=row)
+        self.edit_walkarea_button = tk.Button(
+            group, text='edit walkarea', command=edit_walkarea).grid(column=2, row=row)
+
+        self.edit_walkarea_button = tk.Button(
+            group, text='add edge point', command=add_edge_point).grid(column=3, row=row)
+
+        self.edit_walkarea_button = tk.Button(
+            group, text='add way point', command=edit_walkarea).grid(column=4, row=row)
 
         row += 1
 
