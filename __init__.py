@@ -3880,7 +3880,7 @@ class WalkAreaManager(metaclass=use_on_events):
             scene = get_object(self.game, self._scene)
             for obj_name in scene._objects:
                 obj = get_object(scene.game, obj_name)
-                if obj.solid_area.collidepoint(x - obj.x, y - obj.y):
+                if obj.solid_area.collidepoint(x, y):
                     outside_solids = False
                     break
         safe = True if inside_polygon and outside_solids else False
