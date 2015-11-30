@@ -17,6 +17,7 @@ import sys
 import threading
 import time
 import traceback
+from threading import Thread
 
 from argparse import ArgumentParser
 from collections import Iterable
@@ -1841,6 +1842,10 @@ class Actor(object, metaclass=use_on_events):
         self._sy = v
     sy = property(get_sy, set_sy)
 
+    @property
+    def stand_point(self):
+        return self.x + self.sx, self.y + self.sy
+
     def get_scale(self):
         return self._scale
 
@@ -2721,7 +2726,7 @@ class Actor(object, metaclass=use_on_events):
         if self.game._headless:  # headless mode skips sound and visuals
             items[0].trigger_interact()  # auto-close the on_says
 
-    def _says(self, text, action="portrait", font=None, size=None, using=None, position=None, delay=0.01, step=3, ok="ok"):
+    def _says(self, text, action="portrait", font=None, size=None, using=None, position=None, offset=None, delay=0.01, step=3, ok="ok"):
         # do high contrast if requested and available
         log.info("%s on says %s" % (self.name, text))
         background = using if using else None
@@ -2786,6 +2791,9 @@ class Actor(object, metaclass=use_on_events):
         label.game = self.game
         label.fullscreen(True)
         label.x, label.y = x + dx, y + dy
+        if offset:
+            label.x += offset[0]
+            label.y += offset[1]
         if ok and ok.viewable:
             ok._parent = msgbox
             ok.x, ok.y = msgbox.w - (ok.w * 2) // 3, msgbox.h - (ok.h * 2) // 3
@@ -4384,6 +4392,9 @@ class Text(Item):
 
     display_text = property(get_display_text, set_display_text)
 
+    def on_text(self, text):
+        self.display_text = text
+
     @property
     def w(self):
         w = self.resource.content_width if self.resource else self._width
@@ -5801,6 +5812,8 @@ class Game(metaclass=use_on_events):
             #            self.menu_from_factory("editor", MENU_EDITOR)
 #            editor_pgui(self)
             self.editor = editor(self)
+ #           editor_thread = Thread(target=editor, args=(,))
+#            editor_thread.start()
         if symbol == pyglet.window.key.F2:
             print("edit_script(game, obj) will open the editor for an object")
             import pdb
@@ -7120,8 +7133,21 @@ class Game(metaclass=use_on_events):
 
     def add_modal(self, modal):
         """ An an Item to the modals, making sure it is in the game.items collection """
-        self._modals.append(modal.name)
+        if modal.name not in self._modals: self._modals.append(modal.name)
         self._add(modal)
+
+    def on_modals(self, items=[], replace=False):
+        if replace: self._modals = []
+        for i in items:
+            i = get_object(self, i)
+
+            self.add_modal(i)
+
+
+    def on_remove_modal(self, item):
+        i = get_object(self, item)
+        self._modals.remove(i.name)
+
 
     def on_menu_modal(self, modal=True):
         """ Set if the menu is currently in modal mode (ie non-menu events are blocked """
@@ -7559,7 +7585,7 @@ class MyTkApp(threading.Thread):
             new_scene = get_object(self.game, sname)
             self.app.objects = objects = new_scene._objects
             self.game.camera._scene(new_scene)
-            new_scene.load_assets(self.game)
+            #new_scene.load_assets(self.game)
             self.index = 0
             if len(objects) > 0:
                 self.game._editing = get_object(self.game, objects[self.index])
