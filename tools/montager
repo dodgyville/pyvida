@@ -4,8 +4,6 @@
 #montager
 #cobbled together from websites and gpl stuff by Luke Miller 2005
 #NOTE: Provided AS IS, no warranty for use!
-#v1.0
-#initial release
 
 from PIL import *
 import Image
@@ -91,7 +89,7 @@ def make_contact_sheet(fnames,(ncols,nrows), (photow,photoh),
 
 def super_montage():
     print "montager v1.2 - by Luke Miller - 26/10/2015"
-    usage = "usage: montager out_file file_list\nAlso outputs a small .montage file describing the images.\nFor use with vidaG, to compile animations into single file.";
+    usage = "usage: montager out_file file_list\nAlso outputs a small .montage file describing the images.\nFor use with pyvida, to compile animations into single file.";
     print "NOTE: Provided AS IS, no warranty for use!";
     parser = OptionParser()
     parser.add_option("-r", "--reverse", action="store_true", dest="reverse", help="Reverse file list", default=False)
