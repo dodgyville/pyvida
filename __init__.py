@@ -23,7 +23,7 @@ from argparse import ArgumentParser
 from collections import Iterable
 from datetime import datetime
 from gettext import gettext
-from random import choice, randint
+from random import choice, randint, uniform
 
 import tkinter as tk
 import tkinter.filedialog
@@ -3497,7 +3497,7 @@ def terminate_by_frame(game, emitter, particle):
 
 class Particle(object):
 
-    def __init__(self, x, y, ax, ay, speed, direction):
+    def __init__(self, x, y, ax, ay, speed, direction, scale=1.0):
         self.index = 0
         self.action_index = 0
         self.x = x
@@ -3505,6 +3505,7 @@ class Particle(object):
         self.ax, self.ay = ax, ay
         self.speed = speed
         self.direction = direction
+        self.scale = scale
         self.hidden = True  # hide for first run
         self.terminate = False  # don't renew this particle if True
 
@@ -3514,7 +3515,8 @@ class Emitter(Item, metaclass=use_on_events):
 
     def __init__(self, name, number=10, frames=10, direction=0, fov=0, speed=1,
                  acceleration=(0, 0), size_start=1, size_end=1, alpha_start=1.0,
-                 alpha_end=0, random_index=True, random_age=True,
+                 alpha_end=0, random_index=True, random_age=True, size_spawn_min=1.0, size_spawn_max=1.0,
+                 speed_spawn_min=1.0, speed_spawn_max=1.0,
                  test_terminate=terminate_by_frame, behaviour=BEHAVIOUR_CYCLE):
         """ This object's solid_mask|solid_area is used for spawning 
             direction: what is the angle of the emitter
@@ -3534,6 +3536,8 @@ class Emitter(Item, metaclass=use_on_events):
         # should each particle start mid-action?
         self.random_index = random_index
         self.random_age = random_age  # should each particle start mid-life?
+        self.size_spawn_min, self.size_spawn_max = size_spawn_min, size_spawn_max
+        self.speed_spawn_min, self.speed_spawn_max = speed_spawn_min, speed_spawn_max
         self.particles = []
         self.behaviour = behaviour
         self._editable.append(
@@ -3545,7 +3549,7 @@ class Emitter(Item, metaclass=use_on_events):
     @property
     def summary(self):
         fields = ["name", "number", "frames", "direction", "fov", "speed", "acceleration", "size_start",
-                  "size_end", "alpha_start", "alpha_end", "random_index", "random_age", "test_terminate", "behaviour"]
+                  "size_end", "alpha_start", "alpha_end", "random_index", "random_age", "test_terminate", "behaviour", "size_spawn_min", "size_spawn_max", "speed_spawn_min", "speed_spawn_max"]
         d = {}
         for i in fields:
             d[i] = getattr(self, i, None)
@@ -3578,6 +3582,8 @@ class Emitter(Item, metaclass=use_on_events):
             p.x, p.y = self.x + \
                 randint(0, self._solid_area.w), self.y + \
                 randint(0, self._solid_area.h)
+            p.scale = self.get_a_scale()
+            p.speed = self.speed * uniform(self.speed_spawn_min, self.speed_spawn_max)
             p.index = 0
             p.hidden = False
             if p.terminate == True:
@@ -3624,7 +3630,9 @@ class Emitter(Item, metaclass=use_on_events):
 
             if self.resource is not None:
                 self.resource._frame_index = p.action_index%self.action.num_of_frames
+                self.resource.scale = p.scale
                 self.resource.position = (int(x), int(y))
+                
                 self.resource.draw()
 
             """
@@ -3663,12 +3671,17 @@ class Emitter(Item, metaclass=use_on_events):
     def get_a_direction(self):
         return randint(self.direction - float(self.fov / 2), self.direction + float(self.fov / 2))
 
+    def get_a_scale(self):
+        return uniform(self.size_spawn_min, self.size_spawn_max)
+
     def _add_particles(self, num=1, terminate=False):
         for x in range(0, num):
             d = self.get_a_direction()
+            scale = self.get_a_scale()
+            speed = self.speed * uniform(self.speed_spawn_min, self.speed_spawn_max)
 #            print("DIRECTION",d, self.direction, self.fov/2, self.x, self.y, self._solid_area.__dict__)
             self.particles.append(Particle(self.x + randint(0, self._solid_area.w),
-                                           self.y + randint(0, self._solid_area.h), self._ax, self._ay, self.speed, d))
+                                           self.y + randint(0, self._solid_area.h), self._ax, self._ay, speed, d, scale))
             p = self.particles[-1]
             if self.random_age:
                 p.index = randint(0, self.frames)
