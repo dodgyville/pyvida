@@ -3054,14 +3054,14 @@ class Actor(object, metaclass=use_on_events):
         print("set speed for %s" % self.action.name)
         self.action.speed = speed
 
-    def _set_tint(self, rgb):
+    def _set_tint(self, rgb=None):
         self._tint = rgb
         if rgb == None:
-            rgb = (0, 0, 0)  # (255, 255, 255)
+            rgb = (255, 255, 255) #(0, 0, 0)  
         if self.resource:
             self.resource.color = rgb
 
-    def on_tint(self, rgb):
+    def on_tint(self, rgb=None):
         self._set_tint(rgb)
 
     def on_idle(self, seconds):
@@ -5895,8 +5895,12 @@ class Game(metaclass=use_on_events):
             game.pause(3)
             game.elagoon_background.fade_out()
         if symbol == pyglet.window.key.F10:
-            fn = get_function(self, "debug_cutscene")
-            fn(game)
+            fn = get_function(self, "enter_generic_pod")
+            if fn:
+                fn(game, randint(0,1000000), self.player)
+                game.player._remember("pods unlocked")
+    #       fn = get_function(self, "debug_cutscene")
+     #       fn(game)
         if symbol == pyglet.window.key.F11:
             if self._walkthrough_output == False:
                 self.player.says("Recording walkthrough")
@@ -6564,7 +6568,10 @@ class Game(metaclass=use_on_events):
             for fn in dir(sys.modules[i]):
                 new_fn = getattr(sys.modules[i], fn)
                 if hasattr(new_fn, "__call__"):
-                    setattr(sys.modules[module], new_fn.__name__, new_fn)
+                    try:
+                        setattr(sys.modules[module], new_fn.__name__, new_fn)
+                    except AttributeError:
+                        print("ERROR: unable to reload", module, new_fn)
 
         # XXX update .uses{} values too.
         for i in (list(self._actors.values()) + list(self._items.values())):
