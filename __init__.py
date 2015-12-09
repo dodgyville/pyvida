@@ -5895,10 +5895,18 @@ class Game(metaclass=use_on_events):
             game.pause(3)
             game.elagoon_background.fade_out()
         if symbol == pyglet.window.key.F10:
-            fn = get_function(self, "enter_generic_pod")
-            if fn:
-                fn(game, randint(0,1000000), self.player)
-                game.player._remember("pods unlocked")
+            game.load_state("etreehouse", "initial")
+            game.camera.scene("etreehouse")
+            game.player.relocate("etreehouse", (766, 498))
+            game.player.scale = 0.8
+            game.scene.clean(["tycho"])
+            #game.player.tint((255, 220, 182))
+            #game.player.tint((239, 142, 76))
+            game.player.tint((255, 199, 138))
+#            fn = get_function(self, "enter_generic_pod")
+#            if fn:
+#                fn(game, randint(0,1000000), self.player)
+#                game.player._remember("pods unlocked")
     #       fn = get_function(self, "debug_cutscene")
      #       fn(game)
         if symbol == pyglet.window.key.F11:
