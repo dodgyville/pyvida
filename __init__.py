@@ -857,6 +857,60 @@ def update_progress_bar(game, obj):
 Classes
 """
 
+class PyvidaSprite(pyglet.sprite.Sprite):
+    """ A pyglet sprite but frame animate is handled manually """
+    def __init__(self, *args, **kwargs):
+        pyglet.sprite.Sprite.__init__(self, *args, **kwargs)
+        if self._animation:
+            pyglet.clock.unschedule(self._animate) #make it manual
+
+
+    def _animate(self, dt):
+        self._frame_index += 1
+        if self._frame_index >= len(self._animation.frames):
+            self._frame_index = 0
+            self.dispatch_event('on_animation_end')
+            if self._vertex_list is None:
+                return # Deleted in event handler.
+
+        frame = self._animation.frames[self._frame_index]
+        self._set_texture(frame.image.get_texture())
+
+        if frame.duration is not None:
+            duration = frame.duration - (self._next_dt - dt)
+            duration = min(max(0, duration), frame.duration)
+#            clock.schedule_once(self._animate, duration)
+            self._next_dt = duration
+        else:
+            self.dispatch_event('on_animation_end')    
+
+
+    def _get_image(self):
+        if self._animation:
+            return self._animation
+        return self._texture
+
+    def _set_image(self, img):
+        if self._animation is not None:
+            clock.unschedule(self._animate)
+            self._animation = None
+
+        if isinstance(img, image.Animation):
+            self._animation = img
+            self._frame_index = 0
+            self._set_texture(img.frames[0].image.get_texture())
+            self._next_dt = img.frames[0].duration
+#            if self._next_dt:
+#                clock.schedule_once(self._animate, self._next_dt)
+        else:
+            self._set_texture(img.get_texture())
+        self._update_position()
+
+    image = property(_get_image, _set_image,
+                     doc='''Image or animation to display.
+    :type: `AbstractImage` or `Animation`
+    ''')
+
 class Achievement(object):
     def __init__(self, slug, name, description, filename):
         self.slug = slug
@@ -1011,6 +1065,11 @@ class Motion(object):
         self.blocking = False #block events from firing
         self.destructive = True #apply permanently to actor
 
+        self._average_dx = 0 #useful for pathplanning
+        self._average_dy = 0
+        self._total_dx = 0
+        self._total_dy = 0
+
     def __getstate__(self):
         self.game = None
         return self.__dict__
@@ -1082,6 +1141,13 @@ class Motion(object):
                             import pdb
                             pdb.set_trace()
                     self.deltas.append(m.flat)
+                    self._average_dx += m.x if m.x else 0
+                    self._average_dy = m.y if m.y else 0
+                    self._total_dx = m.x if m.x else 0
+                    self._total_dy = m.y if m.y else 0
+        if len(self.deltas)>0:
+            self._average_dx /= len(self.deltas)
+            self._average_dy /= len(self.deltas)
         return self
 
 
@@ -1091,7 +1157,7 @@ def set_resource(key, w=False, h=False, resource=False, subkey=None):
     ow, oh, oresource = _resources[key] if key in _resources else (0, 0, None)
     ow = w if w != False else ow
     oh = h if h != False else oh
-    if resource == None and isinstance(oresource,  pyglet.sprite.Sprite): #delete sprite
+    if resource == None and isinstance(oresource,  PyvidaSprite): #delete sprite
         oresource.delete()
     oresource = resource if resource != False else oresource
     _resources[key] = (ow, oh, oresource)
@@ -1628,7 +1694,8 @@ class Actor(object, metaclass=use_on_events):
             sprite_callback()
             return
 
-        sprite = pyglet.sprite.Sprite(action_animation, **kwargs)
+        kwargs["subpixel"] = True
+        sprite = PyvidaSprite(action_animation, **kwargs)
         if self._tint:
             sprite.color = self._tint
         if self._scale:
@@ -2077,6 +2144,10 @@ class Actor(object, metaclass=use_on_events):
                         self._do(self.default_idle)
          #   else:
           #      print("missed",target,self.x, self.y)
+        #update the PyvidaSprite animate manually
+        if self.resource:
+            self.resource._animate(dt)
+
         # apply motions
         remove_motions = []
         for motion in self._applied_motions:
@@ -2526,7 +2597,8 @@ class Actor(object, metaclass=use_on_events):
             x += self._vx
             y += self._vy
             pyglet.gl.glTranslatef(self._scroll_dx, 0.0, 0.0)
-            sprite.position = (int(x), int(y))
+#            sprite.position = (int(x), int(y))
+            sprite.position = (x,y)
             if self._scroll_dx != 0 and self._scroll_dx + self.w < self.game.resolution[0]:
                 sprite.position = (int(x + self.w), int(y))
             if self._scroll_dx != 0 and x > 0:
@@ -2997,12 +3069,14 @@ class Actor(object, metaclass=use_on_events):
         return slugify(self.name)
 
 #    def create_sprite(self, action, **kwargs):
-    def _do_motion(self, motion, mode=LOOP, block=False):
+    def _do_motion(self, motion, mode=LOOP, block=False, destructive=None):
         motion = self._motions.get(
             motion, None) if motion in self._motions.keys() else None
         if motion:
             motion.mode = mode
             motion.blocking = block
+            if destructive is not None:
+                motion.destructive = destructive
             if block is True and self.game._headless is False:
                 self.busy += 1
                 self.game._waiting = True #make game wait
@@ -3017,14 +3091,14 @@ class Actor(object, metaclass=use_on_events):
             log.warning("Unable to find motion for actor %s"%(self.name))
         return motion
 
-    def _motion(self, motion=None, mode=LOOP, block=False):
-        motion = self._do_motion(motion, mode, block)
+    def _motion(self, motion=None, mode=LOOP, block=False, destructive=None):
+        motion = self._do_motion(motion, mode, block, destructive)
         motion = [motion] if motion else []
         self._applied_motions = motion
 
-    def on_motion(self, motion=None, mode=LOOP, block=False):
+    def on_motion(self, motion=None, mode=LOOP, block=False, destructive=None):
         """ Clear all existing motions and do just one motion. """
-        self._motion(motion, mode, block)
+        self._motion(motion, mode, block, destructive)
 
     def on_add_motion(self, motion, mode=LOOP, block=False):
         motion = self._do_motion(motion, mode, block)
@@ -4930,7 +5004,7 @@ class Camera(metaclass=use_on_events):  # the view manager
 #        bugs in pyglet 1.2 is killing me on this kind of stuff gah
 #        mask = pyglet.image.SolidColorImagePattern((0, 0, 0, 255))
 #        mask = mask.create_image(self.game.resolution[0], self.game.resolution[1])
-        self._overlay = pyglet.sprite.Sprite(mask, 0, 0)
+        self._overlay = PyvidaSprite(mask, 0, 0)
         self._overlay.opacity = 0
         self._overlay_start = time.time()
         self._overlay_end = time.time() + seconds
@@ -4950,7 +5024,7 @@ class Camera(metaclass=use_on_events):  # the view manager
             mask = pyglet.image.load(os.path.join(d, 'data/special/black.png'))
         else:
             mask = pyglet.image.load(os.path.join(d, 'data/special/white.png'))
-        self._overlay = pyglet.sprite.Sprite(mask, 0, 0)
+        self._overlay = PyvidaSprite(mask, 0, 0)
         self._overlay.opacity = 255
         self._overlay_start = time.time()
         self._overlay_end = time.time() + seconds
@@ -4962,7 +5036,7 @@ class Camera(metaclass=use_on_events):  # the view manager
     def on_off(self):
         d = pyglet.resource.get_script_home()
         mask = pyglet.image.load(os.path.join(d, 'data/special/black.png'))
-        self._overlay = pyglet.sprite.Sprite(mask, 0, 0)
+        self._overlay = PyvidaSprite(mask, 0, 0)
         self._overlay_end = time.time() + 60*60*24*365*100 #one hundred yeaaaaars
 
     def on_on(self):
@@ -5698,11 +5772,15 @@ class Game(metaclass=use_on_events):
         #with player object on occasion
         self._allow_one_player_interaction = False
 
-
+        #force pyglet to draw every frame. Requires restart
+        #this is on by default to allow Motions to sync with Sprites.
+        self._lock_updates_to_draws = True 
+    
         pyglet.clock.schedule_interval(
             self._monitor_scripts, 2)  # keep reloading scripts
         # the pyvida game scripting event loop, XXX: limited to actor fps
-        pyglet.clock.schedule_interval(self.update, 1 / self.default_actor_fps)
+        if not self._lock_updates_to_draws:
+            pyglet.clock.schedule_interval(self.update, 1 / self.default_actor_fps)
         pyglet.clock.set_fps_limit(self.fps)
         self.fps_clock = pyglet.clock.ClockDisplay()
 
@@ -5739,16 +5817,19 @@ class Game(metaclass=use_on_events):
         raise AttributeError
 #        return self.__getattribute__(self, a)
 
+    def on_set_fps(self, v):
+        self.fps = v
+        if not self._lock_updates_to_draws:
+            pyglet.clock.unschedule(self.update)
+            pyglet.clock.schedule_interval(self.update, 1 / self.default_actor_fps)
+        pyglet.clock.set_fps_limit(self.fps)
+
     def set_headless_value(self, v):
         self._headless = v
         if self._headless is True: #speed up
-            pyglet.clock.unschedule(self.update)
-            pyglet.clock.schedule_interval(self.update, 1 / 100)
-            pyglet.clock.set_fps_limit(100)
+            self.on_set_fps(200)
         else:
-            pyglet.clock.unschedule(self.update)
-            pyglet.clock.schedule_interval(self.update, 1 / self.default_actor_fps)
-            pyglet.clock.set_fps_limit(self.fps)
+            self.on_set_fps(self.fps)
 
     def get_headless_value(self):
         return self._headless
@@ -5895,6 +5976,13 @@ class Game(metaclass=use_on_events):
             game.pause(3)
             game.elagoon_background.fade_out()
         if symbol == pyglet.window.key.F10:
+            
+            game.player.relocate("blank", (100, 700))
+            game.player._smart_motions(game)
+            game.player.on_motion()
+            game.player.on_do("right")
+            game.player.on_motion("right", destructive=True)
+            """
             game.load_state("etreehouse", "initial")
             game.camera.scene("etreehouse")
             game.player.relocate("etreehouse", (766, 498))
@@ -5903,6 +5991,7 @@ class Game(metaclass=use_on_events):
             #game.player.tint((255, 220, 182))
             #game.player.tint((239, 142, 76))
             game.player.tint((255, 199, 138))
+            """
 #            fn = get_function(self, "enter_generic_pod")
 #            if fn:
 #                fn(game, randint(0,1000000), self.player)
@@ -6445,7 +6534,7 @@ class Game(metaclass=use_on_events):
             self._progress_bar_renderer = draw_progress_bar
             self._progress_bar_index = 0
             self._progress_bar_count = 0
-            update_progress_bar(self.game, self)
+#            update_progress_bar(self.game, self)
 
         portals = []
         # estimate size of all loads
@@ -6465,8 +6554,8 @@ class Game(metaclass=use_on_events):
             for name in os.listdir(getattr(self, dname)):
                 if only and name not in only:
                     continue  # only load specific objects
-                if draw_progress_bar:
-                    update_progress_bar(self.game, self)
+#                if draw_progress_bar:
+#                    update_progress_bar(self.game, self)
 
                 if logging:
                     log.debug("game.smart loading %s %s" %
@@ -6987,6 +7076,11 @@ class Game(metaclass=use_on_events):
 
     def pyglet_draw(self):  # game.draw
         """ Draw the scene """
+        dt = pyglet.clock.tick()
+
+        if self._lock_updates_to_draws: #force pyglet to do updates and draws together.
+            self.update(dt)
+
         if not self.scene:
             return
 #        if self._headless: return
@@ -6995,7 +7089,6 @@ class Game(metaclass=use_on_events):
 #        self.scene.pyglet_draw()
 
         # draw scene backgroundsgrounds (layers with z equal or less than 1.0)
-        dt = pyglet.clock.tick()
         self._window.clear()
         # undo alpha for pyglet drawing
         pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0)
