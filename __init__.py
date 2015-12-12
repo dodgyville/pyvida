@@ -99,7 +99,7 @@ ALLOW_USE_ON_PLAYER = True #when "using" an object, allow the player actor to an
 ALLOW_SILENT_ACHIEVEMENTS = True #don't break immersion by displaying achievements the moment player earns them
 
 DEFAULT_RESOLUTION = (1920, 1080)
-DEFAULT_FPS = 60
+DEFAULT_FPS = 16
 DEFAULT_ACTOR_FPS = 16
 
 DIRECTORY_ACTORS = "data/actors"
@@ -1090,12 +1090,17 @@ class Motion(object):
                         actor.name, self.name, actor.busy))
             return False
         d = self.deltas[self.index % num_deltas]
+        dx, dy, z, r, scale, frame_index, alpha = d
+        if actor.scale != 1.0:
+            if dx != None: dx *= actor.scale
+            if dy != None: dy *= actor.scale
+            
         if self.destructive is True: #apply to actor's actual co-ordinates
-            actor.x += d[0] if d[0] != None else 0
-            actor.y += d[1] if d[1] != None else 0
+            actor.x += dx if dx != None else 0
+            actor.y += dy if dy != None else 0
         else: #apply only to a temporary visual displacement
-            actor._vx += d[0] if d[0] != None else 0
-            actor._vy += d[1] if d[1] != None else 0
+            actor._vx += dx if dx != None else 0
+            actor._vy += dy if dy != None else 0
         actor.z += d[2] if d[2] != None else 0
         actor.rotate += d[3] if d[3] != None else 0
         if d[4] != None: actor.scale = d[4] 
@@ -1314,8 +1319,36 @@ class Rect(object):
     def bottom(self):
         return self.y + self.h
 
+    @property
+    def topleft(self):
+        return (self.left, self.top)
+
+    @property
+    def bottomleft(self):
+        return (self.left, self.bottom)
+
+    @property
+    def topright(self):
+        return (self.right, self.top)
+
+    @property
+    def bottomright(self):
+        return (self.right, self.bottom)
+
     def collidepoint(self, x, y):
         return collide((self.x, self.y, self.w, self.h), x, y)
+
+    def intersect(self, start, end):
+        """ Return True if the line between start and end intersects with rect """
+        """ http://stackoverflow.com/questions/99353/how-to-test-if-a-line-segment-intersects-an-axis-aligned-rectange-in-2d """
+        x1, y1 = start
+        x2, y2 = end
+        signs = []
+        for x,y in [self.topleft, self.bottomleft, self.topright, self.bottomright]:
+            f = (y2-y1)*x + (x1-x2)*y + (x2*y1-x1*y2)
+            sign = int(f/abs(f)) if f != 0 else 0
+            signs.append(sign) #remember if the line is above, below or crossing the point
+        return False if len(set(signs)) == 1 else True #if any signs change, then it is an intersect
 
     def move(self, dx, dy):
         return Rect(self.x + dx, self.y + dy, self.w, self.h)
@@ -1566,6 +1599,9 @@ class Actor(object, metaclass=use_on_events):
 
         # target when walking somewhere
         self._goto_x, self._goto_y = None, None
+        self._goto_deltas = [] #list of steps to get to or pass over _goto_x, goto_y
+        self._goto_deltas_index = 0 
+        self._goto_deltas_average_speed = 0
         self._goto_dx, self._goto_dy = 0, 0
         self._goto_points = []  # list of points Actor is walking through
 
@@ -2112,14 +2148,24 @@ class Actor(object, metaclass=use_on_events):
             self.alpha = self._opacity
 
         if self._goto_x != None:
-            self.x = self.x + self._goto_dx
-            self.y = self.y + self._goto_dy
-            speed = self.action.speed
+            dx,dy = 0,0
+            if len(self._goto_deltas)>0:
+                dx, dy = self._goto_deltas[self._goto_deltas_index]
+                self._goto_deltas_index += 1
+                if self._goto_deltas_index > len(self._goto_deltas):
+                    print("deltas have missed target")
+                    import pdb; pdb.set_trace()
+            self.x = self.x + dx
+            self.y = self.y + dy
+            speed = self._goto_deltas_average_speed
             target = Rect(self._goto_x, self._goto_y, int(
                 speed * 1.2), int(speed * 1.2)).move(-int(speed * 0.6), -int(speed * 0.6))
 #            target = Rect(self._goto_x, self._goto_y, speed, speed).move(-int(speed*0.5),-int(speed*0.5))
 #            target = Rect(self._goto_x, self._goto_y, 3, 3).move(-1, -1)
-            if target.collidepoint(self.x, self.y):
+            arrived = target.collidepoint(self.x, self.y) or self._goto_deltas_index >= len(self._goto_deltas)
+#            arrived = self._goto_deltas_index >= len(self._goto_deltas)
+            if arrived:
+#                print("ARRIVED",speed, target.collidepoint(self.x, self.y), self._goto_deltas_index, len(self._goto_deltas) )
                 if len(self._goto_points) > 0:  # continue to follow the path
                     destination = self._goto_points.pop()
                     point = get_point(self.game, destination, self)
@@ -2137,6 +2183,7 @@ class Actor(object, metaclass=use_on_events):
                             self.name, self.name, self.busy))
                     self._goto_x, self._goto_y = None, None
                     self._goto_dx, self._goto_dy = 0, 0
+                    self._goto_deltas = []
                     if self._next_action in self._actions.keys():
                         self._do(self._next_action)
                         self._next_action = None
@@ -2145,7 +2192,7 @@ class Actor(object, metaclass=use_on_events):
          #   else:
           #      print("missed",target,self.x, self.y)
         #update the PyvidaSprite animate manually
-        if self.resource:
+        if self.resource and hasattr(self.resource, "_animate"):
             self.resource._animate(dt)
 
         # apply motions
@@ -3346,27 +3393,83 @@ class Actor(object, metaclass=use_on_events):
         self._goto_dx, self._goto_dy = 0, 0
 
     def _calculate_goto(self, destination, block=False):
+        """ Calculate and apply action to get from current point to another point """
         self._goto_x, self._goto_y = destination
         x, y = self._goto_x - self.x, self._goto_y - self.y
         distance = math.hypot(x, y)
         if -5 < distance < 5:
             self._cancel_goto()
             return  # already there
-        # how far we can travel along the distance in one update
-        d = self.action.speed / distance
-        angle = math.atan2(y, x)
-        # how far we can travel in one update, broken down into the x-component
-        self._goto_dx = x * d
-        self._goto_dy = y * d
-#        print("calc", (x, y),(self._x, self._y), self.action.speed, distance, d, (self._goto_dx, self._goto_dy), destination)
+
+#            game.player.on_do("right")
+#            game.player.on_motion("right", destructive=True)
+
+        raw_angle = math.atan2(y, x)
 
         # 0 degrees is towards the top of the screen
-        angle = math.degrees(angle) + 90
+        angle = math.degrees(raw_angle) + 90
         if angle < -45:
             angle += 360
+        goto_action = None
+        goto_motion = None
+        self._goto_deltas = []
+        self._goto_deltas_index = 0
+
         for action in self._actions.values():
             if action.available_for_pathplanning and angle > action.angle_start and angle <= action.angle_end:
-                self._do(action)
+                goto_action = action
+                if action.name in self._motions:
+                    goto_motion = action.name
+                break
+
+
+        if goto_motion is None: #create a set of evenly spaced deltas to get us there:
+            # how far we can travel along the distance in one update
+            d = self.action.speed / distance
+            self._goto_deltas = [(x * d, y * d)]*int(distance/self.action.speed)
+            self._goto_deltas_average_speed = self.action.speed
+        else: #use the goto_motion to create a list of deltas
+            motion = self._motions[goto_motion]
+            speed = math.hypot(motion._average_dx, motion._average_dy)
+            self._goto_deltas_average_speed = 5 #Not used when the motion provides its own deltas.
+            distance_travelled = 0
+            distance_travelled_x = 0
+            distance_travelled_y = 0
+            steps = 0
+            while (distance_travelled < distance):
+                delta = motion.deltas[steps%len(motion.deltas)]
+                dx, dy = delta[0]*self.scale, delta[1]*self.scale
+                dd = math.hypot(dx,dy)
+                ratio = 1.0
+                if distance_travelled + dd > distance: #overshoot, aim closer
+                    ratio = (distance - distance_travelled)/dd
+                    dx *= ratio
+                    dy *= ratio
+
+                distance_travelled += math.hypot(dx,dy)
+                distance_travelled_x += dx
+                distance_travelled_y += dy
+                if ratio<0.5: #this new step is very large, so better to not do it.
+                    pass
+                else:
+                    self._goto_deltas.append((dx,dy))
+                    steps += 1
+
+
+            #if x or y distance travelled is beneath the needed x or y travel distances, create the missing deltas for that axis, and subtract it from the other.
+            raw_angle = math.atan2(y, x)
+            angle = math.degrees(raw_angle) + 90
+            if abs(distance_travelled_y) < distance_travelled: #fallen short on y-axis, so generate new y deltas
+                ratio = (x/distance)
+                self._goto_deltas =[(d[0]*ratio, y/steps) for d in self._goto_deltas]
+            else: #fallen short on x-axis, so generate new x deltas
+                ratio = (y/distance)
+                self._goto_deltas =[(x/steps, d[1]*ratio) for d in self._goto_deltas]
+           
+
+        if goto_action:
+            self._do(goto_action)
+
         self.busy += 1
         if logging:
             log.info("%s has started _calculate_goto, so incrementing self.busy to %s." % (
@@ -3847,6 +3950,7 @@ class WalkAreaManager(metaclass=use_on_events):
         self._polygon_count = len(self._polygon)
         self._polygon_x = []
         self._polygon_y = []
+        self._fill_colour = None
 
         self._editing = False
         self._edit_polygon_index = -1
@@ -4016,20 +4120,31 @@ class WalkAreaManager(metaclass=use_on_events):
         return safe
 
 
-    def pyglet_draw(self):
+    def _pyglet_draw(self, debug=False):
         ypts = [self.game.resolution[1] - y for y in self._polygon_y]
         pts = [item for sublist in zip(self._polygon_x, ypts) for item in sublist]
 #        polygon(self.game, pts)
-        colour = (24, 169, 181, 255)
-        colours = list(fColour(colour)) * self._polygon_count
-        polygon(self.game, pts, colours)
-        for pt in self._polygon:
-            crosshair(self.game, pt, colour)
+        if self._fill_colour is not None:
+            colours = list(fColour(self._fill_colour)) * self._polygon_count
+            polygon(self.game, pts, colours, fill=True)
 
-        colour = (255, 96, 181, 255)
-        for pt in self._waypoints:
-            crosshair(self.game, pt, colour)
+        if debug is True:
+            colour = (24, 169, 181, 255)
+            colours = list(fColour(colour)) * self._polygon_count
+            polygon(self.game, pts, colours)
+            for pt in self._polygon:
+                crosshair(self.game, pt, colour)
 
+            colour = (255, 96, 181, 255)
+            for pt in self._waypoints:
+                crosshair(self.game, pt, colour)
+
+
+    def pyglet_draw(self):
+        self._pyglet_draw()
+
+    def debug_pyglet_draw(self):
+        self._pyglet_draw(debug=True)
 
 
 class Scene(metaclass=use_on_events):
@@ -4811,7 +4926,7 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._motion = []
         self._motion_index = 0
 
-    def _update(self, dt, obj=None):
+    def _update(self, dt, obj=None): #camera.update
         if self.game.scene:
             self.game.scene.x = self.game.scene.x + self._goto_dx
             self.game.scene.y = self.game.scene.y + self._goto_dy
@@ -4831,6 +4946,7 @@ class Camera(metaclass=use_on_events):  # the view manager
                         self.name, self.busy))
                 self._goto_x, self._goto_y = None, None
                 self._goto_dx, self._goto_dy = 0, 0
+#                self._goto_deltas = []
         if self._overlay:
             duration = self._overlay_end - self._overlay_start
             complete = (time.time() - self._overlay_start) / duration
@@ -5672,7 +5788,6 @@ class Game(metaclass=use_on_events):
 
         pyglet.gl.glScalef(scale, scale, scale)
 
-        self._window.on_draw = self.pyglet_draw
         self._window.on_key_press = self.on_key_press
         self._window.on_mouse_motion = self.on_mouse_motion
         self._window.on_mouse_press = self.on_mouse_press
@@ -5781,7 +5896,10 @@ class Game(metaclass=use_on_events):
         # the pyvida game scripting event loop, XXX: limited to actor fps
         if not self._lock_updates_to_draws:
             pyglet.clock.schedule_interval(self.update, 1 / self.default_actor_fps)
-        pyglet.clock.set_fps_limit(self.fps)
+            self._window.on_draw = self.pyglet_draw
+            pyglet.clock.set_fps_limit(self.fps)
+        else:
+            pyglet.clock.schedule_interval(self.combined_update, 1 / self.fps)
         self.fps_clock = pyglet.clock.ClockDisplay()
 
     def close(self):
@@ -5817,19 +5935,26 @@ class Game(metaclass=use_on_events):
         raise AttributeError
 #        return self.__getattribute__(self, a)
 
-    def on_set_fps(self, v):
-        self.fps = v
+    def on_publish_fps(self, fps):
+        """ Make the engine run at the requested fps """
         if not self._lock_updates_to_draws:
             pyglet.clock.unschedule(self.update)
             pyglet.clock.schedule_interval(self.update, 1 / self.default_actor_fps)
-        pyglet.clock.set_fps_limit(self.fps)
+            pyglet.clock.set_fps_limit(fps)
+        else:
+            pyglet.clock.unschedule(self.combined_update)
+            pyglet.clock.schedule_interval(self.combined_update, 1 / fps)
+
+
+    def on_set_fps(self, v):
+        self.fps = v
 
     def set_headless_value(self, v):
         self._headless = v
         if self._headless is True: #speed up
-            self.on_set_fps(200)
+            self.on_publish_fps(200)
         else:
-            self.on_set_fps(self.fps)
+            self.on_publish_fps(self.fps)
 
     def get_headless_value(self):
         return self._headless
@@ -5976,12 +6101,13 @@ class Game(metaclass=use_on_events):
             game.pause(3)
             game.elagoon_background.fade_out()
         if symbol == pyglet.window.key.F10:
-            
             game.player.relocate("blank", (100, 700))
             game.player._smart_motions(game)
+            game.player.rescale(uniform(0.1,1.0))
             game.player.on_motion()
-            game.player.on_do("right")
-            game.player.on_motion("right", destructive=True)
+#            game.player.move((500,0))
+#            game.player.on_do("right")
+#            game.player.on_motion("right", destructive=True)
             """
             game.load_state("etreehouse", "initial")
             game.camera.scene("etreehouse")
@@ -6156,7 +6282,8 @@ class Game(metaclass=use_on_events):
                 if time.clock() - self.last_mouse_release[-1] < 0.2:
                     if self.player and self.player._goto_x != None:
                         self.player._x, self.player._y = self.player._goto_x, self.player._goto_y
-                        self.player._goto_dx, self.player._goto_dy = 0, 0
+#                        self.player._goto_dx, self.player._goto_dy = 0, 0
+                        self.player._goto_deltas = []
                         return
         self._info_object.display_text = " " #clear hover text
 
@@ -7076,10 +7203,7 @@ class Game(metaclass=use_on_events):
 
     def pyglet_draw(self):  # game.draw
         """ Draw the scene """
-        dt = pyglet.clock.tick()
-
-        if self._lock_updates_to_draws: #force pyglet to do updates and draws together.
-            self.update(dt)
+#        dt = pyglet.clock.tick()
 
         if not self.scene:
             return
@@ -7099,6 +7223,9 @@ class Game(metaclass=use_on_events):
                 obj.pyglet_draw(absolute=False)
             else:
                 break
+
+        if self.scene.walkarea and self.scene.walkarea._fill_colour is not None:
+            self.scene.walkarea.pyglet_draw()
 
         scene_objects = []
         if self.scene:
@@ -7153,7 +7280,7 @@ class Game(metaclass=use_on_events):
         if self.editor: #draw mouse coords at mouse pos
             coords(self, "mouse", *self.mouse_position)
             if self.scene.walkarea._editing is True:
-                self.scene.walkarea.pyglet_draw()
+                self.scene.walkarea.debug_pyglet_draw()
 
 
         if self.game.camera._overlay:
@@ -7168,6 +7295,12 @@ class Game(metaclass=use_on_events):
             now = round(time.time() * 100)  # max 100 fps
             d = os.path.join(self.directory_screencast, "%s.png" % now)
             pyglet.image.get_buffer_manager().get_color_buffer().save(d)
+
+    def combined_update(self, dt):
+        """ do the update and the draw in one """
+        self.update(dt)
+        self.pyglet_draw()
+        self._window.dispatch_event('on_draw')
 
     def _remove(self, objects):  # game.remove
         """ Removes objects from the game's storage (it may still exist in other lists, etc) """
