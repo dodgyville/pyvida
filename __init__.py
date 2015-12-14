@@ -1074,13 +1074,14 @@ class Motion(object):
         self.game = None
         return self.__dict__
 
-    def apply_to_actor(self, actor):
+    def apply_to_actor(self, actor, index=None):
         """ Apply the current frame to the actor and increment index, return
         False to delete the motion """
         num_deltas = len(self.deltas)
-        if len(self.deltas) < self.index % num_deltas:
+        delta_index = index if index else self.index
+        if len(self.deltas) < delta_index % num_deltas:
             return True
-        if self.mode == ONCE and self.index == num_deltas:
+        if self.mode == ONCE and delta_index == num_deltas:
             self.index = 0
             if self.blocking is True: #finished blocking the actor
                 actor.busy -= 1 
@@ -1089,7 +1090,8 @@ class Motion(object):
                              "self.busy to %s." % (
                         actor.name, self.name, actor.busy))
             return False
-        d = self.deltas[self.index % num_deltas]
+
+        d = self.deltas[delta_index % num_deltas]
         dx, dy, z, r, scale, frame_index, alpha = d
         if actor.scale != 1.0:
             if dx != None: dx *= actor.scale
@@ -1110,8 +1112,9 @@ class Motion(object):
 #                print("warning: %s action %s not in manual mode, so motion %s "
 #                      "frame requests fighting with auto frame advance"%
 #                      (actor.name, actor.action.name, self.name))
-        if d[6] != None: actor.alpha = d[6] 
-        self.index += 1
+        if d[6] != None: actor.alpha = d[6]
+        if index is None: 
+            self.index += 1
         return True
 
     def smart(self, game, actor=None, filename=None):  # motion.smart
@@ -1147,9 +1150,9 @@ class Motion(object):
                             pdb.set_trace()
                     self.deltas.append(m.flat)
                     self._average_dx += m.x if m.x else 0
-                    self._average_dy = m.y if m.y else 0
-                    self._total_dx = m.x if m.x else 0
-                    self._total_dy = m.y if m.y else 0
+                    self._average_dy += m.y if m.y else 0
+                    self._total_dx += m.x if m.x else 0
+                    self._total_dy += m.y if m.y else 0
         if len(self.deltas)>0:
             self._average_dx /= len(self.deltas)
             self._average_dy /= len(self.deltas)
@@ -2931,11 +2934,14 @@ class Actor(object, metaclass=use_on_events):
         if portrait:
             items.append(portrait)
 
-        dy = 39
+        #create the goto deltas for the msgbox animation
+        dy = 49
         df = 3
         msgbox._goto_x, msgbox._goto_y = msgbox._x, msgbox._y
         msgbox._y += dy
-        msgbox._goto_dy = -dy / df
+        msgbox._goto_deltas = [(0, -dy / df)]*df
+        msgbox._goto_deltas_index = 0
+#        msgbox._goto_dy = -dy / df
         msgbox.busy += 1
 
         for obj in items:
@@ -3677,15 +3683,18 @@ class Particle(object):
     def __init__(self, x, y, ax, ay, speed, direction, scale=1.0):
         self.index = 0
         self.action_index = 0
+        self.motion_index = 0  # where in the Emitter's applied motions is this particle
         self.x = x
         self.y = y
+        self.z = 1.0
         self.ax, self.ay = ax, ay
         self.speed = speed
         self.direction = direction
         self.scale = scale
+        self.alpha = 1.0
+        self.rotate = 0
         self.hidden = True  # hide for first run
         self.terminate = False  # don't renew this particle if True
-
 
 class Emitter(Item, metaclass=use_on_events):
     #    def __init__(self, name, *args, **kwargs):
@@ -3693,7 +3702,7 @@ class Emitter(Item, metaclass=use_on_events):
     def __init__(self, name, number=10, frames=10, direction=0, fov=0, speed=1,
                  acceleration=(0, 0), size_start=1, size_end=1, alpha_start=1.0,
                  alpha_end=0, random_index=True, random_age=True, size_spawn_min=1.0, size_spawn_max=1.0,
-                 speed_spawn_min=1.0, speed_spawn_max=1.0,
+                 speed_spawn_min=1.0, speed_spawn_max=1.0, random_motion_index=True,
                  test_terminate=terminate_by_frame, behaviour=BEHAVIOUR_CYCLE):
         """ This object's solid_mask|solid_area is used for spawning 
             direction: what is the angle of the emitter
@@ -3713,6 +3722,7 @@ class Emitter(Item, metaclass=use_on_events):
         # should each particle start mid-action?
         self.random_index = random_index
         self.random_age = random_age  # should each particle start mid-life?
+        self.random_motion_index = random_motion_index
         self.size_spawn_min, self.size_spawn_max = size_spawn_min, size_spawn_max
         self.speed_spawn_min, self.speed_spawn_max = speed_spawn_min, speed_spawn_max
         self.particles = []
@@ -3726,7 +3736,9 @@ class Emitter(Item, metaclass=use_on_events):
     @property
     def summary(self):
         fields = ["name", "number", "frames", "direction", "fov", "speed", "acceleration", "size_start",
-                  "size_end", "alpha_start", "alpha_end", "random_index", "random_age", "test_terminate", "behaviour", "size_spawn_min", "size_spawn_max", "speed_spawn_min", "speed_spawn_max"]
+                  "size_end", "alpha_start", "alpha_end", "random_index", "random_age", "test_terminate",
+                    "behaviour", "size_spawn_min", "size_spawn_max", "speed_spawn_min", "speed_spawn_max",
+                    "random_motion_index"]
         d = {}
         for i in fields:
             d[i] = getattr(self, i, None)
@@ -3751,11 +3763,15 @@ class Emitter(Item, metaclass=use_on_events):
         p.x += o
         p.x -= self.acceleration[0] * p.index
         p.y -= self.acceleration[1] * p.index
+        for motion in self._applied_motions:
+            motion.apply_to_actor(p, p.motion_index)
+        p.motion_index += 1
         p.index += 1
         p.action_index += 1
         test_terminate = get_function(self.game, self.test_terminate, self)
         if test_terminate(self.game, self, p):  # reset if needed
             #            print("RESET PARTICLE", self.frames, p.index)
+            print("terminate",self.y)
             p.x, p.y = self.x + \
                 randint(0, self._solid_area.w), self.y + \
                 randint(0, self._solid_area.h)
@@ -3864,6 +3880,8 @@ class Emitter(Item, metaclass=use_on_events):
                 p.index = randint(0, self.frames)
             if self.random_index and self.action:
                 p.action_index = randint(0, self.action.num_of_frames)
+            if self.random_motion_index:
+                p.motion_index = randint(0,1000) #XXX we don't have the length of any motions here.
             if self.behaviour == BEHAVIOUR_CYCLE:
                 # fast forward particle through one full cycle so they are
                 # mid-stream when they start
@@ -5094,7 +5112,6 @@ class Camera(metaclass=use_on_events):  # the view manager
         # a list of x,y displacement values
         self._motion = motion
 
-
     def on_drift(self, dx=0, dy=0):
         """ start a permanent non-blocking movement in the camera """
         self._goto_dx = dx
@@ -5721,6 +5738,30 @@ def fit_to_screen(screen, resolution):
     return resolution, scale
 
 
+def idle( self ):
+    """An alternate idle loop than Pyglet's default.
+ 
+    By default, pyglet calls on_draw after EVERY batch of events
+    which without hooking into, causes ghosting
+
+    Courtesy Twisted Pair:
+    https://twistedpairdevelopment.wordpress.com/2011/06/28/pyglet-mouse-events-and-rendering/
+    """
+    pyglet.clock.tick( poll = True )
+    # don't call on_draw
+    return pyglet.clock.get_sleep_time( sleep_idle = True )
+ 
+def patch_idle_loop():
+    """Replaces the default Pyglet idle look with the :py:func:`idle` function in this module.
+    """
+    # check that the event loop has been over-ridden
+    if pyglet.app.EventLoop.idle != idle:
+        # over-ride the default event loop
+        pyglet.app.EventLoop.idle = idle
+
+patch_idle_loop()
+
+
 class Game(metaclass=use_on_events):
 
     def __init__(self, name="Untitled Game", version="v1.0", engine=VERSION_MAJOR, fullscreen=DEFAULT_FULLSCREEN, resolution=DEFAULT_RESOLUTION, fps=DEFAULT_FPS, afps=DEFAULT_ACTOR_FPS, projectsettings=None, scale=1.0):
@@ -6111,6 +6152,7 @@ class Game(metaclass=use_on_events):
             """
             game.load_state("etreehouse", "initial")
             game.camera.scene("etreehouse")
+            game._scenes["etreehouse"].set_background(fname="data/scenes/etreehouse/sunset.png")
             game.player.relocate("etreehouse", (766, 498))
             game.player.scale = 0.8
             game.scene.clean(["tycho"])
@@ -6118,6 +6160,7 @@ class Game(metaclass=use_on_events):
             #game.player.tint((239, 142, 76))
             game.player.tint((255, 199, 138))
             """
+
 #            fn = get_function(self, "enter_generic_pod")
 #            if fn:
 #                fn(game, randint(0,1000000), self.player)
@@ -7300,7 +7343,8 @@ class Game(metaclass=use_on_events):
         """ do the update and the draw in one """
         self.update(dt)
         self.pyglet_draw()
-        self._window.dispatch_event('on_draw')
+     #   self._window.dispatch_event('on_draw')
+        self._window.flip()
 
     def _remove(self, objects):  # game.remove
         """ Removes objects from the game's storage (it may still exist in other lists, etc) """
