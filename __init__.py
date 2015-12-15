@@ -3771,7 +3771,6 @@ class Emitter(Item, metaclass=use_on_events):
         test_terminate = get_function(self.game, self.test_terminate, self)
         if test_terminate(self.game, self, p):  # reset if needed
             #            print("RESET PARTICLE", self.frames, p.index)
-            print("terminate",self.y)
             p.x, p.y = self.x + \
                 randint(0, self._solid_area.w), self.y + \
                 randint(0, self._solid_area.h)
@@ -7435,10 +7434,9 @@ class Game(metaclass=use_on_events):
         self._add(modal)
 
     def on_modals(self, items=[], replace=False):
-        if replace: self._modals = []
+        if replace or len(items)==0: self._modals = []
         for i in items:
             i = get_object(self, i)
-
             self.add_modal(i)
 
 
