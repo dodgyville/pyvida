@@ -547,9 +547,9 @@ def _set_function(game, actors, slug=None, fn="interact", full=None):
         if full:
             fn_name = full  # all actors share the same fn
         if fn == "interact":
-            game.set_interact(i, get_function(game, fn_name))
+            game.on_set_interact(i, get_function(game, fn_name))
         else:
-            game.set_look(i, get_function(game, fn_name))
+            game.on_set_look(i, get_function(game, fn_name))
 
 
 def set_interacts(game, actors, slug=None, full=None):
@@ -1175,6 +1175,31 @@ def get_resource(key, subkey=None):
     r = _resources[key] if key in _resources else (0, 0, None)
     return r
 
+
+def load_defaults(game, obj, name, filename):
+    """ Load defaults from a json file into the obj, used by Actors and Actions """
+    if os.path.isfile(filename):
+        with open(filename, 'r') as f:
+            try:
+                defaults = json.loads(f.read())
+            except ValueError:
+                print("unable to load %s.defaults"%name)
+                if logging: log.error("Error loading %s.defaults"%name)
+                defaults = {}
+        for key, val in defaults.items():
+            if key == "font_colour":
+                if type(val) == list:
+                    val = tuple(val)
+                elif val in COLOURS:
+                    val = COLOURS[val]
+            if key == "font_speech":
+                font_name = os.path.splitext(os.path.basename(val))[0]
+                game.add_font(val, font_name)
+                obj.font_speech = val
+
+            obj.__dict__[key] = val
+
+
 class Action(object):
     def __init__(self, name):
         self.name = name
@@ -1193,6 +1218,7 @@ class Action(object):
         self.default = LOOP
         self.mode = self.default
         self._manual_index = 0 #used by MANUAL mode to lock animation at a single frame
+        self._x, self._y = 0, 0 #is this action offset from the regular actor's x,y
 
     def __getstate__(self):
         self.game = None
@@ -1241,6 +1267,9 @@ class Action(object):
                                   (self.name, montage_fname))
                     num, w, h = 0, 0, 0
         self.num_of_frames = num
+        dfname = fname + ".defaults"
+        load_defaults(game, self, "%s - %s"%(actor.name, self.name), dfname)
+
         set_resource(self.resource_name, w=w, h=h)
 #        self.load_assets(game)
         return self
@@ -2578,26 +2607,7 @@ class Actor(object, metaclass=use_on_events):
         # potentially load some defaults for this actor
         filepath = os.path.join(
             myd, "%s.defaults" % slugify(self.name).lower())
-        if os.path.isfile(filepath):
-            with open(filepath, 'r') as f:
-                try:
-                    actor_defaults = json.loads(f.read())
-                except ValueError:
-                    print("unable to load %s.defaults"%self.name)
-                    if logging: log.error("Error loading %s.defaults"%self.name)
-                    actor_defaults = {}
-            for key, val in actor_defaults.items():
-                if key == "font_colour":
-                    if type(val) == list:
-                        val = tuple(val)
-                    elif val in COLOURS:
-                        val = COLOURS[val]
-                if key == "font_speech":
-                    font_name = os.path.splitext(os.path.basename(val))[0]
-                    game.add_font(val, font_name)
-                    self.font_speech = val
-
-                self.__dict__[key] = val
+        load_defaults(game, self, self.name, filepath)
 
         """ XXX per actor quickload disabled in favour single game quickload, which I'm testing at the moment
         #save fast load info for this actor (rebuild using --B option)
@@ -2633,6 +2643,11 @@ class Actor(object, metaclass=use_on_events):
             if not self.game:
                 print(self.name,"has no game object")
             y = self.game.resolution[1] - y - self.ay - sprite.height
+
+            #displace if the action requires it
+            if self.action:
+                x += self.action._x
+                y += self.action._y
 
             # displace for camera
             if not absolute and self.game.scene:
@@ -2848,7 +2863,10 @@ class Actor(object, metaclass=use_on_events):
         if self.game._headless:  # headless mode skips sound and visuals
             items[0].trigger_interact()  # auto-close the on_says
 
-    def _says(self, text, action="portrait", font=None, size=None, using=None, position=None, offset=None, delay=0.01, step=3, ok="ok"):
+    def _says(self, text, action="portrait", font=None, size=None, using=None, position=None, offset=None, delay=0.01, step=3, ok="ok", interact=close_on_says, block_for_user=True):
+        """
+        if block_for_user is False, then DON'T make the game wait until processing next event
+        """
         # do high contrast if requested and available
         log.info("%s on says %s" % (self.name, text))
         background = using if using else None
@@ -2877,6 +2895,10 @@ class Actor(object, metaclass=use_on_events):
         elif position == BOTTOM:
             x, y = self.game.resolution[
                 0] // 2 - msgbox.w // 2, self.game.resolution[1] * 0.95 - msgbox.h
+        elif position == CENTER:
+            x, y = self.game.resolution[
+                0] // 2 - msgbox.w // 2, self.game.resolution[1] * 0.5 - msgbox.h//2
+
         elif type(position) in [tuple, list]:  # assume coords
             x, y = position
 
@@ -2926,7 +2948,8 @@ class Actor(object, metaclass=use_on_events):
         if logging:
             log.info("%s has started on_says (%s), so increment self.busy to %s." % (
                 self.name, text, self.busy))
-        self.game._waiting = True
+        if block_for_user is True:
+            self.game._waiting = True
 
         items = [msgbox, label]
         if ok:
@@ -2945,7 +2968,7 @@ class Actor(object, metaclass=use_on_events):
         msgbox.busy += 1
 
         for obj in items:
-            obj.interact = close_on_says
+            obj.interact = interact 
             obj.tmp_creator = self.name
             obj.tmp_text = text
             self.game.add_modal(obj)
@@ -2964,6 +2987,9 @@ class Actor(object, metaclass=use_on_events):
             if logging:
                 log.warning(
                     "Can't forget fact '%s' ... was not in memory." % (fact))
+
+    def on_update_interact(self, v):
+        self.interact = v
 
     def on_forget(self, fact):
         """ A queuing function. Forget a fact from the list of facts 
@@ -6141,6 +6167,10 @@ class Game(metaclass=use_on_events):
             game.pause(3)
             game.elagoon_background.fade_out()
         if symbol == pyglet.window.key.F10:
+            fn = get_function(self, "ship_talk")
+            if fn:
+                fn(game, None, game.player)
+            """
             game.player.relocate("blank", (100, 700))
             game.player._smart_motions(game)
             game.player.rescale(uniform(0.1,1.0))
@@ -6148,6 +6178,7 @@ class Game(metaclass=use_on_events):
 #            game.player.move((500,0))
 #            game.player.on_do("right")
 #            game.player.on_motion("right", destructive=True)
+            """
             """
             game.load_state("etreehouse", "initial")
             game.camera.scene("etreehouse")
@@ -7450,12 +7481,12 @@ class Game(metaclass=use_on_events):
         print("Modal menus set to",modal)
         self._menu_modal = modal
 
-    def set_interact(self, actor, fn):  # game.set_interact
+    def on_set_interact(self, actor, fn):  # game.set_interact
         """ helper function for setting interact on an actor """
         actor = get_object(self, actor)
         actor.interact = fn
 
-    def set_look(self, actor, fn):  # game.set_look
+    def on_set_look(self, actor, fn):  # game.set_look
         """ helper function for setting look on an actor """
         actor = get_object(self, actor)
         actor.look = fn
