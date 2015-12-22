@@ -5957,8 +5957,9 @@ class Game(metaclass=use_on_events):
         #this is on by default to allow Motions to sync with Sprites.
         self._lock_updates_to_draws = True 
     
-        pyglet.clock.schedule_interval(
-            self._monitor_scripts, 2)  # keep reloading scripts
+#        pyglet.clock.schedule_interval(
+#            self._monitor_scripts, 2)  # keep reloading scripts
+
         # the pyvida game scripting event loop, XXX: limited to actor fps
         if not self._lock_updates_to_draws:
             pyglet.clock.schedule_interval(self.update, 1 / self.default_actor_fps)
