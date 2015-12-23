@@ -115,6 +115,12 @@ FONT_VERA = DEFAULT_MENU_FONT = os.path.join(DIRECTORY_FONTS, "vera.ttf")
 DEFAULT_MENU_SIZE = 26
 DEFAULT_MENU_COLOUR = (42, 127, 255)
 
+#ACHIEVEMENTS DEFAULT
+
+FONT_ACHIEVEMENT = FONT_VERA
+FONT_ACHIEVEMENT_SIZE = 10
+FONT_ACHIEVEMENT_COLOUR = (215,215,225)
+
 # LAYOUTS FOR MENUS and MENU FACTORIES
 HORIZONTAL = 0
 VERTICAL = 1
@@ -920,7 +926,7 @@ class Achievement(object):
         self.date = None
         self.version = None
 
-class AchievementManager(object):
+class AchievementManager(object, metaclass=use_on_events):
     """ Basic achievement system, hopefully to plug into Steam and other
     services one day """
     def __init__(self):
@@ -939,9 +945,21 @@ class AchievementManager(object):
         new_achievement.date = datetime.now()
         new_achievement.version = game.version
         self.granted[slug] = new_achievement
+
+    def present(self, game, slug):
+        a = self._achievements[slug]
+        if game._headless is True: return
         if not game.settings.silent_achievements:
-            game.player.says("Achievement unlocked: %s\n%s"%(
-                new_achievement.name, new_achievement.description))
+            game.achievement.relocate(game.scene, (game.resolution[0] - game.achievement.w, game.resolution[1]))
+
+            text = Text("achievement_text", pos=(180,60), display_text=a.name, colour=FONT_ACHIEVEMENT_COLOUR, font=FONT_ACHIEVEMENT, size=FONT_ACHIEVEMENT_SIZE)
+            game.add(text, replace=True)
+            text.reparent("achievement")
+            game.achievement.relocate(game.scene)
+            #TODO: replace with bounce Motion
+            game.achievement.move((0,-game.achievement.h), block=True)
+#            game.player.says("Achievement unlocked: %s\n%s"%(
+#                a.name, a.description))
 
 
 class Storage(object):
@@ -2683,28 +2701,34 @@ class Actor(object, metaclass=use_on_events):
 
     def debug_pyglet_draw(self, absolute=False):  # actor.debug_pyglet_draw
         """ Draw some debug info (store it for the unittests) """
+        x,y = self.x, self.y
+        dx,dy = 0,0
+        if self._parent:
+            dx, dy = self._parent.x, self._parent.y
+            x += dx
+            y += dy
         self._debugs = []
         #position = green
         self._debugs.append(
-            crosshair(self.game, (self.x, self.y), (0, 255, 0, 255), absolute=absolute, txt="x,y"))
+            crosshair(self.game, (x,y), (0, 255, 0, 255), absolute=absolute, txt="x,y"))
         #anchor - blue
         self._debugs.append(crosshair(
-            self.game, (self.x + self.ax, self.y + self.ay), (0, 0, 255, 255), absolute=absolute, txt="anchor"))
+            self.game, (x + self.ax, y + self.ay), (0, 0, 255, 255), absolute=absolute, txt="anchor"))
         # stand point - pink
         self._debugs.append(crosshair(
-            self.game, (self.x + self.sx, self.y + self.sy), (255, 200, 200, 255), absolute=absolute, txt="stand"))
+            self.game, (x + self.sx, y + self.sy), (255, 200, 200, 255), absolute=absolute, txt="stand"))
         # name point - yellow
         self._debugs.append(crosshair(
-            self.game, (self.x + self.nx, self.y + self.ny), (255, 220, 80, 255), absolute=absolute))
+            self.game, (x + self.nx, y + self.ny), (255, 220, 80, 255), absolute=absolute))
         # talk point - cyan
         self._debugs.append(crosshair(
-            self.game, (self.x + self.tx, self.y + self.ty), (80, 200, 220, 255), absolute=absolute))
+            self.game, (x + self.tx, y + self.ty), (80, 200, 220, 255), absolute=absolute))
         # clickable area
         self._debugs.append(
-            rectangle(self.game, self.clickable_area, (0, 255, 100, 255), absolute=absolute))
+            rectangle(self.game, self.clickable_area.move(dx,dy), (0, 255, 100, 255), absolute=absolute))
         # solid area
         self._debugs.append(
-            rectangle(self.game, self.solid_area, (255, 15, 30, 255), absolute=absolute))
+            rectangle(self.game, self.solid_area.move(dx,dy), (255, 15, 30, 255), absolute=absolute))
 
     def on_animation_end(self):
         """ The default callback when an animation ends """
@@ -4520,6 +4544,8 @@ class Scene(metaclass=use_on_events):
     def pyglet_draw(self, absolute=False):  # scene.draw (not used)
         pass
 
+class Label(pyglet.text.Label):
+    pass
 
 class Text(Item):
 
@@ -4535,6 +4561,7 @@ class Text(Item):
         super().__init__(name, interact=interact, look=look)
 
         self._display_text = display_text if display_text else name
+        self._display_text = self._display_text
         self.x, self.y = pos
         self.step = step
         self.offset = offset
@@ -4596,7 +4623,7 @@ class Text(Item):
 
         self._animated_text = self._display_text[:self._text_index]
         wrap = self.wrap if self.wrap > 0 else 1  # don't allow 0 width labels
-        label = pyglet.text.Label(self._animated_text,
+        label = Label(self._animated_text,
                                         font_name=self.font_name,
                                         font_size=self.size,
                                         color=c,
@@ -4605,10 +4632,11 @@ class Text(Item):
                                         x=self.x, y=self.y,
                                         anchor_x='left', anchor_y='top')
 
+
         set_resource(self.resource_name, resource=label)
 
         if self.offset:
-            label_offset = pyglet.text.Label(self._animated_text,
+            label_offset = Label(self._animated_text,
                                                    font_name=self.font_name,
                                                    font_size=self.size,
                                                    color=(0, 0, 0, 255),
@@ -4632,6 +4660,7 @@ class Text(Item):
             text = v
         if self.resource:
             self.resource.text = text
+
         if self.resource_offset:
             self.resource_offset.text = text
 
@@ -6002,8 +6031,9 @@ class Game(metaclass=use_on_events):
         raise AttributeError
 #        return self.__getattribute__(self, a)
 
-    def on_publish_fps(self, fps):
+    def on_publish_fps(self, fps=None):
         """ Make the engine run at the requested fps """
+        fps = self.fps if fps is None else fps
         if not self._lock_updates_to_draws:
             pyglet.clock.unschedule(self.update)
             pyglet.clock.schedule_interval(self.update, 1 / self.default_actor_fps)
@@ -6168,9 +6198,13 @@ class Game(metaclass=use_on_events):
             game.pause(3)
             game.elagoon_background.fade_out()
         if symbol == pyglet.window.key.F10:
-            fn = get_function(self, "ship_talk")
+            fn = get_function(self, "carebear_gift_quest_reset")
+            fn(game)
+            """
+            fn = get_function(self, "carebear_gift_quest_reset")
             if fn:
                 fn(game, None, game.player)
+            """
             """
             game.player.relocate("blank", (100, 700))
             game.player._smart_motions(game)
@@ -6315,9 +6349,12 @@ class Game(metaclass=use_on_events):
                                 0] / 2 else MOUSE_RIGHT
                         else: # change to pointer
                             self.mouse_cursor = MOUSE_CROSSHAIR
-
+                    x,y=obj.x, obj.y
+                    if obj._parent:
+                        x += obj._parent.x
+                        y += obj._parent.y     
                     self.info(
-                        t, obj.x + obj.nx, obj.y + obj.ny, obj.display_text_align)
+                        t, x + obj.nx, y + obj.ny, obj.display_text_align)
                     return
 
         # Not over any thing of importance
@@ -7773,8 +7810,8 @@ Editor stuff
             ]
 """
 
-# pyqt4 editor
 
+# pyqt4 editor
 
 def edit_object_script(game, obj):
     """ Create and/or open a script for editing """
@@ -8390,4 +8427,13 @@ class MyTkApp(threading.Thread):
 def editor(game):
     app = MyTkApp(game)
     return app
+
+
+# pyglet editor
+def pyglet_editor(game):
+    window = pyglet.window.Window()
+    @window.event
+    def on_draw():
+        game.combined_update(0)
+    game.publish_fps()
 
