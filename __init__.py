@@ -115,6 +115,12 @@ FONT_VERA = DEFAULT_MENU_FONT = os.path.join(DIRECTORY_FONTS, "vera.ttf")
 DEFAULT_MENU_SIZE = 26
 DEFAULT_MENU_COLOUR = (42, 127, 255)
 
+#GOTO BEHAVIOURS
+GOTO = 0 #if player object, goto the point or object clicked on before triggering interact
+GOTO_EMPTY = 1 #if player object, goto empty points but not objects
+GOTO_OBJECTS = 2 #if player object, goto objects but not empty points
+GOTO_NEVER = 3 #call the interact functions immediately
+
 #ACHIEVEMENTS DEFAULT
 
 FONT_ACHIEVEMENT = FONT_VERA
@@ -950,14 +956,16 @@ class AchievementManager(object, metaclass=use_on_events):
         a = self._achievements[slug]
         if game._headless is True: return
         if not game.settings.silent_achievements:
-            game.achievement.relocate(game.scene, (game.resolution[0] - game.achievement.w, game.resolution[1]))
+            game.achievement.load_assets(game)
+            game.achievement.relocate(game.scene, (120, game.resolution[1]))
 
             text = Text("achievement_text", pos=(180,60), display_text=a.name, colour=FONT_ACHIEVEMENT_COLOUR, font=FONT_ACHIEVEMENT, size=FONT_ACHIEVEMENT_SIZE)
             game.add(text, replace=True)
             text.reparent("achievement")
             game.achievement.relocate(game.scene)
+            game.achievement.motion("popup", mode=ONCE, block=True)
             #TODO: replace with bounce Motion
-            game.achievement.move((0,-game.achievement.h), block=True)
+#            game.achievement.move((0,-game.achievement.h), block=True)
 #            game.player.says("Achievement unlocked: %s\n%s"%(
 #                a.name, a.description))
 
@@ -1319,7 +1327,7 @@ class Action(object):
         for frame in image_seq:
             frames.append(pyglet.image.AnimationFrame(
                 frame, 1 / getattr(game, "default_actor_fps", DEFAULT_ACTOR_FPS)))
-        set_resource(self.resource_name, resource = pyglet.image.Animation(frames))
+        set_resource(self.resource_name, resource = pyglet.image.Animation(frames), w=image_seq.item_width, h=image_seq.item_height)
         self._loaded = True
 
 
@@ -2818,6 +2826,9 @@ class Actor(object, metaclass=use_on_events):
                 kwargs = self._get_text_details()
                 # but with a nice different colour
                 kwargs["colour"] = (55, 255, 87)
+
+            if "colour" not in kwargs: #if player does not provide a colour, use a default
+                kwargs["colour"] = COLOURS["goldenrod"]
             # dim the colour of the option if we have already selected it.
             remember = (self.name, statement, text)
             if remember in self.game._selected_options and "colour" in kwargs:
@@ -2830,7 +2841,7 @@ class Actor(object, metaclass=use_on_events):
             # store this Actor so the callback can modify it.
             opt.tmp_creator = self.name
             # store the colour so we can undo it after hover
-            opt.colour = kwargs["colour"]
+            opt.colour = kwargs["colour"] 
             opt.question = statement
 
             opt.interact = option_answer_callback
@@ -5982,6 +5993,8 @@ class Game(metaclass=use_on_events):
         #with player object on occasion
         self._allow_one_player_interaction = False
 
+        self._player_goto_behaviour = GOTO
+
         #force pyglet to draw every frame. Requires restart
         #this is on by default to allow Motions to sync with Sprites.
         self._lock_updates_to_draws = True 
@@ -6041,7 +6054,6 @@ class Game(metaclass=use_on_events):
         else:
             pyglet.clock.unschedule(self.combined_update)
             pyglet.clock.schedule_interval(self.combined_update, 1 / fps)
-
 
     def on_set_fps(self, v):
         self.fps = v
@@ -6478,27 +6490,32 @@ class Game(metaclass=use_on_events):
                 # if wanting to interact or use an object go to it. If engine
                 # says to go to object for look, do that too.
                 if (self.mouse_mode != MOUSE_LOOK or GOTO_LOOK) and (obj.allow_interact or obj.allow_use or obj.allow_look):
-                    if self.player and self.player.name in self.scene._objects and self.player != obj:
+                    allow_goto_object = True if self._player_goto_behaviour in [GOTO, GOTO_OBJECTS] else False
+                    if self.player and self.player.name in self.scene._objects and self.player != obj and allow_goto_object:
                         if valid_goto_point(self, self.scene, self.player, obj):
                             self.player.goto(obj, block=True)
                             self.player.set_idle(obj)
-
                 if button & pyglet.window.mouse.RIGHT or self.mouse_mode == MOUSE_LOOK:
                     if obj.allow_look or allow_player_use:
                         user_trigger_look(self, obj)
+                    return
                 else:
                     #allow use if object allows use, or in special case where engine allows use on the player actor
                     allow_final_use = (obj.allow_use) or allow_player_use
                     if self.mouse_mode == MOUSE_USE and self._mouse_object and allow_final_use:
                         user_trigger_use(self, obj, self._mouse_object)
                         self._mouse_object = None
+                        return
                     elif obj.allow_interact:
                         user_trigger_interact(self, obj)
-                return
+                        return
+                    else: #potential case where player.allow_interact is false, so pretend no collision.
+                        pass
 
         # no objects to interact with, so just go to the point
         if self.player and self.scene and self.player.scene == self.scene:
-            if valid_goto_point(self, self.scene, self.player, (x,y)):
+            allow_goto_point = True if self._player_goto_behaviour in [GOTO, GOTO_EMPTY] else False
+            if allow_goto_point and valid_goto_point(self, self.scene, self.player, (x,y)):
                 self.player.goto((x, y))
                 self.player.set_idle()
                 return
@@ -7127,7 +7144,8 @@ class Game(metaclass=use_on_events):
             subject_name = subject.display_text if subject.display_text else subject.name
             if self._trunk_step and self._output_walkthrough: 
                 print("Use %s on %s."%(obj_name, subject_name))
-            subject.trigger_use(obj)
+            user_trigger_use(self, subject, obj)
+            self._mouse_object = None     
         elif function_name == "goto":
             # expand the goto request into a sequence of portal requests
             global scene_path
@@ -7777,6 +7795,9 @@ class Game(metaclass=use_on_events):
 
     def on_set_mouse_cursor(self, v):
         self.mouse_cursor = v
+
+    def on_set_player_goto_behaviour(self, v):
+        self._player_goto_behaviour = v
 
     def on_set_headless(self, v):
         self.headless = v
