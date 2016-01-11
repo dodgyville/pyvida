@@ -5569,10 +5569,10 @@ def user_trigger_interact(game, obj):
         game.event_count += 1
         if game.event_callback:
             game.event_callback(game)
-    function_name = game._walkthrough[game._help_index][0].__name__
 
 #XXX It should be possible to track where a user is in relation to the walkthrough here
 #However, it's a low priority for me at the moment.
+#    function_name = game._walkthrough[game._help_index][0].__name__
 #    if game._walkthrough and function_name == "interact":
 #        advance_help_index(game)
 
@@ -6210,8 +6210,9 @@ class Game(metaclass=use_on_events):
             game.pause(3)
             game.elagoon_background.fade_out()
         if symbol == pyglet.window.key.F10:
-            fn = get_function(self, "carebear_gift_quest_reset")
-            fn(game)
+            fn = get_function(self, "generate_sky_achievement")
+            a = fn(game)
+            print(a)
             """
             fn = get_function(self, "carebear_gift_quest_reset")
             if fn:
@@ -6392,10 +6393,11 @@ class Game(metaclass=use_on_events):
                 self._editing.edit_nearest_point(x, y)
             return
 
-        for obj_name in self.scene._objects:
-            obj = get_object(self, obj_name)
-            if obj.collide(x, y) and obj._drag:
-                self._drag = obj
+        if self.scene:
+            for obj_name in self.scene._objects:
+                obj = get_object(self, obj_name)
+                if obj.collide(x, y) and obj._drag:
+                    self._drag = obj
 
     def on_mouse_release(self, x, y, button, modifiers):
         """ Call the correct function depending on what the mouse has clicked on """
@@ -6479,38 +6481,39 @@ class Game(metaclass=use_on_events):
                 potentially_do_idle = True
             else:
                 return
-        for obj_name in self.scene._objects:
-            obj = get_object(self, obj_name)
-            if self.mouse_mode == MOUSE_USE and self._mouse_object == obj: continue #can't use item on self
-            allow_player_use = (self.player and self.player == obj) and (ALLOW_USE_ON_PLAYER or self._allow_one_player_interaction)
-            allow_use = (obj.allow_draw and (obj.allow_interact or obj.allow_use or obj.allow_look)) or allow_player_use
-            if self._allow_one_player_interaction: #switch off special player interact
-                self._allow_one_player_interaction = False
-            if obj.collide(x, y) and allow_use:
-                # if wanting to interact or use an object go to it. If engine
-                # says to go to object for look, do that too.
-                if (self.mouse_mode != MOUSE_LOOK or GOTO_LOOK) and (obj.allow_interact or obj.allow_use or obj.allow_look):
-                    allow_goto_object = True if self._player_goto_behaviour in [GOTO, GOTO_OBJECTS] else False
-                    if self.player and self.player.name in self.scene._objects and self.player != obj and allow_goto_object:
-                        if valid_goto_point(self, self.scene, self.player, obj):
-                            self.player.goto(obj, block=True)
-                            self.player.set_idle(obj)
-                if button & pyglet.window.mouse.RIGHT or self.mouse_mode == MOUSE_LOOK:
-                    if obj.allow_look or allow_player_use:
-                        user_trigger_look(self, obj)
-                    return
-                else:
-                    #allow use if object allows use, or in special case where engine allows use on the player actor
-                    allow_final_use = (obj.allow_use) or allow_player_use
-                    if self.mouse_mode == MOUSE_USE and self._mouse_object and allow_final_use:
-                        user_trigger_use(self, obj, self._mouse_object)
-                        self._mouse_object = None
+        if self.scene:
+            for obj_name in self.scene._objects:
+                obj = get_object(self, obj_name)
+                if self.mouse_mode == MOUSE_USE and self._mouse_object == obj: continue #can't use item on self
+                allow_player_use = (self.player and self.player == obj) and (ALLOW_USE_ON_PLAYER or self._allow_one_player_interaction)
+                allow_use = (obj.allow_draw and (obj.allow_interact or obj.allow_use or obj.allow_look)) or allow_player_use
+                if self._allow_one_player_interaction: #switch off special player interact
+                    self._allow_one_player_interaction = False
+                if obj.collide(x, y) and allow_use:
+                    # if wanting to interact or use an object go to it. If engine
+                    # says to go to object for look, do that too.
+                    if (self.mouse_mode != MOUSE_LOOK or GOTO_LOOK) and (obj.allow_interact or obj.allow_use or obj.allow_look):
+                        allow_goto_object = True if self._player_goto_behaviour in [GOTO, GOTO_OBJECTS] else False
+                        if self.player and self.player.name in self.scene._objects and self.player != obj and allow_goto_object:
+                            if valid_goto_point(self, self.scene, self.player, obj):
+                                self.player.goto(obj, block=True)
+                                self.player.set_idle(obj)
+                    if button & pyglet.window.mouse.RIGHT or self.mouse_mode == MOUSE_LOOK:
+                        if obj.allow_look or allow_player_use:
+                            user_trigger_look(self, obj)
                         return
-                    elif obj.allow_interact:
-                        user_trigger_interact(self, obj)
-                        return
-                    else: #potential case where player.allow_interact is false, so pretend no collision.
-                        pass
+                    else:
+                        #allow use if object allows use, or in special case where engine allows use on the player actor
+                        allow_final_use = (obj.allow_use) or allow_player_use
+                        if self.mouse_mode == MOUSE_USE and self._mouse_object and allow_final_use:
+                            user_trigger_use(self, obj, self._mouse_object)
+                            self._mouse_object = None
+                            return
+                        elif obj.allow_interact:
+                            user_trigger_interact(self, obj)
+                            return
+                        else: #potential case where player.allow_interact is false, so pretend no collision.
+                            pass
 
         # no objects to interact with, so just go to the point
         if self.player and self.scene and self.player.scene == self.scene:
@@ -7333,18 +7336,14 @@ class Game(metaclass=use_on_events):
     def pyglet_draw(self):  # game.draw
         """ Draw the scene """
 #        dt = pyglet.clock.tick()
+        self._window.clear()
 
         if not self.scene:
             return
-#        if self._headless: return
 
-#        if self._headless: return
-#        self.scene.pyglet_draw()
-
-        # draw scene backgroundsgrounds (layers with z equal or less than 1.0)
-        self._window.clear()
         # undo alpha for pyglet drawing
         pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0)
+        # draw scene backgroundsgrounds (layers with z equal or less than 1.0)
         for item in self.scene._layer:
             obj = get_object(self, item)
             obj.game = self
@@ -8116,7 +8115,10 @@ class MyTkApp(threading.Thread):
             self.game.scene.default_idle =  request_default_idle.get()
 
         col = 1
-        actions = list(self.game.player._actions.keys())
+        if self.game.player:
+            actions = list(self.game.player._actions.keys())
+        else:
+            actions = []
         actions.sort()
         if len(actions) > 0:
             tk.Label(group, text="Default player idle for scene:").grid(
