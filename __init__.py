@@ -3905,6 +3905,12 @@ class Emitter(Item, metaclass=use_on_events):
         self.behaviour = BEHAVIOUR_FIRE
         self._add_particles(self.number, terminate=True)
 
+    def on_cease(self):
+        """ Cease spawning new particles and finish """
+        self.behaviour = BEHAVIOUR_FIRE        
+        for p in self.particles:
+            p.terminate = True
+
     def on_on(self):
         """ switch emitter on permanently (default) """
         self.behaviour = BEHAVIOUR_CYCLE
