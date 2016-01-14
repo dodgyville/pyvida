@@ -3394,6 +3394,9 @@ class Actor(object, metaclass=use_on_events):
 
     # actor.relocate
     def _relocate(self, scene=None, destination=None, scale=None):
+        """
+        destination can be a point, an Actor, or CENTER (to center on screen).
+        """
         if self.action and self.action._loaded == False and self.game and not self.game._headless:
             self.load_assets(self.game)
         if scene:
@@ -3403,27 +3406,12 @@ class Actor(object, metaclass=use_on_events):
             scene._add(self)
         if scale:
             self.scale = scale
+        if destination == CENTER:
+            destination = self.game.resolution[0]/2 - self.w/2, self.game.resolution[1]/2 - self.h/2
         if destination:
             pt = get_point(self.game, destination, self)
             self.x, self.y = pt
         return
-
-        # test player's inventory against scene
-        if self.game and scene and self == self.game.player and self.game.test_inventory:
-            for inventory_item in self.inventory.values():
-                for scene_item in scene._objects.values():
-                    if type(scene_item) != Portal:
-                        actee, actor = slugify(scene_item.name), slugify(
-                            inventory_item.name)
-                        basic = "%s_use_%s" % (actee, actor)
-                        fn = get_function(self.game, basic)
-                        if not fn and inventory_item.name in scene_item.uses:
-                            fn = scene_item.uses[inventory_item.name]
-                        # would use default if player tried this combo
-                        if fn == None:
-                            if scene_item.allow_use:
-                                log.warning("%s default use script missing: def %s(game, %s, %s)" % (
-                                    scene.name, basic, actee.lower(), actor.lower()))
 
     def set_idle(self, target=None):
         """ Work out the best idle for this actor based on the target and available idle actions """
