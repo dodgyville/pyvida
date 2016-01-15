@@ -4628,15 +4628,17 @@ class Text(Item):
 
         self._animated_text = self._display_text[:self._text_index]
         wrap = self.wrap if self.wrap > 0 else 1  # don't allow 0 width labels
-        label = Label(self._animated_text,
-                                        font_name=self.font_name,
-                                        font_size=self.size,
-                                        color=c,
-                                        multiline=True,
-                                        width=wrap,
-                                        x=self.x, y=self.y,
-                                        anchor_x='left', anchor_y='top')
-
+        try:
+            label = Label(self._animated_text,
+                                            font_name=self.font_name,
+                                            font_size=self.size,
+                                            color=c,
+                                            multiline=True,
+                                            width=wrap,
+                                            x=self.x, y=self.y,
+                                            anchor_x='left', anchor_y='top')
+        except TypeError:
+            print("ERROR: Unable to create Label for '%s'"%self._animated_text)
 
         set_resource(self.resource_name, resource=label)
 
@@ -5766,10 +5768,10 @@ def save_settings(game, fname):
         # dump some metadata (eg date, title, etc)
         pickle.dump(game.settings, f)
 
-def load_or_create_settings(game, fname):
+def load_or_create_settings(game, fname, settings_cls=Settings):
     """ load the game settings (eg volume, accessibilty options) """
     if not os.path.isfile(fname): #settings file not available, create new object
-        game.settings = Settings()
+        game.settings = settings_cls()
         return False
     with open(fname, "rb") as f:
         game.settings = pickle.load(f)
