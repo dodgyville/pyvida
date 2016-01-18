@@ -973,7 +973,6 @@ class AchievementManager(object, metaclass=use_on_events):
 class Storage(object):
 
     """ Per game data that the developer wants stored with the save game file"""
-
     def __init__(self):
         pass
 
@@ -1032,6 +1031,11 @@ class Settings(object):
 
         self.invert_mouse = False  # for lefties
         self.language = "en"
+
+        #some game play information
+        self._current_session_start = None #what date and time did the current session start
+        self._last_session_end = None #what time did the last session end
+
 
     def save(self, save_dir):
         """ save the current game settings """
@@ -5771,17 +5775,21 @@ def load_game(game, fname):
 
 def save_settings(game, fname):
     """ save the game settings (eg volume, accessibilty options) """
+    game.settings._last_session_end = datetime.now()
     with open(fname, 'wb') as f:
         # dump some metadata (eg date, title, etc)
         pickle.dump(game.settings, f)
 
 def load_or_create_settings(game, fname, settings_cls=Settings):
     """ load the game settings (eg volume, accessibilty options) """
+    existing = True
     if not os.path.isfile(fname): #settings file not available, create new object
         game.settings = settings_cls()
-        return False
-    with open(fname, "rb") as f:
-        game.settings = pickle.load(f)
+        existing = False
+    else:
+        with open(fname, "rb") as f:
+            game.settings = pickle.load(f)
+    game.settings._current_session_start = datetime.now()
     return True
 
 def fit_to_screen(screen, resolution):
