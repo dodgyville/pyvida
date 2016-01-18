@@ -2898,6 +2898,10 @@ class Actor(object, metaclass=use_on_events):
         if self.game._headless:  # headless mode skips sound and visuals
             items[0].trigger_interact()  # auto-close the on_says
 
+    def create_text(self, text, *args, **kwargs):
+        """ Create a Text object using this actor's values """
+        return Text(text, *args, **kwargs)
+
     def _says(self, text, action="portrait", font=None, size=None, using=None, position=None, offset=None, delay=0.01, step=3, ok="ok", interact=close_on_says, block_for_user=True):
         """
         if block_for_user is False, then DON'T make the game wait until processing next event
@@ -2965,7 +2969,9 @@ class Actor(object, metaclass=use_on_events):
             if portrait:
                 mw -= portrait.w
             kwargs["wrap"] = mw * 0.9
-        label = Text(text, delay=delay, step=step, **kwargs)
+        kwargs["delay"] = delay
+        kwargs["step"] = step
+        label = self.create_text(text, **kwargs)
 
         label.game = self.game
         label.fullscreen(True)
@@ -4847,7 +4853,8 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
 
         w = self.clickable_area.w
         dx, dy = self.tile_size
-        for obj_name in self._objects:
+        objs = self._get_sorted()
+        for obj_name in objs:
             obj = get_object(self.game, obj_name)
             if not obj:
                 log.error(
@@ -4890,7 +4897,7 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
 #                    final_x, self.game.resolution[1] - final_y, sw, sh)
                 rectangle(self.game, obj._cr, colour=(
                     255, 255, 255, 255), fill=False, label=False, absolute=False)
-            if x + self.tile_size[0] > x+self.dimensions[0]:
+            if x + self.tile_size[0] > self.resource.x + self.dimensions[0] - self.tile_size[0]:
                 x = self.resource.x + self.padding[0]
                 y += (self.tile_size[1] + self.padding[1])
             else:
@@ -6255,6 +6262,14 @@ class Game(metaclass=use_on_events):
 #            self.player.rescale(3)
  #           self.player.relocate(destination=(700,1600))
 
+    def get_info_position(self, obj):
+        x,y=obj.x, obj.y
+        if obj._parent:
+            x += obj._parent.x
+            y += obj._parent.y     
+        return (x + obj.nx, y + obj.ny)
+
+
     def on_mouse_motion(self, x, y, dx, dy):
         """ Change mouse cursor depending on what the mouse is hovering over """
         self.mouse_position_raw = x, y
@@ -6362,8 +6377,9 @@ class Game(metaclass=use_on_events):
                     if obj._parent:
                         x += obj._parent.x
                         y += obj._parent.y     
+                    ix, iy = self.get_info_position(obj)
                     self.info(
-                        t, x + obj.nx, y + obj.ny, obj.display_text_align)
+                        t, ix, iy, obj.display_text_align)
                     return
 
         # Not over any thing of importance
@@ -6639,14 +6655,19 @@ class Game(metaclass=use_on_events):
         self._walkthrough = [
             i for sublist in suites for i in sublist]  # all tests, flattened in order
 
-    def reset_info_object(self):
-        """ Create a new info object for display overlay texts """
-        # set up info object
+    def create_info_object(self, name="_info_text"):
+        """ Create a Text object for the info object """
         colour = self.font_info_colour
         font = self.font_info
         size = self.font_info_size
-        self._info_object = Text(
-            "_info_text", display_text=" ", font=font, colour=colour, size=size, offset=1)
+        obj = Text(
+            name, display_text=" ", font=font, colour=colour, size=size, offset=1)
+        return obj
+
+    def reset_info_object(self):
+        """ Create a new info object for display overlay texts """
+        # set up info object
+        self._info_object = self.create_info_object()
         self._info_object.x, self._info_object.y = -100, -200
         self._info_object.game = self
 
