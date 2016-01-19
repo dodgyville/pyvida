@@ -18,6 +18,7 @@ import threading
 import time
 import traceback
 from threading import Thread
+from functools import total_ordering
 
 from argparse import ArgumentParser
 from collections import Iterable
@@ -655,6 +656,70 @@ def get_object(game, obj):
                 robj = i
                 return i
     return robj
+
+
+#LOS algorithm/code provided by David Clark (silenus at telus.net) from pygame code repository
+#Constants for line-segment tests
+#Used by a*star search
+DONT_INTERSECT = 0
+COLINEAR = -1
+
+def have_same_signs(a, b):
+    return ((int(a) ^ int(b)) >= 0)
+
+def line_seg_intersect(line1point1, line1point2, line2point1, line2point2):
+    """ do these two lines intersect """
+    x1 = line1point1[0]
+    y1 = line1point1[1]
+    x2 = line1point2[0]
+    y2 = line1point2[1]
+    x3 = line2point1[0]
+    y3 = line2point1[1]
+    x4 = line2point2[0]
+    y4 = line2point2[1]
+
+    a1 = y2 - y1  
+    b1 = x1 - x2  
+    c1 = (x2 * y1) - (x1 * y2)
+
+    r3 = (a1 * x3) + (b1 * y3) + c1  
+    r4 = (a1 * x4) + (b1 * y4) + c1
+
+    if ((r3 != 0) and (r4 != 0) and have_same_signs(r3, r4)):
+        return(DONT_INTERSECT)
+
+    a2 = y4 - y3  
+    b2 = x3 - x4  
+    c2 = x4 * y3 - x3 * y4
+
+    r1 = a2 * x1 + b2 * y1 + c2  
+    r2 = a2 * x2 + b2 * y2 + c2
+
+    if ((r1 != 0) and (r2 != 0) and have_same_signs(r1, r2)):  
+         return(DONT_INTERSECT)
+
+    denom = (a1 * b2) - (a2 * b1)  
+    if denom == 0:  
+        return(COLINEAR)
+    elif denom < 0:
+        offset = (-1 * denom / 2)
+    else:
+        offset = denom / 2
+    
+    num = (b1 * c2) - (b2 * c1)
+    if num < 0:
+        x = (num - offset) / denom
+    else:
+        x = (num + offset) / denom
+
+    num = (a2 * c1) - (a1 * c2)  
+    if num <0:
+        y = (num - offset) / denom
+    else:
+        y = (num - offset) / denom
+
+    return (x, y)
+
 
 
 def collide(rect, x, y):
@@ -1666,6 +1731,7 @@ class Actor(object, metaclass=use_on_events):
         self._goto_deltas_average_speed = 0
         self._goto_dx, self._goto_dy = 0, 0
         self._goto_points = []  # list of points Actor is walking through
+        self._goto_block = False # is this a*star multi-step process blocking?
 
         self._opacity = 255
 
@@ -2231,7 +2297,7 @@ class Actor(object, metaclass=use_on_events):
                 if len(self._goto_points) > 0:  # continue to follow the path
                     destination = self._goto_points.pop()
                     point = get_point(self.game, destination, self)
-                    self._calculate_goto(self, point)
+                    self._calculate_goto(point, self._goto_block)
                 else:
                     if self._finished_goto:
                         finished_fn = get_function(self.game, self._finished_goto, self)
@@ -3457,8 +3523,114 @@ class Actor(object, metaclass=use_on_events):
         self._goto_x, self._goto_y = None, None
         self._goto_dx, self._goto_dy = 0, 0
 
+    def dist_between(self, current, neighbour):
+        a = current[0] - neighbour[0]
+        b = current[1] - neighbour[1]
+        return math.sqrt(a**2 + b**2)
+
+    def neighbour_nodes(self, polygon, nodes, current):
+        """ only return nodes:
+        1. are not the current node
+        2. that nearly vertical of horizontal to current
+        3. that are inside the walkarea polygon
+        4. that the vector made up of current and new node doesn't intersect walkarea
+        """
+        #run around the walkarea and test each segment
+        #if the line between source and target intersects with any segment of 
+        #the walkarea, then disallow, since we want to stay inside the walkarea
+        return_nodes = []
+        max_nodes = 40 #only look at X nodes maximum
+        for node in nodes:
+            max_nodes -= 1
+            if max_nodes == 0: continue
+            if node != current: #and (node[0] == current[0] or node[1] == current[1]):
+                append_node = True 
+                if polygon:
+                    w0 = w1 = polygon[0]
+                    for w2 in polygon[1:]:
+                        if line_seg_intersect(node.point, current.point, w1, w2): 
+                            print(current.point, "to", node.point," hits ",w1,w2,"of walkarea edge.")
+                            append_node = False
+                            break
+                        w1 = w2
+                    if line_seg_intersect(node.point, current.point, w2, w0): append_node = False
+                if append_node == True and node not in return_nodes: return_nodes.append(node)
+        return return_nodes
+
+    def aStar(self, walkarea, nodes, start, end):
+        # courtesy http://stackoverflow.com/questions/4159331/python-speed-up-an-a-star-pathfinding-algorithm
+        openList = []
+        closedList = []
+        path = []
+#        @total_ordering
+        class Node():
+            def __init__(self, x,y):
+                self.x = x
+                self.y = y
+                self.H = 100000
+                self.parent = None
+            @property
+            def point(self):
+                return self.x, self.y
+#            def __eq__(self, other):
+#                return (self.x, self.y) == (other.x, other.y)
+
+        current = Node(*start)
+        end = Node(*end)
+
+        #create a graph of nodes where each node is connected to all the others.
+        graph = {}
+        nodes = [Node(*n) for n in nodes] #convert points to nodes
+        nodes.extend([current, end])
+
+        for key in nodes:
+            #add nodes that the key node can access to the key node's map.
+            graph[key] = self.neighbour_nodes(walkarea._polygon, nodes, key)
+            #graph[key] = [node for node in nodes if node != n] #nodes link to visible nodes 
+
+        def retracePath(c):
+            path.insert(0,c)
+            if c.parent == None:
+                return
+            retracePath(c.parent)
+
+        openList.append(current)
+        while openList:
+            current = min(openList, key=lambda inst:inst.H)
+            if current == end:
+                retracePath(current)
+                return path
+
+            openList.remove(current)
+            closedList.append(current)
+            for tile in graph[current]:
+                if tile not in closedList:
+                    tile.H = (abs(end.x-tile.x)+abs(end.y-tile.y))*10 
+                    if tile not in openList:
+                        openList.append(tile)
+                    tile.parent = current
+        return path
+
+    def _calculate_path(self, start, end):
+        """ Using the scene's walkarea and waypoints, calculate a list of points that reach our destination
+            Using a*star
+        """
+        goto_points = []
+        if not self.game or not self.game.scene:
+            return goto_points
+        scene = self.game.scene
+        if not scene.walkarea:
+            return [start, end]
+        walkarea = scene.walkarea
+        available_points = walkarea._waypoints
+        available_points = [pt for pt in available_points if walkarea.valid(*pt)] #scrub out non-valid points.
+#        available_points.extend([start, end]) #add the current start, end points (assume valid)
+        goto_points = self.aStar(walkarea, available_points, start, end)
+        return [g.point for g in goto_points]
+
+
     def _calculate_goto(self, destination, block=False):
-        """ Calculate and apply action to get from current point to another point """
+        """ Calculate and apply action to get from current point to another point via a straight line """
         self._goto_x, self._goto_y = destination
         x, y = self._goto_x - self.x, self._goto_y - self.y
         distance = math.hypot(x, y)
@@ -3563,8 +3735,10 @@ class Actor(object, metaclass=use_on_events):
             self.x, self.y = point
             return
 
-        self._goto_points = []
-        self._calculate_goto(point, block)
+        start = (self.x, self.y)
+        self._goto_points = self._calculate_path(start, point)[1:]
+        self._goto_block = block
+        self._calculate_goto(self._goto_points[0], block)
 #        print("GOTO", angle, self._goto_x, self._goto_y, self._goto_dx, self._goto_dy, math.degrees(math.atan(100/10)))
 
 
@@ -3778,6 +3952,8 @@ class Emitter(Item, metaclass=use_on_events):
         self.size_start = size_start
         self.size_end = size_end
         self.alpha_start, self.alpha_end = alpha_start, alpha_end
+        self.alpha_delta = (alpha_end - alpha_start)/frames
+
         # should each particle start mid-action?
         self.random_index = random_index
         self.random_age = random_age  # should each particle start mid-life?
@@ -3786,6 +3962,7 @@ class Emitter(Item, metaclass=use_on_events):
         self.speed_spawn_min, self.speed_spawn_max = speed_spawn_min, speed_spawn_max
         self.particles = []
         self.behaviour = behaviour
+#        self.persist = False # particles are added to the scene and remain.
         self._editable.append(
             ("emitter area", "solid_area", "_solid_area", Rect),)
         # self._solid_area = Rect(0,0,0,0) #used for the spawn area
@@ -3814,6 +3991,9 @@ class Emitter(Item, metaclass=use_on_events):
         self._reset()
         return self
 
+#    def create_persistent(self, p):
+#        """ Convert a particle in an object and """
+
     def _update_particle(self, dt, p):
         r = math.radians(p.direction)
         a = p.speed * math.cos(r)
@@ -3822,6 +4002,12 @@ class Emitter(Item, metaclass=use_on_events):
         p.x += o
         p.x -= self.acceleration[0] * p.index
         p.y -= self.acceleration[1] * p.index
+
+#        p.alpha += self.alpha_delta
+#        if p.alpha < 0: p.alpha = 0
+#        if p.alpha > 1.0: p.alpha = 1.0
+
+
         for motion in self._applied_motions:
             motion.apply_to_actor(p, p.motion_index)
         p.motion_index += 1
@@ -3835,6 +4021,7 @@ class Emitter(Item, metaclass=use_on_events):
                 randint(0, self._solid_area.h)
             p.scale = self.get_a_scale()
             p.speed = self.speed * uniform(self.speed_spawn_min, self.speed_spawn_max)
+            p.alpha = self.alpha_start
             p.index = 0
             p.hidden = False
             if p.terminate == True:
@@ -3843,7 +4030,6 @@ class Emitter(Item, metaclass=use_on_events):
     def _update(self, dt, obj=None):  # emitter.update
         Item._update(self, dt, obj=obj)
         for i, p in enumerate(self.particles):
-            # print("PARTICLE",i,"LOCATION",p.x,p.y)
             self._update_particle(dt, p)
 
     def pyglet_draw(self, absolute=False, force=False):  # emitter.draw
@@ -3882,6 +4068,8 @@ class Emitter(Item, metaclass=use_on_events):
             if self.resource is not None:
                 self.resource._frame_index = p.action_index%self.action.num_of_frames
                 self.resource.scale = p.scale
+                print(self.alpha_delta, p.alpha, max(0, min(round(p.alpha*255), 255)))
+#                self.resource.opacity = max(0, min(round(p.alpha*255), 255))
                 self.resource.position = (int(x), int(y))
                 
                 self.resource.draw()
@@ -7433,7 +7621,8 @@ class Game(metaclass=use_on_events):
         if self.editor: #draw mouse coords at mouse pos
             coords(self, "mouse", *self.mouse_position)
             if self.scene.walkarea._editing is True:
-                self.scene.walkarea.debug_pyglet_draw()
+                pass 
+        self.scene.walkarea.debug_pyglet_draw() #XXX Debugging astar
 
 
         if self.game.camera._overlay:
