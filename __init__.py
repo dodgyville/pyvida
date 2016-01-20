@@ -116,6 +116,8 @@ FONT_VERA = DEFAULT_MENU_FONT = os.path.join(DIRECTORY_FONTS, "vera.ttf")
 DEFAULT_MENU_SIZE = 26
 DEFAULT_MENU_COLOUR = (42, 127, 255)
 
+DEFAULT_TEXT_SIZE = 26
+
 #GOTO BEHAVIOURS
 GOTO = 0 #if player object, goto the point or object clicked on before triggering interact
 GOTO_EMPTY = 1 #if player object, goto empty points but not objects
@@ -2288,14 +2290,11 @@ class Actor(object, metaclass=use_on_events):
             speed = self._goto_deltas_average_speed
             target = Rect(self._goto_x, self._goto_y, int(
                 speed * 1.2), int(speed * 1.2)).move(-int(speed * 0.6), -int(speed * 0.6))
-#            target = Rect(self._goto_x, self._goto_y, speed, speed).move(-int(speed*0.5),-int(speed*0.5))
-#            target = Rect(self._goto_x, self._goto_y, 3, 3).move(-1, -1)
             arrived = target.collidepoint(self.x, self.y) or self._goto_deltas_index >= len(self._goto_deltas)
-#            arrived = self._goto_deltas_index >= len(self._goto_deltas)
             if arrived:
-#                print("ARRIVED",speed, target.collidepoint(self.x, self.y), self._goto_deltas_index, len(self._goto_deltas) )
+                self.busy -= 1
                 if len(self._goto_points) > 0:  # continue to follow the path
-                    destination = self._goto_points.pop()
+                    destination = self._goto_points.pop(0)
                     point = get_point(self.game, destination, self)
                     self._calculate_goto(point, self._goto_block)
                 else:
@@ -2305,7 +2304,6 @@ class Actor(object, metaclass=use_on_events):
                             log.error("Unable to find finish goto function %s for %s"%(self._finished_goto, self.name))
                         else:
                             finished_fn(self)
-                    self.busy -= 1
                     if logging:
                         log.info("%s has finished on_goto by arriving at point, so decrement %s.busy to %s." % (
                             self.name, self.name, self.busy))
@@ -3549,7 +3547,6 @@ class Actor(object, metaclass=use_on_events):
                     w0 = w1 = polygon[0]
                     for w2 in polygon[1:]:
                         if line_seg_intersect(node.point, current.point, w1, w2): 
-                            print(current.point, "to", node.point," hits ",w1,w2,"of walkarea edge.")
                             append_node = False
                             break
                         w1 = w2
@@ -3737,8 +3734,12 @@ class Actor(object, metaclass=use_on_events):
 
         start = (self.x, self.y)
         self._goto_points = self._calculate_path(start, point)[1:]
-        self._goto_block = block
-        self._calculate_goto(self._goto_points[0], block)
+        if len(self._goto_points) > 0: #follow a path there
+            goto_point = self._goto_points.pop(0)
+            self._goto_block = block
+        else: #go there direct
+            goto_point = point
+        self._calculate_goto(goto_point, block)
 #        print("GOTO", angle, self._goto_x, self._goto_y, self._goto_dx, self._goto_dy, math.degrees(math.atan(100/10)))
 
 
@@ -4753,7 +4754,7 @@ class Label(pyglet.text.Label):
 class Text(Item):
 
     def __init__(self, name, pos=(0, 0), display_text=None,
-                 colour=(255, 255, 255, 255), font=None, size=26, wrap=800,
+                 colour=(255, 255, 255, 255), font=None, size=DEFAULT_TEXT_SIZE, wrap=800,
                  offset=None, interact=None, look=None, delay=0, step=2,
                  game=None):
         """
@@ -5689,7 +5690,7 @@ class MenuFactory(object):
 
     """ define some defaults for a menu so that it is faster to add new items """
 
-    def __init__(self, name, pos=(0, 0), size=26, font=DEFAULT_MENU_FONT, colour=DEFAULT_MENU_COLOUR, layout=VERTICAL, anchor = LEFT, padding = 0, offset=None):
+    def __init__(self, name, pos=(0, 0), size=DEFAULT_TEXT_SIZE, font=DEFAULT_MENU_FONT, colour=DEFAULT_MENU_COLOUR, layout=VERTICAL, anchor = LEFT, padding = 0, offset=None):
         self.name = name
         self.position = pos
         self.size = size
@@ -7621,8 +7622,7 @@ class Game(metaclass=use_on_events):
         if self.editor: #draw mouse coords at mouse pos
             coords(self, "mouse", *self.mouse_position)
             if self.scene.walkarea._editing is True:
-                pass 
-        self.scene.walkarea.debug_pyglet_draw() #XXX Debugging astar
+                self.scene.walkarea.debug_pyglet_draw()
 
 
         if self.game.camera._overlay:
