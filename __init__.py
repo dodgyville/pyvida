@@ -3503,11 +3503,6 @@ class Actor(object, metaclass=use_on_events):
             sx, sy = obj.x + obj.sx, obj.y + obj.sy
             angle = math.atan2((sx-x), (y-sy))
             angle = math.degrees(angle)
-            print("x=",x)
-            print("y=",y)
-            print("sx=",sx)
-            print("sy=",sy)
-            print(x,sx,y,sy,"angle between",self.name,"and",target.name,"is",angle)
             for potential_action in ANGLED_IDLE:
                 action_name, angle_range = potential_action
                 lower, higher = angle_range
@@ -7747,7 +7742,6 @@ class Game(metaclass=use_on_events):
 
     def on_menu_modal(self, modal=True):
         """ Set if the menu is currently in modal mode (ie non-menu events are blocked """
-        print("Modal menus set to",modal)
         self._menu_modal = modal
 
     def on_set_interact(self, actor, fn):  # game.set_interact
