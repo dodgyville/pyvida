@@ -2963,7 +2963,7 @@ class Actor(object, metaclass=use_on_events):
 
     def on_says(self, text, *args, **kwargs):
         items = self._says(text, *args, **kwargs)
-        if self.game._headless:  # headless mode skips sound and visuals
+        if self.game._walkthrough_auto:  # headless mode skips sound and visuals
             items[0].trigger_interact()  # auto-close the on_says
 
     def create_text(self, text, *args, **kwargs):
@@ -6159,6 +6159,7 @@ class Game(metaclass=use_on_events):
         self._walkthrough_stored_state = None
         self._help_index = 0  # this tracks the walkthrough as the player plays
         self._headless = False  # no user input or graphics
+        self._walkthrough_auto = False  # play the game automatically, emulating player input.
         # if set to true (via --B option), smart load will ignore quick load
         # files and rebuild them.
         self._build = False
@@ -6841,8 +6842,8 @@ class Game(metaclass=use_on_events):
         self.parser.add_argument("-p", "--profile", action="store_true",
                                  dest="profiling", help="Record player movements for testing", default=False)
 
-        self.parser.add_argument("-R", "--random", action="store_true", dest="stresstest",
-                                 help="Randomly deviate from walkthrough to stress test robustness of scripting")
+        self.parser.add_argument("-R", "--random", dest="target_random_steps", nargs='+',
+                                 help="Randomly deviate [x] steps from walkthrough to stress test robustness of scripting")
         self.parser.add_argument("-r", "--resolution", dest="resolution",
                                  help="Force engine to use resolution WxH or (w,h) (recommended (1600,900))")
         self.parser.add_argument(
@@ -7192,8 +7193,7 @@ class Game(metaclass=use_on_events):
             print("Created %s, updated %s"%(t,t))
         # switch on test runner to step through walkthrough
         if options.target_step:
-            if not options.headless:
-                print("WARNING: steps will not progress unless in headles mode -H")
+            self._walkthrough_auto = True #auto advance
             first_step = options.target_step[0]
             last_step = options.target_step[1] if len(options.target_step) == 2 else None
             if last_step: #run through walkthrough to that step and do game load, then continue to second target
@@ -7225,6 +7225,7 @@ class Game(metaclass=use_on_events):
             self.exit_step = True
         if options.headless:
             self.on_set_headless(True)
+            self._walkthrough_auto = True #auto advance
         if options.fullscreen:
             self.fullscreen = True
             self._window.set_fullscreen(True)
@@ -7556,7 +7557,7 @@ class Game(metaclass=use_on_events):
 
         # if waiting for user input, assume the event to trigger the modal is
         # in the walkthrough
-        if self._headless and self._walkthrough_target >= self._walkthrough_index and len(self._modals) > 0:
+        if self._walkthrough_auto and self._walkthrough_target >= self._walkthrough_index and len(self._modals) > 0:
             self._process_walkthrough()
 
     def pyglet_draw(self):  # game.draw
