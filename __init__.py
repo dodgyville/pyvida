@@ -4688,10 +4688,27 @@ class Scene(metaclass=use_on_events):
         log.info("fading out %s" % [o for o in objects])
         for obj_name in objects:
             obj = get_object(self.game, obj_name)
-            obj._opacity_target = 0
-            obj._opacity_delta = (
-                obj._opacity_target - obj._opacity) / (self.game.fps * seconds)
 
+            if fx == FX_FADE_OUT:
+                if self.game._headless:  # headless mode skips sound and visuals
+                    obj.alpha = 0
+                    continue
+                obj._opacity_target = 0
+            else:
+                if self.game._headless:  # headless mode skips sound and visuals
+                    obj.alpha = 255
+                    continue
+                obj._opacity_target = 255
+            if not self.game._headless:
+                obj._opacity_delta = (
+                    obj._opacity_target - obj._opacity) / (self.game.fps * seconds)
+
+    def on_fade_objects_out(self, objects=[], seconds=3, block=False):
+        self.on_fade_objects(objects, seconds, FX_FADE_OUT, block)
+
+    def on_fade_objects_in(self, objects=[], seconds=3, block=False):
+        """ fade the requested objects """
+        self.on_fade_objects(objects, seconds, FX_FADE_IN, block)
 
     def on_hide_objects(self, objects=[], block=False):
         for obj_name in objects:
