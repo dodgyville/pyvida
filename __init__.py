@@ -136,7 +136,7 @@ VERTICAL = 1
 SPACEOUT = 2  # for making "spaceout" style games
 LUCASARTS = 3
 
-# on says position
+# on says position XXX deprecated?
 POSITION_BOTTOM = 0
 POSITION_TOP = 1
 POSITION_LOW = 2
@@ -151,6 +151,7 @@ RIGHT = 1
 CENTER = 2
 TOP = 3
 BOTTOM = 4
+CAPTION = 5 #top left
 
 MOUSE_USE = 1
 MOUSE_LOOK = 2  # SUBALTERN
@@ -940,12 +941,15 @@ class PyvidaSprite(pyglet.sprite.Sprite):
     """ A pyglet sprite but frame animate is handled manually """
     def __init__(self, *args, **kwargs):
         pyglet.sprite.Sprite.__init__(self, *args, **kwargs)
+        self._frame_index = 0
         if self._animation:
             pyglet.clock.unschedule(self._animate) #make it manual
 
 
     def _animate(self, dt):
         self._frame_index += 1
+        if self._animation is None:
+            return
         if self._frame_index >= len(self._animation.frames):
             self._frame_index = 0
             self.dispatch_event('on_animation_end')
@@ -3027,6 +3031,9 @@ class Actor(object, metaclass=use_on_events):
         elif position == CENTER:
             x, y = self.game.resolution[
                 0] // 2 - msgbox.w // 2, self.game.resolution[1] * 0.5 - msgbox.h//2
+        elif position == CAPTION:
+            x, y = self.game.resolution[
+                0] *0.02, self.game.resolution[1] * 0.02
 
         elif type(position) in [tuple, list]:  # assume coords
             x, y = position
@@ -5404,9 +5411,13 @@ class Camera(metaclass=use_on_events):  # the view manager
         """
         self._scene(self.game.player.scene)
 
-    def on_shake(self, xy=0, x=None, y=None):
+    def on_shake(self, xy=0, x=None, y=None, seconds=None):
         self._shake_x = x if x else xy
         self._shake_y = y if y else xy
+        def shake_stop(dt):
+            self._shake_x, self._shake_y = 0, 0
+        if seconds != None:
+            pyglet.clock.schedule_once(shake_stop, seconds)
 
     def on_shake_stop(self):
         self._shake_x, self._shake_y = 0, 0
