@@ -1228,7 +1228,7 @@ class Motion(object):
                 data = f.readlines()
                 meta = data[0]
                 if meta[0] == "*": #flag to set motion to non-destructive
-                    print("motion is non-destructive")
+                    print("motion %s is non-destructive"%self.name)
                     self.destructive=False
                     meta = meta[1:]
                 meta = meta.strip().split(",")
@@ -1376,7 +1376,7 @@ class Action(object):
         set_resource(self.resource_name, resource=None)
         self._loaded = False
 
-    def load_assets(self, game): #action.load
+    def load_assets(self, game): #action.load_assets
         if game:
             self.game = game
         else:
@@ -1384,22 +1384,44 @@ class Action(object):
                 self.name, getattr(self.actor, "name", self.actor)))
             return
         actor = get_object(game, self.actor)
-        image = load_image(self._image)
-        if not image:
-            log.error("Load action {} assets for actor {} has not loaded an image".format(
-                self.name, getattr(actor, "name", actor)))
-            return
-        image_seq = pyglet.image.ImageGrid(image, 1, self.num_of_frames)
-        frames = []
-        if game == None:
-            log.error("Load assets for {} has no game object".format(
-                getattr(actor, "name", actor)))
-        # TODO: generate ping poing, reverse effects here
-        for frame in image_seq:
-            frames.append(pyglet.image.AnimationFrame(
-                frame, 1 / getattr(game, "default_actor_fps", DEFAULT_ACTOR_FPS)))
-        set_resource(self.resource_name, resource = pyglet.image.Animation(frames), w=image_seq.item_width, h=image_seq.item_height)
+        quickload = os.path.splitext(self._image)[0] + ".quickload"
+
+        full_load = True
+        resource = False #don't update resource
+        if game._headless is True: #only load defaults 
+            if os.path.isfile(quickload): #read w,h without loading full image
+                with open(quickload, "r") as f:
+                    # first line is metadata (variable names and default)
+                    data = f.readlines()
+                    w,h = data[1].split(",")
+                    w, h = int(w), int(h)
+                full_load = False
+        if full_load is True:
+            image = load_image(self._image)
+            if not image:
+                log.error("Load action {} assets for actor {} has not loaded an image".format(
+                    self.name, getattr(actor, "name", actor)))
+                return
+            image_seq = pyglet.image.ImageGrid(image, 1, self.num_of_frames)
+            frames = []
+            if game == None:
+                log.error("Load assets for {} has no game object".format(
+                    getattr(actor, "name", actor)))
+            # TODO: generate ping poing, reverse effects here
+            for frame in image_seq:
+                frames.append(pyglet.image.AnimationFrame(
+                    frame, 1 / getattr(game, "default_actor_fps", DEFAULT_ACTOR_FPS)))
+            resource = pyglet.image.Animation(frames) # update the resource
+            w=image_seq.item_width
+            h=image_seq.item_height
+
+        set_resource(self.resource_name, resource = resource, w=w, h=h)
         self._loaded = True
+       
+        if not os.path.isfile(quickload):
+            with open(quickload, "w") as f:
+                f.write("w,h\n")
+                f.write("%s,%s\n"%(w,h))
 
 
 class Rect(object):
@@ -3301,7 +3323,13 @@ class Actor(object, metaclass=use_on_events):
 #        import pdb; pdb.set_trace()
         callback = self.on_animation_end_once #if not block else self.on_animation_end_once_block
         self._next_action = next_action if next_action else self.default_idle
-        result = self._do(action, callback, mode=mode)
+
+        if self.game and self.game._headless is True: #if headless, jump to end
+            self.on_animation_end_once()
+            result = True
+        else:
+            result = self._do(action, callback, mode=mode)
+
         if block:
             self.game._waiting = True
         if result:
@@ -4025,6 +4053,8 @@ class Emitter(Item, metaclass=use_on_events):
 
     def _update(self, dt, obj=None):  # emitter.update
         Item._update(self, dt, obj=obj)
+        if self.game and self.game._headless:
+            return
         for i, p in enumerate(self.particles):
             self._update_particle(dt, p)
 
@@ -4064,7 +4094,7 @@ class Emitter(Item, metaclass=use_on_events):
             if self.resource is not None:
                 self.resource._frame_index = p.action_index%self.action.num_of_frames
                 self.resource.scale = p.scale
-                print(self.alpha_delta, p.alpha, max(0, min(round(p.alpha*255), 255)))
+#                print(self.alpha_delta, p.alpha, max(0, min(round(p.alpha*255), 255)))
 #                self.resource.opacity = max(0, min(round(p.alpha*255), 255))
                 self.resource.position = (int(x), int(y))
                 
@@ -6160,6 +6190,8 @@ class Game(metaclass=use_on_events):
         self._help_index = 0  # this tracks the walkthrough as the player plays
         self._headless = False  # no user input or graphics
         self._walkthrough_auto = False  # play the game automatically, emulating player input.
+        self.exit_step = False # exit when walkthrough reaches end
+
         # if set to true (via --B option), smart load will ignore quick load
         # files and rebuild them.
         self._build = False
@@ -6222,6 +6254,7 @@ class Game(metaclass=use_on_events):
             pyglet.clock.set_fps_limit(self.fps)
         else:
             pyglet.clock.schedule_interval(self.combined_update, 1 / self.fps)
+
         self.fps_clock = pyglet.clock.ClockDisplay()
 
     def close(self):
@@ -6274,6 +6307,7 @@ class Game(metaclass=use_on_events):
     def set_headless_value(self, v):
         self._headless = v
         if self._headless is True: #speed up
+            print("FASTER FPS")
             self.on_publish_fps(200)
         else:
             self.on_publish_fps(self.fps)
@@ -6328,7 +6362,7 @@ class Game(metaclass=use_on_events):
         """ Information required to read/write run a save file """
         data = {self._menu, self._modals, }
         #_menu, _modals, _modals, visited, _modules
-        print(self.__dict__)
+        print("gamstate_info",self.__dict__)
         import pdb
         pdb.set_trace()
         return data
@@ -6425,7 +6459,7 @@ class Game(metaclass=use_on_events):
         if symbol == pyglet.window.key.F10:
             fn = get_function(self, "generate_sky_achievement")
             a = fn(game)
-            print(a)
+            print("F10",a)
             """
             fn = get_function(self, "carebear_gift_quest_reset")
             if fn:
@@ -7269,12 +7303,16 @@ class Game(metaclass=use_on_events):
         if self._walkthrough_index > self._walkthrough_target or self._walkthrough_index > len(self._walkthrough):
             if self._headless:
                 self.headless = False
+                self._walkthrough_auto = False
                 self._resident = [] # force refresh on scenes assets that may not have loaded during headless mode
                 self.scene.load_assets(self)
                 if self.player:
                     self.player.load_assets(self)
                 load_menu_assets(self)
                 print("FINISHED WALKTHROUGH")
+                if self.exit_step is True:
+                    self.quit()
+
             log.info("FINISHED WALKTHROUGH")
             if self._walkthrough_target_name:
                 save_game(
