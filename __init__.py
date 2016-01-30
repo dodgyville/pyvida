@@ -2403,8 +2403,9 @@ class Actor(object, metaclass=use_on_events):
             return False
 
         if self._parent:
-            x = x - self._parent.x
-            y = y - self._parent.y
+            parent = get_object(self.game, self._parent)
+            x = x - parent.x
+            y = y - parent.y
             #print(self.name, (x,y), (nx,ny), self.clickable_area, (self._parent.x, self._parent.y))
         if self._clickable_fullscreen:
             return True
@@ -2756,8 +2757,9 @@ class Actor(object, metaclass=use_on_events):
 
             x, y = self.x, self.y
             if self._parent:
-                x += self._parent.x
-                y += self._parent.y
+                parent = get_object(self.game, self._parent)
+                x += parent.x
+                y += parent.y
 
             x = x + self.ax
             if not self.game:
@@ -2806,7 +2808,8 @@ class Actor(object, metaclass=use_on_events):
         x,y = self.x, self.y
         dx,dy = 0,0
         if self._parent:
-            dx, dy = self._parent.x, self._parent.y
+            parent = get_object(self.game, self._parent)
+            dx, dy = parent.x, parent.y
             x += dx
             y += dy
         self._debugs = []
@@ -3899,7 +3902,7 @@ class Portal(Actor, metaclass=use_on_events):
         self._post_arrive(link, actor)
 
     def enter_here(self, actor=None, block=True):
-        """ exit the portal's link """
+        """ enter the scene from this portal """
         if actor == None:
             actor = self.game.player
         log.warning(
@@ -6195,6 +6198,7 @@ class Game(metaclass=use_on_events):
         self._walkthrough_target_name = None
         self._walkthrough_start_name = None #fast load from a save file
         self._walkthrough_output = False #output the current interactions as a walkthrough (toggle with F11)
+        self._motion_output = None #output the motion from this point if not None
 
         # TODO: for jumping back to a previous state in the game (WIP)
         self._walkthrough_stored_state = None
@@ -6468,41 +6472,14 @@ class Game(metaclass=use_on_events):
             game.pause(3)
             game.elagoon_background.fade_out()
         if symbol == pyglet.window.key.F10:
-            fn = get_function(self, "generate_sky_achievement")
-            a = fn(game)
-            print("F10",a)
-            """
-            fn = get_function(self, "carebear_gift_quest_reset")
-            if fn:
-                fn(game, None, game.player)
-            """
-            """
-            game.player.relocate("blank", (100, 700))
-            game.player._smart_motions(game)
-            game.player.rescale(uniform(0.1,1.0))
-            game.player.on_motion()
-#            game.player.move((500,0))
-#            game.player.on_do("right")
-#            game.player.on_motion("right", destructive=True)
-            """
-            """
-            game.load_state("etreehouse", "initial")
-            game.camera.scene("etreehouse")
-            game._scenes["etreehouse"].set_background(fname="data/scenes/etreehouse/sunset.png")
-            game.player.relocate("etreehouse", (766, 498))
-            game.player.scale = 0.8
-            game.scene.clean(["tycho"])
-            #game.player.tint((255, 220, 182))
-            #game.player.tint((239, 142, 76))
-            game.player.tint((255, 199, 138))
-            """
+            if self._motion_output is None:
+                self.player.says("Recording motion")
+                print("x,y")
+                self._motion_output = self.mouse_position
+            else:
+                self.player.says("Turned off record motion")
+                self._motion_output = None
 
-#            fn = get_function(self, "enter_generic_pod")
-#            if fn:
-#                fn(game, randint(0,1000000), self.player)
-#                game.player._remember("pods unlocked")
-    #       fn = get_function(self, "debug_cutscene")
-     #       fn(game)
         if symbol == pyglet.window.key.F11:
             if self._walkthrough_output == False:
                 self.player.says("Recording walkthrough")
@@ -6630,8 +6607,9 @@ class Game(metaclass=use_on_events):
                             self.mouse_cursor = MOUSE_CROSSHAIR
                     x,y=obj.x, obj.y
                     if obj._parent:
-                        x += obj._parent.x
-                        y += obj._parent.y     
+                        parent = get_object(self.game, self._parent)
+                        x += parent.x
+                        y += parent.y     
                     ix, iy = self.get_info_position(obj)
                     self.info(
                         t, ix, iy, obj.display_text_align)
@@ -6795,6 +6773,11 @@ class Game(metaclass=use_on_events):
 
 
     def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
+        if self._motion_output != None: #output the delta from the last point.
+            ddx,ddy = self.mouse_position[0] - self._motion_output[0], self.mouse_position[1] - self._motion_output[1]
+            print("%i,%i"%(dx,-dy))
+            self._motion_output = self.mouse_position
+
         x, y = x / self._scale, y / self._scale  # if window is being scaled
         if self._drag:
             obj = self._drag
@@ -7288,7 +7271,7 @@ class Game(metaclass=use_on_events):
             round(time.time() * 1000))
         pyglet.app.run()
 
-    def quit(self):
+    def on_quit(self):
         pyglet.app.exit()
 
     def queue_event(self, event, *args, **kwargs):
@@ -7322,7 +7305,7 @@ class Game(metaclass=use_on_events):
                 load_menu_assets(self)
                 print("FINISHED WALKTHROUGH")
                 if self.exit_step is True:
-                    self.quit()
+                    self.on_quit()
 
             log.info("FINISHED WALKTHROUGH")
             if self._walkthrough_target_name:
