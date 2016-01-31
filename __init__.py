@@ -471,6 +471,7 @@ if logging:
         log_level = logging.DEBUG  # what level of debugging
     else:
         log_level = logging.WARNING
+    log_level = logging.INFO
     LOG_FILENAME = os.path.join(DIRECTORY_SAVES, 'pyvida.log')
     ANALYSIS_FILENAME = os.path.join(DIRECTORY_SAVES, 'analysis.log')
     log = create_log("pyvida", LOG_FILENAME, log_level)
@@ -3191,8 +3192,9 @@ class Actor(object, metaclass=use_on_events):
  #       item_name = item.display_text if item.display_text else item.name
 
         name = item.display_text if item.display_text else item.name
+        self_name = self.display_text if self.display_text else self.name
 
-        if self.game and self.game._output_walkthrough: print("%s gets %s."%(self.name, name))
+        if self.game and self.game._output_walkthrough: print("%s adds %s to inventory."%(self_name, name))
 
         if self.game and self == self.game.player:
             text = "%s added to your inventory!" % name
@@ -5930,7 +5932,7 @@ def load_game_pickle(game, fname, meta_only=False):
     global _pyglet_fonts
     with open(fname, "rb") as f:
         meta = pickle.load(f)
-        if not meta_only:
+        if meta_only is False:
             player_info = pickle.load(f)
             game.storage = pickle.load(f)
             game.mixer = pickle.load(f)
@@ -5983,7 +5985,7 @@ def load_game_pickle(game, fname, meta_only=False):
                 except ImportError:
                     log.error("Unable to import {}".format(module_name))
             game.reload_modules()  # reload now to refresh existing references
-    log.warning("POST UNPICKLE inventory %s"%(game.inventory.name))
+            log.warning("POST UNPICKLE inventory %s"%(game.inventory.name))
     return meta
 
 
@@ -6013,10 +6015,11 @@ def save_game(game, fname):
     save_game_pickle(game, fname)
 
 
-def load_game(game, fname):
-    load_game_pickle(game, fname)
-    game.mixer._load()
-
+def load_game(game, fname, meta_only=False):
+    meta = load_game_pickle(game, fname, meta_only=meta_only)
+    if meta_only is False:
+        game.mixer._load()
+    return meta
 
 def save_settings(game, fname):
     """ save the game settings (eg volume, accessibilty options) """
@@ -6089,6 +6092,7 @@ class Game(metaclass=use_on_events):
         self.debug_collection = False
 
         self.name = name
+        self.section_name = name #for save files, what is this segment/section/part of the game called
         self.fps = fps
         self.default_actor_fps = afps
         self.game = self
@@ -6365,7 +6369,7 @@ class Game(metaclass=use_on_events):
     @property
     def get_game_info(self):
         """ Information required to read/write run a save file """
-        return {"version": VERSION_SAVE, "game_version": self.version, "game_engine": self.engine, "title": self.name, "datetime": datetime.now()}
+        return {"version": VERSION_SAVE, "game_version": self.version, "game_engine": self.engine, "title": self.name, "datetime": datetime.now(), "section": self.section_name}
 
     @property
     def get_player_info(self):
@@ -6607,7 +6611,7 @@ class Game(metaclass=use_on_events):
                             self.mouse_cursor = MOUSE_CROSSHAIR
                     x,y=obj.x, obj.y
                     if obj._parent:
-                        parent = get_object(self.game, self._parent)
+                        parent = get_object(self.game, obj._parent)
                         x += parent.x
                         y += parent.y     
                     ix, iy = self.get_info_position(obj)
@@ -7285,7 +7289,7 @@ class Game(metaclass=use_on_events):
         walkthrough = self._walkthrough[self._walkthrough_index]
         global benchmark_events
         t = datetime.now() - benchmark_events
-        print("doing step",walkthrough, t.seconds)
+#        print("doing step",walkthrough, t.seconds)
         benchmark_events = datetime.now()
         try:
             function_name = walkthrough[0].__name__
@@ -7365,7 +7369,7 @@ class Game(metaclass=use_on_events):
             # the error
             if self.scene and self.scene != obj.scene and obj.name not in self._modals and obj.name not in self._menu:
                 log.error("{} not in scene {}, it's on {}".format(
-                    walkthrough[1], self.scene.name, obj.scene.name if obj.scene else "no scene"))
+                    actor_name, self.scene.name, obj.scene.name if obj.scene else "no scene"))
             if self.player:
                 self.player.x, self.player.y = obj.x + obj.sx, obj.y + obj.sy
             x, y = obj.clickable_area.center
