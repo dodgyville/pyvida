@@ -5046,6 +5046,7 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
 
 #        obj.push_handlers(self) #TODO
         self._objects.append(obj.name)
+        self._sorted_objects = None
         if callback:
             obj._collection_select = callback
 
