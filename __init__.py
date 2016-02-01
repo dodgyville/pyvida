@@ -1108,30 +1108,32 @@ class Settings(object):
         self._current_session_start = None #what date and time did the current session start
         self._last_session_end = None #what time did the last session end
 
+        self.filename = None
 
-    def save(self, save_dir):
+    def save(self, fname=None):
         """ save the current game settings """
+        if fname:
+            self.filename = fname
         if logging:
-            log.debug("Saving settings to %s" % save_dir)
-        fname = os.path.join(save_dir, "game.settings")
-        with open(fname, "w") as f:
+            log.debug("Saving settings to %s" % self.filename)
+        with open(self.filename, "wb") as f:
             pickle.dump(self, f)
 
-    def load(self, save_dir):
+    def load(self, fname=None):
         """ load the current game settings """
+        if fname:
+            self.filename = fname
         if logging:
-            log.debug("Loading settings from %s" % save_dir)
-        fname = os.path.join(save_dir, "game.settings")
+            log.debug("Loading settings from %s" % self.filename)
         try:
-            with open(fname, "rU") as f:
+            with open(self.filename, "rb") as f:
                 data = pickle.load(f)
             return data
         except:  # if any problems, use default settings
             log.warning(
-                "Unable to load settings from %s, using defaults" % fname)
+                "Unable to load settings from %s, using defaults" % self.filename)
             # use loaded settings
             return self
-
 
 class MotionDelta(object):
     def __init__(self):
@@ -6035,19 +6037,17 @@ def load_game(game, fname, meta_only=False):
 def save_settings(game, fname):
     """ save the game settings (eg volume, accessibilty options) """
     game.settings._last_session_end = datetime.now()
-    with open(fname, 'wb') as f:
-        # dump some metadata (eg date, title, etc)
-        pickle.dump(game.settings, f)
+    game.settings.save(fname)
 
 def load_or_create_settings(game, fname, settings_cls=Settings):
     """ load the game settings (eg volume, accessibilty options) """
     existing = True
+    game.settings = settings_cls()
+    game.settings.filename = fname
     if not os.path.isfile(fname): #settings file not available, create new object
-        game.settings = settings_cls()
         existing = False
     else:
-        with open(fname, "rb") as f:
-            game.settings = pickle.load(f)
+        game.settings = game.settings.load(fname)
     game.settings._current_session_start = datetime.now()
     return True
 
