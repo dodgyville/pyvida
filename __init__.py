@@ -3561,12 +3561,13 @@ class Actor(object, metaclass=use_on_events):
         b = current[1] - neighbour[1]
         return math.sqrt(a**2 + b**2)
 
-    def neighbour_nodes(self, polygon, nodes, current):
+    def neighbour_nodes(self, polygon, nodes, current, solids):
         """ only return nodes:
         1. are not the current node
         2. that nearly vertical of horizontal to current
         3. that are inside the walkarea polygon
-        4. that the vector made up of current and new node doesn't intersect walkarea
+        4. that none of the paths intersect a solid area.
+        5. that the vector made up of current and new node doesn't intersect walkarea
         """
         #run around the walkarea and test each segment
         #if the line between source and target intersects with any segment of 
@@ -3577,8 +3578,8 @@ class Actor(object, metaclass=use_on_events):
             max_nodes -= 1
             if max_nodes == 0: continue
             if node != current: #and (node[0] == current[0] or node[1] == current[1]):
-                append_node = True 
-                if polygon:
+                append_node = True  
+                if polygon: #test the walkarea
                     w0 = w1 = polygon[0]
                     for w2 in polygon[1:]:
                         if line_seg_intersect(node.point, current.point, w1, w2): 
@@ -3586,10 +3587,13 @@ class Actor(object, metaclass=use_on_events):
                             break
                         w1 = w2
                     if line_seg_intersect(node.point, current.point, w2, w0): append_node = False
+                for rect in solids:
+                    if rect.intersect(current.point, node.point) is True:
+                        append_node = False
                 if append_node == True and node not in return_nodes: return_nodes.append(node)
         return return_nodes
 
-    def aStar(self, walkarea, nodes, start, end):
+    def aStar(self, walkarea, nodes, start, end, solids):
         # courtesy http://stackoverflow.com/questions/4159331/python-speed-up-an-a-star-pathfinding-algorithm
         openList = []
         closedList = []
@@ -3617,7 +3621,7 @@ class Actor(object, metaclass=use_on_events):
 
         for key in nodes:
             #add nodes that the key node can access to the key node's map.
-            graph[key] = self.neighbour_nodes(walkarea._polygon, nodes, key)
+            graph[key] = self.neighbour_nodes(walkarea._polygon, nodes, key, solids)
             #graph[key] = [node for node in nodes if node != n] #nodes link to visible nodes 
 
         def retracePath(c):
@@ -3657,7 +3661,13 @@ class Actor(object, metaclass=use_on_events):
         available_points = walkarea._waypoints
         available_points = [pt for pt in available_points if walkarea.valid(*pt)] #scrub out non-valid points.
 #        available_points.extend([start, end]) #add the current start, end points (assume valid)
-        goto_points = self.aStar(walkarea, available_points, start, end)
+        solids = []
+        for o in scene._objects:
+            o = get_object(self.game, o)
+            if o._allow_draw == True and o != self.game.player:
+                solids.append(o.solid_area)
+#        print("scene solid areas",[x.serialise() for x in solids],start, end, available_points)
+        goto_points = self.aStar(walkarea, available_points, start, end, solids)
         return [g.point for g in goto_points]
 
 
@@ -7390,7 +7400,7 @@ class Game(metaclass=use_on_events):
                     if not obj.link.scene:
                         print("Portal %s's link %s doesn't seem to go anywhere."%(obj.name, obj.link.name))
                     else:
-                        name = obj.link.scene.display_text if obj.link.scene.display_text else obj.link.scene.name
+                        name = obj.link.scene.display_text if obj.link.scene.display_text not in [None, ""] else obj.link.scene.name
                         print("Go to %s."%name)
                 elif obj:
                     if hasattr(obj, "tmp_creator"):
@@ -7418,7 +7428,6 @@ class Game(metaclass=use_on_events):
             scene_path = []
             obj = get_object(self, actor_name)
 
-            if self._trunk_step and self._output_walkthrough: print("Go to %s."%(actor_name))
 
             if self.scene:
                 scene = scene_search(self, self.scene, obj.name.upper())
@@ -7428,10 +7437,11 @@ class Game(metaclass=use_on_events):
                     if logging:
                         log.info("TEST SUITE: Player goes %s" %
                                  ([x.name for x in scene_path]))
-                    name = scene.display_text if scene.display_text else scene.name
+                    name = scene.display_text if scene.display_text not in [None, ""] else scene.name
                     if self._trunk_step and self._output_walkthrough: print("Go to %s."%(name))
                     self.camera.scene(scene)
                 else:
+#                    if self._trunk_step and self._output_walkthrough: print("Unable to go to %s."%(actor_name))
                     if logging:
                         log.error(
                             "Unable to get player from scene %s to scene %s" % (self.scene.name, obj.name))
@@ -7617,6 +7627,8 @@ class Game(metaclass=use_on_events):
 
         if self.scene.walkarea and self.scene.walkarea._fill_colour is not None:
             self.scene.walkarea.pyglet_draw()
+ #           pass
+#        self.scene.walkarea.debug_pyglet_draw() #XXX test walkarea
 
         scene_objects = []
         if self.scene:
