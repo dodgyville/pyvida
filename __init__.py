@@ -19,6 +19,7 @@ import time
 import traceback
 from threading import Thread
 from functools import total_ordering
+from os.path import expanduser
 
 from argparse import ArgumentParser
 from collections import Iterable
@@ -61,6 +62,23 @@ except ImportError:
 
 
 benchmark_events = datetime.now()
+
+SAVE_DIR = "saves"
+if "LOCALAPPDATA" in os.environ: #win 7
+    SAVE_DIR = os.path.join(os.environ["LOCALAPPDATA"], "spaceout2", 'saves')
+elif "APPDATA" in os.environ: #win XP
+    SAVE_DIR = os.path.join(os.environ["APPDATA"], "spaceout2", 'saves')
+elif 'darwin' in sys.platform: # check for OS X support
+#    import pygame._view
+    SAVE_DIR = os.path.join(expanduser("~"), "Library", "Application Support", "spaceout2")
+
+READONLY = False
+if not os.path.exists(SAVE_DIR):
+    try:
+        os.makedirs(SAVE_DIR)
+    except:
+        READONLY = True
+
 
 """
 Constants
@@ -109,7 +127,7 @@ DIRECTORY_ITEMS = "data/items"
 DIRECTORY_SCENES = "data/scenes"
 DIRECTORY_FONTS = "data/fonts"
 DIRECTORY_EMITTERS = "data/emitters"
-DIRECTORY_SAVES = "saves"
+DIRECTORY_SAVES = SAVE_DIR
 DIRECTORY_INTERFACE = "data/interface"
 
 FONT_VERA = DEFAULT_MENU_FONT = os.path.join(DIRECTORY_FONTS, "vera.ttf")
@@ -1115,8 +1133,8 @@ class Settings(object):
         if fname:
             self.filename = fname
         if logging:
-            log.debug("Saving settings to %s" % self.filename)
-        with open(self.filename, "wb") as f:
+            log.info("Saving settings to %s" % self.filename)
+        with open(os.path.abspath(self.filename), "wb") as f:
             pickle.dump(self, f)
 
     def load(self, fname=None):
@@ -1124,9 +1142,9 @@ class Settings(object):
         if fname:
             self.filename = fname
         if logging:
-            log.debug("Loading settings from %s" % self.filename)
+            log.info("Loading settings from %s" % self.filename)
         try:
-            with open(self.filename, "rb") as f:
+            with open(os.path.abspath(self.filename), "rb") as f:
                 data = pickle.load(f)
             return data
         except:  # if any problems, use default settings
@@ -1391,7 +1409,7 @@ class Action(object):
                 self.name, getattr(self.actor, "name", self.actor)))
             return
         actor = get_object(game, self.actor)
-        quickload = os.path.splitext(self._image)[0] + ".quickload"
+        quickload = os.path.abspath(os.path.splitext(self._image)[0] + ".quickload")
 
         full_load = True
         resource = False #don't update resource
@@ -1425,7 +1443,7 @@ class Action(object):
         set_resource(self.resource_name, resource = resource, w=w, h=h)
         self._loaded = True
        
-        if not os.path.isfile(quickload):
+        if not os.path.isfile(quickload) and os.access(quickload, os.W_OK):
             with open(quickload, "w") as f:
                 f.write("w,h\n")
                 f.write("%s,%s\n"%(w,h))
@@ -5621,6 +5639,8 @@ class Mixer(metaclass=use_on_events):  # the sound manager
     def _music_play(self, fname=None, description=None, loops=-1):
         if self._force_mute or self._session_mute:
             return
+        return
+
         if fname:
             if os.path.exists(fname):
                 log.info("Loading music file %s" % fname)
@@ -5646,9 +5666,11 @@ class Mixer(metaclass=use_on_events):  # the sound manager
         self._music_play(fname=fname, loops=loops)
 
     def _music_fade_out(self):
+        return
         self._music_player.pause()
 
     def _music_fade_in(self):
+        return
         if logging:
             log.warning("pyvida.mixer.music_fade_in fade not implemented yet")
         if self._force_mute:
@@ -5665,6 +5687,7 @@ class Mixer(metaclass=use_on_events):  # the sound manager
         self._music_fade_in()
 
     def _music_stop(self):
+        return
         self._music_player.pause()
         self._music_player.next_source()
 
@@ -5698,6 +5721,7 @@ class Mixer(metaclass=use_on_events):  # the sound manager
         description = <string> -> human readable description of sfx
         """
         sfx = None
+        return sfx
         if store:
             setattr(self, store, sfx)
         # headless mode skips sound and visuals
@@ -5742,12 +5766,14 @@ class Mixer(metaclass=use_on_events):  # the sound manager
         self._sfx_play(fname, description, loops, fade_music, store)
 
     def on_sfx_stop(self, sfx=None):
+        return
         self._sfx_player.pause()
         self._sfx_player.next_source()
         #if sfx: sfx.stop()
         pass
 
     def on_music_finish(self, callback=None):
+        return
         """ Set a callback function for when the music finishes playing """
         self._music_player.on_eos = callback
 
