@@ -23,7 +23,7 @@ from os.path import expanduser
 
 from argparse import ArgumentParser
 from collections import Iterable
-from datetime import datetime
+from datetime import datetime, timedelta
 from gettext import gettext
 from random import choice, randint, uniform
 
@@ -146,7 +146,8 @@ GOTO_NEVER = 3 #call the interact functions immediately
 
 FONT_ACHIEVEMENT = FONT_VERA
 FONT_ACHIEVEMENT_SIZE = 10
-FONT_ACHIEVEMENT_COLOUR = (215,215,225)
+FONT_ACHIEVEMENT_COLOUR = (245, 245, 255)
+FONT_ACHIEVEMENT_COLOUR2 = (215, 215, 225)
 
 # LAYOUTS FOR MENUS and MENU FACTORIES
 HORIZONTAL = 0
@@ -1036,11 +1037,12 @@ class AchievementManager(object, metaclass=use_on_events):
 
     def grant(self, game, slug):
         """ Grant an achievement to the player """
-        if slug in self.granted: return #already granted
+        if slug in self.granted: return False #already granted
         new_achievement = copy.copy(self._achievements[slug])
         new_achievement.date = datetime.now()
         new_achievement.version = game.version
         self.granted[slug] = new_achievement
+        return True
 
     def present(self, game, slug):
         a = self._achievements[slug]
@@ -1049,9 +1051,18 @@ class AchievementManager(object, metaclass=use_on_events):
             game.achievement.load_assets(game)
             game.achievement.relocate(game.scene, (120, game.resolution[1]))
 
-            text = Text("achievement_text", pos=(180,60), display_text=a.name, colour=FONT_ACHIEVEMENT_COLOUR, font=FONT_ACHIEVEMENT, size=FONT_ACHIEVEMENT_SIZE)
+            text = Text("achievement_text", pos=(130,240), display_text=a.name, colour=FONT_ACHIEVEMENT_COLOUR, font=FONT_ACHIEVEMENT, size=FONT_ACHIEVEMENT_SIZE)
             game.add(text, replace=True)
+            text._ay = 200
             text.reparent("achievement")
+            text.relocate(game.scene)
+
+#            text = Text("achievement_text2", pos=(130,260), display_text=a.description, colour=FONT_ACHIEVEMENT_COLOUR2, font=FONT_ACHIEVEMENT, size=FONT_ACHIEVEMENT_SIZE)
+#            game.add(text, replace=True)
+#            text._ay = 200
+#            text.reparent("achievement")
+#            text.relocate(game.scene)
+
             game.achievement.relocate(game.scene)
             game.achievement.motion("popup", mode=ONCE, block=True)
             #TODO: replace with bounce Motion
@@ -1064,7 +1075,8 @@ class Storage(object):
 
     """ Per game data that the developer wants stored with the save game file"""
     def __init__(self):
-        pass
+        self._total_time_in_game = timedelta(seconds=0)
+        self._last_save_time = datetime.now()
 
     def __getstate__(self):
         return self.__dict__
@@ -2054,6 +2066,16 @@ class Actor(object, metaclass=use_on_events):
         self._y = v
     y = property(get_y, set_y)
 
+    @property
+    def rank(self):
+        """ draw rank in scene order """
+        y = self._y
+        if self._parent:
+            parent = get_object(self.game, self._parent)
+            y += parent.y
+            y += parent._vy
+        return y
+
     def get_position(self):
         return (self._x, self._y)
 
@@ -2781,6 +2803,9 @@ class Actor(object, metaclass=use_on_events):
                 parent = get_object(self.game, self._parent)
                 x += parent.x
                 y += parent.y
+                x += parent._vx
+                y += parent._vy
+
 
             x = x + self.ax
             if not self.game:
@@ -5000,8 +5025,9 @@ class Text(Item):
 
         x, y = self.x, self.y
         if self._parent:
-            x += self._parent.x
-            y += self._parent.y
+            parent = get_object(self.game, self._parent)
+            x += parent.x
+            y += parent.y
 
         if not absolute and self.game.scene:
             x += self.game.scene.x * self.z
@@ -6051,6 +6077,9 @@ class PyvidaEncoder(json.JSONEncoder):
 
 
 def save_game(game, fname):
+    # XXX not accurate as saving game will change this.
+    game.storage._total_time_in_game += datetime.now() - game.storage._last_save_time
+    game.storage._last_save_time = datetime.now()
     save_game_pickle(game, fname)
 
 
@@ -6423,6 +6452,10 @@ class Game(metaclass=use_on_events):
         pdb.set_trace()
         return data
 
+    @property
+    def time_in_game(self):
+        return self.storage._total_time_in_game + (datetime.now() - self.storage._last_save_time)
+
     def on_key_press(self, symbol, modifiers):
         global use_effect
         game = self
@@ -6488,6 +6521,8 @@ class Game(metaclass=use_on_events):
             print("finished casting")
 
         if symbol == pyglet.window.key.F9:
+            self.settings.achievements.present(game, "puzzle")
+            return
             for i in range(1,1000):
                 game.player.generate_world(i)
                 game.menu.clear()
@@ -7663,7 +7698,7 @@ class Game(metaclass=use_on_events):
                 scene_objects.append(get_object(self, obj_name))
         # - x._parent.y if x._parent else 0
         try:
-            objects = sorted(scene_objects, key=lambda x: x.y, reverse=False)
+            objects = sorted(scene_objects, key=lambda x: x.rank, reverse=False)
             objects = sorted(objects, key=lambda x: x.z, reverse=False)
         except AttributeError:
             import pdb; pdb.set_trace()
