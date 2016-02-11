@@ -5566,6 +5566,9 @@ class Camera(metaclass=use_on_events):  # the view manager
         fname, ext = os.path.splitext(filename)
         img.save(fname+".png")
 
+    def on_relocate(self, position):
+        self.game.scene.x, self.game.scene.y = position
+
     def on_pan(self, left=False, right=False, top=False, bottom=False, percent_vertical=False, speed=None):
         """ Convenience method for panning camera to left, right, top and/or bottom of scene, left OR right OR Neither AND top OR bottom Or Neither """
         x = 0 if left else self.game.scene.x
@@ -7361,7 +7364,7 @@ class Game(metaclass=use_on_events):
         walkthrough = self._walkthrough[self._walkthrough_index]
         global benchmark_events
         t = datetime.now() - benchmark_events
-#        print("doing step",walkthrough, t.seconds)
+        print("doing step",walkthrough, t.seconds)
         benchmark_events = datetime.now()
         try:
             function_name = walkthrough[0].__name__
