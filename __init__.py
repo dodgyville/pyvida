@@ -4528,6 +4528,8 @@ class Scene(metaclass=use_on_events):
         self._x, self._y = 0.0, 0.0
         self._w, self._h = 0, 0
         self.scale = 1.0  # TODO not implemented yet
+        self._rotate = 0
+        self._spin = 0
         self.auto_pan = True  # pan the camera based on player location
 
         self.display_text = None  # used on portals if not None
@@ -4844,7 +4846,13 @@ class Scene(metaclass=use_on_events):
             obj._hide()
 
 
+    def on_rotate(self, d=0):
+        """ Rotate the scene around the window midpoint"""
+        self._rotate = d
 
+    def on_spin(self, d=0):
+        """ Start to rotate the scene around the window midpoint"""
+        self._spin = d
 
     def on_music(self, filename):
         """ What music to play on entering the scene? """
@@ -5325,6 +5333,10 @@ class Camera(metaclass=use_on_events):  # the view manager
                 self.game.scene.x += x 
                 self.game.scene.y += y
                 self._motion_index_index += 1
+
+            if self.game.scene._spin != 0: #rotate the scene
+                self.game.scene._rotate += self.game.scene._spin
+
         if self._goto_x != None:
             speed = self._speed
             target = Rect(self._goto_x, self._goto_y, int(
@@ -6524,6 +6536,9 @@ class Game(metaclass=use_on_events):
             print("finished casting")
 
         if symbol == pyglet.window.key.F9:
+            self.scene._spin += .1
+            print("rotate")
+            return
             self.settings.achievements.present(game, "puzzle")
             return
             for i in range(1,1000):
@@ -7680,6 +7695,16 @@ class Game(metaclass=use_on_events):
             return
 
         # undo alpha for pyglet drawing
+ #       glPushMatrix() #start the scene draw
+        if self.scene._rotate:
+            #rotate scene before we add menu and modals
+            #translate scene to middle
+            glPushMatrix();
+            ww,hh = self.resolution
+            glTranslatef(ww/2, hh/2, 0)
+            glRotatef(-self.scene._rotate, 0.0, 0.0, 1.0)
+            glTranslatef(-ww/2, -hh/2, 0)
+
         pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0)
         # draw scene backgroundsgrounds (layers with z equal or less than 1.0)
         for item in self.scene._layer:
@@ -7720,6 +7745,9 @@ class Game(metaclass=use_on_events):
         if self._info_object.display_text != "":
             self._info_object.pyglet_draw(absolute=False)
 
+        if self.scene._rotate:
+            glPopMatrix() #finish the scene draw
+
         for item_name in self._menu:
             item = get_object(self, item_name)
             item.game = self
@@ -7758,6 +7786,7 @@ class Game(metaclass=use_on_events):
 #        pyglet.graphics.draw(1, pyglet.gl.GL_POINTS,
 #            ('v2i', (int(self.mouse_down[0]), int(self.resolution[1] - self.mouse_down[1])))
 #        )
+
 
         if self.directory_screencast:  # save to directory
             now = round(time.time() * 100)  # max 100 fps
