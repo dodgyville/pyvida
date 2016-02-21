@@ -2787,11 +2787,13 @@ class Actor(object, metaclass=use_on_events):
         self._load_scripts()  # start watching the module for this actor
         return self
 
-    def pyglet_draw(self, absolute=False, force=False):  # actor.draw
+    def pyglet_draw(self, absolute=False, force=False, window=None):  # actor.draw
         if self.game and self.game._headless and not force:
             return
 #        if self.game and self.action and self.action._loaded == False:
 #            self.action.load_assets(self.game)
+
+        height = self.game.resolution[1] if not window else window.height
         sprite = get_resource(self.resource_name)[-1]
         if sprite and self.allow_draw:
             #if action mode is manual (static), force the frame index to the manual frame
@@ -2810,7 +2812,7 @@ class Actor(object, metaclass=use_on_events):
             x = x + self.ax
             if not self.game:
                 print(self.name,"has no game object")
-            y = self.game.resolution[1] - y - self.ay - sprite.height
+            y = height - y - self.ay - sprite.height
 
             #displace if the action requires it
             if self.action:
@@ -6152,7 +6154,18 @@ def patch_idle_loop():
         # over-ride the default event loop
         pyglet.app.EventLoop.idle = idle
 
-patch_idle_loop()
+LOCK_UPDATES_TO_DRAWS = False
+
+if LOCK_UPDATES_TO_DRAWS:
+    patch_idle_loop()
+
+
+class Window(pyglet.window.Window):
+    def __init__(self, *args, **kwargs):
+        super(Window, self).__init__(*args, **kwargs)
+
+    def on_draw(self):
+        self.clear()
 
 
 class Game(metaclass=use_on_events):
@@ -6219,7 +6232,9 @@ class Game(metaclass=use_on_events):
 
 #        config = pyglet.gl.Config(double_buffer=True, vsync=True)
         #config = pyglet.gl.Config(alpha_size=4)
-        self._window = pyglet.window.Window(*resolution)
+        self._window = Window(*resolution)
+        self._window_editor = None
+        self._window_editor_objects = []
 
         pyglet.gl.glScalef(scale, scale, scale)
 
@@ -6330,7 +6345,7 @@ class Game(metaclass=use_on_events):
 
         #force pyglet to draw every frame. Requires restart
         #this is on by default to allow Motions to sync with Sprites.
-        self._lock_updates_to_draws = True 
+        self._lock_updates_to_draws = LOCK_UPDATES_TO_DRAWS 
     
 #        pyglet.clock.schedule_interval(
 #            self._monitor_scripts, 2)  # keep reloading scripts
@@ -6487,7 +6502,8 @@ class Game(metaclass=use_on_events):
             pdb.set_trace()
 
         if symbol == pyglet.window.key.F3: 
-            game.menu.show()
+            #game.menu.show()
+            pyglet_editor(self)
 
         if symbol == pyglet.window.key.F4:
             print("RELOADED MODULES")
@@ -7764,10 +7780,20 @@ class Game(metaclass=use_on_events):
             d = os.path.join(self.directory_screencast, "%s.png" % now)
             pyglet.image.get_buffer_manager().get_color_buffer().save(d)
 
+
+    def pyglet_editor_draw(self): #pyglet editor draw in own window
+        self._window_editor.clear()
+        for i in self._window_editor_objects:
+            obj = get_object(self, i)
+            obj.pyglet_draw(absolute=False, window=self._window_editor)
+
     def combined_update(self, dt):
         """ do the update and the draw in one """
         self.update(dt)
         self.pyglet_draw()
+        if self._window_editor:
+            self.pyglet_editor_draw()
+            self._window_editor.flip()
      #   self._window.dispatch_event('on_draw')
         self._window.flip()
 
@@ -8216,6 +8242,27 @@ def edit_action_motion(game, obj, action):
     open_editor(game, fname, track=False)
 
 
+def set_edit_object(game, obj, old_obj):
+    obj = get_object(game, obj)
+    old_obj = get_object(game, old_obj)
+    if old_obj:
+        old_obj.show_debug = False
+    if obj._editable == [] and hasattr(obj, "set_editable"):
+        obj.set_editable()
+    obj.show_debug = True
+
+
+def editor_new_object(game, obj):
+    d = os.path.join(get_smart_directory(game, obj), obj.name)
+    if not os.path.exists(d):
+        os.makedirs(d)
+    obj.smart(game)
+    obj.load_assets(game)
+    obj.x, obj.y = (
+        game.resolution[0] / 2, game.resolution[1] / 2)
+    game.add(obj)
+    game.scene.add(obj)
+
 class SelectDialog(tk.simpledialog.Dialog):
 
     def __init__(self, game, title, objects, *args, **kwargs):
@@ -8280,14 +8327,9 @@ class MyTkApp(threading.Thread):
 
 
     def set_edit_object(self, obj):
-        obj = get_object(self.game, obj)
-        old_obj = get_object(self.game, self.obj)
-        if old_obj:
-            old_obj.show_debug = False
-        if obj._editable == [] and hasattr(obj, "set_editable"):
-            obj.set_editable()
+        set_edit_object(self.game, obj, self.obj)
+
         self.obj = obj
-        obj.show_debug = True
         if self.editor_label:
             self.editor_label.grid_forget()
             self.editor_label.destroy()
@@ -8338,14 +8380,8 @@ class MyTkApp(threading.Thread):
 #        option = tk.OptionMenu(group, self.game.scene, *scenes, command=change_scene).grid(column=1,row=row)
 
         def _new_object(obj):
-            d = os.path.join(get_smart_directory(self.game, obj), obj.name)
-            if not os.path.exists(d):
-                os.makedirs(d)
-            obj.smart(self.game)
-            obj.x, obj.y = (
-                self.game.resolution[0] / 2, self.game.resolution[1] / 2)
-            self.game.add(obj)
-            self.game.scene.add(obj)
+            editor_new_object(game, obj)
+
             self.app.objects = self.game.scene._objects
             self.set_edit_object(obj)
 
@@ -8793,9 +8829,21 @@ def editor(game):
 
 # pyglet editor
 def pyglet_editor(game):
-    window = pyglet.window.Window()
-    @window.event
-    def on_draw():
-        game.combined_update(0)
-    game.publish_fps()
+    #window = pyglet.window.Window()
+    #@window.event
+    #def on_draw():
+    #    game.combined_update(0)
+    #game.publish_fps()
+    game._window_editor = pyglet.window.Window(200,600)
+    game._window_editor.on_draw = game.pyglet_editor_draw
+    EDITOR_ITEMS = [
+        ("e_save", (10,10)),
+        ("e_load", (40,10)),
+    ]
+    for i in EDITOR_ITEMS:
+        o = Item(i[0]).smart(game)
+        game.add(o)
+        o.load_assets(game)
+        o.x, o.y = i[1]
+    game._window_editor_objects = [i[0] for i in EDITOR_ITEMS]
 
