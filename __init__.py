@@ -1182,13 +1182,13 @@ class MotionDelta(object):
 
 class Motion(object):
 
-    """ A motion is an event independent set of displacement values for an Actor 
+    """ A motion is an event independent set of displacement values for an Actor or Scene
         Perfect for setting up repetitive background motions.
     """
 
     def __init__(self, name):
         self.name = name
-        self.actor = None
+        self.owner = None
         self.game = None
         self._filename = None
         # (x,y,z,rotate,scale) NOTE: scale is absolute, not a delta
@@ -1251,8 +1251,24 @@ class Motion(object):
             self.index += 1
         return True
 
-    def smart(self, game, actor=None, filename=None):  # motion.smart
-        self.actor = actor if actor else self.actor
+    def apply_to_scene(self, scene, index=None):
+        """ Motions applied to scenes are visual only and absolute (ie only the current value is applied 
+            This function is called during pyglet_draw, after the scene has been centred.           
+            TODO: only looping motions that affect scale are implemented
+        """
+        num_deltas = len(self.deltas)
+        delta_index = index if index else self.index
+        d = self.deltas[delta_index % num_deltas]
+        dx, dy, z, r, scale, frame_index, alpha = d
+        pyglet.gl.glScalef(scale, scale,1)
+        print(delta_index, num_deltas, scale)
+#        import pdb; pdb.set_trace()
+        if index is None: 
+            self.index += 1
+        return True
+
+    def smart(self, game, owner=None, filename=None):  # motion.smart
+        self.owner = owner if owner else self.owner
         self.game = game
         fname = os.path.splitext(filename)[0]
         fname = fname + ".motion"
@@ -1762,7 +1778,61 @@ def close_on_says(game, obj, player):
             actor.name, obj.tmp_text, actor.busy))
 
 
-class Actor(object, metaclass=use_on_events):
+class MotionManager(metaclass=use_on_events):
+    """ Enable subclasses to use motions"""
+
+    def __init__(self):
+        self._motions = {}
+        self._applied_motions = []  # list of motions applied at the moment
+
+    def _smart_motions(self, game, exclude=[]):
+        """ smart load the motions """
+        motions = glob.glob(os.path.join(self.directory, "*.motion"))
+        for motion_file in motions:
+            motion_name = os.path.splitext(os.path.basename(motion_file))[0]
+            if motion_name in exclude:
+                continue
+            motion = Motion(motion_name).smart(
+                game, owner=self, filename=motion_file)
+            self._motions[motion_name] = motion
+
+    def _do_motion(self, motion, mode=LOOP, block=False, destructive=None):
+        motion = self._motions.get(
+            motion, None) if motion in self._motions.keys() else None
+        if motion:
+            motion.mode = mode
+            motion.blocking = block
+            if destructive is not None:
+                motion.destructive = destructive
+            if block is True and self.game._headless is False:
+                self.busy += 1
+                self.game._waiting = True #make game wait
+                if logging:
+                    log.info("%s has started motion %s, so incrementing self.busy to %s." % (
+                        self.name, motion.name, self.busy))
+            if self.game._headless is True and mode==ONCE:
+                pass
+                log.warning("XXX: headless mode should apply full motion at once.")
+
+        else:
+            log.warning("Unable to find motion for actor %s"%(self.name))
+        return motion
+
+    def _motion(self, motion=None, mode=LOOP, block=False, destructive=None):
+        motion = self._do_motion(motion, mode, block, destructive)
+        motion = [motion] if motion else []
+        self._applied_motions = motion
+
+    def on_motion(self, motion=None, mode=LOOP, block=False, destructive=None):
+        """ Clear all existing motions and do just one motion. """
+        self._motion(motion, mode, block, destructive)
+
+    def on_add_motion(self, motion, mode=LOOP, block=False):
+        motion = self._do_motion(motion, mode, block)
+        self._applied_motions.append(motion)
+
+
+class Actor(MotionManager, metaclass=use_on_events):
 
     def __init__(self, name, interact=None, display_text=None, look=None, drag=None):
         super().__init__()
@@ -1770,8 +1840,6 @@ class Actor(object, metaclass=use_on_events):
         self._actions = {}
         self._action = None
         self._next_action = None  # for use by do_once and goto and move
-        self._motions = {}
-        self._applied_motions = []  # list of motions applied at the moment
         # list of activities (fn, (*args)) to loop through - good for
         # background actors
         self.control_queue = []
@@ -2083,6 +2151,10 @@ class Actor(object, metaclass=use_on_events):
         self._x = xy[0]
         self._y = xy[1]
     position = property(get_position, set_position)
+
+    @property
+    def directory(self): 
+        return self._directory
 
     def get_ax(self):
         return self._ax * self._scale
@@ -2634,17 +2706,6 @@ class Actor(object, metaclass=use_on_events):
             self._clickable_area = DEFAULT_CLICKABLE = Rect(0, 0, 70, 110)
         else:
             self._clickable_area = Rect(0, 0, self.w, self.h)
-
-    def _smart_motions(self, game, exclude=[]):
-        """ smart load the motions """
-        motions = glob.glob(os.path.join(self._directory, "*.motion"))
-        for motion_file in motions:
-            motion_name = os.path.splitext(os.path.basename(motion_file))[0]
-            if motion_name in exclude:
-                continue
-            motion = Motion(motion_name).smart(
-                game, actor=self, filename=motion_file)
-            self._motions[motion_name] = motion
 
     def _smart_actions(self, game, exclude=[]):
         """ smart load the actions """
@@ -3338,40 +3399,6 @@ class Actor(object, metaclass=use_on_events):
         return slugify(self.name)
 
 #    def create_sprite(self, action, **kwargs):
-    def _do_motion(self, motion, mode=LOOP, block=False, destructive=None):
-        motion = self._motions.get(
-            motion, None) if motion in self._motions.keys() else None
-        if motion:
-            motion.mode = mode
-            motion.blocking = block
-            if destructive is not None:
-                motion.destructive = destructive
-            if block is True and self.game._headless is False:
-                self.busy += 1
-                self.game._waiting = True #make game wait
-                if logging:
-                    log.info("%s has started motion %s, so incrementing self.busy to %s." % (
-                        self.name, motion.name, self.busy))
-            if self.game._headless is True and mode==ONCE:
-                pass
-                log.warning("XXX: headless mode should apply full motion at once.")
-
-        else:
-            log.warning("Unable to find motion for actor %s"%(self.name))
-        return motion
-
-    def _motion(self, motion=None, mode=LOOP, block=False, destructive=None):
-        motion = self._do_motion(motion, mode, block, destructive)
-        motion = [motion] if motion else []
-        self._applied_motions = motion
-
-    def on_motion(self, motion=None, mode=LOOP, block=False, destructive=None):
-        """ Clear all existing motions and do just one motion. """
-        self._motion(motion, mode, block, destructive)
-
-    def on_add_motion(self, motion, mode=LOOP, block=False):
-        motion = self._do_motion(motion, mode, block)
-        self._applied_motions.append(motion)
 
     def on_do(self, action, mode=LOOP):
         self._do(action, mode=mode)
@@ -4512,11 +4539,12 @@ class WalkAreaManager(metaclass=use_on_events):
         self._pyglet_draw(debug=True)
 
 
-class Scene(metaclass=use_on_events):
+class Scene(MotionManager, metaclass=use_on_events):
 
     def __init__(self, name, game=None):
         # list of names of objects in this scene (name not object references to
         # assist pickling)
+        super().__init__()
         self._objects = []
         self.name = name
         self._game = game
@@ -4532,6 +4560,9 @@ class Scene(metaclass=use_on_events):
         self.scale = 1.0  # TODO not implemented yet
         self._rotate = 0
         self._spin = 0
+        self._flip_vertical = False
+        self._flip_horizontal = False
+
         self.auto_pan = True  # pan the camera based on player location
 
         self.display_text = None  # used on portals if not None
@@ -4589,7 +4620,7 @@ class Scene(metaclass=use_on_events):
         return True if obj.name in self._objects else False
 
     @property
-    def directory(self):
+    def directory(self): #scene.directory
         return os.path.join(self.game.directory_scenes, self.name)
 # return os.path.join(os.getcwd(),os.path.join(self.game.directory_scenes,
 # self.name))
@@ -4620,7 +4651,9 @@ class Scene(metaclass=use_on_events):
         if os.path.isfile(ambient_name):
             self.ambient_fname = ambient_name
 
-        # potentially load some defaults for this actor
+        self._smart_motions(game)  # load the motions
+
+        # potentially load some defaults for this scene
         filepath = os.path.join(
             sdir, "%s.defaults" % slugify(self.name).lower())
         if os.path.isfile(filepath):
@@ -4856,6 +4889,10 @@ class Scene(metaclass=use_on_events):
         """ Start to rotate the scene around the window midpoint"""
         self._spin = d
 
+    def on_flip(self, horizontal=None, vertical=None):
+        if vertical != None: self._flip_vertical = vertical
+        if horizontal != None: self._flip_horizontal = horizontal
+
     def on_music(self, filename):
         """ What music to play on entering the scene? """
         self._music_filename = filename
@@ -4863,6 +4900,9 @@ class Scene(metaclass=use_on_events):
     def on_ambient(self, filename):
         """ What ambient sound to play on entering the scene? """
         self._ambient_filename = filename
+
+    def _update(self, dt, obj=None): #scene._update can be useful in subclassing
+        pass
 
     def pyglet_draw(self, absolute=False):  # scene.draw (not used)
         pass
@@ -6405,6 +6445,10 @@ class Game(metaclass=use_on_events):
         raise AttributeError
 #        return self.__getattribute__(self, a)
 
+    def on_clock_schedule_interval(self, *args, **kwargs):
+        """ schedule a repeating callback """
+        pyglet.clock.schedule_interval(*args, **kwargs)
+
     def on_publish_fps(self, fps=None):
         """ Make the engine run at the requested fps """
         fps = self.fps if fps is None else fps
@@ -7656,6 +7700,7 @@ class Game(metaclass=use_on_events):
         if self.scene:
             for obj_name in self.scene._objects:
                 scene_objects.append(get_object(self, obj_name))
+            self.scene._update(dt)
 
         modal_objects = []
         if self._modals:
@@ -7712,13 +7757,31 @@ class Game(metaclass=use_on_events):
 
         # undo alpha for pyglet drawing
  #       glPushMatrix() #start the scene draw
-        if self.scene._rotate:
+        popMatrix = False
+        apply_transform = self.scene._rotate or len(self.scene._applied_motions)>0 or self.scene._flip_vertical or self.scene._flip_horizontal
+        if apply_transform:
             #rotate scene before we add menu and modals
             #translate scene to middle
+            popMatrix = True
             glPushMatrix();
             ww,hh = self.resolution
             glTranslatef(ww/2, hh/2, 0)
-            glRotatef(-self.scene._rotate, 0.0, 0.0, 1.0)
+            if self.scene._rotate:
+                glRotatef(-self.scene._rotate, 0.0, 0.0, 1.0)
+            # apply motions
+            remove_motions = []
+            for motion in self.scene._applied_motions:
+                if motion.apply_to_scene(self.scene) == False:  # motion has finished
+                    remove_motions.append(motion)
+            for motion in remove_motions:
+                self.scene._applied_motions.remove(motion)
+
+            if self.scene._flip_vertical is True:
+                glScalef(1, -1, 1)
+
+            if self.scene._flip_horizontal is True:
+                glScalef(-1, 1, 1)
+
             glTranslatef(-ww/2, -hh/2, 0)
 
         pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0)
@@ -7761,7 +7824,7 @@ class Game(metaclass=use_on_events):
         if self._info_object.display_text != "":
             self._info_object.pyglet_draw(absolute=False)
 
-        if self.scene._rotate:
+        if popMatrix is True:
             glPopMatrix() #finish the scene draw
 
         for item_name in self._menu:
