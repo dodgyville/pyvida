@@ -172,6 +172,9 @@ TOP = 3
 BOTTOM = 4
 CAPTION = 5 #top left
 
+UP = 6
+DOWN = 7
+
 MOUSE_USE = 1
 MOUSE_LOOK = 2  # SUBALTERN
 MOUSE_INTERACT = 3  # DEFAULT ACTION FOR MAIN BTN
@@ -1261,7 +1264,6 @@ class Motion(object):
         d = self.deltas[delta_index % num_deltas]
         dx, dy, z, r, scale, frame_index, alpha = d
         pyglet.gl.glScalef(scale, scale,1)
-        print(delta_index, num_deltas, scale)
 #        import pdb; pdb.set_trace()
         if index is None: 
             self.index += 1
@@ -2271,11 +2273,11 @@ class Actor(MotionManager, metaclass=use_on_events):
         return self._rotate
 
     def set_rotate(self, v):
-        if self.resource:
-            self.resource.rotation = v
+#        if self.resource:
+#            self.resource.rotation = v
 #        if self._clickable_area: self._clickable_area.scale = v
-        if self._clickable_mask:
-            self._clickable_mask.rotation = v
+#        if self._clickable_mask:
+#            self._clickable_mask.rotation = v
         self._rotate = v
     rotate = property(get_rotate, set_rotate)
 
@@ -2851,8 +2853,6 @@ class Actor(MotionManager, metaclass=use_on_events):
     def pyglet_draw(self, absolute=False, force=False, window=None):  # actor.draw
         if self.game and self.game._headless and not force:
             return
-#        if self.game and self.action and self.action._loaded == False:
-#            self.action.load_assets(self.game)
 
         height = self.game.resolution[1] if not window else window.height
         sprite = get_resource(self.resource_name)[-1]
@@ -2892,6 +2892,13 @@ class Actor(MotionManager, metaclass=use_on_events):
             #non-destructive motions may only be displacing the sprite.
             x += self._vx
             y += self._vy
+            glPushMatrix()
+            ww,hh = self.game.resolution
+            if self._rotate:
+                glTranslatef((sprite.width/2)+self.x, hh-self.y-sprite.height/2, 0)
+                glRotatef(-self._rotate, 0.0, 0.0, 1.0)
+                glTranslatef(-((sprite.width/2)+self.x), -(hh-self.y-sprite.height/2 ), 0)
+
             pyglet.gl.glTranslatef(self._scroll_dx, 0.0, 0.0)
 #            sprite.position = (int(x), int(y))
             sprite.position = (x,y)
@@ -2907,7 +2914,12 @@ class Actor(MotionManager, metaclass=use_on_events):
                     sprite.x -= (self.w - 2)
                     if not self._batch:
                         sprite.draw()
-            pyglet.gl.glTranslatef(-self._scroll_dx, 0.0, 0.0)
+#            pyglet.gl.glTranslatef(-self._scroll_dx, 0.0, 0.0)
+#            if self._rotate:
+#                glTranslatef((sprite.width/2)+self.x, hh-self.y-sprite.height/2, 0)
+#                glRotatef(self._rotate, 0.0, 0.0, 1.0)
+#                glTranslatef(-((sprite.width/2)+self.x), -(hh-self.y-sprite.height/2 ), 0)
+            glPopMatrix();
 
         if self.show_debug:
             self.debug_pyglet_draw(absolute=absolute)
@@ -4775,7 +4787,7 @@ class Scene(MotionManager, metaclass=use_on_events):
         if obj.name not in self._objects:
             if logging:
                 log.warning("Object %s not in this scene %s" %
-                            (obj, self.name))
+                            (obj.name, self.name))
             return
         obj.scene = None
         if obj.name in self._objects:
@@ -8599,7 +8611,8 @@ class MyTkApp(threading.Thread):
             if self.obj:
                 self.obj.show_debug = False
             if self.game._editing:
-                self.game._editing.show_debug = False
+                obj = get_object(self.game, self.game._editing)
+                obj.show_debug = False
                 self.game._editing = None  # switch off editor
             self.game.editor = None
             self.app.destroy()
@@ -8734,11 +8747,14 @@ class MyTkApp(threading.Thread):
         self.rows = row
 
     def create_editor_widgets(self):
-        if not self.obj:
+        obj = get_object(self.game, self.obj)
+        if not obj:
+            print("editor widgets can't find",self.obj)
             return
+        self.obj = obj
         row = 0
         self.editor_label = group = tk.LabelFrame(
-            self.app, text=self.obj.name, padx=5, pady=5)
+            self.app, text=obj.name, padx=5, pady=5)
         group.grid(padx=10, pady=10)
 
         self._editing = tk.StringVar(self.app)
@@ -8791,7 +8807,7 @@ class MyTkApp(threading.Thread):
 #                    self.game._editing_point_set = set_attrs
 #                    self.game._editing_point_get = get_attrs
 
-        for i, editable in enumerate(self.obj._editable):
+        for i, editable in enumerate(obj._editable):
             label, get_attrs, set_attrs, types = editable
             btn = tk.Radiobutton(
                 frame, text=label, variable=self._editing, value=label, indicatoron=0, command=selected)
@@ -8803,11 +8819,11 @@ class MyTkApp(threading.Thread):
                 e2 = tk.Entry(frame)
                 e2.grid(row=row, column=2)
                 e2.insert(0, int(get_attrs[1]()))
-                self.obj._tk_edit[label] = (e1, e2)
+                obj._tk_edit[label] = (e1, e2)
             elif types == str:
                 e = tk.Entry(frame)
                 e.grid(row=row, column=1, columnspan=2)
-                self.obj._tk_edit[label] = e
+                obj._tk_edit[label] = e
 #                if get_attrs: e.insert(0, get_attrs())
             elif types == bool:
                 #value="%s%s"%(label, val)
@@ -8819,7 +8835,7 @@ class MyTkApp(threading.Thread):
                 e = tk.Entry(frame)
                 e.grid(row=row, column=1)
                 e.insert(0, int(get_attrs()))
-                self.obj._tk_edit[label] = e
+                obj._tk_edit[label] = e
 
             row += 1
 
@@ -8839,7 +8855,7 @@ class MyTkApp(threading.Thread):
         def apply_motion_btn(*args, **kwargs):
             self.obj.motion(action.get())
 
-        actions = [x.name for x in self.obj._actions.values()]
+        actions = [x.name for x in obj._actions.values()]
         actions.sort()
         if len(actions) > 0:
             tk.Label(group, text="Action:").grid(column=0, row=row)
