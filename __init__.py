@@ -3481,6 +3481,9 @@ class Actor(MotionManager, metaclass=use_on_events):
     def on_resolid(self, rect):
         self._set(["_solid_area"], [rect])
 
+    def on_rotation(self, v):
+        self._set(["rotate"], [v])
+
     def on_rescale(self, v):
         self._set(["scale"], [v])
 
