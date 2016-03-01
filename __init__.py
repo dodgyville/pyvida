@@ -8487,7 +8487,7 @@ class MyTkApp(threading.Thread):
 #        option = tk.OptionMenu(group, self.game.scene, *scenes, command=change_scene).grid(column=1,row=row)
 
         def _new_object(obj):
-            editor_new_object(game, obj)
+            editor_new_object(self.game, obj)
 
             self.app.objects = self.game.scene._objects
             self.set_edit_object(obj)
