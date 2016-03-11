@@ -4714,16 +4714,16 @@ class Scene(MotionManager, metaclass=use_on_events):
             #    pass
 
 
-    def _load_layer(self, element):
+    def _load_layer(self, element, cls=Item):
         fname = os.path.splitext(os.path.basename(element))[0]
         sdir = os.path.dirname(element)
         layer = self.game._add(
-            Item("%s_%s" % (self.name, fname)).smart(self.game, image=element),
+            cls("%s_%s" % (self.name, fname)).smart(self.game, image=element),
             replace=True)
         self._layer.append(layer.name)  # add layer items as items
         return layer
 
-    def _load_layers(self, game, wildcard=None):
+    def _load_layers(self, game, wildcard=None, cls=Item):
         sdir = os.path.join(
             os.getcwd(), os.path.join(game.directory_scenes, self.name))
         wildcard = wildcard if wildcard else os.path.join(sdir, "*.png")
@@ -4734,7 +4734,7 @@ class Scene(MotionManager, metaclass=use_on_events):
             details_filename = os.path.join(sdir, fname + ".details")
             # find a details file for each element
             if os.path.isfile(details_filename):
-                layer = self._load_layer(element)
+                layer = self._load_layer(element, cls=cls)
                 layers.append(layer)
                 try:
                     with open(details_filename, 'r') as f:
