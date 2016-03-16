@@ -3888,6 +3888,7 @@ class Portal(Actor, metaclass=use_on_events):
         self._ox, self._oy = 0, 0  # out point for this portal
 #        self.interact = self._interact_default
         self._link = None  # the connecting Portal
+        self._link_display_text = None #override scene name
 
 #    def __getstate__(self):
 #        """ Prepare the object for pickling """
@@ -3963,7 +3964,7 @@ class Portal(Actor, metaclass=use_on_events):
         """ queue event for changing the portal out points """
         self._ox, self._oy = pt[0], pt[1]
 
-    def _interact_default(self, game, tmat, player):
+    def _interact_default(self, game, portal, player):
         #        if player and player.scene and player.scene != self.scene: #only travel if on same scene as portal
         #            return
         return self.travel()
@@ -6762,7 +6763,10 @@ class Game(metaclass=use_on_events):
                             if link.scene.name not in self.visited:
                                 t = "To the unknown."
                             else:
-                                t = "To %s" % (link.scene.name) if link.scene.display_text in [
+                                if link.display_text not in [None, ""]: #override scene display text
+                                    t = link.display_text
+                                else:
+                                    t = "To %s" % (link.scene.name) if link.scene.display_text in [
                                     None, ""] else "To %s" % (link.scene.display_text)
                         if not self.settings.show_portal_text:
                             t = ""
