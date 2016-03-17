@@ -1033,6 +1033,9 @@ class AchievementManager(object, metaclass=use_on_events):
         self._achievements = {}
         self.granted = {}
 
+    def has(self, slug):
+        return True if slug in self.granted.keys() else False
+
     def register(self, game, slug, name, description, filename):
         """ Register an achievement """
         if slug not in self._achievements:
