@@ -8280,7 +8280,7 @@ class Game(metaclass=use_on_events):
     def on_set_headless(self, v):
         self.headless = v
 
-    def on_set_menu(self, *args, clear=False):
+    def on_set_menu(self, *args, clear=True):
         """ add the items in args to the menu
          """
         if clear == True:
