@@ -4347,6 +4347,10 @@ def distance(pt1, pt2):
     dist = math.sqrt( (pt2[0] - pt1[0])**2 + (pt2[1] - pt1[1])**2 )
     return dist
 
+LOCKED = 0
+UNLOCKED = 1
+FREEROAM = 2
+
 class WalkAreaManager(metaclass=use_on_events):
 
     """ Walkarea with waypoints """
@@ -4356,6 +4360,7 @@ class WalkAreaManager(metaclass=use_on_events):
         self.game = None
         self._waypoints = []
         self._polygon = []
+        self._state = UNLOCKED
 
         #for fast calculation of collisions
         self._polygon_count = len(self._polygon)
@@ -4496,8 +4501,25 @@ class WalkAreaManager(metaclass=use_on_events):
     def on_reset_to_default(self):
         self.on_polygon(DEFAULT_WALKAREA)
 
+    def on_lock(self):
+        """ Lock the walkarea so the player can't walk """
+        self._state = LOCKED
+
+    def on_unlock(self):
+        """ Activate the walkarea """
+        self._state = UNLOCKED
+
+    def on_freeroam(self):
+        """ Make the whole screen a walkarea """
+        self._state = FREEROAM
+
+
     def collide(self, x,y):
         """ Returns True if the point x,y collides with the polygon """
+        if self._state == LOCKED: #always outside walkarea
+            return False
+        elif self._state == FREEROAM: #always inside walkarea
+            return True
         c = False
         i = 0
         npol = self._polygon_count
