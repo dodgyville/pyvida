@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 #NOTE: Provided AS IS, no warranty for use!
 
-#loopser - loops a series of images around onto a shorter set of images to create loopsing animations.
+#looper - loops a series of images around onto a shorter set of images to create loopsing animations.
 #cobbled together from websites and gpl stuff by Luke Miller 2015
 #NOTE: Provided AS IS, no warranty for use!
 
@@ -50,6 +50,7 @@ def super_loopser():
         print("Best results are when number of images %i is cleanly divisible by number of loops %i."%(total_frames, loops))
         return
     print("Using %s original images, looping %s times, onto %s frames."%(total_frames, loops, frames))
+    frames = int(frames)
     first_image = files[0]
     first_image = Image.open(first_image)
     print(first_image.size)
