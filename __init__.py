@@ -164,7 +164,7 @@ POSITION_TEXT = 3  # play at text point of actor
 # collection sorting
 ALPHABETICAL = 0
 
-# ANCHORS FOR MENUS and MENU FACTORIES
+# ANCHORS FOR MENUS and MENU FACTORIES (and on_says)
 LEFT = 0
 RIGHT = 1
 CENTER = 2
@@ -1879,6 +1879,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         self._nx, self._ny = 0, 0  # displacement point for name
         self._tx, self._ty = 0, 0  # displacement point for text
         self._vx, self._vy = 0, 0 # temporary visual displacement (used by motions)
+        self._shakex, self._shakey = 0, 0
         self._parent = None
         # when an actor stands at this actor's stand point, request an idle
         self.idle_stand = None
@@ -2892,6 +2893,10 @@ class Actor(MotionManager, metaclass=use_on_events):
                                  self.game.camera._shake_x)
                     y += randint(-self.game.camera._shake_y,
                                  self.game.camera._shake_y)
+
+            #displace if shaking
+            x += randint(-self._shakex, self._shakex)
+            y += randint(-self._shakey, self._shakey)
             #non-destructive motions may only be displacing the sprite.
             x += self._vx
             y += self._vy
@@ -3454,6 +3459,10 @@ class Actor(MotionManager, metaclass=use_on_events):
 
     def on_tint(self, rgb=None):
         self._set_tint(rgb)
+
+    def on_shake(self, xy=0, x=None, y=None):
+        self._shakex = xy if x is None else x
+        self._shakey = xy if y is None else y
 
     def on_idle(self, seconds):
         """ delay processing the next event for this actor """
@@ -6637,6 +6646,14 @@ class Game(metaclass=use_on_events):
             print("finished casting")
 
         if symbol == pyglet.window.key.F9:
+            game.xian_child.do("left")
+            game.xian_gypsy.do_once("glitch", "vanished")
+            game.pause(1)
+            game.xian_child.do_once("glitchleft", "vanished")
+            game.pause(1)
+            game.xian_gypsy.do("idle")
+            game.xian_child.do("left")
+            return
             self.scene._spin += .1
             print("rotate")
             return
