@@ -5316,6 +5316,18 @@ class MenuManager(metaclass=use_on_events):
         self.game = game
         self.busy = 0
 
+
+    def on_add(self, objects): #menu.add
+        if type(objects) == str:
+            objects = [objects]
+        if not isinstance(objects, Iterable):
+            objects = [objects]
+        for obj in objects:
+            obj = get_object(self.game, obj)
+            obj.load_assets(self.game)
+            obj._usage(draw=True, interact=True)
+            self.game._menu.append(obj.name)
+
     def on_show(self):
         self._show()
 
@@ -8321,6 +8333,7 @@ class Game(metaclass=use_on_events):
 
     def on_set_menu(self, *args, clear=True):
         """ add the items in args to the menu
+            TODO: to be deprecated in favour of menu.add and other methods on MenuManager
          """
         if clear == True:
             self._menu = []
