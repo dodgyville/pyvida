@@ -7550,8 +7550,9 @@ class Game(metaclass=use_on_events):
 
             log.info("FINISHED WALKTHROUGH")
             if self._walkthrough_target_name:
+                walkthrough_target = os.path.abspath(os.path.join(DIRECTORY_SAVES,"%s.save"%self._walkthrough_target_name))
                 save_game(
-                    self, "saves/{}.save".format(self._walkthrough_target_name))
+                    self, walkthrough_target)
 #            self.player.says(gettext("Let's play."))
 #            self.camera.scene("lfloatmid")
 #            self.load_state("igreenhouse", "initial")
