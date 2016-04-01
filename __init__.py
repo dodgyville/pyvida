@@ -1828,7 +1828,6 @@ class MotionManager(metaclass=use_on_events):
                     log.info("%s has started motion %s, so incrementing self.busy to %s." % (
                         self.name, motion.name, self.busy))
             if self.game._headless is True and mode==ONCE:
-                print("APPLYING FULL MOTION IN HEADLESS MODE",self.name,motion.name,self.busy)
                 motion.apply_full_motion_to_actor(self)
                 return None #don't add the motion as it has been fully applied.
         else:
@@ -3874,17 +3873,17 @@ class Actor(MotionManager, metaclass=use_on_events):
 
     def on_move(self, displacement, ignore=False, block=False, next_action=None):
         """ Move Actor relative to its current position """
-        if next_action:
-            self._next_action = next_action
         self._goto(
-            (self.x + displacement[0], self.y + displacement[1]), ignore, block)
+            (self.x + displacement[0], self.y + displacement[1]), ignore, block, next_action)
 
-    def on_goto(self, destination, ignore=False, block=False):
-        self._goto(destination, ignore=ignore, block=block)
+    def on_goto(self, destination, ignore=False, block=False, next_action=None):
+        self._goto(destination, ignore=ignore, block=block, next_action=None)
 
-    def _goto(self, destination, ignore=False, block=False):
+    def _goto(self, destination, ignore=False, block=False, next_action=None):
         """ Get a path to the destination and then start walking """
         point = get_point(self.game, destination, self)
+        if next_action:
+            self._next_action = next_action
 
         if self.game._headless:  # skip pathplanning if in headless mode
             self.x, self.y = point
