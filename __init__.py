@@ -1214,24 +1214,7 @@ class Motion(object):
         self.game = None
         return self.__dict__
 
-    def apply_to_actor(self, actor, index=None):
-        """ Apply the current frame to the actor and increment index, return
-        False to delete the motion """
-        num_deltas = len(self.deltas)
-        delta_index = index if index else self.index
-        if len(self.deltas) < delta_index % num_deltas:
-            return True
-        if self.mode == ONCE and delta_index == num_deltas:
-            self.index = 0
-            if self.blocking is True: #finished blocking the actor
-                actor.busy -= 1 
-                if logging:
-                    log.info("%s has finished motion %s, so decrementing "
-                             "self.busy to %s." % (
-                        actor.name, self.name, actor.busy))
-            return False
-
-        d = self.deltas[delta_index % num_deltas]
+    def _apply_delta(self, actor, d):
         dx, dy, z, r, scale, frame_index, alpha = d
         if actor.scale != 1.0:
             if dx != None: dx *= actor.scale
@@ -1253,6 +1236,35 @@ class Motion(object):
 #                      "frame requests fighting with auto frame advance"%
 #                      (actor.name, actor.action.name, self.name))
         if d[6] != None: actor.alpha = d[6]
+
+
+    def apply_full_motion_to_actor(self, actor, index=None):
+        """ Apply motion to an actor during headless mode. 
+            Used in headless mode when motion is to be applied once.
+        """
+        for d in self.deltas:
+            self._apply_delta(actor, d)
+
+
+    def apply_to_actor(self, actor, index=None):
+        """ Apply the current frame to the actor and increment index, return
+        False to delete the motion """
+        num_deltas = len(self.deltas)
+        delta_index = index if index else self.index
+        if len(self.deltas) < delta_index % num_deltas:
+            return True
+        if self.mode == ONCE and delta_index == num_deltas:
+            self.index = 0
+            if self.blocking is True: #finished blocking the actor
+                actor.busy -= 1 
+                if logging:
+                    log.info("%s has finished motion %s, so decrementing "
+                             "self.busy to %s." % (
+                        actor.name, self.name, actor.busy))
+            return False
+
+        d = self.deltas[delta_index % num_deltas]
+        self._apply_delta(actor, d)
         if index is None: 
             self.index += 1
         return True
@@ -1816,9 +1828,9 @@ class MotionManager(metaclass=use_on_events):
                     log.info("%s has started motion %s, so incrementing self.busy to %s." % (
                         self.name, motion.name, self.busy))
             if self.game._headless is True and mode==ONCE:
-                pass
-                log.warning("XXX: headless mode should apply full motion at once.")
-
+                print("APPLYING FULL MOTION IN HEADLESS MODE",self.name,motion.name,self.busy)
+                motion.apply_full_motion_to_actor(self)
+                return None #don't add the motion as it has been fully applied.
         else:
             log.warning("Unable to find motion for actor %s"%(self.name))
         return motion
@@ -5419,6 +5431,8 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._overlay = None  # image to overlay
         self._overlay_opacity_delta = 0
         self._overlay_counter = 0
+        self._overlay_end = None
+        self._overlay_start = None
 
         self.name = "Default Camera"
         self.game = game
@@ -5454,18 +5468,19 @@ class Camera(metaclass=use_on_events):  # the view manager
                 self._goto_dx, self._goto_dy = 0, 0
 #                self._goto_deltas = []
         if self._overlay:
-            duration = self._overlay_end - self._overlay_start
-            complete = (time.time() - self._overlay_start) / duration
-            if complete > 1:
-                complete = 1
-                #if this was blocking, release it.
-                if self.busy>0: self.busy = 0
+            if self._overlay_end:
+                duration = self._overlay_end - self._overlay_start
+                complete = (time.time() - self._overlay_start) / duration
+                if complete > 1:
+                    complete = 1
+                    #if this was blocking, release it.
+                    if self.busy>0: self.busy = 0
 
-            if self._overlay_fx == FX_FADE_OUT:
-                self._overlay.opacity = round(255 * complete)
-            elif self._overlay_fx == FX_FADE_IN:
-                self._overlay.opacity = round(255 * (1 - complete))
-#            if complete>1: self._overlay = None #finish FX
+                if self._overlay_fx == FX_FADE_OUT:
+                    self._overlay.opacity = round(255 * complete)
+                elif self._overlay_fx == FX_FADE_IN:
+                    self._overlay.opacity = round(255 * (1 - complete))
+    #            if complete>1: self._overlay = None #finish FX
 
     def _scene(self, scene, camera_point=None):
         """ change the current scene """
@@ -5609,6 +5624,20 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._goto_dx = dx
         self._goto_dy = dy
 
+    def on_opacity(self, opacity=255, colour="black"):
+        d = pyglet.resource.get_script_home()
+        if colour == "black":
+            mask = pyglet.image.load(os.path.join(d, 'data/special/black.png'))
+        else:
+            mask = pyglet.image.load(os.path.join(d, 'data/special/white.png'))
+        self._overlay = PyvidaSprite(mask, 0, 0)
+        self._overlay.opacity = opacity
+        self._overlay_start = None
+        self._overlay_end = None
+
+    def on_overlay_off(self):
+        self._overlay = None
+
     def on_fade_out(self, seconds=3, colour="black", block=False): #camera.fade
         """
         colour can only be black|white
@@ -5621,16 +5650,7 @@ class Camera(metaclass=use_on_events):  # the view manager
 #            items[0].trigger_interact()  # auto-close the on_says
 #        return
         d = pyglet.resource.get_script_home()
-        if colour == "black":
-            mask = pyglet.image.load(os.path.join(d, 'data/special/black.png'))
-        else:
-            mask = pyglet.image.load(os.path.join(d, 'data/special/white.png'))
-#        mask = pyglet.image.codecs.gdkpixbuf2.GdkPixbuf2ImageDecoder().decode(open("data/special/black.png", "rb"), "data/special/black.png")
-#        bugs in pyglet 1.2 is killing me on this kind of stuff gah
-#        mask = pyglet.image.SolidColorImagePattern((0, 0, 0, 255))
-#        mask = mask.create_image(self.game.resolution[0], self.game.resolution[1])
-        self._overlay = PyvidaSprite(mask, 0, 0)
-        self._overlay.opacity = 0
+        self.on_opacity(0, colour)
         self._overlay_start = time.time()
         self._overlay_end = time.time() + seconds
         self._overlay_fx = FX_FADE_OUT
@@ -5644,16 +5664,11 @@ class Camera(metaclass=use_on_events):  # the view manager
             return
 #            items[0].trigger_interact()  # auto-close the on_says
     #    return
-        d = pyglet.resource.get_script_home()
-        if colour == "black":
-            mask = pyglet.image.load(os.path.join(d, 'data/special/black.png'))
-        else:
-            mask = pyglet.image.load(os.path.join(d, 'data/special/white.png'))
-        self._overlay = PyvidaSprite(mask, 0, 0)
-        self._overlay.opacity = 255
+        self.on_opacity(255, colour)
         self._overlay_start = time.time()
         self._overlay_end = time.time() + seconds
         self._overlay_fx = FX_FADE_IN
+
         if block:
             self.game._waiting = True
             self.busy += 1
