@@ -3999,7 +3999,7 @@ class Portal(Actor, metaclass=use_on_events):
         log.warning("Actor {} exiting portal {}".format(actor.name, self.name))
         actor.goto((self.x + self.sx, self.y + self.sy), block=block)
         self._pre_leave(self, actor)
-        actor.goto((self.x + self.ox, self.y + self.oy))
+        actor.goto((self.x + self.ox, self.y + self.oy), block=True)
 
     def relocate_here(self, actor=None):
         """ Relocate actor to this portal's out point """
@@ -4630,6 +4630,8 @@ class Scene(MotionManager, metaclass=use_on_events):
         self.description = None  # text for blind users
         self.default_idle = None #override player._idle for this scene
         self.scales = {}
+#        self.scale_gradient = (600, 750) #what y value range to apply the scale_horizon_value to player?
+#        self.scale_horizon_value = 1.0 #deactivated
 
         self.walkarea = WalkAreaManager(self)
 
