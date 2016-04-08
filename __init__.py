@@ -799,6 +799,24 @@ def option_mouse_motion(game, btn, player, *args, **kwargs2):
     """ When hovering over this answer """
     btn.resource.color = (255, 255, 255, 255)
 
+def close_on_says(game, obj, player):
+    """ Close an actor's msgbox and associated items """
+    # REMOVE ITEMS from obj.items instead
+    actor = get_object(game, obj.tmp_creator)
+    try:
+        for item in actor.tmp_modals:
+            if item in game._modals:
+                game._modals.remove(item)
+    except:
+        import pdb;pdb.set_trace()
+    game._remove(actor.tmp_items) #remove temporary items from game
+    actor.busy -= 1
+    actor.tmp_items = None
+    actor.tmp_modals = None
+    if logging:
+        log.info("%s has finished on_says (%s), so decrement self.busy to %i." % (
+            actor.name, obj.tmp_text, actor.busy))
+
 
 def option_answer_callback(game, btn, player):
     """ Called when the option is selected in on_asks """
@@ -1774,25 +1792,6 @@ def receiver(signal, **kwargs):
 """
 Classes
 """
-
-
-def close_on_says(game, obj, player):
-    """ Close an actor's msgbox and associted items """
-    # REMOVE ITEMS from obj.items instead
-    actor = get_object(game, obj.tmp_creator)
-    try:
-        for item in actor.tmp_modals:
-            if item in game._modals:
-                game._modals.remove(item)
-    except:
-        import pdb;pdb.set_trace()
-    game._remove(actor.tmp_items) #remove temporary items from game
-    actor.busy -= 1
-    actor.tmp_items = None
-    actor.tmp_modals = None
-    if logging:
-        log.info("%s has finished on_says (%s), so decrement self.busy to %i." % (
-            actor.name, obj.tmp_text, actor.busy))
 
 
 class MotionManager(metaclass=use_on_events):
@@ -2873,7 +2872,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         sprite = get_resource(self.resource_name)[-1]
         if sprite and self.allow_draw:
             #if action mode is manual (static), force the frame index to the manual frame
-            if self.action.mode == MANUAL:
+            if self.action and self.action.mode == MANUAL:
                 sprite._frame_index = self.action._manual_index
 
             x, y = self.x, self.y
@@ -3152,8 +3151,9 @@ class Actor(MotionManager, metaclass=use_on_events):
             myd) else background
         msgbox = get_object(self.game, using)
         if not msgbox:  # assume using is a file
+            msgbox_name = using if using else "msgbox" #default
             msgbox = self.game.add(
-                Item("msgbox").smart(self.game, using=using, assets=True))
+                Item(msgbox_name).smart(self.game, using=using, assets=True))
         msgbox.load_assets(self.game)
 
         if ok:
@@ -4257,6 +4257,8 @@ class Emitter(Item, metaclass=use_on_events):
         self.behaviour = BEHAVIOUR_FIRE        
         for p in self.particles:
             p.terminate = True
+            if self.game and self.game._headless:
+                self.particles.remove(p)
 
     def on_on(self):
         """ switch emitter on permanently (default) """
