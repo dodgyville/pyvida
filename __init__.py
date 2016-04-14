@@ -8070,6 +8070,11 @@ class Game(metaclass=use_on_events):
         self._add(modal)
 
     def on_modals(self, items=[], replace=False):
+        if type(items) == str:
+            items = [items]
+        if not isinstance(items, Iterable):
+            items = [items]
+
         if replace or len(items)==0: self._modals = []
         for i in items:
             i = get_object(self, i)
