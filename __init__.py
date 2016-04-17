@@ -1190,19 +1190,30 @@ class Settings(object):
             return self
 
 class MotionDelta(object):
-    def __init__(self):
-        self.x = None
-        self.y = None
-        self.z = None
-        self.r = None
-        self.scale = None
-        self.f = None #frame of the animation of the action
-        self.alpha = None
+    def __init__(self, x=None, y=None,z=None,r=None,scale=None,f=None,alpha=None):
+        self.x = x
+        self.y = y
+        self.z = z
+        self.r = r
+        self.scale = scale
+        self.f = f #frame of the animation of the action
+        self.alpha = alpha
 
     @property
     def flat(self):
         return self.x, self.y, self.z, self.r, self.scale, self.f, self.alpha
 
+    def __add__(self, b):
+        n = MotionDelta()
+        a = self
+        n.x = a.x + b.x if a.x != None and b.x != None else None
+        n.y = a.y + b.y if a.y != None and b.y != None else None
+        n.z = a.z + b.z if a.z != None and b.z != None else None
+        n.r = a.r + b.r if a.r != None and b.r != None else None
+        n.scale = a.scale + b.scale if a.scale != None and b.scale != None else None
+        n.f = a.f + b.f if a.f != None and b.f != None else None
+        n.alpha = a.alpha + b.alpha if a.alpha != None and b.alpha != None else None
+        return n
 
 class Motion(object):
 
@@ -1301,6 +1312,15 @@ class Motion(object):
         if index is None: 
             self.index += 1
         return True
+
+    def double_tempo(self):
+        new_deltas = []
+        for i in range(0, len(self.deltas)-1, 2):
+            a = MotionDelta(*self.deltas[i])
+            b = MotionDelta(*self.deltas[i+1])
+            nd = a + b
+            new_deltas.append(nd.flat)
+        self.deltas = new_deltas
 
     def smart(self, game, owner=None, filename=None):  # motion.smart
         self.owner = owner if owner else self.owner
@@ -5362,7 +5382,9 @@ class MenuManager(metaclass=use_on_events):
             menu_items = self.game._menu
         if type(menu_items) not in [tuple, list]:
             menu_items = [menu_items]
-        for i_name in menu_items:
+        for obj in menu_items:
+            obj = get_object(self.game, obj)
+            i_name = obj.name
             if i_name in self.game._menu:
                 self.game._menu.remove(i_name)
 
@@ -6737,6 +6759,7 @@ class Game(metaclass=use_on_events):
  #           self.player.relocate(destination=(700,1600))
 
     def get_info_position(self, obj):
+        obj = get_object(self, obj)
         x,y=obj.x, obj.y
         if obj._parent:
             x += obj._parent.x
