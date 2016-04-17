@@ -1786,6 +1786,10 @@ class Signal(object):
 post_interact = Signal(providing_args=["game", "instance", "player"])
 pre_interact = Signal(providing_args=["game", "instance", "player"])
 
+post_look = Signal(providing_args=["game", "instance", "player"])
+pre_look = Signal(providing_args=["game", "instance", "player"])
+
+
 post_use = Signal(providing_args=["game", "instance", "player"])
 pre_use = Signal(providing_args=["game", "instance", "player"])
 
@@ -2677,6 +2681,11 @@ class Actor(MotionManager, metaclass=use_on_events):
                 receiver(self.game, self, self.game.player)
 
     def trigger_look(self):
+        # do the signals for pre_look
+        for receiver, sender in pre_look.receivers:
+            if isinstance(self, sender):
+                receiver(self.game, self, self.game.player)
+
         if logging:
             log.debug("Player looks at %s" % self.name)
         self.game.mouse_mode = MOUSE_INTERACT  # reset mouse mode
@@ -7423,7 +7432,7 @@ class Game(metaclass=use_on_events):
             return
 #        print("RELOAD MODULES")
         # clear signals so they reload
-        for i in [post_interact, pre_interact, post_use, pre_use, pre_leave, post_arrive]:
+        for i in [post_interact, pre_interact, post_use, pre_use, pre_leave, post_arrive, post_look, pre_look]:
             i.receivers = []
 
         # reload modules
