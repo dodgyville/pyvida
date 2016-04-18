@@ -1322,6 +1322,11 @@ class Motion(object):
             new_deltas.append(nd.flat)
         self.deltas = new_deltas
 
+    def print(self):
+        print("x,y,z,r,scale,f,alpha")
+        for i in self.deltas:
+            print([x for x in i if x != None])
+
     def smart(self, game, owner=None, filename=None):  # motion.smart
         self.owner = owner if owner else self.owner
         self.game = game
