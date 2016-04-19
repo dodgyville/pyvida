@@ -4602,7 +4602,7 @@ class WalkAreaManager(metaclass=use_on_events):
             scene = get_object(self.game, self._scene)
             for obj_name in scene._objects:
                 obj = get_object(scene.game, obj_name)
-                if obj.solid_area.collidepoint(x, y):
+                if obj.allow_update and obj.solid_area.collidepoint(x, y):
                     outside_solids = False
                     break
         safe = True if inside_polygon and outside_solids else False
@@ -4959,19 +4959,6 @@ class Scene(MotionManager, metaclass=use_on_events):
             backgrounds = self._layer
         objects = objects if objects else []
         backgrounds = backgrounds if backgrounds else []
-        for obj_name in objects:
-            obj = get_object(self.game, obj_name)
-            obj._hide()
-        for obj_name in backgrounds:
-            obj = get_object(self.game, obj_name)
-            obj._hide()
-
-    def on_hide(self, objects=None, backgrounds=None, block=False):
-        if objects is None and backgrounds is None: #hide everything
-            objects = self._objects
-            backgrounds = self._layer
-        objects = objects if objects else self._objects
-        backgrounds = backgrounds if backgrounds else self._layer
         for obj_name in objects:
             obj = get_object(self.game, obj_name)
             obj._hide()
@@ -6712,6 +6699,9 @@ class Game(metaclass=use_on_events):
             print("finished casting")
 
         if symbol == pyglet.window.key.F9:
+            from scripts.general import chip_first_attempt
+            chip_first_attempt(game)
+            return
             game.xian_child.do("left")
             game.xian_gypsy.do_once("glitch", "vanished")
             game.pause(1)
