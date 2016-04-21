@@ -3189,7 +3189,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             msgbox = self.game.add(
                 Item(msgbox_name).smart(self.game, using=using, assets=True))
         msgbox.load_assets(self.game)
-
+    
         if ok:
             ok = self.game.add(Item(ok).smart(self.game, assets=True))
             ok.load_assets(self.game)
