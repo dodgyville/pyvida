@@ -1871,8 +1871,8 @@ class MotionManager(metaclass=use_on_events):
         """ Clear all existing motions and do just one motion. """
         self._motion(motion, mode, block, destructive)
 
-    def on_add_motion(self, motion, mode=LOOP, block=False):
-        motion = self._do_motion(motion, mode, block)
+    def on_add_motion(self, motion, mode=LOOP, block=False, destructive=None):
+        motion = self._do_motion(motion, mode, block, destructive)
         self._applied_motions.append(motion)
 
 

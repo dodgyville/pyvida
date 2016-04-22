@@ -10,6 +10,7 @@ import Image
 import sys, os
 from math import ceil
 from optparse import OptionParser
+import copy
 
 
 MAX_WIDTH = 16384 #pyvida limit
@@ -95,6 +96,7 @@ def super_montage():
     parser.add_option("-r", "--reverse", action="store_true", dest="reverse", help="Reverse file list", default=False)
     parser.add_option("-f", "--flip", action="store_true", dest="flip", help="Flip the images left-right", default=False)
     parser.add_option("-s", "--speed", dest="speed", help="Change speed of animation by repeating/skipping frames", default=1, metavar="SPEED")
+    parser.add_option("-p", "--pingpong", action="store_true", dest="pingpong", help="Ping pong the animation back and forth", default=False)
 
     (options, args) = parser.parse_args()
     if len(args) < 2:
@@ -121,6 +123,13 @@ def super_montage():
         m = Image.open(fname) #get info from first image.
         if m.size[0] > mwidth: mwidth=m.size[0] #store the widest image value
         if m.size[1] > mheight: mheight=m.size[1] #store the tallest image value
+    if options.pingpong is True: #
+        print("BEFORE",files)
+        pong = copy.copy(files)
+        pong.reverse()
+        files.extend(pong)
+        print("AFTER",files)
+
     ncols = len(files)%(MAX_WIDTH/mwidth)
     nrows = int(ceil(float(len(files))/float(MAX_WIDTH/mwidth)))
     print ncols, nrows, mwidth, mheight
