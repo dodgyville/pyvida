@@ -2405,11 +2405,14 @@ class Actor(MotionManager, metaclass=use_on_events):
         return get_resource(self.resource_name)[1]
 
     def fog_display_text(self, actor):
-        actor = get_object(self.game, actor)
-        actor_name = actor.name if actor else None
         display_text = self.display_text if self.display_text else self.name
         fog_text = self._fog_display_text if self._fog_display_text else display_text
-        return display_text if self.has_met(actor_name) else fog_text
+        if actor is None:
+            return display_text
+        else:
+            actor = get_object(self.game, actor)
+            actor_name = actor.name if actor else None
+            return display_text if self.has_met(actor_name) else fog_text
 
     def _get_text_details(self, font=None, size=None, wrap=None):
         """ get a dict of details about the speech of this object """
@@ -6856,6 +6859,7 @@ class Game(metaclass=use_on_events):
                 allow_hover = (obj.allow_interact or obj.allow_use or obj.allow_look) or allow_player_hover
                 if obj.collide(x, y) and allow_hover:
                     t = obj.name if obj.display_text == None else obj.display_text
+                    t = obj.fog_display_text(self.player)
                     if isinstance(obj, Portal):
                         link = get_object(self, obj._link)
                         if self.settings.portal_exploration and link and link.scene:
