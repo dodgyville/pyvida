@@ -1873,7 +1873,8 @@ class MotionManager(metaclass=use_on_events):
 
     def on_add_motion(self, motion, mode=LOOP, block=False, destructive=None):
         motion = self._do_motion(motion, mode, block, destructive)
-        self._applied_motions.append(motion)
+        if motion is not None:
+            self._applied_motions.append(motion)
 
 
 class Actor(MotionManager, metaclass=use_on_events):
@@ -5104,7 +5105,7 @@ class Text(Item):
         return self._display_text
 
     def set_display_text(self, v):
-        if not v: return
+        if v is None: return
         self._display_text = v
         #if there are special display requirements for this text, format it here
         if self.format_text: 
