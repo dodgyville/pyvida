@@ -220,9 +220,12 @@ EDIT_SOLID = "solid_area"
 FX_FADE_OUT = 0
 FX_FADE_IN = 1
 
-# KEYS
-K_ESCAPE = "X"
-K_s = "s"
+# KEYS (currently bound to pyglet)
+K_ESCAPE = pyglet.window.key.ESCAPE
+K_I = pyglet.window.key.I
+K_L = pyglet.window.key.L
+K_S = pyglet.window.key.S
+K_ENTER = pyglet.window.key.ENTER
 
 # COLOURS
 COLOURS = {
@@ -1243,6 +1246,13 @@ class Motion(object):
         self.game = None
         return self.__dict__
 
+    def add_delta(self, x=None, y=None, z=None, r=None, scale=None, f=None, alpha=None):
+        self.deltas.append([x, y, z, r, scale, f, alpha])
+
+    def add_deltas(self, deltas):
+        for d in deltas:
+            self.add_delta(*d)
+
     def _apply_delta(self, actor, d):
         dx, dy, z, r, scale, frame_index, alpha = d
         if actor.scale != 1.0:
@@ -1320,7 +1330,7 @@ class Motion(object):
             b = MotionDelta(*self.deltas[i+1])
             nd = a + b
             new_deltas.append(nd.flat)
-        self.deltas = new_deltas
+        self.deltas = new_deltas  
 
     def print(self):
         print("x,y,z,r,scale,f,alpha")
@@ -1397,6 +1407,9 @@ def load_defaults(game, obj, name, filename):
                 if logging: log.error("Error loading %s.defaults"%name)
                 defaults = {}
         for key, val in defaults.items():
+            if key == "interact_key":
+                key = "_interact_key"
+                val = eval(val) #XXX not great
             if key == "font_colour":
                 if type(val) == list:
                     val = tuple(val)
@@ -1960,6 +1973,7 @@ class Actor(MotionManager, metaclass=use_on_events):
 
         self.show_debug = False
 
+        self._interact_key = None #keyboard key assigned to this interact
         self._interact = interact  # special queuing function for interacts
         self._look = look  # override queuing function for look
         self._finished_goto = None #override function when goto has finished
@@ -3937,6 +3951,9 @@ class Actor(MotionManager, metaclass=use_on_events):
         self._calculate_goto(goto_point, block)
 #        print("GOTO", angle, self._goto_x, self._goto_y, self._goto_dx, self._goto_dy, math.degrees(math.atan(100/10)))
 
+    def on_key(self, key = None):
+        #set interact_key
+        self._interact_key = key
 
 class Item(Actor):
     pass
@@ -6446,6 +6463,7 @@ class Game(metaclass=use_on_events):
         self._walkthrough_start_name = None #fast load from a save file
         self._walkthrough_output = False #output the current interactions as a walkthrough (toggle with F11)
         self._motion_output = None #output the motion from this point if not None
+        self._motion_output_raw = [] #will do some processing
 
         # TODO: for jumping back to a previous state in the game (WIP)
         self._walkthrough_stored_state = None
@@ -6652,6 +6670,13 @@ class Game(metaclass=use_on_events):
             if symbol == pyglet.window.key.RIGHT:
                 game.editor.obj.x += 1
 
+        #check menu items for key matches
+        for i in self._menu:
+            obj = get_object(self, i)
+            if obj and obj._interact_key == symbol:
+                obj.trigger_interact() #XXX possible user_trigger_interact()
+                
+
         if symbol == pyglet.window.key.F1:
             #            edit_object(self, list(self.scene._objects.values()), 0)
             #            self.menu_from_factory("editor", MENU_EDITOR)
@@ -6748,9 +6773,15 @@ class Game(metaclass=use_on_events):
                 self.player.says("Recording motion")
                 print("x,y")
                 self._motion_output = self.mouse_position
+                self._motion_output_raw = []
             else:
-                self.player.says("Turned off record motion")
+                motion = Motion("tmp")
+                motion.add_deltas(self._motion_output_raw)
+                import pdb; pdb.set_trace()
+                s = input('motion name? (no .motion)') 
+                self.player.says("Processed, saved, and turned off record motion")
                 self._motion_output = None
+                self._motion_output_raw = []
 
         if symbol == pyglet.window.key.F11:
             if self._walkthrough_output == False:
@@ -7051,9 +7082,11 @@ class Game(metaclass=use_on_events):
 
     def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
         if self._motion_output != None: #output the delta from the last point.
-            ddx,ddy = self.mouse_position[0] - self._motion_output[0], self.mouse_position[1] - self._motion_output[1]
+#            ddx,ddy = self.mouse_position[0] - self._motion_output[0], self.mouse_position[1] - self._motion_output[1]
             print("%i,%i"%(dx,-dy))
             self._motion_output = self.mouse_position
+            self._motion_output_raw.append((dx,-dy))
+
 
         x, y = x / self._scale, y / self._scale  # if window is being scaled
         if self._drag:
