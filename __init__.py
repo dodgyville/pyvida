@@ -204,6 +204,7 @@ MANUAL = 4  #user sets the frame index
 # EMITTER BEHAVIOURS
 BEHAVIOUR_CYCLE = 0  # continiously on
 BEHAVIOUR_FIRE = 1  # spawn one batch of particles then stop
+BEHAVIOUR_FRESH = 2 # continuously on, but with a fresh spawn at the start
 
 # WALKTHROUGH EXTRAS KEYWORDS
 LABEL = "label"
@@ -226,6 +227,7 @@ K_I = pyglet.window.key.I
 K_L = pyglet.window.key.L
 K_S = pyglet.window.key.S
 K_ENTER = pyglet.window.key.ENTER
+K_SPACE = pyglet.window.key.SPACE
 
 # COLOURS
 COLOURS = {
@@ -3190,7 +3192,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         """ Create a Text object using this actor's values """
         return Text(text, *args, **kwargs)
 
-    def _says(self, text, action="portrait", font=None, size=None, using=None, position=None, offset=None, delay=0.01, step=3, ok="ok", interact=close_on_says, block_for_user=True):
+    def _says(self, text, action="portrait", font=None, size=None, using=None, position=None, offset=None, delay=0.01, step=3, ok=-1, interact=close_on_says, block_for_user=True):
         """
         if block_for_user is False, then DON'T make the game wait until processing next event
         """
@@ -3208,6 +3210,8 @@ class Actor(MotionManager, metaclass=use_on_events):
                 Item(msgbox_name).smart(self.game, using=using, assets=True))
         msgbox.load_assets(self.game)
     
+        if ok == -1: #use the game's default ok
+            ok = self.game._default_ok
         if ok:
             ok = self.game.add(Item(ok).smart(self.game, assets=True))
             ok.load_assets(self.game)
@@ -3373,7 +3377,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             item.scene._remove(item)
         return item
 
-    def on_gets(self, item, remove=True, ok="ok", action="portrait", collection="collection"):
+    def on_gets(self, item, remove=True, ok=-1, action="portrait", collection="collection"):
         """ add item to inventory, remove from scene if remove == True """
         item = self._gets(item, remove, collection)
         if item == None:
@@ -4216,6 +4220,8 @@ class Emitter(Item, metaclass=use_on_events):
         p.x += o
         p.x -= self.acceleration[0] * p.index
         p.y -= self.acceleration[1] * p.index
+        p.alpha = self.alpha_start + self.alpha_delta*p.index
+        if p.alpha<0: p.alpha = 0
 
 #        p.alpha += self.alpha_delta
 #        if p.alpha < 0: p.alpha = 0
@@ -4284,8 +4290,9 @@ class Emitter(Item, metaclass=use_on_events):
             if self.resource is not None:
                 self.resource._frame_index = p.action_index%self.action.num_of_frames
                 self.resource.scale = p.scale
-#                print(self.alpha_delta, p.alpha, max(0, min(round(p.alpha*255), 255)))
-#                self.resource.opacity = max(0, min(round(p.alpha*255), 255))
+#                if p == self.particles[0]:
+#                    print(self.alpha_delta, p.alpha, max(0, min(round(p.alpha*255), 255)))
+                self.resource.opacity = max(0, min(round(p.alpha*255), 255))
                 self.resource.position = (int(x), int(y))
                 
                 self.resource.draw()
@@ -4314,6 +4321,11 @@ class Emitter(Item, metaclass=use_on_events):
             p.terminate = True
             if self.game and self.game._headless:
                 self.particles.remove(p)
+
+    def on_start(self):
+        """ switch emitter on and start with fresh particles """
+        self.behaviour = BEHAVIOUR_FRESH
+        self._reset()
 
     def on_on(self):
         """ switch emitter on permanently (default) """
@@ -4371,7 +4383,7 @@ class Emitter(Item, metaclass=use_on_events):
     def _reset(self):
         """ rebuild emitter """
         self.particles = []
-        if self.behaviour == BEHAVIOUR_CYCLE:
+        if self.behaviour in [BEHAVIOUR_CYCLE, BEHAVIOUR_FRESH]:
             self._add_particles(self.number)
 
     def on_reset(self):
@@ -6380,6 +6392,7 @@ class Game(metaclass=use_on_events):
         self.font_info = FONT_VERA
         self.font_info_size = 16
         self.font_info_colour = (255, 220, 0)  # off yellow
+        self._default_ok = "ok" #used by on_says
 
         self._info_object = None
         self.reset_info_object()
@@ -8407,6 +8420,10 @@ class Game(metaclass=use_on_events):
         """
         self._allow_one_player_interaction = True
 
+
+    def on_default_ok(self, v="ok"):
+        """ Set the default OK button used by Actor.on_says """
+        self._default_ok = v
 
     def on_set_mouse_mode(self, v):
         self.mouse_mode = v
