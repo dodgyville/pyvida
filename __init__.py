@@ -4343,6 +4343,10 @@ class Emitter(Item, metaclass=use_on_events):
         for p in self.particles:
             p.ax, p.ay = self._ax, self._ay
 
+    def on_kill(self):
+        """ stop all particles """
+        self.particles = []
+
     def get_a_direction(self):
         return randint(self.direction - float(self.fov / 2), self.direction + float(self.fov / 2))
 
@@ -4942,6 +4946,9 @@ class Scene(MotionManager, metaclass=use_on_events):
                 self._layer.remove(i)
         self._load_layer(fname)
         if fname:
+            for i in self._layer:
+                obj = get_object(self.game, i)
+                obj.load_assets(self.game)
             log.debug("Set background for scene %s to %s" % (self.name, fname))
 #        if fname == None and self._background == None and self._background_fname: #load image
 #            fname = self._background_fname
