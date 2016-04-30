@@ -2422,6 +2422,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         return get_resource(self.resource_name)[1]
 
     def fog_display_text(self, actor):
+        """ Use this everywhere for getting the correct name of an Actor """
         display_text = self.display_text if self.display_text else self.name
         fog_text = self._fog_display_text if self._fog_display_text else display_text
         if actor is None:
@@ -5300,6 +5301,12 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         # mouse coords are in universal format (top-left is 0,0), use rawx,
         # rawy to ignore camera
         self.mx, self.my = rx, ry
+        obj = self.get_object((self.mx, self.my))
+        ix, iy = game.get_info_position(self)
+        t = obj.fog_display_text(None) if obj else " "
+        game.info(
+            t, ix, iy, self.display_text_align)
+
 
     def _interact_default(self, game, collection, player):
         # XXX should use game.mouse_press or whatever it's calleed
@@ -6845,6 +6852,7 @@ class Game(metaclass=use_on_events):
 
         if not self.scene:
             return
+        # check modals as first priority
         modal_collide = False
         for name in self._modals:
             obj = get_object(self, name)
@@ -6863,6 +6871,7 @@ class Game(metaclass=use_on_events):
         if modal_collide:
             return
         if len(self._modals) == 0:
+            # check menu as second priority.
             menu_collide = False
             for obj_name in self._menu:
                 obj = get_object(self, obj_name)
@@ -7018,7 +7027,9 @@ class Game(metaclass=use_on_events):
         # modals are absolute (they aren't displaced by camera)
         for name in self._modals:
             obj = get_object(self, name)
-            if obj.collide(ax, ay):
+            allow_collide = True if (obj.allow_look or obj.allow_use) \
+                else False
+            if allow_collide and obj.collide(ax, ay):
                 user_trigger_interact(self, obj)
                 return
         # don't process other objects while there are modals
@@ -7028,7 +7039,9 @@ class Game(metaclass=use_on_events):
         # try menu events
         for obj_name in self._menu:
             obj = get_object(self, obj_name)
-            if obj.collide(ax, ay):
+            allow_collide = True if (obj.allow_look or obj.allow_use) \
+                else False
+            if allow_collide and obj.collide(ax, ay):
                 user_trigger_interact(self, obj)
                 return
 
