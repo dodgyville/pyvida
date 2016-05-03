@@ -1325,6 +1325,17 @@ class Motion(object):
             self.index += 1
         return True
 
+    def half_speed(self):
+        new_deltas = []
+        for i in range(0, len(self.deltas)-1):
+            a = MotionDelta(*self.deltas[i])
+            a.x /= 2
+            a.y /= 2 
+#            b = MotionDelta(*self.deltas[i+1])
+#            nd = a + b
+            new_deltas.append(a.flat)
+        self.deltas = new_deltas  
+
     def double_tempo(self):
         new_deltas = []
         for i in range(0, len(self.deltas)-1, 2):
