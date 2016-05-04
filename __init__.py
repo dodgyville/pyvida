@@ -6924,6 +6924,7 @@ class Game(metaclass=use_on_events):
                         fn = get_function(self, obj._mouse_motion, obj)
                         fn(self.game, obj, self.game.player,
                            x, y, dx, dy, ox, oy)
+                        return
                 # hover over player object if it meets the requirements
                 allow_player_hover = (self.player and self.player == obj) and \
                                      ((ALLOW_USE_ON_PLAYER and self.mouse_mode == MOUSE_USE) or
