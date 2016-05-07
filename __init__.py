@@ -1689,9 +1689,11 @@ def crosshair(game, point, colour, absolute=False, txt=""):
     label.draw()
     return point
 
-def coords(game, txt, x,y):
+def coords(game, txt, x,y, invert=True):
     pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0)  # undo alpha for pyglet drawing
-    label = pyglet.text.Label("{0}, {1}".format(x, game.resolution[1] - y),
+    if invert is True:
+        y = game.resolution[1] - y
+    label = pyglet.text.Label("{0}, {1}".format(x, y),
                               font_name='Arial',
                               font_size=10,
                               color=(255,255,0,255),
@@ -2515,7 +2517,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                     destination = self._goto_points.pop(0)
                     point = get_point(self.game, destination, self)
                     self._calculate_goto(point, self._goto_block)
-                else:
+                else: #arrived at point, stop moving
                     if self._finished_goto:
                         finished_fn = get_function(self.game, self._finished_goto, self)
                         if not finished_fn:
@@ -3718,17 +3720,22 @@ class Actor(MotionManager, metaclass=use_on_events):
                        ]
         if target:
             obj = get_object(self.game, target)
-            #walk to stand point, compare to actual point
-            x,y = obj.x, obj.y
-            sx, sy = obj.x + obj.sx, obj.y + obj.sy
-            angle = math.atan2((sx-x), (y-sy))
-            angle = math.degrees(angle)
-            for potential_action in ANGLED_IDLE:
-                action_name, angle_range = potential_action
-                lower, higher = angle_range
-                if lower <= angle < higher and action_name in self._actions:
-                    idle = action_name
-                    break
+            idle = None
+            if obj.idle_stand: #target object is requesting a specific idle
+                idle = obj.idle_stand if obj.idle_stand in self._actions else None
+            
+
+            if idle is None: #compare stand point to object's base point
+                x,y = obj.x, obj.y
+                sx, sy = obj.x + obj.sx, obj.y + obj.sy
+                angle = math.atan2((sx-x), (y-sy))
+                angle = math.degrees(angle)
+                for potential_action in ANGLED_IDLE:
+                    action_name, angle_range = potential_action
+                    lower, higher = angle_range
+                    if lower <= angle < higher and action_name in self._actions:
+                        idle = action_name
+                        break
         self._next_action = idle
 
 
@@ -3994,7 +4001,7 @@ class Portal(Actor, metaclass=use_on_events):
     def link(self):
         return get_object(self.game, self._link)
 
-    def debug_pyglet_draw(self, absolute=False):
+    def debug_pyglet_draw(self, absolute=False): #portal.debug.draw
         super().debug_pyglet_draw(absolute=absolute)
         #outpoint - red
         self._debugs.append(crosshair(
@@ -4560,6 +4567,9 @@ class WalkAreaManager(metaclass=use_on_events):
         self._polygon = points
         self._update_walkarea()
 
+    def get_random_point(self):
+        """ return a random point from within the polygon """
+
     def insert_edge_point(self):
         """ Add a new point after the current index
         :return:
@@ -4678,7 +4688,7 @@ class WalkAreaManager(metaclass=use_on_events):
                 crosshair(self.game, pt, colour)
 
 
-    def pyglet_draw(self):
+    def pyglet_draw(self): #walkareamanager.draw
         self._pyglet_draw()
 
     def debug_pyglet_draw(self):
@@ -6970,7 +6980,8 @@ class Game(metaclass=use_on_events):
 
     def on_mouse_press(self, x, y, button, modifiers):
         """ If the mouse is over an object with a down action, switch to that action """
-#        print('    (%s, %s), '%(x-self.player.x, self.resolution[1] - y - self.player.y))
+        if self.editor: #draw mouse coords at mouse pos
+            print('    (%s, %s), '%(x, self.resolution[1] - y))
 
         x, y = x / self._scale, y / self._scale  # if window is being scaled
         if self.scene:
@@ -8055,7 +8066,9 @@ class Game(metaclass=use_on_events):
             self._mouse_object.pyglet_draw()
 
         if self.editor: #draw mouse coords at mouse pos
-            coords(self, "mouse", *self.mouse_position)
+            x,y = self.mouse_position
+#            y = self.game.resolution[1] - y
+            coords(self, "mouse", x,y, invert=False)
             if self.scene.walkarea._editing is True:
                 self.scene.walkarea.debug_pyglet_draw()
 
