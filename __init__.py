@@ -1348,7 +1348,7 @@ class Motion(object):
     def print(self):
         print("x,y,z,r,scale,f,alpha")
         for i in self.deltas:
-            print([x for x in i if x != None])
+            print(str(i)[1:-1])
 
     def smart(self, game, owner=None, filename=None):  # motion.smart
         self.owner = owner if owner else self.owner
@@ -2695,7 +2695,6 @@ class Actor(MotionManager, metaclass=use_on_events):
                 log.info("Using custom use script %s for actor %s" %
                          (basic, override_name))
         script = get_function(self.game, basic)
-
         #if no script, try to find a default catch all scripts
         #for the actee or the actor
         default = "use_%s_on_default" % (slug_actor)
@@ -6733,7 +6732,7 @@ class Game(metaclass=use_on_events):
  #           editor_thread = Thread(target=editor, args=(,))
 #            editor_thread.start()
         if symbol == pyglet.window.key.F2:
-            print("edit_script(game, obj) will open the editor for an object")
+            print("edit_object_script(game, obj) will open the editor for an object")
             import pdb
             pdb.set_trace()
 
@@ -8864,6 +8863,12 @@ class MyTkApp(threading.Thread):
         def save_layers(*args, **kwargs):
             self.game.scene._save_layers()
 
+        def edit_interact_scripts(*args, **kwargs):
+            for i in self.game.scene._objects:
+                obj = get_object(self.game, i)
+                if obj.allow_interact or obj.allow_look:
+                    edit_object_script(self.game, obj)
+
         def _edit_walkarea(scene):
             scene.walkarea.on_toggle_editor()
             if scene.walkarea._editing:
@@ -8891,6 +8896,8 @@ class MyTkApp(threading.Thread):
             group, text='initial state', command=initial_state).grid(column=2, row=row)
         self.layer_save_button = tk.Button(
             group, text='save layers', command=save_layers).grid(column=3, row=row)
+        self.layer_save_button = tk.Button(
+            group, text='Edit scripts', command=edit_interact_scripts).grid(column=4, row=row)
 
         row += 1
 
