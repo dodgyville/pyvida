@@ -3399,8 +3399,9 @@ class Actor(MotionManager, metaclass=use_on_events):
   #      name = self.display_text if self.display_text else self.name
  #       item_name = item.display_text if item.display_text else item.name
 
-        name = item.display_text if item.display_text else item.name
-        self_name = self.display_text if self.display_text else self.name
+#        name = item.display_text if item.display_text else item.name
+        name = item.fog_display_text(None)
+        self_name = item.fog_display_text(None)
 
         if self.game and self.game._output_walkthrough: print("%s adds %s to inventory."%(self_name, name))
 
