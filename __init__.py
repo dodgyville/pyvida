@@ -171,6 +171,7 @@ CENTER = 2
 TOP = 3
 BOTTOM = 4
 CAPTION = 5 #top left
+CAPTION_RIGHT = 6 #top right
 
 UP = 6
 DOWN = 7
@@ -3246,6 +3247,9 @@ class Actor(MotionManager, metaclass=use_on_events):
         elif position == CAPTION:
             x, y = self.game.resolution[
                 0] *0.02, self.game.resolution[1] * 0.02
+        elif position == CAPTION_RIGHT:
+            x, y = self.game.resolution[
+                0] *0.98 - msgbox.w, self.game.resolution[1] * 0.02
 
         elif type(position) in [tuple, list]:  # assume coords
             x, y = position
@@ -3658,7 +3662,7 @@ class Actor(MotionManager, metaclass=use_on_events):
 
     # actor.fade_out
     def on_fade_out(self, action=None, seconds=3, block=False):
-        self._fade_out(action, seconds)
+        self._fade_out(action, seconds, block=block)
 
     def on_usage(self, draw=None, update=None, look=None, interact=None, use=None):
         """ Set the player->object interact flags on this object """
@@ -6781,8 +6785,9 @@ class Game(metaclass=use_on_events):
             print("finished casting")
 
         if symbol == pyglet.window.key.F9:
-            from scripts.general import chip_first_attempt
-            chip_first_attempt(game)
+            from scripts.general import chip_first_attempt, cutscene_founders
+            cutscene_founders(game)
+#            chip_first_attempt(game)
             return
             game.xian_child.do("left")
             game.xian_gypsy.do_once("glitch", "vanished")
