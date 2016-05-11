@@ -5325,6 +5325,10 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         obj = self.get_object((self.mx, self.my))
         ix, iy = game.get_info_position(self)
         t = obj.fog_display_text(None) if obj else " "
+        if obj: 
+            game.mouse_cursor = MOUSE_CROSSHAIR
+        else:
+            game.mouse_cursor = MOUSE_POINTER
         game.info(
             t, ix, iy, self.display_text_align)
 
@@ -5402,9 +5406,8 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
                 # temporary collection values, stored for collection
                 obj._cr = Rect(
                     final_x,  final_y, sw, sh)
-#                    final_x, self.game.resolution[1] - final_y, sw, sh)
-                rectangle(self.game, obj._cr, colour=(
-                    255, 255, 255, 255), fill=False, label=False, absolute=False)
+#                rectangle(self.game, obj._cr, colour=(
+#                    255, 255, 255, 255), fill=False, label=False, absolute=False)
             if x + self.tile_size[0] > self.resource.x + self.dimensions[0] - self.tile_size[0]:
                 x = self.resource.x + self.padding[0]
                 y += (self.tile_size[1] + self.padding[1])
@@ -5776,7 +5779,7 @@ class Camera(metaclass=use_on_events):  # the view manager
     def on_on(self):
         self._overlay = None
 
-    def on_screenshot(self, filename):
+    def on_screenshot(self, filename, size=None):
         """ Save the current screen to a file
         :param filename:
         :return:
@@ -5789,6 +5792,8 @@ class Camera(metaclass=use_on_events):  # the view manager
         img = Image.open(filename)
         img = img.convert('RGB') #remove alpha
         fname, ext = os.path.splitext(filename)
+        if size:
+            img.thumbnail(size, Image.ANTIALIAS)
         img.save(fname+".png")
 
     def on_relocate(self, position):
