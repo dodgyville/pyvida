@@ -4299,7 +4299,6 @@ class Emitter(Item, metaclass=use_on_events):
             x = x + self.ax
             h = 1 if self.resource is None else self.resource.height
             y = self.game.resolution[1] - y - self.ay - h
-
             # displace for camera
             if not absolute and self.game.scene:
                 x += self.game.scene.x * self.z
