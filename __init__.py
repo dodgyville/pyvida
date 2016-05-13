@@ -163,6 +163,7 @@ POSITION_TEXT = 3  # play at text point of actor
 
 # collection sorting
 ALPHABETICAL = 0
+CHRONOLOGICAL = 1 #sort by time they were added
 
 # ANCHORS FOR MENUS and MENU FACTORIES (and on_says)
 LEFT = 0
@@ -229,6 +230,12 @@ K_L = pyglet.window.key.L
 K_S = pyglet.window.key.S
 K_ENTER = pyglet.window.key.ENTER
 K_SPACE = pyglet.window.key.SPACE
+K_1 = pyglet.window.key._1
+K_2 = pyglet.window.key._2
+K_3 = pyglet.window.key._3
+K_4 = pyglet.window.key._4
+K_5 = pyglet.window.key._5
+K_6 = pyglet.window.key._6
 
 # COLOURS
 COLOURS = {
@@ -3112,6 +3119,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         items = self._says(statement, **kwargs)
         log.info("on_ask after _says: %s.busy = %i" % (self.name, self.busy))
         label = None
+        keys = {0: K_1, 1: K_2, 2: K_3, 3: K_4, 4: K_5, 5: K_6} #Map upto 6 options to keys 
         if len(args) == 0:
             log.error("No arguments sent to %s on_ask, skipping" % (self.name))
             return
@@ -3141,6 +3149,8 @@ class Actor(MotionManager, metaclass=use_on_events):
 #            def over_option
 #            kwargs["over"] = over_option
             opt = Text("option{}".format(i), display_text=text, **kwargs)
+            if i in keys.keys():
+                opt.on_key(keys[i])
             opt.x, opt.y = label.x + 10, label.y + label.h + i * opt.h + 5
             # store this Actor so the callback can modify it.
             opt.tmp_creator = self.name
@@ -5263,6 +5273,15 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         self.dimensions = dimensions
         self.tile_size = tile_size
 
+    def objects(self):
+        show = self._get_sorted()
+        objects = [] 
+        for obj_name in show:
+            obj = get_object(self.game, obj_name) 
+            if obj:
+                objects.append(obj)
+        return objects
+
     def load_assets(self, game): #collection.load
         super().load_assets(game)
         for obj_name in self._objects:
@@ -6217,7 +6236,7 @@ def save_game_pickle(game, fname):
             scene = get_object(game, o)
             if scene: restore_object(game, scene)
 
-    log.warning("POST PICKLE inventory %s"%game.inventory.name)
+#    log.warning("POST PICKLE inventory %s"%game.inventory.name)
 
 def load_menu_assets(game):
     for menu_item in game._menu:
@@ -6286,7 +6305,7 @@ def load_game_pickle(game, fname, meta_only=False):
                 except ImportError:
                     log.error("Unable to import {}".format(module_name))
             game.reload_modules()  # reload now to refresh existing references
-            log.warning("POST UNPICKLE inventory %s"%(game.inventory.name))
+#            log.warning("POST UNPICKLE inventory %s"%(game.inventory.name))
     return meta
 
 
