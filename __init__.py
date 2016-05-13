@@ -88,8 +88,8 @@ DEBUG_STDOUT = True  # stream errors to stdout as well as log file
 
 ENABLE_EDITOR = False  # default for editor
 ENABLE_PROFILING = False
-ENABLE_LOGGING = True
-ENABLE_LOCAL_LOGGING = True
+ENABLE_LOGGING = False
+ENABLE_LOCAL_LOGGING = False
 DEFAULT_TEXT_EDITOR = "gedit"
 
 VERSION_MAJOR = 5  # major incompatibilities
@@ -3415,7 +3415,7 @@ class Actor(MotionManager, metaclass=use_on_events):
 
 #        name = item.display_text if item.display_text else item.name
         name = item.fog_display_text(None)
-        self_name = item.fog_display_text(None)
+        self_name = self.fog_display_text(None)
 
         if self.game and self.game._output_walkthrough: print("%s adds %s to inventory."%(self_name, name))
 
@@ -4956,7 +4956,7 @@ class Scene(MotionManager, metaclass=use_on_events):
         obj.scene = None
         if obj.name in self._objects:
             self._objects.remove(obj.name)
-        else:
+        elif self._:
             log.warning("%s not in scene %s" % (obj.name, self.name))
 
     def on_remove(self, obj):  # scene.remove
@@ -6140,7 +6140,7 @@ def advance_help_index(game):
 
 def user_trigger_interact(game, obj):
     obj.trigger_interact()
-    if game._walkthrough_output and obj.name not in ["msgbox"]:
+    if game._record_walkthrough and obj.name not in ["msgbox"]:
         name = obj.display_text if obj.name[:6] == "option" else obj.name
         print('    [interact, "%s"],'%name)
 
@@ -6159,7 +6159,7 @@ def user_trigger_interact(game, obj):
 def user_trigger_use(game, subject, obj):
     """ use obj on subject """
     subject.trigger_use(obj)
-    if game._walkthrough_output:
+    if game._record_walkthrough:
         print('    [use, "%s", "%s"],'%(subject.name, obj.name))
 
     if not game.editor:
@@ -6170,7 +6170,7 @@ def user_trigger_use(game, subject, obj):
 
 def user_trigger_look(game, obj):
     obj.trigger_look()
-    if game._walkthrough_output:
+    if game._record_walkthrough:
         print('    [look, "%s"],'%obj.name)
 
     if not game.editor:
@@ -6541,7 +6541,7 @@ class Game(metaclass=use_on_events):
         # if auto-creating a savefile for this walkthrough
         self._walkthrough_target_name = None
         self._walkthrough_start_name = None #fast load from a save file
-        self._walkthrough_output = False #output the current interactions as a walkthrough (toggle with F11)
+        self._record_walkthrough = False #output the current interactions as a walkthrough (toggle with F11)
         self._motion_output = None #output the motion from this point if not None
         self._motion_output_raw = [] #will do some processing
 
@@ -6865,11 +6865,11 @@ class Game(metaclass=use_on_events):
                 self._motion_output_raw = []
 
         if symbol == pyglet.window.key.F11:
-            if self._walkthrough_output == False:
+            if self._record_walkthrough == False:
                 self.player.says("Recording walkthrough")
             else:
                 self.player.says("Turned off record walkthrough")
-            self._walkthrough_output = not self._walkthrough_output
+            self._record_walkthrough = not self._record_walkthrough
         if symbol == pyglet.window.key.F12:
             self._event = None
             self._events = []
@@ -7687,7 +7687,8 @@ class Game(metaclass=use_on_events):
         walkthrough = self._walkthrough[self._walkthrough_index]
         global benchmark_events
         t = datetime.now() - benchmark_events
-        print("doing step",walkthrough, t.seconds)
+        if self._output_walkthrough is False:
+            print("doing step",walkthrough, t.seconds)
         benchmark_events = datetime.now()
         try:
             function_name = walkthrough[0].__name__
@@ -7767,8 +7768,9 @@ class Game(metaclass=use_on_events):
             # if not in same scene as camera, and not in modals or menu, log
             # the error
             if self.scene and self.scene != obj.scene and obj.name not in self._modals and obj.name not in self._menu:
-                log.error("{} not in scene {}, it's on {}".format(
-                    actor_name, self.scene.name, obj.scene.name if obj.scene else "no scene"))
+                if self._output_walkthrough is False:
+                    log.error("{} not in scene {}, it's on {}".format(
+                        actor_name, self.scene.name, obj.scene.name if obj.scene else "no scene"))
             if self.player:
                 self.player.x, self.player.y = obj.x + obj.sx, obj.y + obj.sy
             x, y = obj.clickable_area.center
