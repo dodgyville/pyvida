@@ -4005,6 +4005,11 @@ class Portal(Actor, metaclass=use_on_events):
         self._link = None  # the connecting Portal
         self._link_display_text = None #override scene name
 
+        #look and use are disabled by default for Portals
+        self._allow_use = False
+        self._allow_look = False
+
+
 #    def __getstate__(self):
 #        """ Prepare the object for pickling """
 #        self.__dict__ = super().__getstate__()
@@ -6899,7 +6904,7 @@ class Game(metaclass=use_on_events):
         ox, oy = ox / self._scale, oy / self._scale
         oy = self.game.resolution[1] - oy
 
-        if not self.scene:
+        if not self.scene or self._headless:
             return
         # check modals as first priority
         modal_collide = False
@@ -7019,6 +7024,7 @@ class Game(metaclass=use_on_events):
         y = self.resolution[1] - y  # invert y-axis if needed
 
         self.mouse_down = (x, y)
+        if self._headless: return
 
         # if editing walkarea, set the index to the nearest point
         if self._editing:
@@ -7050,6 +7056,8 @@ class Game(metaclass=use_on_events):
         x, y = x / self._scale, y / self._scale  # if window is being scaled
 
         ax, ay = x, y  # asbolute x,y (for modals and menu)
+
+        if self._headless: return
 
         if self.scene:
             x -= self.scene.x  # displaced by camera
