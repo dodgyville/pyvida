@@ -1497,7 +1497,7 @@ class Action(object):
         self.game = game
         fname = os.path.splitext(filename)[0]
         montage_fname = fname + ".montage"
-        self._image = filename
+        self._image = os.path.relpath(filename)
         if not os.path.isfile(montage_fname):
             w,h = get_image_size(filename)
             num = 1 #single frame animation
@@ -2813,7 +2813,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             if action_name in exclude:
                 continue
             action = Action(action_name).smart(
-                game, actor=self, filename=action_file)
+                game, actor=self, filename=os.path.relpath(action_file))
             action.available_for_pathplanning = True
             self._actions[action_name] = action
             if action_name in PATHPLANNING:
@@ -2872,7 +2872,8 @@ class Actor(MotionManager, metaclass=use_on_events):
             d = get_smart_directory(game, self)
 
         myd = os.path.join(d, name)
-        if not os.path.isdir(myd):  # fallback to pyvida defaults
+        absd = os.path.join(os.getcwd(),myd)
+        if not os.path.isdir(absd):  # fallback to pyvida defaults
             this_dir, this_filename = os.path.split(__file__)
             log.debug("Unable to find %s, falling back to %s" %
                       (myd, this_dir))
@@ -2883,8 +2884,8 @@ class Actor(MotionManager, metaclass=use_on_events):
         if image:
             images = [image]
         else:
-            images = glob.glob(os.path.join(myd, "*.png"))
-            if os.path.isdir(myd) and len(glob.glob("%s/*" % myd)) == 0:
+            images = glob.glob(os.path.join(absd, "*.png"))
+            if os.path.isdir(absd) and len(glob.glob("%s/*" % absd)) == 0:
                 if logging:
                     log.info(
                         "creating placeholder file in empty %s dir" % name)
@@ -2922,7 +2923,7 @@ class Actor(MotionManager, metaclass=use_on_events):
 
         # potentially load some defaults for this actor
         filepath = os.path.join(
-            myd, "%s.defaults" % slugify(self.name).lower())
+            absd, "%s.defaults" % slugify(self.name).lower())
         load_defaults(game, self, self.name, filepath)
 
         """ XXX per actor quickload disabled in favour single game quickload, which I'm testing at the moment
@@ -4885,17 +4886,18 @@ class Scene(MotionManager, metaclass=use_on_events):
         return layer
 
     def _load_layers(self, game, wildcard=None, cls=Item):
-        sdir = os.path.join(
-            os.getcwd(), os.path.join(game.directory_scenes, self.name))
-        wildcard = wildcard if wildcard else os.path.join(sdir, "*.png")
+        sdir = os.path.join(game.directory_scenes, self.name)
+        absdir = os.path.join(
+            os.getcwd(), sdir)
+        wildcard = wildcard if wildcard else os.path.join(absdir, "*.png")
         self._layer = [] #clear old layers
         layers = []
         for element in glob.glob(wildcard):  # add layers
             fname = os.path.splitext(os.path.basename(element))[0]
-            details_filename = os.path.join(sdir, fname + ".details")
+            details_filename = os.path.join(absdir, fname + ".details")
             # find a details file for each element
             if os.path.isfile(details_filename):
-                layer = self._load_layer(element, cls=cls)
+                layer = self._load_layer(os.path.join(sdir, os.path.basename(element)), cls=cls)
                 layers.append(layer)
                 try:
                     with open(details_filename, 'r') as f:
