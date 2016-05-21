@@ -42,6 +42,7 @@ from pyglet_gui.option_selectors import Dropdown
 """
 
 from pyglet.gl import *
+from pyglet.gl.gl import c_float
 
 from pyglet.image.codecs.png import PNGImageDecoder
 import pyglet.window.mouse
@@ -2021,7 +2022,12 @@ class Actor(MotionManager, metaclass=use_on_events):
         self._batch = None
 #        self._events = []
 
+        # sepcial visual effects
         self._tint = None
+        self._fx_sway = 0 #sway speed
+        self._fx_sway_angle = 0 #in degrees
+        self._fx_sway_index = 0 #TODO: there is no limit to how high this might go
+
         self.set_editable()
 
     def unload_assets(self):  # actor.unload
@@ -2988,9 +2994,23 @@ class Actor(MotionManager, metaclass=use_on_events):
             glPushMatrix()
             ww,hh = self.game.resolution
             if self._rotate:
-                glTranslatef((sprite.width/2)+self.x, hh-self.y-sprite.height/2, 0)
+                glTranslatef((sprite.width/2)+self.x, hh-self.y-sprite.height/2, 0) #move to middle of sprite
                 glRotatef(-self._rotate, 0.0, 0.0, 1.0)
                 glTranslatef(-((sprite.width/2)+self.x), -(hh-self.y-sprite.height/2 ), 0)
+
+ 
+
+            if self._fx_sway != 0:
+#                import pdb; pdb.set_trace()
+                glTranslatef((sprite.width/2)+self.x, hh-self.y, 0) #hh-self.y-sprite.height, 0) #move to base of sprite
+                angle = math.sin(self._fx_sway_index) * self._fx_sway_angle
+                skew = math.tan(math.radians(angle))
+                #A 4D transformation matrix that does nothing but apply a skew in the x-axis
+                skew_matrix = (c_float*16)(1,0,0,0, skew,1,0,0, 0,0,1,0, 0,0,0,1)
+                glMultMatrixf(skew_matrix)
+                glTranslatef(-((sprite.width/2)+self.x), -(hh-self.y), 0) #(hh-self.y-sprite.height ), 0) 
+                self._fx_sway_index += self._fx_sway
+
 
             pyglet.gl.glTranslatef(self._scroll_dx, 0.0, 0.0)
 #            sprite.position = (int(x), int(y))
@@ -3551,6 +3571,11 @@ class Actor(MotionManager, metaclass=use_on_events):
             rgb = (255, 255, 255) #(0, 0, 0)  
         if self.resource:
             self.resource.color = rgb
+
+    def on_sway(self, speed=0.05, angle=0.3):
+        self._fx_sway = speed
+        self._fx_sway_angle = angle
+        self._fx_sway_index = 0
 
     def on_tint(self, rgb=None):
         self._set_tint(rgb)
