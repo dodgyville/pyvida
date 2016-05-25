@@ -40,6 +40,7 @@ python setup.py install
 ### Dependencies ###
 
  * pyglet 1.2a
+ * pygame (for music and sound)
  * python 3.3+
 
 ### Writing a game in pyvida ###
