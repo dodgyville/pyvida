@@ -1136,12 +1136,14 @@ class Settings(object):
     """ game settings saveable by user """
 
     def __init__(self):
+        self.mute = False
         self.music_on = True
         self.sfx_on = True
         self.voices_on = True
 
 #        self.music_volume = 0.6
         self.music_volume = 0.6 
+        self.ambient_volume = 0.6
         self.sfx_volume = 0.8
         self.sfx_subtitles = False
         self.voices_volume = 0.8
@@ -4753,8 +4755,10 @@ FRESH_BUT_SHARE = 1 #only restart if a different song to what is playing, else c
 PAIR = 2 #pair with other songs, jump to the same position in the song as the one we are leaving (good for muffling)
 
 class Music():
-    """ Container class for music """
+    """ Container class for music, used by Mixer and Scenes """
+    """ TODO: WIP, not used yet """
     def __init__(self, filename):
+        self.filename = filename
         self.mode = FRESH_BUT_SHARE
         self.remember = True #resume playback at the point where playback was last stopped for this song
         self.current_location = 0 #where in the song we are
@@ -4773,7 +4777,6 @@ class Scene(MotionManager, metaclass=use_on_events):
         self._layer = []
         self.busy = 0
         self._music_filename = None
-        self._music_mode = FRESH_THEN_
         self._ambient_filename = None
         self._last_load_state = None #used by editor
 
@@ -5936,7 +5939,6 @@ class PlayerPyglet(pyglet.media.Player):
 class PlayerPygameSFX(pyglet.media.Player):
     pass
 
-
 class PlayerPygameMusic():
     def __init__(self):
         pygame.init()
@@ -5951,7 +5953,12 @@ class PlayerPygameMusic():
     def play(self, loops=-1):
         pygame.mixer.music.play(loops=loops)
 
-
+    def queue(self, fname):
+        try:
+            pygame.mixer.music.queue(fname)
+        except pygame.error:
+            print("pygame mixer music error")
+            pass
 
 
 class Mixer(metaclass=use_on_events):
@@ -6006,6 +6013,13 @@ class Mixer(metaclass=use_on_events):
             self._music_player = PlayerPyglet()
             self._sfx_player = PlayerPyglet()
 
+    def publish_volumes(self):
+        """ Use game.settings to set various volumes """
+        v = self.game.settings.music_volume
+        if self.game.settings.mute == True:
+            v = 0
+        pygame.mixer.music.set_volume(v)
+
 
     def _load(self):
         self._music_play(self._music_fname)
@@ -6022,7 +6036,7 @@ class Mixer(metaclass=use_on_events):
 
         self.music_index = 0  # reset music counter
         if not self.game._headless:
-            self._music_player.queue(music)
+            self._music_player.queue(fname)
             self._music_player.eos_action = 'loop'
 #            if self._music_player.playing == True: #go to next song
 #                self._music_player.next_source()
@@ -6493,6 +6507,7 @@ def load_or_create_settings(game, fname, settings_cls=Settings):
     else:
         game.settings = game.settings.load(fname)
     game.settings._current_session_start = datetime.now()
+    game.mixer.publish_volumes()
     return True
 
 def fit_to_screen(screen, resolution):
@@ -7580,6 +7595,11 @@ class Game(metaclass=use_on_events):
             self._progress_bar_count = 0
 #            update_progress_bar(self.game, self)
 
+        #reset some variables
+        self._selected_options = []
+        self._visited = []
+        self._resident = [] #scenes to keep in memory
+
         portals = []
         # estimate size of all loads
         for obj_cls in [Actor, Item, Emitter, Portal, Scene]:
@@ -8576,6 +8596,18 @@ class Game(metaclass=use_on_events):
         """ Wait for all scripting events to finish """
         self._waiting = True
         return
+
+    def on_autosave(self, actor, tilesize):
+        game = self
+        fname = datetime.now().strftime("%Y%m%d_%H%M%S")
+        save_game(game, os.path.join(DIRECTORY_SAVES, "%s.save"%fname))
+        game.menu.on_hide()
+        game.pause(0.5)
+        game.camera.screenshot(os.path.join(DIRECTORY_SAVES, "%s.png"%fname), tilesize)
+        actor = get_object(game, actor)
+        actor.says(gettext("Game autosaved."))
+        game.menu.show()
+
 
     def on_pause(self, duration):
         """ pause the game for duration seconds """
