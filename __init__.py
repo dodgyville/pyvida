@@ -4750,20 +4750,6 @@ class WalkAreaManager(metaclass=use_on_events):
         self._pyglet_draw(debug=True)
 
 
-FRESH = 0 #restart song each time player enters scene.
-FRESH_BUT_SHARE = 1 #only restart if a different song to what is playing, else continue.
-PAIR = 2 #pair with other songs, jump to the same position in the song as the one we are leaving (good for muffling)
-
-class Music():
-    """ Container class for music, used by Mixer and Scenes """
-    """ TODO: WIP, not used yet """
-    def __init__(self, filename):
-        self.filename = filename
-        self.mode = FRESH_BUT_SHARE
-        self.remember = True #resume playback at the point where playback was last stopped for this song
-        self.current_location = 0 #where in the song we are
-        self.pair = [] #songs to pair with
-
 
 class Scene(MotionManager, metaclass=use_on_events):
 
@@ -5936,16 +5922,39 @@ class Camera(metaclass=use_on_events):  # the view manager
 class PlayerPyglet(pyglet.media.Player):
     pass
 
-class PlayerPygameSFX(pyglet.media.Player):
-    pass
+class PlayerPygameSFX():
+    def __init__(self, game):
+        self._sound = None
+        self.game = game
+
+    def load(self, fname):
+        self._sound = pygame.mixer.Sound(fname)
+#        v = self.game.mixer._sfx_volume
+        new_volume = self.game.settings.music_volume if self.game and self.game.settings else 1
+        self.volume(new_volume)
+
+    def play(self):
+        self._sound.play()
+
+    def stop(self):
+        self._sound.stop()
+
+    def volume(self, v):
+        self._sound.set_volume(v)
+
+#    def fadeout(self, seconds): #Note: we use a custom fade agnostic        
+#        self._sound.fadeout(seconds*100)
 
 class PlayerPygameMusic():
-    def __init__(self):
-        pygame.init()
-        pygame.mixer.init()
+    def __init__(self, game):
+        self.game = game
 
     def pause(self):
         pygame.mixer.music.pause()
+
+    def stop(self):
+        pygame.mixer.music.stop()
+
 
     def load(self, fname):
         pygame.mixer.music.load(fname)
@@ -5961,6 +5970,22 @@ class PlayerPygameMusic():
             pass
 
 
+
+FRESH = 0 #restart song each time player enters scene.
+FRESH_BUT_SHARE = 1 #only restart if a different song to what is playing, else continue.
+PAIR = 2 #pair with other songs, jump to the same position in the song as the one we are leaving (good for muffling)
+
+class MusicRule():
+    """ Container class for music rules, used by Mixer and Scenes """
+    """ TODO: WIP, not used yet """
+    def __init__(self, filename):
+        self.filename = filename
+        self.mode = FRESH_BUT_SHARE
+        self.remember = True #resume playback at the point where playback was last stopped for this song
+        self.current_location = 0 #where in the song we are
+        self.pair = [] #songs to pair with
+
+
 class Mixer(metaclass=use_on_events):
     def __init__(self, game):
         self.game = game
@@ -5970,6 +5995,9 @@ class Mixer(metaclass=use_on_events):
         self.music_break = 200000  # fade the music out every x milliseconds
         self.music_break_length = 15000  # keep it quiet for y milliseconds
         self.music_index = 0
+
+        self.music_rules = {} #rules for playing particular tracks
+
         self._music_fname = None
         self._unfade_music = None  # (channel_to_watch, new_music_volme)
         self._force_mute = False  # override settings
@@ -5990,8 +6018,10 @@ class Mixer(metaclass=use_on_events):
         self._music_volume_callback = None
 
         if mixer == "pygame":
-            self._music_player = PlayerPygameMusic()
-            self._sfx_player = PlayerPygameSFX()
+            pygame.init()
+            pygame.mixer.init()
+            self._music_player = PlayerPygameMusic(game)
+            self._sfx_player = PlayerPygameSFX(game)
         else:
             self._music_player = PlayerPyglet()
             self._sfx_player = PlayerPyglet()
@@ -6020,7 +6050,6 @@ class Mixer(metaclass=use_on_events):
             v = 0
         pygame.mixer.music.set_volume(v)
 
-
     def _load(self):
         self._music_play(self._music_fname)
 
@@ -6047,8 +6076,17 @@ class Mixer(metaclass=use_on_events):
     def on_music_play(self, fname=None, description=None, loops=-1):
         """ Description is for subtitles 
             Treat as if we are playing it (remember it, etc), even if a flag stop actual audio.
+            By default, if a song is already playing, don't load and restart it.
         """
         if fname:
+            if fname in self.music_rules:
+                rule = self.music_rules[fname]
+            else:
+                rule = MusicRule(fname) #default rule
+
+            if self._music_fname == fname and rule.mode == FRESH_BUT_SHARE: #keep playing existing
+                return
+
             if os.path.exists(fname):
                 log.info("Loading music file %s" % fname)
 #                music = pyglet.resource.media(filename)
@@ -6062,7 +6100,7 @@ class Mixer(metaclass=use_on_events):
         if self._force_mute or self._session_mute or self.game._headless:
             return
         self._music_player.play(loops=loops)
-#        self._music_play(fname=fname, loops=loops)
+
 
     def on_music_fade(self, val=0, duration=5):
         fps = self.game.fps if self.game else DEFAULT_FPS         
@@ -6083,13 +6121,8 @@ class Mixer(metaclass=use_on_events):
         self._music_player.play()
         self.on_music_fade(val=v, duration=duration)
 
-
-    def _music_stop(self):
-        self._music_player.pause()
-#        self._music_player.next_source()
-
     def on_music_stop(self):
-        self._music_stop()
+        self._music_player.pause()
 
     def on_music_volume(self, val):
         """ val 0.0 - 1.0 """
@@ -6103,7 +6136,7 @@ class Mixer(metaclass=use_on_events):
         """ val 0.0 - 1.0 """
         new_volume = self._sfx_volume = val
         new_volume *= self.game.settings.sfx_volume if self.game and self.game.settings else 1
-        self._sfx_player.volume = new_volume
+        self._sfx_player.volume(new_volume)
 
     def on_sfx_fade(self, val, duration=5):
         fps = self.game.fps if self.game else DEFAULT_FPS         
@@ -6113,7 +6146,7 @@ class Mixer(metaclass=use_on_events):
     def _update(self, dt, obj=None):
         """ Called by game.update to handle fades and effects """
         log.warning("FADING NOT DONE YET")
-        if self._sfx_volume_target: #fade the volume up or down
+        if self._sfx_volume_target is not None: #fade the volume up or down
             v = self._sfx_volume + self._sfx_volume_step
             finish = False
             if self._sfx_volume_step < 0 and v <= self._sfx_volume_target:
@@ -6153,6 +6186,20 @@ class Mixer(metaclass=use_on_events):
         fade_music = False | 0..1.0 -> fade the music to <fade_music> level while playing this sfx
         description = <string> -> human readable description of sfx
         """
+        if fname:
+            if os.path.exists(fname):
+                log.info("Loading sfx file %s" % fname)
+                self._sfx_player.load(fname)
+            else:
+                log.warning("SFX file %s missing." % fname)
+                self._sfx_player.pause()
+                return
+
+        if self.game.settings.mute or self.game._headless:
+            return
+        self._sfx_player.play()
+
+        return
         sfx = None
         if store:
             setattr(self, store, sfx) #XXX replace with resource?
@@ -6198,8 +6245,8 @@ class Mixer(metaclass=use_on_events):
         self._sfx_play(fname, description, loops, fade_music, store)
 
     def on_sfx_stop(self, sfx=None):
-        self._sfx_player.pause()
-        self._sfx_player.next_source()
+        self._sfx_player.stop()
+#        self._sfx_player.next_source()
         #if sfx: sfx.stop()
 
     def on_music_finish(self, callback=None):
