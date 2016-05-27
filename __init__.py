@@ -6037,8 +6037,8 @@ class Mixer(metaclass=use_on_events):
         """ Used by load game to restore the current music settings """
         self.__dict__.update(d)   # update attributes
         if mixer == "pygame":
-            self._music_player = PlayerPygameMusic()
-            self._sfx_player = PlayerPygameSFX()
+            self._music_player = PlayerPygameMusic(game)
+            self._sfx_player = PlayerPygameSFX(game)
         else:
             self._music_player = PlayerPyglet()
             self._sfx_player = PlayerPyglet()
