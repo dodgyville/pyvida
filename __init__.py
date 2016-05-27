@@ -4296,6 +4296,7 @@ class Emitter(Item, metaclass=use_on_events):
         p.x -= self.acceleration[0] * p.index
         p.y -= self.acceleration[1] * p.index
         p.alpha = self.alpha_start + self.alpha_delta*p.index
+#        p.scale = self.size_start + ((self.size_end-self.size_start)/self.frames) * p.index
         if p.alpha<0: p.alpha = 0
 
 #        p.alpha += self.alpha_delta
@@ -4342,7 +4343,7 @@ class Emitter(Item, metaclass=use_on_events):
             return
 
         self._rect = Rect(self.x, self.y, 0, 0)
-        for p in self.particles:
+        for i, p in enumerate(self.particles):
             x, y = p.x, p.y
             if self._parent:
                 x += self._parent.x
@@ -4364,6 +4365,7 @@ class Emitter(Item, metaclass=use_on_events):
             if self.resource is not None:
                 self.resource._frame_index = p.action_index%self.action.num_of_frames
                 self.resource.scale = p.scale
+#                if i == 10: print(i, p.index, p.scale)
 #                if p == self.particles[0]:
 #                    print(self.alpha_delta, p.alpha, max(0, min(round(p.alpha*255), 255)))
                 self.resource.opacity = max(0, min(round(p.alpha*255), 255))
@@ -6037,8 +6039,8 @@ class Mixer(metaclass=use_on_events):
         """ Used by load game to restore the current music settings """
         self.__dict__.update(d)   # update attributes
         if mixer == "pygame":
-            self._music_player = PlayerPygameMusic(game)
-            self._sfx_player = PlayerPygameSFX(game)
+            self._music_player = PlayerPygameMusic(self.game)
+            self._sfx_player = PlayerPygameSFX(self.game)
         else:
             self._music_player = PlayerPyglet()
             self._sfx_player = PlayerPyglet()
