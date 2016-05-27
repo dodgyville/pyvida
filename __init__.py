@@ -26,6 +26,7 @@ from collections import Iterable
 from datetime import datetime, timedelta
 from gettext import gettext
 from random import choice, randint, uniform
+from time import sleep
 
 import tkinter as tk
 import tkinter.filedialog
@@ -243,6 +244,9 @@ K_3 = pyglet.window.key._3
 K_4 = pyglet.window.key._4
 K_5 = pyglet.window.key._5
 K_6 = pyglet.window.key._6
+K_7 = pyglet.window.key._7
+K_8 = pyglet.window.key._8
+K_9 = pyglet.window.key._9
 
 # COLOURS
 COLOURS = {
@@ -5102,6 +5106,7 @@ class Scene(MotionManager, metaclass=use_on_events):
     def on_music(self, filename):
         """ What music to play on entering the scene? """
         self._music_filename = filename
+        print("**SCENE MUSIC FILE UPDATED TO",filename)
 
     def on_ambient(self, filename):
         """ What ambient sound to play on entering the scene? """
@@ -5651,28 +5656,13 @@ class Camera(metaclass=use_on_events):  # the view manager
 #        if self.game.scene:  # unload background when not in use
 #            self.game.scene._unload_layer()
         game = self.game
+        current_scene = game.scene
         if scene == None:
             if logging:
                 log.error(
                     "Can't change to non-existent scene, staying on current scene")
             scene = self.game.scene
-        if type(scene) in [str]:
-            if scene in self.game._scenes:
-                scene = self.game._scenes[scene]
-            else:
-                if logging:
-                    log.error(
-                        "camera on_scene: unable to find scene %s" % scene)
-                scene = self.game.scene
-#        if self.game.text:
-#            print("The view has changed to scene %s"%scene.name)
-#            if scene.description:
-#                print(scene.description)
-#            else:
-#                print("There is no description for this scene")
-#            print("You can see:")
-#            for i in scene.objects.values():
-#                print(i.display_text)
+        scene = get_object(self.game, scene)
         self.game.scene = scene
 
         # reset camera
@@ -5705,6 +5695,10 @@ class Camera(metaclass=use_on_events):  # the view manager
                 gc.collect()  # force garbage collection
         if logging:
             log.debug("changing scene to %s" % scene.name)
+
+#        if scene.name == "aspaceship":
+#            import pdb; pdb.set_trace()
+
         if self.game and self.game._headless:
             return  # headless mode skips sound and visuals
 
@@ -5717,8 +5711,15 @@ class Camera(metaclass=use_on_events):  # the view manager
 #            else:
 #                if logging: log.warning("No background for scene %s"%self.game.scene.name)
         # start music for this scene
+        mixer = game.mixer
+        if mixer._music_filename: #store position of current track
+            mixer.music_rules[mixer._music_filename].position = mixer._music_player.position()
         if scene._music_filename:
-            self.game.mixer.on_music_play(scene._music_filename)
+            rule = mixer.music_rules[scene._music_filename] if scene._music_filename in mixer.music_rules else None
+            start = rule.position if rule else 0
+#            mixer.music_fade_out(0.5)
+            mixer.music_play(scene._music_filename, start=start)
+#            mixer.music_fade_in(0.5)
  #       self._play_scene_music()
 #        if game.scene._ambient_filename:
 #            self._ambient_sound = self.game.mixer._sfx_play(game.scene._ambient_filename, loops=-1)
@@ -5957,12 +5958,18 @@ class PlayerPygameMusic():
     def stop(self):
         pygame.mixer.music.stop()
 
-
     def load(self, fname):
+        print("LOAD MUSIC",fname)
         pygame.mixer.music.load(fname)
 
-    def play(self, loops=-1):
-        pygame.mixer.music.play(loops=loops)
+    def play(self, loops=-1, start=0):
+        pygame.mixer.music.stop() #reset counter
+        print("PLAY MUSIC",start)
+        pygame.mixer.music.play(loops=loops, start=start)
+
+    def position(self):
+        """ Note, this returns the number of seconds, for use with OGG. """
+        return pygame.mixer.music.get_pos()/100 
 
     def queue(self, fname):
         try:
@@ -5971,11 +5978,14 @@ class PlayerPygameMusic():
             print("pygame mixer music error")
             pass
 
+    def volume(self, v):
+        pygame.mixer.music.set_volume(v)
 
 
 FRESH = 0 #restart song each time player enters scene.
 FRESH_BUT_SHARE = 1 #only restart if a different song to what is playing, else continue.
 PAIR = 2 #pair with other songs, jump to the same position in the song as the one we are leaving (good for muffling)
+REMEMBER = 3 #remember where we were in the song when we last played it.
 
 class MusicRule():
     """ Container class for music rules, used by Mixer and Scenes """
@@ -5984,7 +5994,7 @@ class MusicRule():
         self.filename = filename
         self.mode = FRESH_BUT_SHARE
         self.remember = True #resume playback at the point where playback was last stopped for this song
-        self.current_location = 0 #where in the song we are
+        self.position = 0 #where in the song we are
         self.pair = [] #songs to pair with
 
 
@@ -6000,7 +6010,13 @@ class Mixer(metaclass=use_on_events):
 
         self.music_rules = {} #rules for playing particular tracks
 
-        self._music_fname = None
+        # when loading, music and ambient sound will be restored.
+        self._music_filename = None
+        self._music_position = 0 #where the current music is
+        self._sfx_filename = None
+        self._ambient_filename = None
+        self._ambient_position = 0
+
         self._unfade_music = None  # (channel_to_watch, new_music_volme)
         self._force_mute = False  # override settings
         self._music_callback = None  # callback for when music ends
@@ -6018,42 +6034,50 @@ class Mixer(metaclass=use_on_events):
         self._music_volume_target = None
         self._music_volume_step = 0
         self._music_volume_callback = None
+        self.initialise_players(game)
 
+    def initialise_players(self, game):
         if mixer == "pygame":
-            pygame.init()
-            pygame.mixer.init()
+            print("INITIALISE PLAYERS")
+            print("PYGAME MIXER REPORTS", pygame.mixer.get_init())
             self._music_player = PlayerPygameMusic(game)
             self._sfx_player = PlayerPygameSFX(game)
         else:
             self._music_player = PlayerPyglet()
             self._sfx_player = PlayerPyglet()
 
+
     def __getstate__(self): #actor.getstate
         """ Prepare the object for pickling """ 
+        self._music_position = self._music_player.position()
         self._music_player = None
         self._sfx_player = None
         self.game = None
+        print("DEINITIALISE PLAYERS AT POSITION",self._music_position)
         return dict(self.__dict__)
 
     def __setstate__(self, d):
         """ Used by load game to restore the current music settings """
         self.__dict__.update(d)   # update attributes
-        if mixer == "pygame":
-            self._music_player = PlayerPygameMusic(self.game)
-            self._sfx_player = PlayerPygameSFX(self.game)
-        else:
-            self._music_player = PlayerPyglet()
-            self._sfx_player = PlayerPyglet()
+        self.initialise_players(self.game)
 
-    def publish_volumes(self):
+    def on_resume(self):
+        """ Resume from a load file, force all sounds and music to play """
+        self.on_publish_volumes()
+        current_music = self._music_filename
+        self._music_filename = None
+        if current_music:
+            self.on_music_play(current_music, start=self._music_position)
+
+    def on_publish_volumes(self):
         """ Use game.settings to set various volumes """
         v = self.game.settings.music_volume
         if self.game.settings.mute == True:
             v = 0
+        print("SETTING VOLUME TO %f"%v)
         pygame.mixer.music.set_volume(v)
-
-    def _load(self):
-        self._music_play(self._music_fname)
+        self._music_volume = v
+        self._music_volume_target = None
 
     def on_status(self):
         """ Print the various modifiers on the mixer """
@@ -6075,33 +6099,49 @@ class Mixer(metaclass=use_on_events):
 
 #            self._music_player.on_eos = self._
 
-    def on_music_play(self, fname=None, description=None, loops=-1):
+    def on_music_play(self, fname=None, description=None, loops=-1, start=None, volume=None):
         """ Description is for subtitles 
             Treat as if we are playing it (remember it, etc), even if a flag stop actual audio.
             By default, if a song is already playing, don't load and restart it.
         """
+        if self._music_filename:
+            current_rule = self.music_rules[self._music_filename]
+            current_rule.position = self._music_player.position()
         if fname:
             if fname in self.music_rules:
                 rule = self.music_rules[fname]
             else:
                 rule = MusicRule(fname) #default rule
+                self.music_rules[fname] = rule
 
-            if self._music_fname == fname and rule.mode == FRESH_BUT_SHARE: #keep playing existing
+            default_start = rule.position
+
+            if self._music_filename == fname and rule.mode == FRESH_BUT_SHARE and pygame.mixer.music.get_busy() == True: #keep playing existing
+                print("KEEP PLAYING EXISTING SONG", fname)
                 return
-
+            if rule.mode == FRESH:
+                default_start = 0
             if os.path.exists(fname):
                 log.info("Loading music file %s" % fname)
 #                music = pyglet.resource.media(filename)
                 self._music_player.load(fname)
-                self._music_fname = fname
+                self._music_filename = fname
+                print("SETTING CURRENT MUSIC FILENAME TO", fname)
+                self._music_position = 0
+                self.on_publish_volumes() #reset any fades
             else:
                 log.warning("Music file %s missing." % fname)
                 self._music_player.pause()
                 return
-
+        else:
+            print("NO MUSIC FILE",fname)
+            return
         if self._force_mute or self._session_mute or self.game._headless:
             return
-        self._music_player.play(loops=loops)
+        if volume: self.on_music_volume(volume)
+
+        start = start if start else default_start
+        self._music_player.play(loops=loops, start=start)
 
 
     def on_music_fade(self, val=0, duration=5):
@@ -6111,16 +6151,17 @@ class Mixer(metaclass=use_on_events):
 
     def on_music_fade_out(self, duration=5):
         self.on_music_fade(val=0, duration=duration)
-        def finish_fade_out():
-            self._music_player.pause()
-        self._music_volume_callback = finish_fade_out
+#        def finish_fade_out(): #XXX: Can't be local for pickle
+#            pass
+#            self._music_player.pause()
+#        self._music_volume_callback = finish_fade_out
 
     def on_music_fade_in(self, duration=5):
         if self._force_mute:
             return
-        v = self._music_volume
+        v = self.game.settings.music_volume if self.game and self.game.settings else 1
         self.on_music_volume(0)
-        self._music_player.play()
+#        self._music_player.play()
         self.on_music_fade(val=v, duration=duration)
 
     def on_music_stop(self):
@@ -6131,7 +6172,7 @@ class Mixer(metaclass=use_on_events):
         new_volume = self._music_volume = val
         # scale by the master volume from settings
         new_volume *= self.game.settings.music_volume if self.game and self.game.settings else 1
-        self._music_player.volume = new_volume
+        self._music_player.volume(new_volume)
         log.info("Setting music volume to %f"%new_volume)
 
     def on_sfx_volume(self, val):
@@ -6164,7 +6205,7 @@ class Mixer(metaclass=use_on_events):
                 self._sfx_volume_callback = None
             self.on_sfx_volume(v)
 
-        if self._music_volume_target: #fade the volume up or down
+        if self._music_volume_target is not None: #fade the volume up or down
             v = self._music_volume + self._music_volume_step
             finish = False
             if self._music_volume_step < 0 and v <= self._music_volume_target:
@@ -6453,7 +6494,11 @@ def load_game_pickle(game, fname, meta_only=False):
             player_info = pickle.load(f)
             game.storage = pickle.load(f)
             game.mixer = pickle.load(f)
-            game.mixer.game = game #restore mixer
+
+            #restore mixer
+            game.mixer.game = game 
+#            game.mixer.initialise_players(game)
+
             _pyglet_fonts = pickle.load(f)
 
             game._menu = pickle.load(f)
@@ -6475,7 +6520,7 @@ def load_game_pickle(game, fname, meta_only=False):
 
 
             #switch off headless mode to force graphical assets of most recently
-            #accessed scenes to load.        
+            #accessed scenes to load.
             headless = game._headless
             game._headless = False
             for scene_name in game._resident:
@@ -6485,6 +6530,7 @@ def load_game_pickle(game, fname, meta_only=False):
                 else:
                     log.warning("Pickle load: scene %s is resident but not actually in Game, "%scene_name)
             load_menu_assets(game)
+
             game._headless = headless
 
             # load pyglet fonts
@@ -6538,7 +6584,7 @@ def save_game(game, fname):
 def load_game(game, fname, meta_only=False):
     meta = load_game_pickle(game, fname, meta_only=meta_only)
     if meta_only is False:
-        game.mixer._load()
+        pass
     return meta
 
 def save_settings(game, fname):
@@ -6556,7 +6602,7 @@ def load_or_create_settings(game, fname, settings_cls=Settings):
     else:
         game.settings = game.settings.load(fname)
     game.settings._current_session_start = datetime.now()
-    game.mixer.publish_volumes()
+    game.mixer.on_publish_volumes()
     return True
 
 def fit_to_screen(screen, resolution):
@@ -6634,6 +6680,16 @@ class Game(metaclass=use_on_events):
         self._scale = scale
 
         self.camera = Camera(self)  # the camera object
+        #initialise sound
+        if mixer == "pygame":
+            print("INITIALISE MIXER START")
+            pygame.init()
+            #pygame.display.set_mode((200,100))
+#            pygame.mixer.quit()
+#            sleep(5)
+            pygame.mixer.init()
+            print("INITIALISE MIXER")
+
         self.mixer = Mixer(self)  # the sound mixer object
         self.menu = MenuManager(self)  # the menu manager object
         self._menu_factories = {}
@@ -7001,9 +7057,14 @@ class Game(metaclass=use_on_events):
             print("finished casting")
 
         if symbol == pyglet.window.key.F9:
+            pygame.mixer.quit()
+            pygame.mixer.init()
+            game.mixer._music_player.load(game.mixer._music_filename)
+            game.mixer._music_player.play()
+            return
             from scripts.general import chip_first_attempt, cutscene_founders
             cutscene_founders(game)
-#            chip_first_attempt(game)
+            chip_first_attempt(game)
             return
             game.xian_child.do("left")
             game.xian_gypsy.do_once("glitch", "vanished")
@@ -7812,6 +7873,7 @@ class Game(metaclass=use_on_events):
         options = self.parser.parse_args()
 #        self.mixer._force_mute =  #XXX sound disabled for first draft
         self.mixer._session_mute = False
+
         if options.mute == True:
             self.mixer._session_mute = True
         if options.output_walkthrough == True:
@@ -7873,6 +7935,9 @@ class Game(metaclass=use_on_events):
 
     def on_quit(self):
         pyglet.app.exit()
+        if mixer=="pygame":
+            print("SHUTDOWN PYGAME MIXER")
+            pygame.mixer.quit()
 
     def queue_event(self, event, *args, **kwargs):
         self._events.append((event, args, kwargs))
@@ -7904,6 +7969,17 @@ class Game(metaclass=use_on_events):
                 if self.player:
                     self.player.load_assets(self)
                 load_menu_assets(self)
+
+                # restart music and ambient sounds                
+                self.mixer.initialise_players(self)
+                self.mixer.resume()
+#                if self.mixer._music_filename:
+#                    self.mixer.on_music_play(self.mixer._music_filename, start=self.mixer._music_position)
+        #        if game.mixer._ambient_filename:
+        #            game.mixer.ambient_play(game.mixer._music_filename, start=game.mixer._music_position)
+
+
+
                 print("FINISHED WALKTHROUGH")
                 if self.exit_step is True:
                     self.on_quit()
@@ -8654,7 +8730,7 @@ class Game(metaclass=use_on_events):
         game.pause(0.5)
         game.camera.screenshot(os.path.join(DIRECTORY_SAVES, "%s.png"%fname), tilesize)
         actor = get_object(game, actor)
-        actor.says(gettext("Game autosaved."))
+        actor.says(gettext("Game saved."))
         game.menu.show()
 
 
