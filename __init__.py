@@ -236,8 +236,12 @@ K_ESCAPE = pyglet.window.key.ESCAPE
 K_I = pyglet.window.key.I
 K_L = pyglet.window.key.L
 K_S = pyglet.window.key.S
+K_C = pyglet.window.key.C
+K_LESS = pyglet.window.key.LESS
+K_GREATER = pyglet.window.key.GREATER
 K_ENTER = pyglet.window.key.ENTER
 K_SPACE = pyglet.window.key.SPACE
+K_0 = pyglet.window.key._0
 K_1 = pyglet.window.key._1
 K_2 = pyglet.window.key._2
 K_3 = pyglet.window.key._3
@@ -5602,6 +5606,7 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._overlay_counter = 0
         self._overlay_end = None
         self._overlay_start = None
+        self._transition = [] #Just messing about, list of scenes to switch between for a rapid editing effect
 
         self.name = "Default Camera"
         self.game = game
@@ -5651,6 +5656,18 @@ class Camera(metaclass=use_on_events):  # the view manager
                     self._overlay.opacity = round(255 * (1 - complete))
     #            if complete>1: self._overlay = None #finish FX
 
+        """
+        Just a fun little experiment in quick cutting between scenes
+        """
+        if len(self._transition)>0:
+            transition = self._transition.pop()
+            scene = get_object(self.game, transition)
+            self.game.scene = scene
+
+    def on_transition(self, scenes=[]):
+        """ Quick fire cuts between scenes (without triggering scene change behaviour """
+        self._transition = scenes
+
     def _scene(self, scene, camera_point=None):
         """ change the current scene """
 #        if self.game.scene:  # unload background when not in use
@@ -5698,9 +5715,6 @@ class Camera(metaclass=use_on_events):  # the view manager
 
 #        if scene.name == "aspaceship":
 #            import pdb; pdb.set_trace()
-
-        if self.game and self.game._headless:
-            return  # headless mode skips sound and visuals
 
         if self._ambient_sound:
             self._ambient_sound.stop()
@@ -5943,6 +5957,7 @@ class PlayerPygameSFX():
         self._sound.stop()
 
     def volume(self, v):
+        if self._sound is None: return
         self._sound.set_volume(v)
 
 #    def fadeout(self, seconds): #Note: we use a custom fade agnostic        
@@ -6115,7 +6130,6 @@ class Mixer(metaclass=use_on_events):
                 self.music_rules[fname] = rule
 
             default_start = rule.position
-
             if self._music_filename == fname and rule.mode == FRESH_BUT_SHARE and pygame.mixer.music.get_busy() == True: #keep playing existing
                 print("KEEP PLAYING EXISTING SONG", fname)
                 return
@@ -7257,6 +7271,11 @@ class Game(metaclass=use_on_events):
                         x += parent.x
                         y += parent.y     
                     ix, iy = self.get_info_position(obj)
+#                    if self.scene: #displace for camera Note: this should be handled by actor.draw
+#                        if obj.name == "celebrant":
+#                            import pdb; pdb.set_trace()
+#                        ix += self.scene.x 
+#                        iy += self.scene.y 
                     self.info(
                         t, ix, iy, obj.display_text_align)
                     return
