@@ -6036,7 +6036,8 @@ class Mixer(metaclass=use_on_events):
         self._force_mute = False  # override settings
         self._music_callback = None  # callback for when music ends
 
-        self._session_mute = False #mute this session only (resets next load)
+        #mute this session only (resets next load)
+        self._session_mute = False
 
         #for fade in, fade out
         self._sfx_volume = 1.0
@@ -6060,6 +6061,10 @@ class Mixer(metaclass=use_on_events):
         else:
             self._music_player = PlayerPyglet()
             self._sfx_player = PlayerPyglet()
+        if game:
+            options = game.parser.parse_args()
+            self._session_mute = True if options.mute == True else False
+            print("*** SETTING SESSION MUTE2 ***",self._session_mute) 
 
 
     def __getstate__(self): #actor.getstate
@@ -6150,6 +6155,7 @@ class Mixer(metaclass=use_on_events):
         else:
             print("NO MUSIC FILE",fname)
             return
+        print("PLAY: SESSION MUTE", self._session_mute)
         if self._force_mute or self._session_mute or self.game._headless:
             return
         if volume: self.on_music_volume(volume)
@@ -6680,6 +6686,8 @@ class Game(metaclass=use_on_events):
 
     def __init__(self, name="Untitled Game", version="v1.0", engine=VERSION_MAJOR, fullscreen=DEFAULT_FULLSCREEN, resolution=DEFAULT_RESOLUTION, fps=DEFAULT_FPS, afps=DEFAULT_ACTOR_FPS, projectsettings=None, scale=1.0):
         self.debug_collection = False
+        self.parser = ArgumentParser()
+        self.add_arguments()
 
         self.name = name
         self.section_name = name #for save files, what is this segment/section/part of the game called
@@ -6842,8 +6850,6 @@ class Game(metaclass=use_on_events):
         # (message, time))
         self.messages = []
 
-        self.parser = ArgumentParser()
-        self.add_arguments()
 
         # mouse
         self.mouse_cursors = {}  # available mouse images
@@ -7892,9 +7898,6 @@ class Game(metaclass=use_on_events):
         options = self.parser.parse_args()
 #        self.mixer._force_mute =  #XXX sound disabled for first draft
         self.mixer._session_mute = False
-
-        if options.mute == True:
-            self.mixer._session_mute = True
         if options.output_walkthrough == True:
             self._output_walkthrough = True
             print("Walkthrough for %s"%self.name)
