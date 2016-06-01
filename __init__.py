@@ -2104,6 +2104,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             sprite.scale = self.scale
         if self.rotate:
             sprite.rotation = self.rotate
+        sprite.opacity = self.alpha
         sprite.on_animation_end = sprite_callback
 
         # jump to end
@@ -2443,6 +2444,7 @@ class Actor(MotionManager, metaclass=use_on_events):
     allow_update = property(get_allow_update, set_allow_update)
 
     def set_alpha(self, v):
+        """ 0 - 255 """
         self._opacity = v
 
         if isinstance(self, Text) and self.resource:
@@ -2516,6 +2518,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                 self._opacity_target = None
                 if self._opacity_target_block:
                     self.busy -= 1  # stop blocking
+                    self._opacity_target_block = False
                     if logging:
                         log.info("%s has finished on_fade_out, so decrement self.busy to %i." % (
                             self.name, self.busy))
@@ -2524,6 +2527,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                 self._opacity = self._opacity_target
                 self._opacity_target = None
                 if self._opacity_target_block:
+                    self._opacity_target_block = False
                     self.busy -= 1  # stop blocking
                     if logging:
                         log.info("%s has finished on_fade_in, so decrement self.busy to %i." % (
@@ -3519,7 +3523,12 @@ class Actor(MotionManager, metaclass=use_on_events):
             self._actions[action.name] = action
         elif type(action) == str:
             action = self._actions[action]
-    
+        resource = self.resource
+#        if resource:
+#            resource.opacity = max(0, min(round(self.alpha*255), 255))
+#            if action and action.name == "alive":
+#                import pdb; pdb.set_trace()
+
         #store the callback in resources
         callback = "on_animation_end" if callback == None else getattr(callback, "__name__", callback)
         self._pyglet_animation_callback = callback
@@ -3659,6 +3668,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         self.on_retext(point)
 
     def on_opacity(self, v):
+        """ 0 - 255 """
         self.alpha = v
 
     def _hide(self):
@@ -4225,7 +4235,7 @@ class Particle(object):
         self.speed = speed
         self.direction = direction
         self.scale = scale
-        self.alpha = 1.0
+        self.alpha = 1.0   #XXX: This should be 0-255 to match rest of pyvida
         self.rotate = 0
         self.hidden = True  # hide for first run
         self.terminate = False  # don't renew this particle if True
