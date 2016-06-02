@@ -6153,10 +6153,11 @@ class Mixer(metaclass=use_on_events):
                 return
             if rule.mode == FRESH:
                 default_start = 0
-            if os.path.exists(fname):
-                log.info("Loading music file %s" % fname)
+            absfilename = os.path.join(os.getcwd(),fname)
+            if os.path.exists(absfilename):
+                log.info("Loading music file %s" % absfilename)
 #                music = pyglet.resource.media(filename)
-                self._music_player.load(fname)
+                self._music_player.load(absfilename)
                 self._music_filename = fname
                 print("SETTING CURRENT MUSIC FILENAME TO", fname)
                 self._music_position = 0
@@ -6263,11 +6264,12 @@ class Mixer(metaclass=use_on_events):
         description = <string> -> human readable description of sfx
         """
         if fname:
-            if os.path.exists(fname):
-                log.info("Loading sfx file %s" % fname)
-                self._sfx_player.load(fname)
+            absfilename = os.path.join(os.getcwd(),fname)
+            if os.path.exists(absfilename):
+                log.info("Loading sfx file %s" % absfilename)
+                self._sfx_player.load(absfilename)
             else:
-                log.warning("SFX file %s missing." % fname)
+                log.warning("SFX file %s missing." % absfilename)
                 self._sfx_player.pause()
                 return
 
