@@ -1298,6 +1298,7 @@ class Motion(object):
         if d[5] != None: 
             actor._frame(int(d[5]))
 #            if actor.action.mode != MANUAL:
+
 #                print("warning: %s action %s not in manual mode, so motion %s "
 #                      "frame requests fighting with auto frame advance"%
 #                      (actor.name, actor.action.name, self.name))
@@ -6629,6 +6630,9 @@ def load_or_create_settings(game, fname, settings_cls=Settings):
     existing = True
     game.settings = settings_cls()
     game.settings.filename = fname
+    options = game.parser.parse_args()
+    if options.nuke:
+        os.remove(fname)
     if not os.path.isfile(fname): #settings file not available, create new object
         existing = False
     else:
@@ -6757,6 +6761,7 @@ class Game(metaclass=use_on_events):
         self._gui = []
         self.storage = Storage()
         self.resolution = resolution
+        self.nuke = False #nuke platform dependent files such as game.settings
 
         # scale the game if the screen is too small
         # don't allow game to be bigger than the available screen.
@@ -7558,6 +7563,8 @@ class Game(metaclass=use_on_events):
             "-l", "--lowmemory", action="store_true", dest="memory_save", help="Run game in low memory mode")
         self.parser.add_argument("-m", "--matrixinventory", action="store_true", dest="test_inventory",
                                  help="Test each item in inventory against each item in scene", default=False)
+        self.parser.add_argument("-n", "--nuke", action="store_true", dest="nuke",
+                                 help="Nuke platform-dependent files, such as game.settings.", default=False)
         self.parser.add_argument("-o", "--objects", action="store_true", dest="analyse_characters",
                                  help="Print lots of info about actor and items to calculate art requirements", default=False)
         self.parser.add_argument("-p", "--profile", action="store_true",
