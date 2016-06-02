@@ -1299,6 +1299,7 @@ class Motion(object):
             actor._frame(int(d[5]))
 #            if actor.action.mode != MANUAL:
 
+
 #                print("warning: %s action %s not in manual mode, so motion %s "
 #                      "frame requests fighting with auto frame advance"%
 #                      (actor.name, actor.action.name, self.name))
@@ -6153,7 +6154,7 @@ class Mixer(metaclass=use_on_events):
                 return
             if rule.mode == FRESH:
                 default_start = 0
-            absfilename = os.path.join(os.getcwd(),fname)
+            absfilename = os.path.abspath(fname)
             if os.path.exists(absfilename):
                 log.info("Loading music file %s" % absfilename)
 #                music = pyglet.resource.media(filename)
@@ -6264,7 +6265,7 @@ class Mixer(metaclass=use_on_events):
         description = <string> -> human readable description of sfx
         """
         if fname:
-            absfilename = os.path.join(os.getcwd(),fname)
+            absfilename = os.path.abspath(fname)                         
             if os.path.exists(absfilename):
                 log.info("Loading sfx file %s" % absfilename)
                 self._sfx_player.load(absfilename)
