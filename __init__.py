@@ -96,7 +96,7 @@ DEBUG_STDOUT = True  # stream errors to stdout as well as log file
 
 ENABLE_EDITOR = False  # default for editor
 ENABLE_PROFILING = False
-ENABLE_LOGGING = True
+ENABLE_LOGGING = False
 DEFAULT_TEXT_EDITOR = "gedit"
 
 VERSION_MAJOR = 5  # major incompatibilities
