@@ -7,6 +7,7 @@
 
 from PIL import *
 from PIL import Image
+from PIL import ImageChops
 #import Image
 import sys, os
 from math import ceil
@@ -22,6 +23,9 @@ def super_loopser():
 #    parser.add_option("-f", "--flip", action="store_true", dest="flip", help="Flip the images left-right", default=False)
     parser.add_option("-l", "--loops", dest="loops", help="How many times to loops frames", default=-1, metavar="loops")
     parser.add_option("-f", "--frames", dest="frames", help="How many frames to use for loops", default=-1, metavar="loops")
+    parser.add_option("-a", "--add", dest="fx_add", action="store_true", help="Add images together", default=False)
+    parser.add_option("-s", "--screen", dest="fx_screen", action="store_true", help="Screen images together", default=False)
+    parser.add_option("-m", "--multiply", dest="fx_multiply", action="store_true", help="Mutilply images together", default=False)
 
     (options, args) = parser.parse_args()
     if len(args) < 2:
@@ -57,6 +61,9 @@ def super_loopser():
     new_frames = [Image.new('RGBA', first_image.size, (0,0,0,0)) for x in range(0, frames)]
 #    for i in new_frames:
 #        i.paste((50,80,100,255), (0,0, i.size[0], i.size[1]))
+    fx_add = options.fx_add
+    fx_screen = options.fx_screen
+    fx_multiply = options.fx_multiply
 
     for i, fname in enumerate(files):
         m = Image.open(fname).convert("RGBA") #get info from first image.
@@ -66,7 +73,14 @@ def super_loopser():
         for j in range(0, int(frames), int(frames/loops)):
             index = (i+j)%frames
             frame_list.append(index)
-            new_frames[index].paste(m, (0,0), m)
+            if fx_add:
+                new_frames[index] = ImageChops.add(new_frames[index], m)
+            elif fx_screen:
+                new_frames[index] = ImageChops.screen(new_frames[index], m)
+            elif fx_multiply:
+                new_frames[index] = ImageChops.multiply(new_frames[index], m)
+            else:
+               new_frames[index].paste(m, (0,0), m)
 #            new_frames[index] = Image.blend(new_frames[index], m, m)
         print("pasting image %s onto frames %s"%(fname, frame_list))
 
