@@ -96,8 +96,7 @@ DEBUG_STDOUT = True  # stream errors to stdout as well as log file
 
 ENABLE_EDITOR = False  # default for editor
 ENABLE_PROFILING = False
-ENABLE_LOGGING = False
-ENABLE_LOCAL_LOGGING = False
+ENABLE_LOGGING = True
 DEFAULT_TEXT_EDITOR = "gedit"
 
 VERSION_MAJOR = 5  # major incompatibilities
@@ -5959,6 +5958,10 @@ class PlayerPygameSFX():
         self.game = game
 
     def load(self, fname):
+        if logging:
+            log.debug("loading sfx")
+            log.debug(os.getcwd())
+            log.debug(fname)
         self._sound = pygame.mixer.Sound(fname)
 #        v = self.game.mixer._sfx_volume
         new_volume = self.game.settings.music_volume if self.game and self.game.settings else 1
@@ -6068,8 +6071,8 @@ class Mixer(metaclass=use_on_events):
 
     def initialise_players(self, game):
         if mixer == "pygame":
-            print("INITIALISE PLAYERS")
-            print("PYGAME MIXER REPORTS", pygame.mixer.get_init())
+            log.debug("INITIALISE PLAYERS")
+            log.debug("PYGAME MIXER REPORTS", pygame.mixer.get_init())
             self._music_player = PlayerPygameMusic(game)
             self._sfx_player = PlayerPygameSFX(game)
         else:
@@ -6723,13 +6726,14 @@ class Game(metaclass=use_on_events):
         self.camera = Camera(self)  # the camera object
         #initialise sound
         if mixer == "pygame":
-            print("INITIALISE MIXER START")
-            pygame.init()
+            log.info("INITIALISE MIXER START")
+#            pygame.init()
             #pygame.display.set_mode((200,100))
 #            pygame.mixer.quit()
 #            sleep(5)
             pygame.mixer.init()
-            print("INITIALISE MIXER")
+            mm = "INITIALISE MIXER %s"%str(pygame.mixer.get_init())
+            log.info(mm)
 
         self.mixer = Mixer(self)  # the sound mixer object
         self.menu = MenuManager(self)  # the menu manager object
