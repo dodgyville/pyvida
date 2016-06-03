@@ -7255,7 +7255,7 @@ class Game(metaclass=use_on_events):
             scene_objects = copy.copy(self.scene._objects)
             if (ALLOW_USE_ON_PLAYER and self.player) or \
                     (self._allow_one_player_interaction is True): #add player object
-                scene_objects.append(self.player.name)
+                scene_objects.insert(0, self.player.name) #prioritise player over other items
             for obj_name in scene_objects:
                 obj = get_object(self, obj_name)
                 if not obj.allow_draw:
@@ -7430,7 +7430,11 @@ class Game(metaclass=use_on_events):
             else:
                 return
         if self.scene:
-            for obj_name in self.scene._objects:
+            scene_objects = copy.copy(self.scene._objects)
+            if (ALLOW_USE_ON_PLAYER and self.player) or \
+                    (self._allow_one_player_interaction is True): #add player object
+                scene_objects.insert(0, self.player.name) #prioritise player over other items
+            for obj_name in scene_objects:
                 obj = get_object(self, obj_name)
                 if self.mouse_mode == MOUSE_USE and self._mouse_object == obj: continue #can't use item on self
                 allow_player_use = (self.player and self.player == obj) and (ALLOW_USE_ON_PLAYER or self._allow_one_player_interaction)
