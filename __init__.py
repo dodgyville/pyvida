@@ -3701,31 +3701,25 @@ class Actor(MotionManager, metaclass=use_on_events):
         """
         self._show()
 
-    def on_fade_in(self, action=None, seconds=3, block=False):  # actor.fade_in
+    def on_fade(self, target, action=None, seconds=3, block=False):
+        """ target is 0 - 255 """
         if action:
             self._do(action)
         if self.game._headless:  # headless mode skips sound and visuals
-            self.alpha = 255
+            self.alpha = target
             return
-        self._opacity_target = 255
+        self._opacity_target = target
         self._opacity_delta = (
             self._opacity_target - self._opacity) / (self.game.fps * seconds)
         if block == True:
             self.busy += 1
             self._opacity_target_block = True
 
+    def on_fade_in(self, action=None, seconds=3, block=False):  # actor.fade_in
+        self.on_fade(255, action=action, seconds=seconds, block=block)
+
     def _fade_out(self, action=None, seconds=3, block=False):  # actor.fade_out
-        if action:
-            self._do(action)
-        if self.game._headless:  # headless mode skips sound and visuals
-            self.alpha = 0
-            return
-        self._opacity_target = 0
-        self._opacity_delta = (
-            self._opacity_target - self._opacity) / (self.game.fps * seconds)
-        if block == True:
-            self.busy += 1
-            self._opacity_target_block = True
+        self.on_fade(0, action=action, seconds=seconds, block=block)
 
     # actor.fade_out
     def on_fade_out(self, action=None, seconds=3, block=False):
@@ -4066,6 +4060,12 @@ class Portal(Actor, metaclass=use_on_events):
         self._allow_use = False
         self._allow_look = False
 
+
+    def _usage(self, draw=None, update=None, look=None, interact=None, use=None):
+        # XXX this is a hack for Pleasure Planet ... I accidently left on all the look and use flags
+        # and there's no easy way to switch them all off.
+        # For the general release, they now default to off.
+        super()._usage(draw=draw, update=update, look=False, interact=interact, use=False)
 
 #    def __getstate__(self):
 #        """ Prepare the object for pickling """
