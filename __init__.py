@@ -175,11 +175,13 @@ CHRONOLOGICAL = 1 #sort by time they were added
 # ANCHORS FOR MENUS and MENU FACTORIES (and on_says)
 LEFT = 0
 RIGHT = 1
-CENTER = 2
+CENTER = 2 #center
 TOP = 3
 BOTTOM = 4
 CAPTION = 5 #top left
 CAPTION_RIGHT = 6 #top right
+RIGHTLEFT = 7 #for languages printed right to left
+CENTER_HORIZONTAL_TOO = 8
 
 UP = 6
 DOWN = 7
@@ -3271,7 +3273,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         """ Create a Text object using this actor's values """
         return Text(text, *args, **kwargs)
 
-    def _says(self, text, action="portrait", font=None, size=None, using=None, position=None, offset=None, delay=0.01, step=3, ok=-1, interact=close_on_says, block_for_user=True):
+    def _says(self, text, action="portrait", font=None, size=None, using=None, position=None, align=LEFT, offset=None, delay=0.01, step=3, ok=-1, interact=close_on_says, block_for_user=True):
         """
         if block_for_user is False, then DON'T make the game wait until processing next event
         """
@@ -3354,6 +3356,9 @@ class Actor(MotionManager, metaclass=use_on_events):
         label.game = self.game
         label.fullscreen(True)
         label.x, label.y = x + dx, y + dy
+        if align == CENTER_HORIZONTAL_TOO:
+            label.x += (msgbox.w//2 - label.w//2)
+            label.y += (msgbox.h//2 - label.h)
         if offset:
             label.x += offset[0]
             label.y += offset[1]
@@ -5273,7 +5278,7 @@ class Text(Item):
 
     @property
     def w(self):
-        w = self.resource.content_width if self.resource else self._width
+        w = self.resource.content_width if self.resource and self.resource.content_width>0 else self._width
         return w
 
     @property
