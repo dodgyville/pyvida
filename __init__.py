@@ -96,7 +96,7 @@ DEBUG_STDOUT = True  # stream errors to stdout as well as log file
 
 ENABLE_EDITOR = False  # default for editor
 ENABLE_PROFILING = False
-ENABLE_LOGGING = False
+ENABLE_LOGGING = True
 DEFAULT_TEXT_EDITOR = "gedit"
 
 VERSION_MAJOR = 5  # major incompatibilities
@@ -221,7 +221,16 @@ HINT = "hint"
 
 
 # EDITOR CONSTANTS
-MENU_EDITOR = "e_load", "e_save", "e_add", "e_delete", "e_prev", "e_next", "e_walk", "e_portal", "e_scene", "e_step", "e_reload", "e_jump", "e_state_save", "e_state_load"
+MENU_EDITOR_PAIRS = {
+    "e_load":"e_load_state",
+    "e_save": "e_save_state",
+    "e_add": "e_add_object",
+    "e_delete": "e_delete_object",
+    "e_prev": "e_previous_object", 
+    "e_next": "e_next_object", 
+#    "e_walk": , "e_portal", "e_scene", "e_step", "e_reload", "e_jump", "e_state_save", "e_state_load"
+}
+MENU_EDITOR = ["e_load", "e_save", "e_add", "e_delete", "e_prev", "e_next", "e_walk", "e_portal", "e_scene", "e_step", "e_reload", "e_jump", "e_state_save", "e_state_load"]
 EDIT_CLICKABLE = "clickable_area"
 EDIT_SOLID = "solid_area"
 
@@ -6886,7 +6895,7 @@ class Game(metaclass=use_on_events):
         self.hide_cursor = HIDE_MOUSE
         self.mouse_down = (0, 0)  # last press
         self.mouse_position_raw = (0, 0)  # last known position of mouse
-        self.mouse_position = (0, 0)  # last known position of mouse
+        self.mouse_position = (0, 0)  # last known position of mouse, scaled
         #enable the player's clickable area for one event, useful for interacting
         #with player object on occasion
         self._allow_one_player_interaction = False
@@ -7188,8 +7197,8 @@ class Game(metaclass=use_on_events):
     def on_mouse_motion(self, x, y, dx, dy):
         """ Change mouse cursor depending on what the mouse is hovering over """
         self.mouse_position_raw = x, y
-        self.mouse_position = x, self.game.resolution[
-            1] - y  # adjusted for pyglet
+        self.mouse_position = x/self._scale, self.game.resolution[
+            1] - y/self._scale  # adjusted for pyglet
         ox, oy = x, y
         if self.scene:
             x -= self.scene.x  # displaced by camera
@@ -8423,10 +8432,10 @@ class Game(metaclass=use_on_events):
         # and hasattr(self._mouse_object, "pyglet_draw"):
         if self._mouse_object:
             self._mouse_object.x, self._mouse_object.y = self.mouse_position
-            self._mouse_object.x -= self._mouse_object.ax #cancel out anchor
-            self._mouse_object.y -= self._mouse_object.ay #cancel out anchor
-            self._mouse_object.x -= self._mouse_object.w//2
-            self._mouse_object.y -= self._mouse_object.h//2
+#            self._mouse_object.x -= self._mouse_object._ax #cancel out anchor
+#            self._mouse_object.y -= self._mouse_object._ay #cancel out anchor
+#            self._mouse_object.x -= self._mouse_object.w//2
+#            self._mouse_object.y -= self._mouse_object.h//2
             self._mouse_object.pyglet_draw()
 
         if self.editor: #draw mouse coords at mouse pos
@@ -9539,16 +9548,27 @@ def pyglet_editor(game):
     #def on_draw():
     #    game.combined_update(0)
     #game.publish_fps()
-    game._window_editor = pyglet.window.Window(200,600)
-    game._window_editor.on_draw = game.pyglet_editor_draw
-    EDITOR_ITEMS = [
-        ("e_save", (10,10)),
-        ("e_load", (40,10)),
-    ]
+#    game._window_editor = pyglet.window.Window(200,600)
+#    game._window_editor.on_draw = game.pyglet_editor_draw
+#    EDITOR_ITEMS = [
+#        ("e_save", (10,10)),
+#        ("e_load", (40,10)),
+#    ]
+    #edit_object(self, list(self.scene._objects.values()), 0)
+    game.menu_from_factory("editor", MENU_EDITOR)
+    game.menu_from_factory("editor", [
+        (MENU_NEW, new_game),
+        (MENU_LOAD_GAME, savegame_add),
+        (MENU_EXTRAS, menu_extras),
+        (MENU_SETTINGS, menu_settings),
+        (MENU_EXIT_GAME, menu_exit_game),
+        ])
+
+
     for i in EDITOR_ITEMS:
         o = Item(i[0]).smart(game)
         game.add(o)
-        o.load_assets(game)
-        o.x, o.y = i[1]
-    game._window_editor_objects = [i[0] for i in EDITOR_ITEMS]
+#        o.load_assets(game)
+#        o.x, o.y = i[1]
+#    game._window_editor_objects = [i[0] for i in EDITOR_ITEMS]
 
