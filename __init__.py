@@ -3485,7 +3485,20 @@ class Actor(MotionManager, metaclass=use_on_events):
             text = "%s gets %s!" % (self.name, name)
 
         # Actor can only spawn events belonging to it.
-        items = self._says(text, action="portrait", ok=ok)
+        items = self._says(text, action="portrait", ok=ok)        
+        if self.game:
+            msgbox = items[0]
+            item.load_assets(self.game)
+            item.x = msgbox.x + (msgbox.w // 2) - item.w // 2
+            item.y = msgbox.y + (msgbox.h // 2) - item.h // 2
+            items.append(item)
+            item.tmp_creator = self.name
+#            item.tmp_text = text
+            self.game.add_modal(item)
+#        self.game._modals.extend([x.name for x in items])
+            self.tmp_modals.append(item.name)
+#            self.tmp_items = [label.name]
+
 #        if logging: log.info("%s has requested game to wait for on_gets to finish, so game.waiting to True."%(self.name))
 #        self.game._waiting = True
 
@@ -5345,6 +5358,7 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         self.sort_by = ALPHABETICAL
         self.reverse_sort = False
         self.index = 0  # where in the index to start showing
+        self.limit = -1 # number of items to display at once, -1 is infinite
         self.selected = None
         self._mouse_motion = self._mouse_motion_collection
         self.mx, self.my = 0, 0  # in pyglet format
@@ -5404,10 +5418,17 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
                 show, key=lambda x: x.lower(), reverse=self.reverse_sort)
         return self._sorted_objects
 
+    def get_displayed_objects(self):
+        if self.limit == -1:
+            show = self._get_sorted()[self.index:]
+        else:
+            show = self._get_sorted()[self.index:(self.index+self.limit)]
+        return show    
+
     def get_object(self, pos):
         """ Return the object at this spot on the screen in the collection """
         mx, my = pos
-        show = self._get_sorted()[self.index:]
+        show = self.get_displayed_objects()
         for obj_name in show:
             i = get_object(self.game, obj_name)
             if hasattr(i, "_cr") and collide(i._cr, mx, my):
@@ -5427,14 +5448,13 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         self.mx, self.my = rx, ry
         obj = self.get_object((self.mx, self.my))
         ix, iy = game.get_info_position(self)
-        t = obj.fog_display_text(None) if obj else " "
+        txt = obj.fog_display_text(None) if obj else " "
         if obj: 
             game.mouse_cursor = MOUSE_CROSSHAIR
         else:
             game.mouse_cursor = MOUSE_POINTER
         game.info(
-            t, ix, iy, self.display_text_align)
-
+            txt, ix, iy, self.display_text_align)
 
     def _interact_default(self, game, collection, player):
         # XXX should use game.mouse_press or whatever it's calleed
@@ -5468,8 +5488,9 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
 
         w = self.clickable_area.w
         dx, dy = self.tile_size
-        objs = self._get_sorted()
-        for obj_name in objs:
+#        objs = self._get_sorted()
+        show = self.get_displayed_objects()
+        for obj_name in show:
             obj = get_object(self.game, obj_name)
             if not obj:
                 log.error(
@@ -5759,7 +5780,7 @@ class Camera(metaclass=use_on_events):  # the view manager
             rule = mixer.music_rules[scene._music_filename] if scene._music_filename in mixer.music_rules else None
             start = rule.position if rule else 0
 #            mixer.music_fade_out(0.5)
-            mixer.music_play(scene._music_filename, start=start)
+            mixer.on_music_play(scene._music_filename, start=start)
 #            mixer.music_fade_in(0.5)
  #       self._play_scene_music()
 #        if game.scene._ambient_filename:
@@ -6095,8 +6116,6 @@ class Mixer(metaclass=use_on_events):
         if game:
             options = game.parser.parse_args()
             self._session_mute = True if options.mute == True else False
-            print("*** SETTING SESSION MUTE2 ***",self._session_mute) 
-
 
     def __getstate__(self): #actor.getstate
         """ Prepare the object for pickling """ 
@@ -6110,7 +6129,6 @@ class Mixer(metaclass=use_on_events):
     def __setstate__(self, d):
         """ Used by load game to restore the current music settings """
         self.__dict__.update(d)   # update attributes
-        self.initialise_players(self.game)
 
     def on_resume(self):
         """ Resume from a load file, force all sounds and music to play """
@@ -6550,7 +6568,7 @@ def load_game_pickle(game, fname, meta_only=False):
 
             #restore mixer
             game.mixer.game = game 
-#            game.mixer.initialise_players(game)
+            game.mixer.initialise_players(game)
 
             _pyglet_fonts = pickle.load(f)
 
@@ -6692,6 +6710,7 @@ def idle( self ):
     Courtesy Twisted Pair:
     https://twistedpairdevelopment.wordpress.com/2011/06/28/pyglet-mouse-events-and-rendering/
     """
+#    print("PYGLET IDLE")
     pyglet.clock.tick( poll = True )
     # don't call on_draw
     return pyglet.clock.get_sleep_time( sleep_idle = True )
@@ -6715,6 +6734,7 @@ class Window(pyglet.window.Window):
         super(Window, self).__init__(*args, **kwargs)
 
     def on_draw(self):
+#        print("WINDOW DRAW")
         self.clear()
 
 
@@ -7941,7 +7961,7 @@ class Game(metaclass=use_on_events):
         # event_loop.run()
         options = self.parser.parse_args()
 #        self.mixer._force_mute =  #XXX sound disabled for first draft
-        self.mixer._session_mute = False
+        self.mixer._session_mute = True if options.mute == True else False
         if options.output_walkthrough == True:
             self._output_walkthrough = True
             print("Walkthrough for %s"%self.name)
@@ -8282,6 +8302,7 @@ class Game(metaclass=use_on_events):
 
     def update(self, dt, single_event=False):  # game.update
         """ Run update on scene objects """
+#        print("GAME UPDATE")
         scene_objects = []
         fn = get_function(self, "game_update") #special update function game can use
         if fn:
@@ -8345,6 +8366,7 @@ class Game(metaclass=use_on_events):
 
         if not self.scene:
             return
+#        print("GAME DRAW")
 
         # undo alpha for pyglet drawing
  #       glPushMatrix() #start the scene draw
@@ -8412,9 +8434,6 @@ class Game(metaclass=use_on_events):
             if obj.z > 1.0:
                 obj.pyglet_draw(absolute=False)
 
-        if self._info_object.display_text != "":
-            self._info_object.pyglet_draw(absolute=False)
-
         if popMatrix is True:
             glPopMatrix() #finish the scene draw
 
@@ -8422,6 +8441,9 @@ class Game(metaclass=use_on_events):
             item = get_object(self, item_name)
             item.game = self
             item.pyglet_draw(absolute=True)
+
+        if self._info_object.display_text != "":
+            self._info_object.pyglet_draw(absolute=False)
 
         for name in self._modals:
             modal = get_object(self, name)
