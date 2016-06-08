@@ -581,6 +581,11 @@ def get_image_size(fname):
     return width, height
 
 
+def rgb2gray(rgb):
+    """ based on matlab """
+    gray = int(0.2989 * rgb[0] + 0.5870 * rgb[1] + 0.1140 * rgb[2])
+    return gray, gray, gray
+
 def deslugify(txt):
     """ replace underscores with spaces, basically """
     return txt.replace("_", " ")
@@ -1613,6 +1618,10 @@ class Rect(object):
 
     def serialise(self):
         return "[{}, {}, {}, {}, {}]".format(self.x, self.y, self.w, self.h, self.scale)
+
+    @property
+    def flat(self):
+        return (self.x, self.y, self._w, self._h)
 
     def __str__(self):
         return self.serialise()
@@ -3185,6 +3194,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                 label = item
             item.collide_mode = COLLIDE_NEVER
         # add the options
+        msgbox = items[0]
         for i, option in enumerate(args):
             text, callback = option
             if self.game.player:
@@ -3202,13 +3212,16 @@ class Actor(MotionManager, metaclass=use_on_events):
             remember = (self.name, statement, text)
             if remember in self.game._selected_options and "colour" in kwargs:
                 r, g, b = kwargs["colour"]
-                kwargs["colour"] = (r // 2, g // 2, b // 2)
+                kwargs["colour"] = rgb2gray((r*.667, g*.667, b*.667)) #rgb2gray((r / 2, g / 2, b / 2))
 #            def over_option
 #            kwargs["over"] = over_option
             opt = Text("option{}".format(i), display_text=text, **kwargs)
             if i in keys.keys():
                 opt.on_key(keys[i])
-            opt.x, opt.y = label.x + 10, label.y + label.h + i * opt.h + 5
+            padding_x = 10
+            opt.x, opt.y = label.x + padding_x, label.y + label.h + i * opt.h + 5
+            rx,ry,rw,rh = opt._clickable_area.flat
+            opt.on_reclickable(Rect(rx, ry, msgbox.w - (label.x + padding_x), rh)) #expand option to width of msgbox
             # store this Actor so the callback can modify it.
             opt.tmp_creator = self.name
             # store the colour so we can undo it after hover
@@ -3489,8 +3502,8 @@ class Actor(MotionManager, metaclass=use_on_events):
         if self.game:
             msgbox = items[0]
             item.load_assets(self.game)
-            item.x = msgbox.x + (msgbox.w // 2) - item.w // 2
-            item.y = msgbox.y + (msgbox.h // 2) - item.h // 2
+            item.x = msgbox.x + (msgbox.w // 2) - item.w // 2 #- item._ax
+            item.y = msgbox.y + (msgbox.h // 2) - item.h // 2 #- item._ay
             items.append(item)
             item.tmp_creator = self.name
 #            item.tmp_text = text
@@ -7466,7 +7479,7 @@ class Game(metaclass=use_on_events):
         if self.scene:
             scene_objects = copy.copy(self.scene._objects)
             if (ALLOW_USE_ON_PLAYER and self.player) or \
-                    (self._allow_one_player_interaction is True): #add player object
+                    (self._allow_one_player_interaction == True): #add player object
                 scene_objects.insert(0, self.player.name) #prioritise player over other items
             for obj_name in scene_objects:
                 obj = get_object(self, obj_name)
@@ -7494,6 +7507,7 @@ class Game(metaclass=use_on_events):
                         if self.mouse_mode == MOUSE_USE and self._mouse_object and allow_final_use:
                             user_trigger_use(self, obj, self._mouse_object)
                             self._mouse_object = None
+                            self.mouse_mode = MOUSE_INTERACT
                             return
                         elif obj.allow_interact:
                             user_trigger_interact(self, obj)
@@ -8173,6 +8187,7 @@ class Game(metaclass=use_on_events):
                 print("Use %s on %s."%(obj_name, subject_name))
             user_trigger_use(self, subject, obj)
             self._mouse_object = None     
+            self.mouse_mode = MOUSE_INTERACT
         elif function_name == "goto":
             # expand the goto request into a sequence of portal requests
             global scene_path
