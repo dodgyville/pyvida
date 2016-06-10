@@ -845,14 +845,24 @@ def option_mouse_motion(game, btn, player, *args, **kwargs2):
 def close_on_says(game, obj, player):
     """ Close an actor's msgbox and associated items """
     # REMOVE ITEMS from obj.items instead
+    if not hasattr(obj, "tmp_creator"):
+        log.warning("%s has no tmp_creator in close_on_says. Might not be a problem in walkthrough_auto mode.", obj.name)
+        return
     actor = get_object(game, obj.tmp_creator)
     try:
         for item in actor.tmp_modals:
             if item in game._modals:
                 game._modals.remove(item)
-    except:
-        import pdb;pdb.set_trace()
-    game._remove(actor.tmp_items) #remove temporary items from game
+    except TypeError:
+        log.warning("%s has no tmp_items in close_on_says. Might not be a problem in walkthrough_auto mode.", actor.name)
+        return
+
+    try:
+        game._remove(actor.tmp_items) #remove temporary items from game
+    except AttributeError:
+        log.warning("%s has no tmp_items in close_on_says. Might not be a problem in walkthrough_auto mode.", actor.name)
+        return
+        
     actor.busy -= 1
     actor.tmp_items = None
     actor.tmp_modals = None
@@ -2923,12 +2933,13 @@ class Actor(MotionManager, metaclass=use_on_events):
             d = get_smart_directory(game, self)
 
         myd = os.path.join(d, name)
-        absd = os.path.join(os.getcwd(),myd)
+        absd = os.path.join(os.getcwd(), myd)
         if not os.path.isdir(absd):  # fallback to pyvida defaults
             this_dir, this_filename = os.path.split(__file__)
             log.debug("Unable to find %s, falling back to %s" %
                       (myd, this_dir))
             myd = os.path.join(this_dir, d, name)
+            absd = os.path.join(os.getcwd(), myd)
 
         self._directory = myd
 
@@ -3515,7 +3526,7 @@ class Actor(MotionManager, metaclass=use_on_events):
 #        if logging: log.info("%s has requested game to wait for on_gets to finish, so game.waiting to True."%(self.name))
 #        self.game._waiting = True
 
-        if self.game._headless:  # headless mode skips sound and visuals
+        if self.game._walkthrough_auto:  # headless mode skips sound and visuals
             items[0].trigger_interact()  # auto-close the on_says
 
     def _loses(self, item):
@@ -4061,11 +4072,17 @@ class Actor(MotionManager, metaclass=use_on_events):
 
     def _goto(self, destination, ignore=False, block=False, next_action=None):
         """ Get a path to the destination and then start walking """
+
+        # if in auto mode but not headless, force player to walk everywhere.
+        if self.game and self == self.game.player and self.game._walkthrough_auto == True and self.game._headless == False:
+            block = True
+
         point = get_point(self.game, destination, self)
         if next_action:
             self._next_action = next_action
 
         if self.game._headless:  # skip pathplanning if in headless mode
+            print("JUMP TO POINT")
             self.x, self.y = point
             return
 
@@ -5163,7 +5180,6 @@ class Scene(MotionManager, metaclass=use_on_events):
     def on_music(self, filename):
         """ What music to play on entering the scene? """
         self._music_filename = filename
-        print("**SCENE MUSIC FILE UPDATED TO",filename)
 
     def on_ambient(self, filename):
         """ What ambient sound to play on entering the scene? """
@@ -7140,7 +7156,8 @@ class Game(metaclass=use_on_events):
             # ffmpeg -r 16 -pattern_type glob -i '*.png' -c:v libx264 out.mp4
             d = "screencast %s" % datetime.now()
             d = os.path.join(DIRECTORY_SAVES, d)
-            os.mkdir(d)
+            if not os.path.isdir(d):
+                os.mkdir(d)
             print("saving to", d)
             self.directory_screencast = d
         if symbol == pyglet.window.key.F8:  # stop recording
@@ -7615,7 +7632,7 @@ class Game(metaclass=use_on_events):
         self.parser.add_argument(
             "-H", "--headless", action="store_true", dest="headless", help="Run game as headless (no video)")
         self.parser.add_argument("-i", "--imagereactor", action="store_true",
-                                 dest="artreactor", help="Save images from each scene (don't run headless)")
+                                 dest="imagereactor", help="Save images from each walkthrough step flagged with screenshot (don't run headless)")
         self.parser.add_argument("-k", "--kost <background> <actor> <items>", nargs=3, dest="estimate_cost",
                                  help="Estimate cost of artwork in game (background is cost per background, etc)")
         self.parser.add_argument(
@@ -7983,6 +8000,7 @@ class Game(metaclass=use_on_events):
             print("Created %s, updated %s"%(t,t))
         # switch on test runner to step through walkthrough
         if options.target_step:
+            print("AUTO WALKTHROUGH")
             self._walkthrough_auto = True #auto advance
             first_step = options.target_step[0]
             last_step = options.target_step[1] if len(options.target_step) == 2 else None
@@ -7999,8 +8017,8 @@ class Game(metaclass=use_on_events):
                 self._walkthrough_target = int(first_step)
             else:  # use a label
                 for i, x in enumerate(self._walkthrough):
-                    if x[-1] == first_step:
-                        self._walkthrough_start_name = x[-1]
+                    if x[0] == savepoint and x[1] == first_step:
+                        self._walkthrough_start_name = x[1]
                         if not last_step: 
                             self._walkthrough_target = i + 1
             if not last_step:
@@ -8016,6 +8034,14 @@ class Game(metaclass=use_on_events):
         if options.headless:
             self.on_set_headless(True)
             self._walkthrough_auto = True #auto advance
+
+        if options.imagereactor == True:
+            """ save a screenshot as requested by walkthrough """
+            if self._headless is True:
+                print("WARNING, ART REACTOR CAN'T RUN IN HEADLESS MODE")
+            d = "imagereactor %s" % datetime.now()
+            self._imagereactor_directory = os.path.join(DIRECTORY_SAVES, d)
+
         if options.fullscreen:
             self.fullscreen = True
             self._window.set_fullscreen(True)
@@ -8048,6 +8074,11 @@ class Game(metaclass=use_on_events):
         if len(self._walkthrough) == 0 or self._walkthrough_index >= len(self._walkthrough) or self._walkthrough_target==0:
             return  # no walkthrough
         walkthrough = self._walkthrough[self._walkthrough_index]
+        extras = {} if len(walkthrough) == 2 else walkthrough[-1] 
+        #extra options include:
+        # "screenshot": True -- take a screenshot when screenflag flag enabled
+        # "track": True -- when this event triggers the first time, advance the tracking system
+        # "hint": <str> -- when this event triggers for the first time, set game.storage.hint to this value
         global benchmark_events
         t = datetime.now() - benchmark_events
         if self._output_walkthrough is False:
@@ -8114,8 +8145,17 @@ class Game(metaclass=use_on_events):
         else:
             self._trunk_step = True
 
+        options = self.parser.parse_args()
+        if options.imagereactor == True and "screenshot" in extras:
+            """ save a screenshot as requested by walkthrough """
+            if self._headless is True:
+                print("WARNING, ART REACTOR CAN'T RUN IN HEADLESS MODE")
+            d = self._imagereactor_directory
+            if not os.path.isdir(d):
+                os.mkdir(d)
+            self.camera.on_screenshot(os.path.join(d, "image%0.5i.png"%self._walkthrough_index))
         if function_name == "savepoint":
-            human_readable_name = walkthrough[-1]
+            human_readable_name = walkthrough[1]
         elif function_name == "interact":
             button = pyglet.window.mouse.LEFT
             modifiers = 0
