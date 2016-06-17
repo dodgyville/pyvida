@@ -702,9 +702,13 @@ def get_point(game, destination, actor=None):
         obj = destination
 
     if obj:
-        destination = obj.sx + obj.x, obj.sy + obj.y
+        x,y = obj.sx + obj.x, obj.sy + obj.y
+        if obj._parent:
+            parent = get_object(game, obj._parent)
+            x += parent.x
+            y += parent.y
+        destination = (x,y)
     return destination
-
 
 def get_object(game, obj):
     """ get an object from a name or object """
@@ -811,6 +815,7 @@ def valid_goto_point(game, scene, obj, destination):
     point = get_point(game, destination, obj)
     if scene and scene.walkarea:
         if not scene.walkarea.valid(*point):
+            log.info("Not a valid goto point for %s"%obj.name)
             return False
     return True
 
@@ -1127,10 +1132,12 @@ class AchievementManager(object, metaclass=use_on_events):
         if not game.settings.silent_achievements:
             game.achievement.load_assets(game)
             game.achievement.relocate(game.scene, (120, game.resolution[1]))
+            game.achievement.z = 3
 
             text = Text("achievement_text", pos=(130,240), display_text=a.name, colour=FONT_ACHIEVEMENT_COLOUR, font=FONT_ACHIEVEMENT, size=FONT_ACHIEVEMENT_SIZE)
             game.add(text, replace=True)
             text._ay = 200
+            text.z = 3
             text.reparent("achievement")
             text.relocate(game.scene)
 
@@ -2582,6 +2589,10 @@ class Actor(MotionManager, metaclass=use_on_events):
             arrived = target.collidepoint(self.x, self.y) or self._goto_deltas_index >= len(self._goto_deltas)
             if arrived:
                 self.busy -= 1
+                if logging:
+                    log.info("%s has arrived decrementing "
+                             "self.busy to %s, may not be finished moving though." % (self.name, self.busy))
+
                 if len(self._goto_points) > 0:  # continue to follow the path
                     destination = self._goto_points.pop(0)
                     point = get_point(self.game, destination, self)
@@ -3163,6 +3174,11 @@ class Actor(MotionManager, metaclass=use_on_events):
             return
         self.resource._frame_index = (
             self.resource._frame_index + num_frames) % len(self.resource._animation.frames)
+
+    def on_random_frame(self):
+        """ Advance the current action to a random frame """
+        i = random.randint(0, len(self.resource._animation.frames))
+        self._frame(i)
 
     def on_asks(self, statement, *args, **kwargs):
         """ A queuing function. Display a speech bubble with text and several replies, and wait for player to pick one.
@@ -3980,6 +3996,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         x, y = self._goto_x - self.x, self._goto_y - self.y
         distance = math.hypot(x, y)
         if -5 < distance < 5:
+            log.info("%s already there, so cancelling goto"%self.name)
             self._cancel_goto()
             return  # already there
 
@@ -4004,7 +4021,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                     goto_motion = action.name
                 break
 
-
+        log.info("%s preferred goto action is %s"%(self.name, goto_action))
         if goto_motion is None: #create a set of evenly spaced deltas to get us there:
             # how far we can travel along the distance in one update
             d = self.action.speed / distance
@@ -4068,7 +4085,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             (self.x + displacement[0], self.y + displacement[1]), ignore, block, next_action)
 
     def on_goto(self, destination, ignore=False, block=False, next_action=None):
-        self._goto(destination, ignore=ignore, block=block, next_action=None)
+        self._goto(destination, ignore=ignore, block=block, next_action=next_action)
 
     def _goto(self, destination, ignore=False, block=False, next_action=None):
         """ Get a path to the destination and then start walking """
@@ -4082,7 +4099,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             self._next_action = next_action
 
         if self.game._headless:  # skip pathplanning if in headless mode
-            print("JUMP TO POINT")
+            log.info("%s jumps to point."%self.name)
             self.x, self.y = point
             return
 
@@ -4414,7 +4431,7 @@ class Emitter(Item, metaclass=use_on_events):
 
         if not self.action:
             if logging:
-                log.error("Emitter %s has no actions" % (self.name))
+                log.error("Emitter %s has no actions. Is it in the Emitter directory?" % (self.name))
             return
         if not self.allow_draw:
             return
@@ -4440,6 +4457,7 @@ class Emitter(Item, metaclass=use_on_events):
                                  self.game.camera._shake_y)
 
             if self.resource is not None:
+#                import pdb; pdb.set_trace()
                 self.resource._frame_index = p.action_index%self.action.num_of_frames
                 self.resource.scale = p.scale
 #                if i == 10: print(i, p.index, p.scale)
@@ -7432,6 +7450,7 @@ class Game(metaclass=use_on_events):
 
         y = self.game.resolution[1] - y  # invert y-axis if needed
         ay = self.game.resolution[1] - ay
+        log.debug("mouse release")
 
         # we are editing something, so don't interact with objects
         if self.editor and self._selector: #select an object
@@ -7480,15 +7499,19 @@ class Game(metaclass=use_on_events):
 
         potentially_do_idle = False
         if len(self._events) == 1:
-            # if the only event is a goto to a uninteresting point, clear it.
-            if self._events[0][0].__name__ == "on_goto":
+            # if the only event is a goto for the player to a uninteresting point, clear it.
+            if self._events[0][0].__name__ == "on_goto" and self._events[0][1][0] == self.player:
                 if self.player._finished_goto:
                     finished_fn = get_function(self, self.player._finished_goto, self.player)
                     if finished_fn:
                         finished_fn(self)
                     else:
+                        print("there is a finished_goto fn but it can not be found")
                         import pdb; pdb.set_trace()
                 self.player.busy -= 1
+                if logging:
+                    log.debug("%s has cancelled on_goto, decrementing "
+                             "self.player.busy to %s" % (self.player.name, self.player.busy))
                 self.player._cancel_goto()
                 potentially_do_idle = True
             else:
