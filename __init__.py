@@ -5210,7 +5210,54 @@ class Scene(MotionManager, metaclass=use_on_events):
         pass
 
 class Label(pyglet.text.Label):
-    pass
+        pass
+
+from pyglet.text import decode_html, HTMLLabel, DocumentLabel
+
+
+class HTMLLabel(DocumentLabel):
+    '''HTML formatted text label.
+    
+    A subset of HTML 4.01 is supported.  See `pyglet.text.formats.html` for
+    details.
+    '''
+    def __init__(self, text='', font_name=None, font_size=None, bold=False, italic=False, color=(255, 255, 255, 255), x=0, y=0, width=None, height=None, anchor_x='left', anchor_y='baseline', halign='left', multiline=False, dpi=None, batch=None, group=None):
+
+#    def __init__(self, text='', location=None, 
+#                 x=0, y=0, width=None, height=None,
+#                 anchor_x='left', anchor_y='baseline',
+#                 multiline=False, dpi=None, batch=None, group=None):
+        self._text = text
+        self._location = location
+        self._font_name = font_name
+        self._font_size = font_size
+
+        document = decode_html(text, location)
+        super().__init__(document, x, y, width, height, 
+                                        anchor_x, anchor_y,
+                                        multiline, dpi, batch, group)
+
+    def _set_text(self, text):
+        import pdb; pdb.set_trace()
+        self._text = text
+        self.document = decode_html(text, self._location)
+
+#    @DocumentLabel.text.getter
+    def _get_text(self):   
+        return "<font face='%s' size='%i'>%s</font>"%(self._font_name, self._font_size*4, self.__text)
+#        return self._text
+
+#    def _update(self):
+#        import pdb; pdb.set_trace()
+#        super()._update()
+
+
+    text = property(_get_text, _set_text, 
+                    doc='''HTML formatted text of the label.
+
+    :type: str
+    ''')
+
 
 class Text(Item):
 
@@ -5255,7 +5302,7 @@ class Text(Item):
             0, 0, self.resource.content_width, self.resource.content_height)
 
         wrap = self.wrap if self.wrap > 0 else 1  # don't allow 0 width labels
-        tmp = pyglet.text.Label(self._display_text,
+        tmp = Label(self._display_text,
                                 font_name=font_name,
                                 font_size=size,
                                 multiline=True,
@@ -5288,17 +5335,17 @@ class Text(Item):
 
         self._animated_text = self._display_text[:self._text_index]
         wrap = self.wrap if self.wrap > 0 else 1  # don't allow 0 width labels
-        try:
-            label = Label(self._animated_text,
-                                            font_name=self.font_name,
-                                            font_size=self.size,
-                                            color=c,
-                                            multiline=True,
-                                            width=wrap,
-                                            x=self.x, y=self.y,
-                                            anchor_x='left', anchor_y='top')
-        except TypeError:
-            print("ERROR: Unable to create Label for '%s'"%self._animated_text)
+        label = Label(self._animated_text,
+                                        font_name=self.font_name,
+                                        font_size=self.size,
+                                        color=c,
+                                        multiline=True,
+                                        width=wrap,
+                                        x=self.x, y=self.y,
+                                        anchor_x='left', anchor_y='top')
+#        import pdb; pdb.set_trace()
+#        except TypeError:
+#            print("ERROR: Unable to create Label for '%s'"%self._animated_text)
 
         set_resource(self.resource_name, resource=label)
 
@@ -5567,7 +5614,7 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
                 final_x, final_y = int(x) + (dx/2) - (sw/2), int(y)+ (dy/2) - (sh/2)
                 sprite.x, sprite.y = final_x, self.game.resolution[1] - final_y
                 #pyglet seems to render Labels and Sprites at x,y differently, so compensate.
-                if isinstance(sprite, pyglet.text.Label):
+                if isinstance(sprite, Label):
                     pass
                 else:
                     sprite.y -= sh
