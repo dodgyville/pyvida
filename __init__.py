@@ -6207,9 +6207,6 @@ class Mixer(metaclass=use_on_events):
         else:
             self._music_player = PlayerPyglet()
             self._sfx_player = PlayerPyglet()
-        if game:
-            options = game.parser.parse_args()
-            self._session_mute = True if options.mute == True else False
 
     def __getstate__(self): #actor.getstate
         """ Prepare the object for pickling """ 
@@ -6234,6 +6231,9 @@ class Mixer(metaclass=use_on_events):
 
     def on_publish_volumes(self):
         """ Use game.settings to set various volumes """
+        if self.game:
+            options = self.game.parser.parse_args()
+            self._session_mute = True if options.mute == True else False
         v = self.game.settings.music_volume
         if self.game.settings.mute == True:
             v = 0
@@ -8216,6 +8216,7 @@ class Game(metaclass=use_on_events):
             self._trunk_step = True
 
         options = self.parser.parse_args()
+
         if options.imagereactor == True and "screenshot" in extras:
             """ save a screenshot as requested by walkthrough """
             if self._headless is True:
