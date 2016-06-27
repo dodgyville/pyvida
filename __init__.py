@@ -27,6 +27,7 @@ from datetime import datetime, timedelta
 from gettext import gettext
 from random import choice, randint, uniform
 from time import sleep
+from math import sin, cos, radians
 
 import tkinter as tk
 import tkinter.filedialog
@@ -5758,6 +5759,7 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._motion = []
         self._motion_index = 0
 
+
     def _update(self, dt, obj=None): #camera.update
         if self.game.scene:
             self.game.scene.x = self.game.scene.x + self._goto_dx
@@ -6150,7 +6152,6 @@ REMEMBER = 3 #remember where we were in the song when we last played it.
 
 class MusicRule():
     """ Container class for music rules, used by Mixer and Scenes """
-    """ TODO: WIP, not used yet """
     def __init__(self, filename):
         self.filename = filename
         self.mode = FRESH_BUT_SHARE
@@ -6269,7 +6270,7 @@ class Mixer(metaclass=use_on_events):
         """
         if self._music_filename:
             current_rule = self.music_rules[self._music_filename]
-            current_rule.position = self._music_player.position()
+            current_rule.position = self._music_position
         if fname:
             if fname in self.music_rules:
                 rule = self.music_rules[fname]
@@ -6284,9 +6285,8 @@ class Mixer(metaclass=use_on_events):
             if rule.mode == FRESH:
                 default_start = 0
             absfilename = os.path.abspath(fname)
-            if os.path.exists(absfilename):
+            if os.path.exists(absfilename): #new music
                 log.info("Loading music file %s" % absfilename)
-#                music = pyglet.resource.media(filename)
                 self._music_player.load(absfilename)
                 self._music_filename = fname
                 print("SETTING CURRENT MUSIC FILENAME TO", fname)
@@ -6352,7 +6352,8 @@ class Mixer(metaclass=use_on_events):
 
     def _update(self, dt, obj=None):
         """ Called by game.update to handle fades and effects """
-        log.warning("FADING NOT DONE YET")
+        self._music_position += dt #where the current music is
+
         if self._sfx_volume_target is not None: #fade the volume up or down
             v = self._sfx_volume + self._sfx_volume_step
             finish = False
