@@ -4948,6 +4948,16 @@ class Scene(MotionManager, metaclass=use_on_events):
         return self._background
     """
 
+    @property
+    def objects_sorted(self):
+        """ Sort scene objects by z value """
+        obj_names = copy.copy(self._objects)
+        objs = []
+        for obj in obj_names:
+            objs.append(get_object(self.game, obj))
+        objs.sort(key=lambda x: x.z, reverse=True)  # sort by z-value
+        return objs
+
     def smart(self, game):  # scene.smart
         self.game = game
         self._load_layers(game)
@@ -5446,14 +5456,14 @@ class Text(Item):
 
 class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
 
-    def __init__(self, name, callback, padding=(10, 10), dimensions=(300, 300), tile_size=(80, 80)):
+    def __init__(self, name, callback, padding=(10, 10), dimensions=(300, 300), tile_size=(80, 80), limit=-1):
         super().__init__(name)
         self._objects = []
         self._sorted_objects = None
         self.sort_by = ALPHABETICAL
         self.reverse_sort = False
         self.index = 0  # where in the index to start showing
-        self.limit = -1 # number of items to display at once, -1 is infinite
+        self.limit = limit # number of items to display at once, -1 is infinite
         self.selected = None
         self._mouse_motion = self._mouse_motion_collection
         self.mx, self.my = 0, 0  # in pyglet format
@@ -7382,7 +7392,8 @@ class Game(metaclass=use_on_events):
             if len(self._menu) > 0 and self._menu_modal:
                 return  # menu is in modal mode so block other objects
 
-            scene_objects = copy.copy(self.scene._objects)
+#            scene_objects = copy.copy(self.scene._objects)
+            scene_objects = self.scene.objects_sorted
             if (ALLOW_USE_ON_PLAYER and self.player) or \
                     (self._allow_one_player_interaction is True): #add player object
                 scene_objects.insert(0, self.player.name) #prioritise player over other items
@@ -7565,7 +7576,8 @@ class Game(metaclass=use_on_events):
             else:
                 return
         if self.scene:
-            scene_objects = copy.copy(self.scene._objects)
+#            scene_objects = copy.copy(self.scene._objects)
+            scene_objects = self.scene.objects_sorted
             if (ALLOW_USE_ON_PLAYER and self.player) or \
                     (self._allow_one_player_interaction == True): #add player object
                 scene_objects.insert(0, self.player.name) #prioritise player over other items
