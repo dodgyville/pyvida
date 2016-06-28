@@ -7396,7 +7396,8 @@ class Game(metaclass=use_on_events):
             scene_objects = self.scene.objects_sorted
             if (ALLOW_USE_ON_PLAYER and self.player) or \
                     (self._allow_one_player_interaction is True): #add player object
-                scene_objects.insert(0, self.player.name) #prioritise player over other items
+                if self.player in scene_objects:
+                    scene_objects.insert(0, self.player.name) #prioritise player over other items
             for obj_name in scene_objects:
                 obj = get_object(self, obj_name)
                 if not obj.allow_draw:
@@ -7580,7 +7581,8 @@ class Game(metaclass=use_on_events):
             scene_objects = self.scene.objects_sorted
             if (ALLOW_USE_ON_PLAYER and self.player) or \
                     (self._allow_one_player_interaction == True): #add player object
-                scene_objects.insert(0, self.player.name) #prioritise player over other items
+                if self.player in scene_objects:
+                    scene_objects.insert(0, self.player.name) #prioritise player over other items
             for obj_name in scene_objects:
                 obj = get_object(self, obj_name)
                 if self.mouse_mode == MOUSE_USE and self._mouse_object == obj: continue #can't use item on self
