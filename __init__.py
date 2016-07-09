@@ -6342,6 +6342,10 @@ class Mixer(metaclass=use_on_events):
     def on_music_stop(self):
         self._music_player.pause()
 
+    def on_music_restart(self):
+        self._music_player.play()
+
+
     def on_music_volume(self, val):
         """ val 0.0 - 1.0 """
         new_volume = self._music_volume = val
