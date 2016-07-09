@@ -5466,6 +5466,7 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         self.limit = limit # number of items to display at once, -1 is infinite
         self.selected = None
         self._mouse_motion = self._mouse_motion_collection
+        self._mouse_scroll = None
         self.mx, self.my = 0, 0  # in pyglet format
 
         self.callback = callback
@@ -6933,6 +6934,7 @@ class Game(metaclass=use_on_events):
         self._window.on_mouse_press = self.on_mouse_press
         self._window.on_mouse_release = self.on_mouse_release
         self._window.on_mouse_drag = self.on_mouse_drag
+        self._window.on_mouse_scroll = self.on_mouse_scroll
         self.last_mouse_release = None  # track for double clicks
         self._pyglet_batches = []
         self._gui_batch = pyglet.graphics.Batch()
@@ -7183,7 +7185,10 @@ class Game(metaclass=use_on_events):
                 game.editor.obj.x += 1
 
         #check menu items for key matches
-        for i in self._menu:
+        objs = copy.copy(self._menu)
+        if self.scene:
+            objs.extend(self.scene._objects)
+        for i in objs:
             obj = get_object(self, i)
             if obj and obj._interact_key == symbol:
                 obj.trigger_interact() #XXX possible user_trigger_interact()
@@ -7324,12 +7329,8 @@ class Game(metaclass=use_on_events):
             y += obj._parent.y     
         return (x + obj.nx, y + obj.ny)
 
-
-    def on_mouse_motion(self, x, y, dx, dy):
-        """ Change mouse cursor depending on what the mouse is hovering over """
-        self.mouse_position_raw = x, y
-        self.mouse_position = x/self._scale, self.game.resolution[
-            1] - y/self._scale  # adjusted for pyglet
+    def get_point_from_raw(self, x,y):
+        """ Take a point from the mouse on the screen and convert it to in-engine coords """
         ox, oy = x, y
         if self.scene:
             x -= self.scene.x  # displaced by camera
@@ -7341,6 +7342,30 @@ class Game(metaclass=use_on_events):
         # if window is being scaled
         ox, oy = ox / self._scale, oy / self._scale
         oy = self.game.resolution[1] - oy
+        return ox, oy
+
+
+    def on_mouse_scroll(self, x, y, scroll_x, scroll_y):
+        ox,oy = self.get_point_from_raw(x,y)
+        objs = copy.copy(self._modals)
+        objs.extend(self._menu)
+        for name in objs:
+            obj = get_object(self, name)
+            if obj.collide(ox, oy) and getattr(obj, "_mouse_scroll", None):
+                obj._mouse_scroll(self, obj, scroll_x, scroll_y)
+
+#            for obj_name in self._menu:
+#                obj = get_object(self, obj_name)
+#            scene_objects = self.scene.objects_sorted
+#            for obj_name in scene_objects:
+
+    def on_mouse_motion(self, x, y, dx, dy):
+        """ Change mouse cursor depending on what the mouse is hovering over """
+        self.mouse_position_raw = x, y
+        self.mouse_position = x/self._scale, self.game.resolution[
+            1] - y/self._scale  # adjusted for pyglet
+
+        ox,oy = self.get_point_from_raw(x,y)
 
         if not self.scene or self._headless:
             return
