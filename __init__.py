@@ -7332,12 +7332,7 @@ class Game(metaclass=use_on_events):
     def get_point_from_raw(self, x,y):
         """ Take a point from the mouse on the screen and convert it to in-engine coords """
         ox, oy = x, y
-        if self.scene:
-            x -= self.scene.x  # displaced by camera
-            y += self.scene.y
 
-        x, y = x / self._scale, y / self._scale  # if window is being scaled
-        y = self.game.resolution[1] - y  # invert y-axis if needed
 
         # if window is being scaled
         ox, oy = ox / self._scale, oy / self._scale
@@ -7366,6 +7361,13 @@ class Game(metaclass=use_on_events):
             1] - y/self._scale  # adjusted for pyglet
 
         ox,oy = self.get_point_from_raw(x,y)
+
+        if self.scene:
+            x -= self.scene.x  # displaced by camera
+            y += self.scene.y
+
+        x, y = x / self._scale, y / self._scale  # if window is being scaled
+        y = self.game.resolution[1] - y  # invert y-axis if needed
 
         if not self.scene or self._headless:
             return
