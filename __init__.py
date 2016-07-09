@@ -7411,8 +7411,9 @@ class Game(metaclass=use_on_events):
                     menu_collide = True
                 else:  # unhover over menu item
                     if obj.action and obj.action.name == "over" and (obj.allow_interact or obj.allow_use or obj.allow_look):
-                        if "idle" in obj._actions:
-                            obj._do('idle')
+                        idle = obj._idle  # don't use obj.default_idle as it is scene dependent
+                        if idle in obj._actions:
+                            obj._do(idle)
                 if menu_collide:
                     return
 
