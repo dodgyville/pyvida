@@ -183,6 +183,7 @@ CAPTION = 5 #top left
 CAPTION_RIGHT = 6 #top right
 RIGHTLEFT = 7 #for languages printed right to left
 CENTER_HORIZONTAL_TOO = 8
+CENTER_TOP = 9 #center screen but near top
 
 UP = 6
 DOWN = 7
@@ -1162,6 +1163,7 @@ class Storage(object):
     def __init__(self):
         self._total_time_in_game = timedelta(seconds=0)
         self._last_save_time = datetime.now()
+        self.hint = None
 
     def __getstate__(self):
         return self.__dict__
@@ -3837,6 +3839,8 @@ class Actor(MotionManager, metaclass=use_on_events):
             self.scale = scale
         if destination == CENTER:
             destination = self.game.resolution[0]/2 - self.w/2, self.game.resolution[1]/2 - self.h/2
+        if destination == CENTER_TOP:
+            destination = self.game.resolution[0]/2 - self.w/2, self.game.resolution[1]*0.1 
         if destination:
             pt = get_point(self.game, destination, self)
             self.x, self.y = pt
@@ -6558,6 +6562,10 @@ def user_trigger_interact(game, obj):
         name = obj.display_text if obj.name[:6] == "option" else obj.name
         print('    [interact, "%s"],'%name)
 
+    key = str([interact, obj.name]) 
+    if key in game._walkthrough_hints.keys(): #there's a hint in the walkthroughs, use that.        
+        game.storage.hint = game._walkthrough_hints.pop(key, None)
+
     if not game.editor:
         game.event_count += 1
         if game.event_callback:
@@ -6586,6 +6594,10 @@ def user_trigger_look(game, obj):
     obj.trigger_look()
     if game._record_walkthrough:
         print('    [look, "%s"],'%obj.name)
+
+    key = str([look, obj.name]) #update the hint system
+    if key in game._walkthrough_hints.keys():
+        game.storage.hint = game._walkthrough_hints.pop(key, None)
 
     if not game.editor:
         game.event_count += 1
@@ -6667,8 +6679,12 @@ def load_menu_assets(game):
             obj.load_assets(game)
 
 
-def load_game_pickle(game, fname, meta_only=False):
+def load_game_pickle(game, fname, meta_only=False, keep=[]):
     global _pyglet_fonts
+    keep_scene_objects = []
+    for i in keep:
+        obj = get_object(game, i)
+        keep_scene_objects.append(obj)
     with open(fname, "rb") as f:
         meta = pickle.load(f)
         if meta_only is False:
@@ -6730,6 +6746,9 @@ def load_game_pickle(game, fname, meta_only=False):
                     log.error("Unable to import {}".format(module_name))
             game.reload_modules()  # reload now to refresh existing references
 #            log.warning("POST UNPICKLE inventory %s"%(game.inventory.name))
+    for obj in keep_scene_objects:
+        game.add(obj)
+        game.scene._add(obj)
     return meta
 
 
@@ -6762,8 +6781,8 @@ def save_game(game, fname):
     save_game_pickle(game, fname)
 
 
-def load_game(game, fname, meta_only=False):
-    meta = load_game_pickle(game, fname, meta_only=meta_only)
+def load_game(game, fname, meta_only=False, keep=[]):
+    meta = load_game_pickle(game, fname, meta_only=meta_only, keep=keep)
     if meta_only is False:
         pass
     return meta
@@ -6976,6 +6995,7 @@ class Game(metaclass=use_on_events):
         self._modules = {}
         self._sys_paths = []  # file paths to dynamically loaded modules
         self._walkthrough = []
+        self._walkthrough_hints = {} #(event, hint) auto-compiled from "help" attr on walkthrough
         self._walkthrough_index = 0  # our location in the walkthrough
         self._walkthrough_target = 0  # our target
         # if auto-creating a savefile for this walkthrough
@@ -7351,7 +7371,11 @@ class Game(metaclass=use_on_events):
         for name in objs:
             obj = get_object(self, name)
             if obj.collide(ox, oy) and getattr(obj, "_mouse_scroll", None):
-                obj._mouse_scroll(self, obj, scroll_x, scroll_y)
+                fn = get_function(self, obj._mouse_scroll)
+                if fn:
+                    fn(self, obj, scroll_x, scroll_y)
+                else:
+                    log.error("Unable to find mouse scroll function %s"%obj._mouse_scroll)
 
 #            for obj_name in self._menu:
 #                obj = get_object(self, obj_name)
@@ -7785,6 +7809,17 @@ class Game(metaclass=use_on_events):
         """ use test suites to enable jumping forward """
         self._walkthrough = [
             i for sublist in suites for i in sublist]  # all tests, flattened in order
+        for walkthrough in self._walkthrough:
+            extras = {}
+            key = walkthrough #no extras
+            if walkthrough[0] == "use" and len(walkthrough) == 4: 
+                key = walkthrough[:3]
+                extras = walkthrough[-1] 
+            elif len(walkthrough) == 3:
+                key = walkthrough[:2]
+                extras = walkthrough[-1] 
+            if "help" in extras: #compile a list of helpful hints for the game
+                self._walkthrough_hints[str(key)] = extras["help"]
 
     def create_info_object(self, name="_info_text"):
         """ Create a Text object for the info object """
@@ -8983,13 +9018,19 @@ class Game(metaclass=use_on_events):
         self._waiting = True
         return
 
-    def on_autosave(self, actor, tilesize):
+    def on_autosave(self, actor, tilesize, exclude_from_screenshot=[]):
         game = self
         fname = datetime.now().strftime("%Y%m%d_%H%M%S")
         save_game(game, os.path.join(DIRECTORY_SAVES, "%s.save"%fname))
+        for i in exclude_from_screenshot:
+            obj = get_object(game, i)
+            obj.hide()
         game.menu.on_hide()
         game.pause(0.5)
         game.camera.screenshot(os.path.join(DIRECTORY_SAVES, "%s.png"%fname), tilesize)
+        for i in exclude_from_screenshot:
+            obj = get_object(game, i)
+            obj.show()
         actor = get_object(game, actor)
         actor.says(gettext("Game saved."))
         game.menu.show()
