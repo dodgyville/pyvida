@@ -2001,6 +2001,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         self._goto_deltas = [] #list of steps to get to or pass over _goto_x, goto_y
         self._goto_deltas_index = 0 
         self._goto_deltas_average_speed = 0
+        self._goto_destination_test = True # during goto, test if over destination point
         self._goto_dx, self._goto_dy = 0, 0
         self._goto_points = []  # list of points Actor is walking through
         self._goto_block = False # is this a*star multi-step process blocking?
@@ -2543,6 +2544,19 @@ class Actor(MotionManager, metaclass=use_on_events):
             kwargs["size"] = self.game.font_speech_size
         return kwargs
 
+    def on_queue_deltas(self, deltas, block=True):
+        """ Fake an goto action using a custom list of deltas """
+        self._goto_deltas_index = 0
+        self._goto_deltas = deltas
+        self._goto_block = block
+        self.game._waiting = block
+
+        self._goto_destination_test = False #switch off destination test to use all deltas
+        xs, ys = zip(*deltas)
+        self._goto_x, self._goto_y = self.x + sum(xs), self.y + sum(ys) #sum of deltas
+        self.busy += 1
+    
+
     def _update(self, dt, obj=None):  # actor._update, use obj to override self
         self._vx, self._vy = 0, 0
         self._scroll_dx += self.scroll[0]
@@ -2589,8 +2603,12 @@ class Actor(MotionManager, metaclass=use_on_events):
             speed = self._goto_deltas_average_speed
             target = Rect(self._goto_x, self._goto_y, int(
                 speed * 1.2), int(speed * 1.2)).move(-int(speed * 0.6), -int(speed * 0.6))
-            arrived = target.collidepoint(self.x, self.y) or self._goto_deltas_index >= len(self._goto_deltas)
+            if self._goto_destination_test == True:
+                arrived = target.collidepoint(self.x, self.y) or self._goto_deltas_index >= len(self._goto_deltas)
+            else:
+                arrived = self._goto_deltas_index >= len(self._goto_deltas)
             if arrived:
+                self._goto_destination_test = True # auto switch on destination test
                 self.busy -= 1
                 if logging:
                     log.info("%s has arrived decrementing "
