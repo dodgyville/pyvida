@@ -6642,6 +6642,7 @@ def save_game_pickle(game, fname):
         pickle.dump(game.get_game_info, f)
         # dump info about the player, including history
         pickle.dump(game.get_player_info, f)
+        pickle.dump(game.get_engine, f)
         pickle.dump(game.storage, f)
         mixer1, mixer2 = game.mixer._music_player, game.mixer._sfx_player
         pickle.dump(game.mixer, f)
@@ -6707,6 +6708,7 @@ def load_game_pickle(game, fname, meta_only=False, keep=[]):
         meta = pickle.load(f)
         if meta_only is False:
             player_info = pickle.load(f)
+            game.set_engine(pickle.load(f))
             game.storage = pickle.load(f)
             game.mixer = pickle.load(f)
 
@@ -6883,6 +6885,7 @@ class Window(pyglet.window.Window):
     def on_draw(self):
 #        print("WINDOW DRAW")
         self.clear()
+
 
 
 class Game(metaclass=use_on_events):
@@ -7193,19 +7196,22 @@ class Game(metaclass=use_on_events):
         return {"version": VERSION_SAVE, "game_version": self.version, "game_engine": self.engine, "title": self.name, "datetime": datetime.now(), "section": self.section_name}
 
     @property
+    def get_engine(self):
+        """ Information used internally by the engine that needs to be saved. """
+        watching = ["_player_goto_behaviour"]
+        data = { key: self.__dict__[key] for key in watching }
+        return data
+
+    def set_engine(self, data):
+        """ Restory information used internally by the engine that needs to be saved. """
+        for key, v in data.items():
+            setattr(self, key, v)
+
+    @property
     def get_player_info(self):
         """ Information required to put the player at the correct location in the game """
         return {"scene": self.scene.name if self.scene else None, "player": self.player.name if self.player else None}
 
-    @property
-    def get_gamestate_info(self):
-        """ Information required to read/write run a save file """
-        data = {self._menu, self._modals, }
-        #_menu, _modals, _modals, visited, _modules
-        print("gamstate_info",self.__dict__)
-        import pdb
-        pdb.set_trace()
-        return data
 
     @property
     def time_in_game(self):
