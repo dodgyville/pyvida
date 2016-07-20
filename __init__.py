@@ -2546,14 +2546,20 @@ class Actor(MotionManager, metaclass=use_on_events):
 
     def on_queue_deltas(self, deltas, block=True):
         """ Fake an goto action using a custom list of deltas """
+        xs, ys = zip(*deltas)
+        destination = self.x + sum(xs), self.y + sum(ys) #sum of deltas
+
+        if self.game._headless == True:
+            self._goto(destination, block=block)
+            return
+  
         self._goto_deltas_index = 0
         self._goto_deltas = deltas
         self._goto_block = block
         self.game._waiting = block
 
         self._goto_destination_test = False #switch off destination test to use all deltas
-        xs, ys = zip(*deltas)
-        self._goto_x, self._goto_y = self.x + sum(xs), self.y + sum(ys) #sum of deltas
+        self._goto_x, self._goto_y = destination
         self.busy += 1
     
 
@@ -5232,6 +5238,18 @@ class Scene(MotionManager, metaclass=use_on_events):
         """ What music to play on entering the scene? """
         self._music_filename = filename
 
+    def on_music_play(self):
+        """ Play this scene's music """
+        mixer = self.game.mixer
+        if mixer._music_filename: #store position of current track
+            mixer.music_rules[mixer._music_filename].position = mixer._music_player.position()
+        if self._music_filename:
+            rule = mixer.music_rules[self._music_filename] if self._music_filename in mixer.music_rules else None
+            start = rule.position if rule else 0
+#            mixer.music_fade_out(0.5)
+            mixer.on_music_play(self._music_filename, start=start)
+
+
     def on_ambient(self, filename):
         """ What ambient sound to play on entering the scene? """
         self._ambient_filename = filename
@@ -5902,18 +5920,7 @@ class Camera(metaclass=use_on_events):  # the view manager
 #            else:
 #                if logging: log.warning("No background for scene %s"%self.game.scene.name)
         # start music for this scene
-        mixer = game.mixer
-        if mixer._music_filename: #store position of current track
-            mixer.music_rules[mixer._music_filename].position = mixer._music_player.position()
-        if scene._music_filename:
-            rule = mixer.music_rules[scene._music_filename] if scene._music_filename in mixer.music_rules else None
-            start = rule.position if rule else 0
-#            mixer.music_fade_out(0.5)
-            mixer.on_music_play(scene._music_filename, start=start)
-#            mixer.music_fade_in(0.5)
- #       self._play_scene_music()
-#        if game.scene._ambient_filename:
-#            self._ambient_sound = self.game.mixer._sfx_play(game.scene._ambient_filename, loops=-1)
+        scene.on_music_play()
 
     def on_scene(self, scene, camera_point=None):
         """ change the scene """
@@ -6326,6 +6333,7 @@ class Mixer(metaclass=use_on_events):
                 self._music_position = 0
                 self.on_publish_volumes() #reset any fades
             else:
+                print("unable to find music file",fname)
                 log.warning("Music file %s missing." % fname)
                 self._music_player.pause()
                 return
