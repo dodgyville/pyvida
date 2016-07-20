@@ -3669,7 +3669,6 @@ class Actor(MotionManager, metaclass=use_on_events):
 #        import pdb; pdb.set_trace()
         callback = self.on_animation_end_once #if not block else self.on_animation_end_once_block
         self._next_action = next_action if next_action else self.default_idle
-
         if self.game and self.game._headless is True: #if headless, jump to end
             self.on_animation_end_once()
             result = True
@@ -4738,6 +4737,18 @@ class WalkAreaManager(metaclass=use_on_events):
             self._edit_waypoint_index = closest_waypoint
         else:
             self._edit_polygon_index = closest_polygon
+
+
+    def mirror(self, w):
+        """ Flip walkarea using w(idth) of screen) 
+            XXX does not flip waypoints yet
+        """
+        np = []
+        for p in self._polygon:
+            np.append((w-p[0], p[1]))
+#        self._waypoints = []
+        self._polygon = np
+        self._update_walkarea()
 
     def _update_walkarea(self):
         self._polygon_count = len(self._polygon)
@@ -6062,7 +6073,7 @@ class Camera(metaclass=use_on_events):  # the view manager
             img.thumbnail(size, Image.ANTIALIAS)
         img.save(fname+".png")
 
-    def on_relocate(self, position):
+    def on_relocate(self, position): #camera.relocate
         self.game.scene.x, self.game.scene.y = position
 
     def on_pan(self, left=False, right=False, top=False, bottom=False, percent_vertical=False, speed=None):
@@ -9110,11 +9121,17 @@ class Game(metaclass=use_on_events):
             else:
                 pyglet.clock.schedule_once(splash_finish, duration, self)
 
-    def on_relocate(self, obj, scene, destination=None):  # game.relocate
+    def on_relocate(self, obj, scene, destination=None, scale=None):  # game.relocate
         obj = get_object(self.game, obj)
         scene = get_object(self.game, scene)
         destination = get_point(self.game, destination)
-        obj._relocate(scene, destination)
+        if scale == None:
+            if obj.name in scene.scales.keys():
+                scale = scene.scales[obj.name]
+            # use auto scaling for actor if available
+            elif "actors" in scene.scales.keys() and not isinstance(obj, Item) and not isinstance(obj, Portal):
+                scale = scene.scales["actors"]
+        obj._relocate(scene, destination, scale=scale)
 
     def on_allow_one_player_interaction(self):
         """ Ignore the allow_use, allow_look, allow_interact rules for the
@@ -9528,6 +9545,19 @@ class MyTkApp(threading.Thread):
                 if obj.allow_interact or obj.allow_look:
                     edit_object_script(self.game, obj)
 
+        def edit_flip_scene(*args, **kwargs):
+            w = self.game.resolution[0]
+            for i in self.game.scene._objects:
+                obj = get_object(self.game, i)
+                if obj == self.game.player:
+                    continue
+                obj.x = w - obj.x
+                obj._sx = - obj._sx
+                obj._ax = - obj._ax
+                obj._tx = - obj._tx
+                obj._nx = - obj._nx
+            self.game.scene.walkarea.mirror(w)
+
         def _edit_walkarea(scene):
             scene.walkarea.on_toggle_editor()
             if scene.walkarea._editing:
@@ -9557,6 +9587,8 @@ class MyTkApp(threading.Thread):
             group, text='save layers', command=save_layers).grid(column=3, row=row)
         self.layer_save_button = tk.Button(
             group, text='Edit scripts', command=edit_interact_scripts).grid(column=4, row=row)
+        self.layer_save_button = tk.Button(
+            group, text='Flip scene', command=edit_flip_scene).grid(column=5, row=row)
 
         row += 1
 
