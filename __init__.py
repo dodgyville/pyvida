@@ -2513,7 +2513,9 @@ class Actor(MotionManager, metaclass=use_on_events):
         return get_resource(self.resource_name)[1]
 
     def fog_display_text(self, actor):
-        """ Use this everywhere for getting the correct name of an Actor """
+        """ Use this everywhere for getting the correct name of an Actor 
+            eg name = game.mistriss.fog_display_text(game.player)   
+            """
         display_text = self.display_text if self.display_text else self.name
         fog_text = self._fog_display_text if self._fog_display_text else display_text
         if actor is None:
@@ -6904,6 +6906,22 @@ class Window(pyglet.window.Window):
     def on_draw(self):
 #        print("WINDOW DRAW")
         self.clear()
+
+
+def gamestats(game):
+    """ Print some stats about the current game """
+    total_items = len(game._items) + len(game._actors) + len(game._scenes)
+    total_frames_of_animation = 0
+    for objects in [game._actors, game._items]:
+        objects_to_pickle = []
+        for o in objects.values():  # test objects
+            actor_frames = 0
+            for action in o._actions.values():
+                total_frames_of_animation += action.num_of_frames 
+                actor_frames += action.num_of_frames 
+#            print("%s has %i frames of animation in %i actions."%(o.name, actor_frames, len(o._actions)))
+    print("Total objects: %i (%i scenes)"%(total_items, len(game._scenes)))
+    print("Total frames of animation: %i"%(total_frames_of_animation))
 
 
 
