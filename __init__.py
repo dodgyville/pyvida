@@ -2302,6 +2302,7 @@ class Actor(MotionManager, metaclass=use_on_events):
     def set_position(self, xy):
         self._x = xy[0]
         self._y = xy[1]
+
     position = property(get_position, set_position)
 
     @property
@@ -2432,8 +2433,12 @@ class Actor(MotionManager, metaclass=use_on_events):
     rotate = property(get_rotate, set_rotate)
 
     @property
-    def position(self):
-        return (self.x, self.y)
+    def center(self):
+        return (self.x + self.ax/2, self.y + self.ay/2)
+
+#    @property
+#    def position(self):
+#        return (self.x, self.y)
 
     def set_interact(self, v):
         self._interact = v
@@ -3686,6 +3691,10 @@ class Actor(MotionManager, metaclass=use_on_events):
         """ Remove from scene """
         if self.scene:
             self.scene._remove(self)
+
+    def on_mirror(self):
+        """ mirror stand point (and perhaps other points) """
+        self.sx = -self.sx
 
     def on_speed(self, speed):
         print("set speed for %s" % self.action.name)
@@ -6291,7 +6300,7 @@ class Mixer(metaclass=use_on_events):
         v = self.game.settings.music_volume
         if self.game.settings.mute == True:
             v = 0
-        print("SETTING VOLUME TO %f"%v)
+#        print("SETTING VOLUME TO %f"%v)
         pygame.mixer.music.set_volume(v)
         self._music_volume = v
         self._music_volume_target = None
@@ -6353,7 +6362,7 @@ class Mixer(metaclass=use_on_events):
         else:
             print("NO MUSIC FILE",fname)
             return
-        print("PLAY: SESSION MUTE", self._session_mute)
+#        print("PLAY: SESSION MUTE", self._session_mute)
         if self._force_mute or self._session_mute or self.game._headless:
             return
         if volume: self.on_music_volume(volume)
