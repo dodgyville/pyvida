@@ -1407,10 +1407,20 @@ class Motion(object):
             new_deltas.append(nd.flat)
         self.deltas = new_deltas  
 
+
+    def mirror(self):
+        new_deltas = []
+        for i in self.deltas:
+            a = MotionDelta(*i)
+            a.x = -a.x
+            new_deltas.append(a.flat)
+        self.deltas = new_deltas  
+
     def print(self):
         print("x,y,z,r,scale,f,alpha")
         for i in self.deltas:
             print(str(i)[1:-1])
+
 
     def smart(self, game, owner=None, filename=None):  # motion.smart
         self.owner = owner if owner else self.owner
@@ -2026,6 +2036,7 @@ class Actor(MotionManager, metaclass=use_on_events):
 
         self._scale = 1.0
         self._rotate = 0
+        self._mirrored = False # has actor been mirrored by on_mirror?
         self._pyglet_animation_callback = None #when an animation ends, this function will be called
 
         # can override name for game.info display text
@@ -3693,8 +3704,13 @@ class Actor(MotionManager, metaclass=use_on_events):
             self.scene._remove(self)
 
     def on_mirror(self):
-        """ mirror stand point (and perhaps other points) """
+        """ mirror stand point (and perhaps other points) 
+            and motions
+        """
         self.sx = -self.sx
+        self._mirrored = not self._mirrored
+        for motion in self._motions.values():
+            motion.mirror()
 
     def on_speed(self, speed):
         print("set speed for %s" % self.action.name)
@@ -9160,12 +9176,12 @@ class Game(metaclass=use_on_events):
                 scale = scene.scales["actors"]
         obj._relocate(scene, destination, scale=scale)
 
-    def on_allow_one_player_interaction(self):
+    def on_allow_one_player_interaction(self, v = True):
         """ Ignore the allow_use, allow_look, allow_interact rules for the
         game.player object just once then go back to standard behaviour.
         :return:
         """
-        self._allow_one_player_interaction = True
+        self._allow_one_player_interaction = v
 
 
     def on_default_ok(self, v="ok"):
