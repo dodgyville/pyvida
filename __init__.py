@@ -6200,12 +6200,12 @@ class PlayerPygameMusic():
         pygame.mixer.music.stop()
 
     def load(self, fname):
-        print("LOAD MUSIC",fname)
+#        print("LOAD MUSIC",fname)
         pygame.mixer.music.load(fname)
 
     def play(self, loops=-1, start=0):
         pygame.mixer.music.stop() #reset counter
-        print("PLAY MUSIC",start)
+#        print("PLAY MUSIC",start)
         pygame.mixer.music.play(loops=loops, start=start)
 
     def position(self):
@@ -6358,7 +6358,7 @@ class Mixer(metaclass=use_on_events):
 
             default_start = rule.position
             if self._music_filename == fname and rule.mode == FRESH_BUT_SHARE and pygame.mixer.music.get_busy() == True: #keep playing existing
-                print("KEEP PLAYING EXISTING SONG", fname)
+#                print("KEEP PLAYING EXISTING SONG", fname)
                 return
             if rule.mode == FRESH:
                 default_start = 0
@@ -6367,7 +6367,7 @@ class Mixer(metaclass=use_on_events):
                 log.info("Loading music file %s" % absfilename)
                 self._music_player.load(absfilename)
                 self._music_filename = fname
-                print("SETTING CURRENT MUSIC FILENAME TO", fname)
+#                print("SETTING CURRENT MUSIC FILENAME TO", fname)
                 self._music_position = 0
                 self.on_publish_volumes() #reset any fades
             else:
