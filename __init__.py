@@ -3823,6 +3823,7 @@ class Actor(MotionManager, metaclass=use_on_events):
 
     def on_fade(self, target, action=None, seconds=3, block=False):
         """ target is 0 - 255 """
+        log.info("%s fade to %i"%(self.name, target))
         if action:
             self._do(action)
         if self.game._headless:  # headless mode skips sound and visuals
@@ -3833,7 +3834,9 @@ class Actor(MotionManager, metaclass=use_on_events):
             self._opacity_target - self._opacity) / (self.game.fps * seconds)
         if block == True:
             self.busy += 1
+            self.game._waiting = True # make all other events wait too.
             self._opacity_target_block = True
+            log.info("%s fade has requested block, so increment busy to %i"%(self.name, self.busy))
 
     def on_fade_in(self, action=None, seconds=3, block=False):  # actor.fade_in
         self.on_fade(255, action=action, seconds=seconds, block=block)
@@ -4949,6 +4952,7 @@ class Scene(MotionManager, metaclass=use_on_events):
 #        self.scale_horizon_value = 1.0 #deactivated
 
         self.walkarea = WalkAreaManager(self)
+        self._colour = None  #clear colour (0-255, 0-255, 0-255)
 
 
         self.walkareas = OldWalkAreaManager(self, game)  # pyvida4 compatability
@@ -5962,6 +5966,7 @@ class Camera(metaclass=use_on_events):  # the view manager
 
     def on_scene(self, scene, camera_point=None):
         """ change the scene """
+        pyglet.gl.glClearColor(0,0,0,255) # reset clear colour to black
         if type(scene) in [str]:
             if scene in self.game._scenes:
                 scene = self.game._scenes[scene]
@@ -8656,6 +8661,10 @@ class Game(metaclass=use_on_events):
     def pyglet_draw(self):  # game.draw
         """ Draw the scene """
 #        dt = pyglet.clock.tick()
+        if self.scene and self.scene._colour:
+            c = self.scene._colour
+            c = c if len(c) == 4 else (c[0], c[1], c[2], 255)
+            pyglet.gl.glClearColor(*c)
         self._window.clear()
 
         if not self.scene:
