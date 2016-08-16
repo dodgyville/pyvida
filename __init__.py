@@ -72,14 +72,16 @@ except ImportError:
 
 benchmark_events = datetime.now()
 
+GAME_SAVE_NAME = "spaceout2b6" # XXX should match game, should be engine independent.
+
 SAVE_DIR = "saves"
 if "LOCALAPPDATA" in os.environ: #win 7
-    SAVE_DIR = os.path.join(os.environ["LOCALAPPDATA"], "spaceout2", 'saves')
+    SAVE_DIR = os.path.join(os.environ["LOCALAPPDATA"], GAME_SAVE_NAME, 'saves')
 elif "APPDATA" in os.environ: #win XP
-    SAVE_DIR = os.path.join(os.environ["APPDATA"], "spaceout2", 'saves')
+    SAVE_DIR = os.path.join(os.environ["APPDATA"], GAME_SAVE_NAME, 'saves')
 elif 'darwin' in sys.platform: # check for OS X support
 #    import pygame._view
-    SAVE_DIR = os.path.join(expanduser("~"), "Library", "Application Support", "spaceout2")
+    SAVE_DIR = os.path.join(expanduser("~"), "Library", "Application Support", GAME_SAVE_NAME)
 
 READONLY = False
 if not os.path.exists(SAVE_DIR):
@@ -93,7 +95,7 @@ if not os.path.exists(SAVE_DIR):
 Constants
 """
 DEBUG_ASTAR = False
-DEBUG_STDOUT = True  # stream errors to stdout as well as log file
+DEBUG_STDOUT = False  # stream errors to stdout as well as log file
 
 ENABLE_EDITOR = False  # default for editor
 ENABLE_PROFILING = False
@@ -1744,6 +1746,7 @@ def crosshair(game, point, colour, absolute=False, txt=""):
 
     # y is inverted for pyglet
     x, y = int(point[0]), int(game.resolution[1] - point[1])
+
     if not absolute and game.scene:
         x += int(game.scene.x)
         y -= int(game.scene.y)
@@ -2158,6 +2161,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         if self.rotate:
             sprite.rotation = self.rotate
         sprite.opacity = self.alpha
+
         sprite.on_animation_end = sprite_callback
 
         # jump to end
@@ -2984,6 +2988,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                     "actor.smart - using %s for smart load instead of real name %s" % (using, self.name))
             name = os.path.basename(using)
             d = os.path.dirname(using)
+
         else:
             name = self.name
             d = get_smart_directory(game, self)
@@ -7559,6 +7564,7 @@ class Game(metaclass=use_on_events):
                 allow_player_hover = (self.player and self.player == obj) and \
                                      ((ALLOW_USE_ON_PLAYER and self.mouse_mode == MOUSE_USE) or
                                      (self._allow_one_player_interaction is True))
+
                 allow_hover = (obj.allow_interact or obj.allow_use or obj.allow_look) or allow_player_hover
                 if obj.collide(x, y) and allow_hover:
                     t = obj.name if obj.display_text == None else obj.display_text
@@ -8519,7 +8525,8 @@ class Game(metaclass=use_on_events):
         else:
             print("UNABLE TO PROCESS %s"%function_name)
         if human_readable_name:
-            save_game(self, "saves/{}.save".format(human_readable_name))
+            fname = os.path.join(DIRECTORY_SAVES, "{}.save".format(human_readable_name))
+            save_game(self, fname)
 
     def _handle_events(self):
         """ Handle game events """
