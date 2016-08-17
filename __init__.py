@@ -1229,6 +1229,11 @@ class Settings(object):
         self._current_session_start = None #what date and time did the current session start
         self._last_session_end = None #what time did the last session end
 
+        self.total_time_played = 0 # total time playing this game in ms
+        self.total_time_played_this_playthrough = 0 #total time this playthrough in ms
+        self.fastest_playthrough = None
+
+
         self.filename = None
 
     def save(self, fname=None):
@@ -8308,7 +8313,25 @@ class Game(metaclass=use_on_events):
             round(time.time() * 1000))
         pyglet.app.run()
 
+    def is_fastest_playthrough(self):
+        """ Call at game over time, store and return true if this is the fastest playthrough """
+        r = False
+        s = datetime.now() - self.settings._current_session_start
+        new_time = self.settings.total_time_played_this_playthrough + s.milliseconds
+        if self.settings and self.settings.filename:
+            if self.settings.fatest_playthrough == None or new_time <= self.settings.fastest_playthrough:
+                self.settings.fastest_playthrough = self.settings.total_time_played_this_playthrough
+                r = True
+                save_settings(game, game.settings.filename)            
+        return r
+
     def on_quit(self):
+        if self.settings and self.settings.filename:
+            s = datetime.now() - self.settings._current_session_start
+            self.settings.total_time_played_this_playthrough += s.milliseconds
+            self.settings.total_time_played += s.milliseconds
+            save_settings(game, game.settings.filename)
+
         pyglet.app.exit()
         if mixer=="pygame":
             print("SHUTDOWN PYGAME MIXER")
