@@ -72,7 +72,7 @@ except ImportError:
 
 benchmark_events = datetime.now()
 
-GAME_SAVE_NAME = "spaceout2b6" # XXX should match game, should be engine independent.
+GAME_SAVE_NAME = "spaceout2" # XXX should match game, should be engine independent.
 
 SAVE_DIR = "saves"
 if "LOCALAPPDATA" in os.environ: #win 7
@@ -97,7 +97,7 @@ Constants
 DEBUG_ASTAR = False
 DEBUG_STDOUT = False  # stream errors to stdout as well as log file
 
-ENABLE_EDITOR = False  # default for editor
+ENABLE_EDITOR = True  # default for editor
 ENABLE_PROFILING = False
 ENABLE_LOGGING = True
 DEFAULT_TEXT_EDITOR = "gedit"
@@ -6882,7 +6882,7 @@ def load_or_create_settings(game, fname, settings_cls=Settings):
     game.settings = settings_cls()
     game.settings.filename = fname
     options = game.parser.parse_args()
-    if options.nuke:
+    if options.nuke and os.path.isfile(fname): # nuke
         os.remove(fname)
     if not os.path.isfile(fname): #settings file not available, create new object
         existing = False
@@ -6890,7 +6890,7 @@ def load_or_create_settings(game, fname, settings_cls=Settings):
         game.settings = game.settings.load(fname)
     game.settings._current_session_start = datetime.now()
     game.mixer.on_publish_volumes()
-    return True
+    return existing
 
 def fit_to_screen(screen, resolution):
     # given a screen size and the game's resolution, return a screen size and
