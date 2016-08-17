@@ -590,6 +590,9 @@ def rgb2gray(rgb):
     gray = int(0.2989 * rgb[0] + 0.5870 * rgb[1] + 0.1140 * rgb[2])
     return gray, gray, gray
 
+def milliseconds(td): #milliseconds of a timedelta
+    return td.days*86400000 + td.seconds*1000 + td.microseconds/1000
+
 def deslugify(txt):
     """ replace underscores with spaces, basically """
     return txt.replace("_", " ")
@@ -8316,8 +8319,9 @@ class Game(metaclass=use_on_events):
     def is_fastest_playthrough(self):
         """ Call at game over time, store and return true if this is the fastest playthrough """
         r = False
-        s = datetime.now() - self.settings._current_session_start
-        new_time = self.settings.total_time_played_this_playthrough + s.milliseconds
+        td = datetime.now() - self.settings._current_session_start
+        s = milliseconds(td)
+        new_time = self.settings.total_time_played_this_playthrough + s
         if self.settings and self.settings.filename:
             if self.settings.fatest_playthrough == None or new_time <= self.settings.fastest_playthrough:
                 self.settings.fastest_playthrough = self.settings.total_time_played_this_playthrough
@@ -8327,9 +8331,10 @@ class Game(metaclass=use_on_events):
 
     def on_quit(self):
         if self.settings and self.settings.filename:
-            s = datetime.now() - self.settings._current_session_start
-            self.settings.total_time_played_this_playthrough += s.milliseconds
-            self.settings.total_time_played += s.milliseconds
+            td = datetime.now() - self.settings._current_session_start
+            s = milliseconds(td)
+            self.settings.total_time_played_this_playthrough += s
+            self.settings.total_time_played += s
             save_settings(game, game.settings.filename)
 
         pyglet.app.exit()
@@ -8637,7 +8642,7 @@ class Game(metaclass=use_on_events):
         if fn:
             fn(self, dt, single_event)
 
-#        dt = self.fps #time passed (in miliseconds)
+#        dt = self.fps #time passed (in milliseconds)
         if self.scene:
             for obj_name in self.scene._objects:
                 scene_objects.append(get_object(self, obj_name))
