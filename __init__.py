@@ -6311,7 +6311,7 @@ class Mixer(metaclass=use_on_events):
         self._music_player = None
         self._sfx_player = None
         self.game = None
-        print("DEINITIALISE PLAYERS AT POSITION",self._music_position)
+#        print("DEINITIALISE PLAYERS AT POSITION",self._music_position)
         return dict(self.__dict__)
 
     def __setstate__(self, d):
@@ -6703,7 +6703,7 @@ def save_game_pickle(game, fname):
     log.info("Saving game to %s" % fname)
     # time since game created or loaded
     dt = datetime.now() - game.storage._last_load_time
-    game.storage._total_time_in_game += milliseconds(dt)
+    game.storage._total_time_in_game += dt
     game.storage._last_save_time = game.storage._last_load_time = datetime.now()
     with open(fname, 'wb') as f:
         # dump some metadata (eg date, title, etc)
@@ -6772,11 +6772,14 @@ def load_game_pickle(game, fname, meta_only=False, keep=[]):
     for i in keep:
         obj = get_object(game, i)
         keep_scene_objects.append(obj)
+
     with open(fname, "rb") as f:
         meta = pickle.load(f)
         if meta_only is False:
             player_info = pickle.load(f)
-            game.set_engine(pickle.load(f))
+            engine_info = pickle.load(f)
+#            import pdb; pdb.set_trace()
+            game.set_engine(engine_info)
             game.storage = pickle.load(f)
             game.storage._last_load_time = datetime.now()
 
@@ -6884,10 +6887,10 @@ def load_or_create_settings(game, fname, settings_cls=Settings):
     options = game.parser.parse_args()
     if options.nuke and os.path.isfile(fname): # nuke
         os.remove(fname)
+    game.settings = settings_cls() # setup default settings
+    game.settings.filename = fname        
     if not os.path.isfile(fname): #settings file not available, create new object
         existing = False
-        game.settings = settings_cls()
-        game.settings.filename = fname        
     else:
         game.settings = game.settings.load(fname)
     game.settings._current_session_start = datetime.now()
@@ -8322,8 +8325,8 @@ class Game(metaclass=use_on_events):
         """ Call at game over time, store and return true if this is the fastest playthrough """
         r = False
         td = datetime.now() - self.storage._last_load_time
-        s = milliseconds(td)
-        new_time = self.storage._total_time_in_game + s
+#        s = milliseconds(td)
+        new_time = milliseconds(self.storage._total_time_in_game + td)
         if self.settings and self.settings.filename:
             if self.settings.fatest_playthrough == None or new_time <= self.settings.fastest_playthrough:
                 self.settings.fastest_playthrough = new_time

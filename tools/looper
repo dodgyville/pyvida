@@ -15,14 +15,16 @@ from optparse import OptionParser
 
 
 def super_loopser():
-    print("loopser v1.0 - by Luke Miller - 6/12/2015")
-    usage = "usage: montager out_file file_list\nFor use with pyvida, loops a series of images around onto a shorter set of images to create looping animations. Use either -l OR -f (not both)";
+    print("loopser v1.1 - by Luke Miller - 6/12/2015")
+    usage = "usage: looper out_file file_list\nFor use with pyvida, loops a series of images around onto a shorter set of images to create looping animations. Use either -l OR -f (not both)";
+    print("Examples:\n looper")
     print("NOTE: Provided AS IS, no warranty for use!")
     parser = OptionParser()
 #    parser.add_option("-", "--reverse", action="store_true", dest="reverse", help="Reverse file list", default=False)
 #    parser.add_option("-f", "--flip", action="store_true", dest="flip", help="Flip the images left-right", default=False)
     parser.add_option("-l", "--loops", dest="loops", help="How many times to loops frames", default=-1, metavar="loops")
     parser.add_option("-f", "--frames", dest="frames", help="How many frames to use for loops", default=-1, metavar="loops")
+    # for when images do not have an alpha
     parser.add_option("-a", "--add", dest="fx_add", action="store_true", help="Add images together", default=False)
     parser.add_option("-s", "--screen", dest="fx_screen", action="store_true", help="Screen images together", default=False)
     parser.add_option("-m", "--multiply", dest="fx_multiply", action="store_true", help="Mutilply images together", default=False)
