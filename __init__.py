@@ -97,7 +97,7 @@ Constants
 DEBUG_ASTAR = False
 DEBUG_STDOUT = False  # stream errors to stdout as well as log file
 
-ENABLE_EDITOR = True  # default for editor
+ENABLE_EDITOR = False  # default for editor. Caution: This starts module reloads which ruins pickles 
 ENABLE_PROFILING = False
 ENABLE_LOGGING = True
 DEFAULT_TEXT_EDITOR = "gedit"
@@ -1166,8 +1166,11 @@ class Storage(object):
 
     """ Per game data that the developer wants stored with the save game file"""
     def __init__(self):
-        self._total_time_in_game = timedelta(seconds=0)
+        self._total_time_in_game = timedelta(seconds=0) # playthrough time for this game
         self._last_save_time = datetime.now()
+        self._last_load_time = datetime.now()
+        self._created = datetime.now()
+
         self.hint = None
 
     def __getstate__(self):
@@ -1233,11 +1236,9 @@ class Settings(object):
         self._last_session_end = None #what time did the last session end
 
         self.total_time_played = 0 # total time playing this game in ms
-        self.total_time_played_this_playthrough = 0 #total time this playthrough in ms
         self.fastest_playthrough = None
-
-
         self.filename = None
+
 
     def save(self, fname=None):
         """ save the current game settings """
@@ -1257,11 +1258,10 @@ class Settings(object):
         try:
             with open(os.path.abspath(self.filename), "rb") as f:
                 data = pickle.load(f)
-            return data
+            return data # use loaded settings
         except:  # if any problems, use default settings
             log.warning(
-                "Unable to load settings from %s, using defaults" % self.filename)
-            # use loaded settings
+                "Unable to load settings from %s, using defaults" % self.filename)            
             return self
 
 class MotionDelta(object):
@@ -6701,6 +6701,10 @@ def restore_object(game, obj):
 
 def save_game_pickle(game, fname):
     log.info("Saving game to %s" % fname)
+    # time since game created or loaded
+    dt = datetime.now() - game.storage._last_load_time
+    game.storage._total_time_in_game += milliseconds(dt)
+    game.storage._last_save_time = game.storage._last_load_time = datetime.now()
     with open(fname, 'wb') as f:
         # dump some metadata (eg date, title, etc)
         pickle.dump(game.get_game_info, f)
@@ -6774,6 +6778,8 @@ def load_game_pickle(game, fname, meta_only=False, keep=[]):
             player_info = pickle.load(f)
             game.set_engine(pickle.load(f))
             game.storage = pickle.load(f)
+            game.storage._last_load_time = datetime.now()
+
             game.mixer = pickle.load(f)
 
             #restore mixer
@@ -6859,9 +6865,6 @@ class PyvidaEncoder(json.JSONEncoder):
 
 
 def save_game(game, fname):
-    # XXX not accurate as saving game will change this.
-    game.storage._total_time_in_game += datetime.now() - game.storage._last_save_time
-    game.storage._last_save_time = datetime.now()
     save_game_pickle(game, fname)
 
 
@@ -6873,19 +6876,18 @@ def load_game(game, fname, meta_only=False, keep=[]):
 
 def save_settings(game, fname):
     """ save the game settings (eg volume, accessibilty options) """
-    game.settings._last_session_end = datetime.now()
     game.settings.save(fname)
 
 def load_or_create_settings(game, fname, settings_cls=Settings):
     """ load the game settings (eg volume, accessibilty options) """
     existing = True
-    game.settings = settings_cls()
-    game.settings.filename = fname
     options = game.parser.parse_args()
     if options.nuke and os.path.isfile(fname): # nuke
         os.remove(fname)
     if not os.path.isfile(fname): #settings file not available, create new object
         existing = False
+        game.settings = settings_cls()
+        game.settings.filename = fname        
     else:
         game.settings = game.settings.load(fname)
     game.settings._current_session_start = datetime.now()
@@ -7295,7 +7297,7 @@ class Game(metaclass=use_on_events):
 
     @property
     def time_in_game(self):
-        return self.storage._total_time_in_game + (datetime.now() - self.storage._last_save_time)
+        return self.storage._total_time_in_game + (datetime.now() - self.storage._last_load_time)
 
     def on_key_press(self, symbol, modifiers):
         global use_effect
@@ -8319,12 +8321,12 @@ class Game(metaclass=use_on_events):
     def is_fastest_playthrough(self):
         """ Call at game over time, store and return true if this is the fastest playthrough """
         r = False
-        td = datetime.now() - self.settings._current_session_start
+        td = datetime.now() - self.storage._last_load_time
         s = milliseconds(td)
-        new_time = self.settings.total_time_played_this_playthrough + s
+        new_time = self.storage._total_time_in_game + s
         if self.settings and self.settings.filename:
             if self.settings.fatest_playthrough == None or new_time <= self.settings.fastest_playthrough:
-                self.settings.fastest_playthrough = self.settings.total_time_played_this_playthrough
+                self.settings.fastest_playthrough = new_time
                 r = True
                 save_settings(game, game.settings.filename)            
         return r
@@ -8333,8 +8335,8 @@ class Game(metaclass=use_on_events):
         if self.settings and self.settings.filename:
             td = datetime.now() - self.settings._current_session_start
             s = milliseconds(td)
-            self.settings.total_time_played_this_playthrough += s
             self.settings.total_time_played += s
+            self.settings._last_session_end = datetime.now()
             save_settings(game, game.settings.filename)
 
         pyglet.app.exit()
