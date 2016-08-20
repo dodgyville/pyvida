@@ -4249,6 +4249,8 @@ class Portal(Actor, metaclass=use_on_events):
     def portal_text(self):
         """ What to display when hovering over this link """
         link = self.link
+        t = self.name if self.display_text == None else self.display_text
+        t = self.fog_display_text(self.game.player)
         if self.game.settings.portal_exploration and link and link.scene:
             if link.scene.name not in self.game.visited:
                 t = "To the unknown."
@@ -7640,10 +7642,11 @@ class Game(metaclass=use_on_events):
 
                 allow_hover = (obj.allow_interact or obj.allow_use or obj.allow_look) or allow_player_hover
                 if obj.collide(x, y) and allow_hover:
-                    t = obj.name if obj.display_text == None else obj.display_text
-                    t = obj.fog_display_text(self.player)
                     if isinstance(obj, Portal):
                         t = obj.portal_text
+                    else:
+                        t = obj.name if obj.display_text == None else obj.display_text
+                        t = obj.fog_display_text(self.player)
 
                     if self.mouse_mode != MOUSE_LOOK: #change cursor if not in look mode
                         # hover over portal
