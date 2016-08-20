@@ -96,7 +96,7 @@ Constants
 """
 DEBUG_ASTAR = False
 DEBUG_STDOUT = True  # stream errors to stdout as well as log file
-DEBUG_NAMES = True # TODO: Output final names for portals and items in a scene. Could be a useful commandline option
+DEBUG_NAMES = False # TODO: Output final names for portals and items in a scene. Could be a useful commandline option
 
 if DEBUG_NAMES:
     tmp_objects_first = {}
@@ -3819,8 +3819,8 @@ class Actor(MotionManager, metaclass=use_on_events):
     def _hide(self):
         self._usage(draw=False, update=False)
 
-    def on_hide(self, interactive=False):
-        """ A queuing function: hide the actor, including from all click and hover events 
+    def on_hide(self):
+        """ A queuing function: hide the actor, but leave interact events alone
 
             Example::
 
