@@ -95,7 +95,13 @@ if not os.path.exists(SAVE_DIR):
 Constants
 """
 DEBUG_ASTAR = False
-DEBUG_STDOUT = False  # stream errors to stdout as well as log file
+DEBUG_STDOUT = True  # stream errors to stdout as well as log file
+DEBUG_NAMES = True # TODO: Output final names for portals and items in a scene. Could be a useful commandline option
+
+if DEBUG_NAMES:
+    tmp_objects_first = {}
+    tmp_objects_second = {}
+
 
 ENABLE_EDITOR = False  # default for editor. Caution: This starts module reloads which ruins pickles 
 ENABLE_PROFILING = False
@@ -1446,7 +1452,7 @@ class Motion(object):
                 data = f.readlines()
                 meta = data[0]
                 if meta[0] == "*": #flag to set motion to non-destructive
-                    print("motion %s is non-destructive"%self.name)
+#                    print("motion %s is non-destructive"%self.name)
                     self.destructive=False
                     meta = meta[1:]
                 meta = meta.strip().split(",")
@@ -3267,6 +3273,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         if self.game._output_walkthrough:
             print("%s says \"%s\"" % (name, statement))
         log.info("on_ask before _says: %s.busy = %i" % (self.name, self.busy))
+        kwargs["key"] = None # deactivate on_says keyboard shortcut close
         items = self._says(statement, **kwargs)
         log.info("on_ask after _says: %s.busy = %i" % (self.name, self.busy))
         label = None
@@ -3371,7 +3378,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         """ Create a Text object using this actor's values """
         return Text(text, *args, **kwargs)
 
-    def _says(self, text, action="portrait", font=None, size=None, using=None, position=None, align=LEFT, offset=None, delay=0.01, step=3, ok=-1, interact=close_on_says, block_for_user=True):
+    def _says(self, text, action="portrait", font=None, size=None, using=None, position=None, align=LEFT, offset=None, delay=0.01, step=3, ok=-1, interact=close_on_says, block_for_user=True, key=K_SPACE):
         """
         if block_for_user is False, then DON'T make the game wait until processing next event
         """
@@ -3454,6 +3461,9 @@ class Actor(MotionManager, metaclass=use_on_events):
         label.game = self.game
         label.fullscreen(True)
         label.x, label.y = x + dx, y + dy
+        if key:
+            label.on_key(key)
+
         if align == CENTER_HORIZONTAL_TOO:
             label.x += (msgbox.w//2 - label.w//2)
             label.y += (msgbox.h//2 - label.h)
@@ -4199,7 +4209,7 @@ class Portal(Actor, metaclass=use_on_events):
         self._ox, self._oy = 0, 0  # out point for this portal
 #        self.interact = self._interact_default
         self._link = None  # the connecting Portal
-        self._link_display_text = None #override scene name
+#        self._link_display_text = None #override scene name
 
         #look and use are disabled by default for Portals
         self._allow_use = False
@@ -4234,6 +4244,25 @@ class Portal(Actor, metaclass=use_on_events):
         # (human readable, get variable names, set variable names, widget types)
         self._editable.insert(
             1, ("out point", (self.get_ox, self.get_oy), (self.set_ox, self.set_oy),  (int, int)))
+
+    @property
+    def portal_text(self):
+        """ What to display when hovering over this link """
+        link = self.link
+        if self.game.settings.portal_exploration and link and link.scene:
+            if link.scene.name not in self.game.visited:
+                t = "To the unknown."
+            else:
+                # use the link's display text if available, or the scene display text if available, else the scene name
+                if link.display_text not in [None, ""]: #override scene display text
+                    t = link.display_text
+                else:
+                    t = "To %s" % (link.scene.name) if link.scene.display_text in [
+                    None, ""] else "To %s" % (link.scene.display_text)
+        if not self.game.settings.show_portal_text:
+            t = ""
+        return t
+
 
     def guess_link(self):
         links = self.name.split("_to_")
@@ -4346,6 +4375,10 @@ class Portal(Actor, metaclass=use_on_events):
             log.warning("No actor available for this portal")
             return
         link = get_object(self.game, self._link)
+
+        if DEBUG_NAMES:
+            print(">>>portal>>> %s: %s"%(self.name, self.portal_text))
+
         if not link:
             self.game.player.says("It doesn't look like that goes anywhere.")
             if logging:
@@ -5931,6 +5964,16 @@ class Camera(metaclass=use_on_events):  # the view manager
             scene = self.game.scene
         scene = get_object(self.game, scene)
         self.game.scene = scene
+        if DEBUG_NAMES: # output what names the player sees
+            global tmp_objects_first, tmp_objects_second
+            for o in scene._objects:
+                obj = get_object(self.game, o)
+                if not isinstance(obj, Portal) and (obj.allow_interact or obj.allow_use or obj.allow_look):
+                    t = obj.fog_display_text(self.game.player)
+                    if o not in tmp_objects_first.keys():
+                        tmp_objects_first[o] = "%s: %s"%(scene.name, t)
+                    elif o not in tmp_objects_second:
+                        tmp_objects_second[o] = "%s: %s"%(scene.name, t)
 
         # reset camera
         self._goto_x, self._goto_y = None, None
@@ -7316,16 +7359,9 @@ class Game(metaclass=use_on_events):
                 game.editor.obj.x -= 1
             if symbol == pyglet.window.key.RIGHT:
                 game.editor.obj.x += 1
+            
 
-        #check menu items for key matches
-        objs = copy.copy(self._menu)
-        if self.scene:
-            objs.extend(self.scene._objects)
-        for i in objs:
-            obj = get_object(self, i)
-            if obj and obj._interact_key == symbol:
-                obj.trigger_interact() #XXX possible user_trigger_interact()
-                
+        # process engine keys before game keys
 
         if symbol == pyglet.window.key.F1:
             #            edit_object(self, list(self.scene._objects.values()), 0)
@@ -7450,9 +7486,33 @@ class Game(metaclass=use_on_events):
             self._event = None
             self._events = []
 
+        # check modals, menus, and then scene objects for key matches
 
-#            self.player.rescale(3)
- #           self.player.relocate(destination=(700,1600))
+        #check menu items for key matches
+        for name in self._modals:
+            obj = get_object(self, name)
+            if obj and obj.allow_interact and obj._interact_key == symbol:
+                user_trigger_interact(self, obj)
+                return
+
+        # don't process other objects while there are modals
+        if len(self._modals) > 0:
+            return
+
+        # try menu events
+        for obj_name in self._menu:
+            obj = get_object(self, obj_name)
+            if obj and obj.allow_interact and obj._interact_key == symbol:
+                user_trigger_interact(self, obj)
+                return
+
+        if len(self._menu) > 0 and self._menu_modal:
+            return  # menu is in modal mode so block other objects
+
+        for obj_name in self.scene._objects:
+            obj = get_object(self, obj_name)
+            if obj and obj._interact_key == symbol:
+                obj.trigger_interact() #XXX possible user_trigger_interact()
 
     def get_info_position(self, obj):
         obj = get_object(self, obj)
@@ -7583,18 +7643,7 @@ class Game(metaclass=use_on_events):
                     t = obj.name if obj.display_text == None else obj.display_text
                     t = obj.fog_display_text(self.player)
                     if isinstance(obj, Portal):
-                        link = get_object(self, obj._link)
-                        if self.settings.portal_exploration and link and link.scene:
-                            if link.scene.name not in self.visited:
-                                t = "To the unknown."
-                            else:
-                                if link.display_text not in [None, ""]: #override scene display text
-                                    t = link.display_text
-                                else:
-                                    t = "To %s" % (link.scene.name) if link.scene.display_text in [
-                                    None, ""] else "To %s" % (link.scene.display_text)
-                        if not self.settings.show_portal_text:
-                            t = ""
+                        t = obj.portal_text
 
                     if self.mouse_mode != MOUSE_LOOK: #change cursor if not in look mode
                         # hover over portal
@@ -8328,7 +8377,7 @@ class Game(metaclass=use_on_events):
 #        s = milliseconds(td)
         new_time = milliseconds(self.storage._total_time_in_game + td)
         if self.settings and self.settings.filename:
-            if self.settings.fatest_playthrough == None or new_time <= self.settings.fastest_playthrough:
+            if self.settings.fastest_playthrough == None or new_time <= self.settings.fastest_playthrough:
                 self.settings.fastest_playthrough = new_time
                 r = True
                 save_settings(game, game.settings.filename)            
@@ -8363,7 +8412,7 @@ class Game(metaclass=use_on_events):
         # "hint": <str> -- when this event triggers for the first time, set game.storage.hint to this value
         global benchmark_events
         t = datetime.now() - benchmark_events
-        if self._output_walkthrough is False:
+        if self._output_walkthrough is False and DEBUG_STDOUT is True:
             print("doing step",walkthrough, t.seconds)
         benchmark_events = datetime.now()
         try:
@@ -8394,6 +8443,28 @@ class Game(metaclass=use_on_events):
 
 
                 print("FINISHED WALKTHROUGH")
+                if DEBUG_NAMES:
+                    global tmp_objects_first, tmp_objects_second
+                    met = []
+                    for key, v in tmp_objects_first.items():
+                        obj = get_object(self, key)
+                        df = "%s.defaults"%slugify(key).lower()
+                        if obj: 
+                            d = os.path.join(obj.directory, df) if obj.directory else "no directory"
+                        else:
+                            print("XXX no object for %s"%key)
+                            d = "no directory"
+                        print("f>> %s (%s) - \"%s\""%(v,key, d))
+                        if key in tmp_objects_second:
+                            print("s>> %s (%s)"%(tmp_objects_second[key], key))
+                        else:
+                            print("no second")
+                        met.append(key)
+                        print()
+                    for key, v in tmp_objects_second.items():
+                        if key not in met:
+                            print(">>> second meeting but no first: %s %s"%(v, key))
+
                 if self.exit_step is True:
                     self.on_quit()
 
