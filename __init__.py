@@ -95,7 +95,7 @@ if not os.path.exists(SAVE_DIR):
 Constants
 """
 DEBUG_ASTAR = False
-DEBUG_STDOUT = True  # stream errors to stdout as well as log file
+DEBUG_STDOUT = True  # stream errors and walkthrough to stdout as well as log file
 DEBUG_NAMES = False # TODO: Output final names for portals and items in a scene. Could be a useful commandline option
 
 if DEBUG_NAMES:
