@@ -102,7 +102,6 @@ if DEBUG_NAMES:
     tmp_objects_first = {}
     tmp_objects_second = {}
 
-
 ENABLE_EDITOR = False  # default for editor. Caution: This starts module reloads which ruins pickles 
 ENABLE_PROFILING = False
 ENABLE_LOGGING = True
@@ -2808,7 +2807,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                         print("\n\n")
 
                 if logging:
-                    log.debug("Player interact (%s) with %s" %
+                    log.info("Player interact (%s) with %s" %
                               (script.__name__, self.name))
             else:
                 # warn if using default vida interact
@@ -2846,7 +2845,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         script = script if script else get_function(self.game, default)
         if script:
             if logging:
-                log.debug("Call use script (%s)" % basic)
+                log.info("Call use script (%s)" % basic)
             script(self.game, self, actor)
         else:
             # warn if using default vida look
@@ -2868,7 +2867,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                 receiver(self.game, self, self.game.player)
 
         if logging:
-            log.debug("Player looks at %s" % self.name)
+            log.info("Player looks at %s" % self.name)
         self.game.mouse_mode = MOUSE_INTERACT  # reset mouse mode
         if self._look:  # if user has supplied a look override
             script = get_function(self.game, self._look)
