@@ -5088,7 +5088,7 @@ class Scene(MotionManager, metaclass=use_on_events):
             game.load_state(self, "initial")
         ambient_name = os.path.join(sdir, "ambient.ogg")  # ambient sound to
         if os.path.isfile(ambient_name):
-            self.ambient_fname = ambient_name
+            self._ambient_filename = ambient_name
 
         self._smart_motions(game)  # load the motions
 
@@ -6009,9 +6009,14 @@ class Camera(metaclass=use_on_events):  # the view manager
 
 #        if scene.name == "aspaceship":
 #            import pdb; pdb.set_trace()
+        self.game.mixer.on_ambient_stop()
+        if scene._ambient_filename:
+            print("PLAYING",scene._ambient_filename)
+            self.game.mixer.on_ambient_play(scene._ambient_filename)
+        else:
+            print("STOPPING",current_scene._ambient_filename if current_scene else "None")
+#            self.game.mixer.on_ambient_stop()
 
-        if self._ambient_sound:
-            self._ambient_sound.stop()
 #        if self.game.scene and self.game._window:
 #            if self.game.scene._background:
 #                self.game.scene._background.blit((0,0))
@@ -6228,21 +6233,26 @@ class PlayerPygameSFX():
         self._sound = None
         self.game = game
 
-    def load(self, fname):
+    def load(self, fname, volume=None):
         if logging:
             log.debug("loading sfx")
             log.debug(os.getcwd())
             log.debug(fname)
         self._sound = pygame.mixer.Sound(fname)
 #        v = self.game.mixer._sfx_volume
-        new_volume = self.game.settings.music_volume if self.game and self.game.settings else 1
+        if volume is None:
+            new_volume = self.game.settings.music_volume if self.game and self.game.settings else 1
+        else:
+            new_volume = volume
         self.volume(new_volume)
 
-    def play(self):
-        self._sound.play()
+    def play(self, loops=0):
+        if self._sound:
+            self._sound.play(loops=loops)
 
     def stop(self):
-        self._sound.stop()
+        if self._sound:
+            self._sound.stop()
 
     def volume(self, v):
         if self._sound is None: return
@@ -6345,15 +6355,18 @@ class Mixer(metaclass=use_on_events):
             log.debug("PYGAME MIXER REPORTS", pygame.mixer.get_init())
             self._music_player = PlayerPygameMusic(game)
             self._sfx_player = PlayerPygameSFX(game)
+            self._ambient_player = PlayerPygameSFX(game)
         else:
             self._music_player = PlayerPyglet()
             self._sfx_player = PlayerPyglet()
+            self._ambient_player = PlayerPyglet()
 
     def __getstate__(self): #actor.getstate
         """ Prepare the object for pickling """ 
         self._music_position = self._music_player.position()
         self._music_player = None
         self._sfx_player = None
+        self._ambient_player = None
         self.game = None
 #        print("DEINITIALISE PLAYERS AT POSITION",self._music_position)
         return dict(self.__dict__)
@@ -6369,6 +6382,10 @@ class Mixer(metaclass=use_on_events):
         self._music_filename = None
         if current_music:
             self.on_music_play(current_music, start=self._music_position)
+        current_ambient = self._ambient_filename
+        self._ambient_filename = None
+        if current_ambient:
+            self.on_ambient_play(current_ambient)
 
     def on_publish_volumes(self):
         """ Use game.settings to set various volumes """
@@ -6378,10 +6395,15 @@ class Mixer(metaclass=use_on_events):
         v = self.game.settings.music_volume
         if self.game.settings.mute == True:
             v = 0
-#        print("SETTING VOLUME TO %f"%v)
         pygame.mixer.music.set_volume(v)
         self._music_volume = v
         self._music_volume_target = None
+
+        v = self.game.settings.ambient_volume
+        if self.game.settings.mute == True:
+            v = 0
+        self._ambient_player.volume(v)
+
 
     def on_status(self):
         """ Print the various modifiers on the mixer """
@@ -6543,57 +6565,18 @@ class Mixer(metaclass=use_on_events):
             absfilename = os.path.abspath(fname)                         
             if os.path.exists(absfilename):
                 log.info("Loading sfx file %s" % absfilename)
-                self._sfx_player.load(absfilename)
+                self._sfx_player.load(absfilename, self.game.settings.sfx_volume)
             else:
                 log.warning("SFX file %s missing." % absfilename)
                 self._sfx_player.pause()
                 return
-
         if self.game.settings.mute or self.game._headless:
             return
-        self._sfx_player.play()
-
+        if self.game.settings and self.game.settings.sfx_subtitles and description:
+            d = "<sound effect: %s>" % description
+            self.game.message(d)
+        self._sfx_player.play(loops=loops)
         return
-        sfx = None
-        if store:
-            setattr(self, store, sfx) #XXX replace with resource?
-        # headless mode skips sound and visuals
-        if self.game and self.game._headless:
-            if fname and not os.path.exists(fname):
-                log.warning("Music sfx %s missing." % fname)
-            return sfx
-
-        if fname:
-            # subtitle sfx
-            if self.game.settings and self.game.settings.sfx_subtitles and description:
-                d = "<sound effect: %s>" % description
-                self.game.message(d)
-
-            if os.path.exists(fname):
-                log.info("Loading sfx file %s" % fname)
-#                log.warning("Creating an sfx player in memory but probably never going to release it")
-#                sfx_player = pyglet.media.Player()
-#                self._sfx_players.append(sfx_player)
-#                sound = pyglet.resource.media(sfx, streaming=False)
-                sfx = pyglet.media.load(fname)
-                self._sfx_player.queue(sfx)
-                self._sfx_player.play()
-#                if pygame.mixer:
-#                    sfx = pygame.mixer.Sound(fname)
-#                    if self.game.settings: sfx.set_volume(self.game.settings.sfx_volume)
-            else:
-                log.warning("Music sfx %s missing." % fname)
-                return sfx
-        if sfx and not self.game._headless:
-            # fade music if needed
-            v = None
-            # restore music if needed
-            if v:
-                channel = 1
-                self._unfade_music = (channel, v)
-        if store:
-            setattr(self, store, sfx)
-        return sfx
 
     def on_sfx_play(self, fname=None, description=None, loops=0, fade_music=False, store=None):
         self._sfx_play(fname, description, loops, fade_music, store)
@@ -6602,6 +6585,24 @@ class Mixer(metaclass=use_on_events):
         self._sfx_player.stop()
 #        self._sfx_player.next_source()
         #if sfx: sfx.stop()
+
+    def on_ambient_play(self, fname=None, description=None):
+        if fname:
+            absfilename = os.path.abspath(fname)                         
+            if os.path.exists(absfilename):
+                log.info("Loading ambient file %s" % absfilename)
+                self._ambient_player.load(absfilename, self.game.settings.ambient_volume)
+                self._ambient_filename = fname
+            else:
+                log.warning("Ambient file %s missing." % absfilename)
+                self._ambient_player.pause()
+                return
+        if self.game.settings.mute or self.game._headless:
+            return
+        self._ambient_player.play(loops=-1) # loop indefinitely
+
+    def on_ambient_stop(self):
+        self._ambient_player.stop()
 
     def on_music_finish(self, callback=None):
         return
@@ -6756,9 +6757,10 @@ def save_game_pickle(game, fname):
         pickle.dump(game.get_player_info, f)
         pickle.dump(game.get_engine, f)
         pickle.dump(game.storage, f)
-        mixer1, mixer2 = game.mixer._music_player, game.mixer._sfx_player
+        mixer1, mixer2, mixer3 = game.mixer._music_player, game.mixer._sfx_player, game.mixer._ambient_player
         pickle.dump(game.mixer, f)
-        game.mixer._music_player, game.mixer._sfx_player, game.mixer.game = mixer1, mixer2, game
+        game.mixer._music_player, game.mixer._sfx_player, game.mixer._ambient_player = mixer1, mixer2, mixer3
+        game.mixer.game = game
         pickle.dump(_pyglet_fonts, f)
         pickle.dump(game._menu, f)
         pickle.dump(game._menus, f)
