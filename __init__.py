@@ -4063,7 +4063,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         solids = []
         for o in scene._objects:
             o = get_object(self.game, o)
-            if o._allow_draw == True and o != self.game.player:
+            if o._allow_draw == True and o != self.game.player and not isinstance(o, Emitter):
                 solids.append(o.solid_area)
 #        print("scene solid areas",[x.serialise() for x in solids],start, end, available_points)
         goto_points = self.aStar(walkarea, available_points, start, end, solids)
@@ -4930,7 +4930,7 @@ class WalkAreaManager(metaclass=use_on_events):
             scene = get_object(self.game, self._scene)
             for obj_name in scene._objects:
                 obj = get_object(scene.game, obj_name)
-                if obj.allow_update and obj.solid_area.collidepoint(x, y):
+                if obj.allow_update and obj.solid_area.collidepoint(x, y) and not isinstance(obj, Emitter):
                     outside_solids = False
                     break
         safe = True if inside_polygon and outside_solids else False
@@ -6250,6 +6250,10 @@ class PlayerPygameSFX():
         if self._sound:
             self._sound.play(loops=loops)
 
+    def fadeout(self, seconds):
+        if self._sound:
+            self._sound.fadeout(seconds*100)
+
     def stop(self):
         if self._sound:
             self._sound.stop()
@@ -6581,6 +6585,9 @@ class Mixer(metaclass=use_on_events):
     def on_sfx_play(self, fname=None, description=None, loops=0, fade_music=False, store=None):
         self._sfx_play(fname, description, loops, fade_music, store)
 
+    def on_sfx_fadeout(self, seconds=2):
+        self._sfx_player.fadeout(seconds)
+
     def on_sfx_stop(self, sfx=None):
         self._sfx_player.stop()
 #        self._sfx_player.next_source()
@@ -6876,6 +6883,7 @@ def load_game_pickle(game, fname, meta_only=False, keep=[]):
             # change camera to scene
             if player_info["player"]:
                 game.player = get_object(game, player_info["player"])
+                game.player.load_assets(game)
             if player_info["scene"]:
                 game.camera._scene(player_info["scene"])
             for module_name in game._modules:
