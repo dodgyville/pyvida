@@ -3712,7 +3712,7 @@ class Actor(MotionManager, metaclass=use_on_events):
 #        import pdb; pdb.set_trace()
         callback = self.on_animation_end_once #if not block else self.on_animation_end_once_block
         self._next_action = next_action if next_action else self.default_idle
-        if self.game and self.game._headless is True: #if headless, jump to end
+        if (self.game and self.game._headless is True) or not self.scene: #if headless or not on scene, jump to end
             self.on_animation_end_once()
             result = True
         else:
@@ -6031,10 +6031,12 @@ class Camera(metaclass=use_on_events):  # the view manager
 
 #        if scene.name == "aspaceship":
 #            import pdb; pdb.set_trace()
+
         self.game.mixer.on_ambient_stop()
         if scene._ambient_filename:
             self.game.mixer.on_ambient_play(scene._ambient_filename)
-#            self.game.mixer.on_ambient_stop()
+        else:
+            self.game.mixer.on_ambient_play() # remove ambient
 
 #        if self.game.scene and self.game._window:
 #            if self.game.scene._background:
@@ -6251,6 +6253,7 @@ class PlayerPygameSFX():
     def __init__(self, game):
         self._sound = None
         self.game = game
+        self.loops = 0
 
     def load(self, fname, volume):
         if logging:
@@ -6268,6 +6271,7 @@ class PlayerPygameSFX():
     def play(self, loops=0):
         if self._sound:
             self._sound.play(loops=loops)
+            self.loops = loops
 
     def fadeout(self, seconds):
         if self._sound:
@@ -6541,8 +6545,13 @@ class Mixer(metaclass=use_on_events):
         self._sfx_volume_target = val
         self._sfx_volume_step = ((val - self._sfx_volume)/fps)/duration
 
+    def _sfx_stop_callback(self):
+        """ callback used by fadeout to stop sfx """
+        self.on_sfx_stop()
+
     def on_sfx_fadeout(self, seconds=2):
         self.on_sfx_fade(0, seconds)
+        self._sfx_volume_callback = self._sfx_stop_callback
 
     def _update(self, dt, obj=None): #mixer.update
         """ Called by game.update to handle fades and effects """
@@ -6614,19 +6623,19 @@ class Mixer(metaclass=use_on_events):
         #if sfx: sfx.stop()
 
     def on_ambient_play(self, fname=None, description=None):
+        self._ambient_filename = fname
         if fname:
             absfilename = os.path.abspath(fname)                         
             if os.path.exists(absfilename):
                 log.info("Loading ambient file %s" % absfilename)
                 self._ambient_player.load(absfilename, self.game.settings.ambient_volume)
-                self._ambient_filename = fname
             else:
                 log.warning("Ambient file %s missing." % absfilename)
-                self._ambient_player.pause()
                 return
         if self.game.settings.mute or self.game._headless:
             return
-        self._ambient_player.play(loops=-1) # loop indefinitely
+        if self._ambient_filename:
+            self._ambient_player.play(loops=-1) # loop indefinitely
 
     def on_ambient_stop(self):
         self._ambient_player.stop()
