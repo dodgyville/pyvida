@@ -429,6 +429,7 @@ GLOBALS (yuck)
 """
 _pyglet_fonts = {DEFAULT_MENU_FONT: "bitstream vera sans"}
 _resources = {} #graphical assets for the game, #w,h, Sprite|None
+_sound_resources = {} #sound assets for the game, # PlayerPygameSFX
 
 """
 Testing utilities
@@ -2082,6 +2083,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         self._editing_save = True  # allow saving via the editor
         # how the collide method for this Actor functions
         self.collide_mode = COLLIDE_CLICKABLE
+
         self._tk_edit = {}  # used by tk editor to update values in widgets
 
         self.show_debug = False
@@ -2096,6 +2098,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         self._mouse_motion = None  # called when mouse is hovering over object
         # called when mouse is not hovering over object
         self._mouse_none = None
+
         # called when item is selected in a collection
         self._collection_select = None
         self.uses = {}  # override use functions (actor is key name)
@@ -5873,6 +5876,25 @@ class MenuManager(metaclass=use_on_events):
                 if i in self.game._menu:
                     self.game._menu.remove(i)
 
+    def on_enter_exit_sounds(self, enter_filename=None, exit_filename=None):
+        """ Sounds to play when mouse moves over a menu item """
+        self.game._menu_enter_filename = enter_filename # filename of sfx to play when entering hover over a menu
+        self.game._menu_exit_filename =  exit_filename # sfx to play when exiting hover over a menu item
+
+    def on_play_menu_sfx(self, key):
+        if key in _sound_resources:
+            sfx = _sound_resources[key]
+        else:
+            sfx = _sound_resources[key] = PlayerPygameSFX(self.game)
+            sfx.load(key, self.game.settings.sfx_volume)
+        sfx.play()        
+
+    def on_play_enter_sfx(self):
+        self.on_play_menu_sfx(self.game._menu_enter_filename)
+
+    def on_play_exit_sfx(self):
+        self.on_play_menu_sfx(self.game._menu_exit_filename)
+      
 
 class Camera(metaclass=use_on_events):  # the view manager
 
@@ -6011,10 +6033,7 @@ class Camera(metaclass=use_on_events):  # the view manager
 #            import pdb; pdb.set_trace()
         self.game.mixer.on_ambient_stop()
         if scene._ambient_filename:
-            print("PLAYING",scene._ambient_filename)
             self.game.mixer.on_ambient_play(scene._ambient_filename)
-        else:
-            print("STOPPING",current_scene._ambient_filename if current_scene else "None")
 #            self.game.mixer.on_ambient_stop()
 
 #        if self.game.scene and self.game._window:
@@ -6233,17 +6252,17 @@ class PlayerPygameSFX():
         self._sound = None
         self.game = game
 
-    def load(self, fname, volume=None):
+    def load(self, fname, volume):
         if logging:
             log.debug("loading sfx")
             log.debug(os.getcwd())
             log.debug(fname)
         self._sound = pygame.mixer.Sound(fname)
 #        v = self.game.mixer._sfx_volume
-        if volume is None:
-            new_volume = self.game.settings.music_volume if self.game and self.game.settings else 1
-        else:
-            new_volume = volume
+#        if volume is None:
+#            new_volume = self.game.settings.music_volume if self.game and self.game.settings else 1
+#        else:
+        new_volume = volume
         self.volume(new_volume)
 
     def play(self, loops=0):
@@ -6510,8 +6529,9 @@ class Mixer(metaclass=use_on_events):
         self._music_player.volume(new_volume)
         log.info("Setting music volume to %f"%new_volume)
 
-    def on_sfx_volume(self, val):
+    def on_sfx_volume(self, val=None):
         """ val 0.0 - 1.0 """
+        val = val if val else 1 # reset
         new_volume = self._sfx_volume = val
         new_volume *= self.game.settings.sfx_volume if self.game and self.game.settings else 1
         self._sfx_player.volume(new_volume)
@@ -6521,7 +6541,10 @@ class Mixer(metaclass=use_on_events):
         self._sfx_volume_target = val
         self._sfx_volume_step = ((val - self._sfx_volume)/fps)/duration
 
-    def _update(self, dt, obj=None):
+    def on_sfx_fadeout(self, seconds=2):
+        self.on_sfx_fade(0, seconds)
+
+    def _update(self, dt, obj=None): #mixer.update
         """ Called by game.update to handle fades and effects """
         self._music_position += dt #where the current music is
 
@@ -6565,6 +6588,7 @@ class Mixer(metaclass=use_on_events):
         fade_music = False | 0..1.0 -> fade the music to <fade_music> level while playing this sfx
         description = <string> -> human readable description of sfx
         """
+        self._sfx_player.stop()
         if fname:
             absfilename = os.path.abspath(fname)                         
             if os.path.exists(absfilename):
@@ -6572,7 +6596,6 @@ class Mixer(metaclass=use_on_events):
                 self._sfx_player.load(absfilename, self.game.settings.sfx_volume)
             else:
                 log.warning("SFX file %s missing." % absfilename)
-                self._sfx_player.pause()
                 return
         if self.game.settings.mute or self.game._headless:
             return
@@ -6584,9 +6607,6 @@ class Mixer(metaclass=use_on_events):
 
     def on_sfx_play(self, fname=None, description=None, loops=0, fade_music=False, store=None):
         self._sfx_play(fname, description, loops, fade_music, store)
-
-    def on_sfx_fadeout(self, seconds=2):
-        self._sfx_player.fadeout(seconds)
 
     def on_sfx_stop(self, sfx=None):
         self._sfx_player.stop()
@@ -6841,6 +6861,7 @@ def load_game_pickle(game, fname, meta_only=False, keep=[]):
             #restore mixer
             game.mixer.game = game 
             game.mixer.initialise_players(game)
+            game.mixer.resume()
 
             _pyglet_fonts = pickle.load(f)
 
@@ -7087,6 +7108,9 @@ class Game(metaclass=use_on_events):
         self._menu = []
         self._menus = []  # a stack of menus
         self._menu_modal = False  # is this menu blocking game events
+        self._menu_enter_filename = None # filename of sfx to play when entering hover over a menu
+        self._menu_exit_filename = None # sfx to play when exiting hover over a menu item
+
         self._scenes = {}
         self._gui = []
         self.storage = Storage()
@@ -7337,7 +7361,7 @@ class Game(metaclass=use_on_events):
     @property
     def get_engine(self):
         """ Information used internally by the engine that needs to be saved. """
-        watching = ["_player_goto_behaviour"]
+        watching = ["_player_goto_behaviour",  "_menu_enter_filename", "_menu_exit_filename"]
         data = { key: self.__dict__[key] for key in watching }
         return data
 
@@ -7611,6 +7635,8 @@ class Game(metaclass=use_on_events):
                     self.mouse_cursor = MOUSE_CROSSHAIR if self.mouse_cursor == MOUSE_POINTER else self.mouse_cursor
 
                     if obj._actions and "over" in obj._actions and (obj.allow_interact or obj.allow_use or obj.allow_look):
+                        if obj._action != "over":
+                            self.menu.on_play_enter_sfx() #play sound if available
                         obj._do("over")
 
                     if obj._mouse_motion and not menu_collide:
@@ -7620,6 +7646,7 @@ class Game(metaclass=use_on_events):
                 else:  # unhover over menu item
                     if obj.action and obj.action.name == "over" and (obj.allow_interact or obj.allow_use or obj.allow_look):
                         idle = obj._idle  # don't use obj.default_idle as it is scene dependent
+                        self.menu.on_play_exit_sfx() #play sound if available
                         if idle in obj._actions:
                             obj._do(idle)
                 if menu_collide:
@@ -8215,6 +8242,12 @@ class Game(metaclass=use_on_events):
         if player:
             self.player = player
 
+        # menu sounds
+        if os.path.isfile("data/sfx/menu_enter.ogg"):
+            self._menu_enter_filename = "data/sfx/menu_enter.ogg" 
+        if os.path.isfile("data/sfx/menu_enter.ogg"):
+            self._menu_exit_filename = "data/sfx/menu_exit.ogg" 
+
         if use_quick_load:  # save quick load file
             # use the on_save queuing method to allow all load_states to finish
             self.save_game(use_quick_load)
@@ -8401,7 +8434,7 @@ class Game(metaclass=use_on_events):
             s = milliseconds(td)
             self.settings.total_time_played += s
             self.settings._last_session_end = datetime.now()
-            save_settings(game, game.settings.filename)
+            save_settings(self, self.settings.filename)
 
         pyglet.app.exit()
         if mixer=="pygame":
@@ -8743,8 +8776,8 @@ class Game(metaclass=use_on_events):
 
         layer_objects = self.scene._layer if self.scene else []
         # update all the objects in the scene or the event queue.
-        items_list = [layer_objects, scene_objects, self._menu, modal_objects, [
-            self.camera], [obj[1][0] for obj in self._events], self._edit_menu]
+        items_list = [layer_objects, scene_objects, self._menu, modal_objects, 
+            [self.camera], [self.mixer], [obj[1][0] for obj in self._events], self._edit_menu]
         items_to_update = []
         for items in items_list:
             for item in items:  # _to_update:
@@ -8752,7 +8785,7 @@ class Game(metaclass=use_on_events):
                     item = get_object(self, item)
                 if item not in items_to_update:
                     items_to_update.append(item)
-        for item in items_to_update:  # _to_update:
+        for item in items_to_update:
             if item == None: 
                 log.error("Some item(s) in scene %s are None, which is odd."%self.name)
                 continue
