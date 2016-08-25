@@ -6350,6 +6350,7 @@ class Mixer(metaclass=use_on_events):
         self.music_rules = {} #rules for playing particular tracks
 
         # when loading, music and ambient sound will be restored.
+        self._music_stash = None # push / pop music
         self._music_filename = None
         self._music_position = 0 #where the current music is
         self._sfx_filename = None
@@ -6452,14 +6453,30 @@ class Mixer(metaclass=use_on_events):
 
 #            self._music_player.on_eos = self._
 
-    def on_music_play(self, fname=None, description=None, loops=-1, start=None, volume=None):
+    def on_music_pop(self, volume=None):
+        """ Stop the current track and if there is music stashed, pop it and start playing it """
+        if self._music_filename: # currently playing music
+            if self._music_stash: # there is a file on the stash
+                if self._music_stash == self._music_filename: # is same as the one on stash, so keep playing
+                    return
+                else: # there is a stash and it is different
+                    fname = self._music_stash
+                    self.on_music_play(fname)
+                    self._music_stash = None
+            else: # no stash so just stop the current music
+                self.on_music_stop(volume=volume)
+
+    def on_music_play(self, fname=None, description=None, loops=-1, start=None, volume=None, push=False):
         """ Description is for subtitles 
             Treat as if we are playing it (remember it, etc), even if a flag stop actual audio.
             By default, if a song is already playing, don't load and restart it.
+            If push is True, push the current music (if any) into storage
         """
         if self._music_filename:
             current_rule = self.music_rules[self._music_filename]
             current_rule.position = self._music_position
+            if push:
+                self._music_stash = self._music_filename
         if fname:
             if fname in self.music_rules:
                 rule = self.music_rules[fname]
@@ -6492,7 +6509,7 @@ class Mixer(metaclass=use_on_events):
 #        print("PLAY: SESSION MUTE", self._session_mute)
         if self._force_mute or self._session_mute or self.game._headless:
             return
-        if volume: self.on_music_volume(volume)
+        if volume is not None: self.on_music_volume(volume)
 
         start = start if start else default_start
         self._music_player.play(loops=loops, start=start)
@@ -6502,6 +6519,7 @@ class Mixer(metaclass=use_on_events):
         fps = self.game.fps if self.game else DEFAULT_FPS         
         self._music_volume_target = val
         self._music_volume_step = ((val - self._music_volume)/fps)/duration
+        self.busy += 1
 
     def on_music_fade_out(self, duration=5):
         self.on_music_fade(val=0, duration=duration)
@@ -6544,6 +6562,7 @@ class Mixer(metaclass=use_on_events):
         fps = self.game.fps if self.game else DEFAULT_FPS         
         self._sfx_volume_target = val
         self._sfx_volume_step = ((val - self._sfx_volume)/fps)/duration
+        self.busy += 1
 
     def _sfx_stop_callback(self):
         """ callback used by fadeout to stop sfx """
@@ -6571,6 +6590,7 @@ class Mixer(metaclass=use_on_events):
                 self._sfx_volume_target = None
                 self._sfx_volume_step = 0
                 self._sfx_volume_callback = None
+                self.busy -= 1
             self.on_sfx_volume(v)
 
         if self._music_volume_target is not None: #fade the volume up or down
@@ -6587,6 +6607,7 @@ class Mixer(metaclass=use_on_events):
                 self._music_volume_target = None
                 self._music_volume_step = 0
                 self._music_volume_callback = None
+                self.busy -= 1
             self.on_music_volume(v)
 
                 
