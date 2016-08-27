@@ -252,10 +252,15 @@ FX_FADE_IN = 1
 
 # KEYS (currently bound to pyglet)
 K_ESCAPE = pyglet.window.key.ESCAPE
+K_A = pyglet.window.key.A
+K_B = pyglet.window.key.B
+K_C = pyglet.window.key.C
+K_D = pyglet.window.key.D
+K_E = pyglet.window.key.E
+K_F = pyglet.window.key.F
 K_I = pyglet.window.key.I
 K_L = pyglet.window.key.L
 K_S = pyglet.window.key.S
-K_C = pyglet.window.key.C
 K_LESS = pyglet.window.key.LESS
 K_GREATER = pyglet.window.key.GREATER
 K_ENTER = pyglet.window.key.ENTER
