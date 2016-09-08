@@ -261,6 +261,9 @@ K_F = pyglet.window.key.F
 K_I = pyglet.window.key.I
 K_L = pyglet.window.key.L
 K_S = pyglet.window.key.S
+K_T = pyglet.window.key.T
+K_U = pyglet.window.key.U
+K_V = pyglet.window.key.V
 K_LESS = pyglet.window.key.LESS
 K_GREATER = pyglet.window.key.GREATER
 K_ENTER = pyglet.window.key.ENTER
@@ -6121,7 +6124,7 @@ class Camera(metaclass=use_on_events):  # the view manager
     def on_opacity(self, opacity=255, colour="black"):
         d = pyglet.resource.get_script_home()
         if colour == "black":
-            mask = pyglet.image.load(os.path.join(d, 'data/special/black.png'))
+            mask = pyglet.image.load(os.path.join(d, 'data/special/black.png')) #TODO create dynamically based on resolution
         else:
             mask = pyglet.image.load(os.path.join(d, 'data/special/white.png'))
         self._overlay = PyvidaSprite(mask, 0, 0)
@@ -6658,7 +6661,7 @@ class Mixer(metaclass=use_on_events):
             else:
                 log.warning("Ambient file %s missing." % absfilename)
                 return
-        if self.game.settings.mute or self.game._headless:
+        if (self.game.settings and self.game.settings.mute) or self.game._headless:
             return
         if self._ambient_filename:
             self._ambient_player.play(loops=-1) # loop indefinitely
@@ -7100,9 +7103,9 @@ class Game(metaclass=use_on_events):
         self.version = version
         self.engine = engine
 
-        self._scale = scale
-
         self.camera = Camera(self)  # the camera object
+        self.settings = None # game-wide settings 
+
         #initialise sound
         if mixer == "pygame":
             log.info("INITIALISE MIXER START")
@@ -7162,6 +7165,9 @@ class Game(metaclass=use_on_events):
         h = display.get_default_screen().height
         resolution, scale = fit_to_screen((w, h), resolution)
         self._scale = scale
+        self._bars = [None, None, None, None] #black bars in fullscreen, top, bottom, left, right
+        self._window_dx = 0 # displacement by fullscreen mode
+        self._window_dy = 0
 
 #        config = pyglet.gl.Config(double_buffer=True, vsync=True)
         #config = pyglet.gl.Config(alpha_size=4)
@@ -8434,8 +8440,7 @@ class Game(metaclass=use_on_events):
             self._imagereactor_directory = os.path.join(DIRECTORY_SAVES, d)
 
         if options.fullscreen:
-            self.fullscreen = True
-            self._window.set_fullscreen(True)
+            self.on_toggle_fullscreen(True)
             # import pdb; pdb.set_trace() #Don't do this. Lesson learned.
 
         if splash:
@@ -8462,6 +8467,7 @@ class Game(metaclass=use_on_events):
                 r = True
                 save_settings(game, game.settings.filename)            
         return r
+
 
     def on_quit(self):
         if self.settings and self.settings.filename:
@@ -9332,6 +9338,44 @@ class Game(metaclass=use_on_events):
         def pause_finish(d, game):
             self.busy -= 1
         pyglet.clock.schedule_once(pause_finish, duration, self)
+
+    def on_toggle_fullscreen(self, fullscreen=None):
+        """ Toggle fullscreen, or use <fullscreen> to set the value """
+#        glPopMatrix();
+#        glPushMatrix();
+        if fullscreen == None:
+            fullscreen = not self._window.fullscreen
+        if self.settings:
+            self.settings.fullscreen = fullscreen
+            # XXX do we need to save settings here? Or should we even be doing this here?
+
+        self.fullscreen = fullscreen #status of this session
+
+        self._window.set_fullscreen(fullscreen)
+        if fullscreen: # work out blackbars if needed
+            display = pyglet.window.get_platform().get_default_display()
+            w = display.get_default_screen().width
+            h = display.get_default_screen().height
+            resolution, scale = fit_to_screen((w, h), self.resolution)
+            #pyglet.gl.glScalef(scale, scale, scale)
+            eyex,eyey,eyez,centx,centy,centz,upx,upy,upz =0, 0, 0, 0, 0,-1, 0, 1,0
+            #eyex = 0.001
+           # glMatrixMode(GL_MODELVIEW)  
+           # pyglet.gl.gluLookAt(eyex,eyey,eyez,centx,centy,centz,upx,upy,upz)
+           # glDisable(GL_SCISSOR_TEST)
+           # glScissor(0, 0, resolution[0], resolution[1])
+           # glEnable(pyglet.gl.GL_SCISSOR_TEST) 
+           # self._bar
+            sw, sh = resolution
+            self._window_dx = dx = (w-sw)/2/scale
+            self._window_dy = dy = (h-sh)/2/scale
+            glTranslatef(dx, dy, 0) #move to middle of screen
+            print("resolution", resolution, (w,h), scale)
+        else:
+            glTranslatef(-self._window_dx,-self._window_dy, 0) #move back to corner of window
+
+
+
 
     def on_splash(self, image, callback, duration=None, immediately=False):
         """ show a splash screen then pass to callback after duration 
