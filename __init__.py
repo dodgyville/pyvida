@@ -7165,7 +7165,7 @@ class Game(metaclass=use_on_events):
         h = display.get_default_screen().height
         resolution, scale = fit_to_screen((w, h), resolution)
         self._scale = scale
-        self._bars = [None, None, None, None] #black bars in fullscreen, top, bottom, left, right
+        self._bars = [] #black bars in fullscreen, (pyglet image, location)
         self._window_dx = 0 # displacement by fullscreen mode
         self._window_dy = 0
 
@@ -7601,7 +7601,8 @@ class Game(metaclass=use_on_events):
     def get_point_from_raw(self, x,y):
         """ Take a point from the mouse on the screen and convert it to in-engine coords """
         ox, oy = x, y
-
+        ox -= self._window_dx*self._scale
+        oy -= self._window_dy*self._scale
 
         # if window is being scaled
         ox, oy = ox / self._scale, oy / self._scale
@@ -7630,6 +7631,7 @@ class Game(metaclass=use_on_events):
     def on_mouse_motion(self, x, y, dx, dy):
         """ Change mouse cursor depending on what the mouse is hovering over """
         self.mouse_position_raw = x, y
+
         self.mouse_position = x/self._scale, self.game.resolution[
             1] - y/self._scale  # adjusted for pyglet
 
@@ -7706,7 +7708,7 @@ class Game(metaclass=use_on_events):
                 obj = get_object(self, obj_name)
                 if not obj.allow_draw:
                     continue
-                if obj.collide(x, y) and obj._mouse_motion:
+                if obj.collide(ox, oy) and obj._mouse_motion:
                     if obj._mouse_motion:
                         fn = get_function(self, obj._mouse_motion, obj)
                         fn(self.game, obj, self.game.player,
@@ -7718,7 +7720,7 @@ class Game(metaclass=use_on_events):
                                      (self._allow_one_player_interaction is True))
 
                 allow_hover = (obj.allow_interact or obj.allow_use or obj.allow_look) or allow_player_hover
-                if obj.collide(x, y) and allow_hover:
+                if obj.collide(ox, oy) and allow_hover:
                     if isinstance(obj, Portal):
                         t = obj.portal_text
                     else:
@@ -8976,6 +8978,13 @@ class Game(metaclass=use_on_events):
         if self.game.camera._overlay:
             self.game.camera._overlay.draw()
 
+        # draw black bars if required
+        for bar in self._bars:
+            image, location = bar
+            if image:
+                image.blit(*location)
+
+
 #        self.fps_clock.draw()
 #        pyglet.graphics.draw(1, pyglet.gl.GL_POINTS,
 #            ('v2i', (int(self.mouse_down[0]), int(self.resolution[1] - self.mouse_down[1])))
@@ -9371,6 +9380,16 @@ class Game(metaclass=use_on_events):
             self._window_dy = dy = (h-sh)/2/scale
             glTranslatef(dx, dy, 0) #move to middle of screen
             print("resolution", resolution, (w,h), scale)
+            self._bars = []
+            pattern =  pyglet.image.SolidColorImagePattern((0, 0, 0, 255))
+            if dx > 0: # vertical bars
+                image = pattern.create_image(int(dx), int(sh/scale))
+                self._bars.append((image, (-dx,0)))
+                self._bars.append((image, (sw/scale,0)))
+            if dy > 0: # horizontal bars
+                image = pattern.create_image(int(sw/scale), int(dy))
+                self._bars.append((image, (0,-dy)))
+                self._bars.append((image, (0,sh/scale)))
         else:
             glTranslatef(-self._window_dx,-self._window_dy, 0) #move back to corner of window
 
