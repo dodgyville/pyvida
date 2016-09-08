@@ -9391,6 +9391,7 @@ class Game(metaclass=use_on_events):
                 self._bars.append((image, (0,-dy)))
                 self._bars.append((image, (0,sh/scale)))
         else:
+            self._bars = []
             glTranslatef(-self._window_dx,-self._window_dy, 0) #move back to corner of window
 
 
