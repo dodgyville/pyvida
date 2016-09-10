@@ -7795,9 +7795,11 @@ class Game(metaclass=use_on_events):
 
         self.last_mouse_release = (x, y, button, time.time())
 
+        ox,oy = self.get_point_from_raw(x,y)
+
         x, y = x / self._scale, y / self._scale  # if window is being scaled
 
-        ax, ay = x, y  # asbolute x,y (for modals and menu)
+        ax, ay = ox, oy  # asbolute x,y (for modals and menu)
 
         if self._headless: return
 
@@ -7805,15 +7807,15 @@ class Game(metaclass=use_on_events):
             x -= self.scene.x  # displaced by camera
             y += self.scene.y
 
-        y = self.game.resolution[1] - y  # invert y-axis if needed
-        ay = self.game.resolution[1] - ay
+ #       y = self.game.resolution[1] - y  # invert y-axis if needed
+ #       ay = self.game.resolution[1] - ay
         log.debug("mouse release")
 
         # we are editing something, so don't interact with objects
         if self.editor and self._selector: #select an object
             for obj_name in self.scene._objects:
                 obj = get_object(self, obj_name)
-                if obj.collide(x, y):
+                if obj.collide(ox, oy):
                     self.editor.set_edit_object(obj)
                     self._selector = False #turn off selector
                     return
@@ -7887,7 +7889,7 @@ class Game(metaclass=use_on_events):
                 allow_use = (obj.allow_draw and (obj.allow_interact or obj.allow_use or obj.allow_look)) or allow_player_use
                 if self._allow_one_player_interaction: #switch off special player interact
                     self._allow_one_player_interaction = False
-                if obj.collide(x, y) and allow_use:
+                if obj.collide(ox, oy) and allow_use:
                     # if wanting to interact or use an object go to it. If engine
                     # says to go to object for look, do that too.
                     if (self.mouse_mode != MOUSE_LOOK or GOTO_LOOK) and (obj.allow_interact or obj.allow_use or obj.allow_look):
@@ -7917,8 +7919,8 @@ class Game(metaclass=use_on_events):
         # no objects to interact with, so just go to the point
         if self.player and self.scene and self.player.scene == self.scene:
             allow_goto_point = True if self._player_goto_behaviour in [GOTO, GOTO_EMPTY] else False
-            if allow_goto_point and valid_goto_point(self, self.scene, self.player, (x,y)):
-                self.player.goto((x, y))
+            if allow_goto_point and valid_goto_point(self, self.scene, self.player, (ox,oy)):
+                self.player.goto((ox, oy))
                 self.player.set_idle()
                 return
 
