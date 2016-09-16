@@ -7716,7 +7716,7 @@ class Game(metaclass=use_on_events):
         x, y = x / self._scale, y / self._scale  # if window is being scaled
         y = self.game.resolution[1] - y  # invert y-axis if needed
 
-        if not self.scene or self._headless:
+        if not self.scene or self._headless or self._walkthrough_auto:
             return
         # check modals as first priority
         modal_collide = False
@@ -7881,7 +7881,7 @@ class Game(metaclass=use_on_events):
             return
 #        print()
 
-        if self._headless: return
+        if self._headless or self._walkthrough_auto: return
 
         if self.scene:
             x -= self.scene.x  # displaced by camera
