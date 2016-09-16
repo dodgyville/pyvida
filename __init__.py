@@ -7704,6 +7704,11 @@ class Game(metaclass=use_on_events):
 
         ox,oy = self.get_point_from_raw(x,y)
 
+        if oy < 0 or ox < 0 or ox > self.resolution[0] or oy > self.resolution[1]: # mouse is outside game window
+            self._info_object.display_text = " "  # clear info
+            self.mouse_cursor = MOUSE_POINTER if self.mouse_mode != MOUSE_LOOK else self.mouse_cursor # reset mouse pointer
+            return
+
         if self.scene:
             x -= self.scene.x  # displaced by camera
             y += self.scene.y
@@ -7867,10 +7872,14 @@ class Game(metaclass=use_on_events):
         self.last_mouse_release = (x, y, button, time.time())
 
         ox,oy = self.get_point_from_raw(x,y)
-
+#        print("(res), (w,h), (rawx,rawy), (windowdx, windowdy)",self.resolution, (self.w, self.h), (x,y), (self._window_dx, self._window_dy))
         x, y = x / self._scale, y / self._scale  # if window is being scaled
 
         ax, ay = ox, oy  # asbolute x,y (for modals and menu)
+#        print("(scaled x, scaled y), (ox,oy)",(x,y),(ox,oy))
+        if oy < 0 or ox < 0 or ox > self.resolution[0] or oy > self.resolution[1]: # mouse is outside game window
+            return
+#        print()
 
         if self._headless: return
 
@@ -9453,7 +9462,7 @@ class Game(metaclass=use_on_events):
             self._window_dx = dx = (w-sw)/2/scale
             self._window_dy = dy = (h-sh)/2/scale
             glTranslatef(dx, dy, 0) #move to middle of screen
-            print("resolution", resolution, (w,h), scale)
+ #           print("resolution", resolution, (w,h), scale)
             self._bars = []
             pattern =  pyglet.image.SolidColorImagePattern((0, 0, 0, 255))
             if dx > 0: # vertical bars
@@ -9467,7 +9476,7 @@ class Game(metaclass=use_on_events):
         else:
             self._bars = []
             glTranslatef(-self._window_dx,-self._window_dy, 0) #move back to corner of window
-
+            self._window_dx, self._window_dy = 0, 0
 
 
 
