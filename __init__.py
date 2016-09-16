@@ -1677,6 +1677,10 @@ class Rect(object):
     def flat(self):
         return (self.x, self.y, self._w, self._h)
 
+    @property
+    def flat2(self):
+        return (self.topleft, self.bottomleft, self.topright, self.bottomright)
+
     def __str__(self):
         return self.serialise()
 
@@ -1738,11 +1742,26 @@ class Rect(object):
         x1, y1 = start
         x2, y2 = end
         signs = []
+        intersect = False
         for x,y in [self.topleft, self.bottomleft, self.topright, self.bottomright]:
             f = (y2-y1)*x + (x1-x2)*y + (x2*y1-x1*y2)
             sign = int(f/abs(f)) if f != 0 else 0
             signs.append(sign) #remember if the line is above, below or crossing the point
-        return False if len(set(signs)) == 1 else True #if any signs change, then it is an intersect
+        possible_intersect = False if len(set(signs)) == 1 else True #if any signs change, then it is an intersect
+        intersect = possible_intersect
+        if possible_intersect: 
+            intersect = True
+            if (x1 > self.right and x2 > self.right): intersect = False
+            if (x1 < self.left and x2 < self.left): intersect = False
+            if (y1 < self.top and y2 < self.top): intersect = False
+            if (y1 > self.bottom and y2 > self.bottom): intersect = False 
+#            if not intersect:
+#                print("cancel possible intersect",start,end,"does not collide with",self.flat2)
+#            else:
+#                print("definite intersect",start,end,"does collide with",self.flat2)
+#        else:
+#            print("no initial intersect",start,end,"does not collide with",self.flat2)
+        return intersect
 
     def move(self, dx, dy):
         return Rect(self.x + dx, self.y + dy, self.w, self.h)
@@ -1750,6 +1769,12 @@ class Rect(object):
     def grow(self, v):
         v = round(v / 2)
         return Rect(self.x - v, self.y - v, self.w + v * 2, self.h + v * 2)
+
+    @property
+    def waypoints(self):
+        # return 4 points outside this rect
+        pts = self.grow(12)
+        return [pts.topleft, pts.topright, pts.bottomright, pts.bottomleft]
 
 #    def scale(self, v):
 #        self.w, self.h = int(self.w*v), int(self.h*v)
@@ -3987,7 +4012,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         for node in nodes:
             max_nodes -= 1
             if max_nodes == 0: continue
-            if node != current: #and (node[0] == current[0] or node[1] == current[1]):
+            if node.point != current.point: #and (node[0] == current[0] or node[1] == current[1]):
                 append_node = True  
                 if polygon: #test the walkarea
                     w0 = w1 = polygon[0]
@@ -3998,9 +4023,13 @@ class Actor(MotionManager, metaclass=use_on_events):
                         w1 = w2
                     if line_seg_intersect(node.point, current.point, w2, w0): append_node = False
                 for rect in solids:
-                    if rect.intersect(current.point, node.point) is True:
+                    collide = rect.intersect(current.point, node.point)
+#                    if collide:
+#                        print("test neighbours",current.point,node.point,"intersect with solid",rect.topleft, rect.topright, rect.bottomright, rect.bottomleft,"collides?",collide)
+                    if collide is True:
                         append_node = False
                 if append_node == True and node not in return_nodes: return_nodes.append(node)
+#        print("so neighbour nodes for",current.x, current.y,"are",[(pt.x, pt.y) for pt in return_nodes])
         return return_nodes
 
     def aStar(self, walkarea, nodes, start, end, solids):
@@ -4028,12 +4057,17 @@ class Actor(MotionManager, metaclass=use_on_events):
         graph = {}
         nodes = [Node(*n) for n in nodes] #convert points to nodes
         nodes.extend([current, end])
-
+#        print()
         for key in nodes:
             #add nodes that the key node can access to the key node's map.
             graph[key] = self.neighbour_nodes(walkarea._polygon, nodes, key, solids)
             #graph[key] = [node for node in nodes if node != n] #nodes link to visible nodes 
-
+#        print("So our node graph is",graph)
+#        for key in nodes:
+#            print("node",key.point,"can see:",end="")
+#            for n in graph[key]:
+#                print(n.point,", ",end="")
+#            print()        
         def retracePath(c):
             path.insert(0,c)
             if c.parent == None:
@@ -4043,8 +4077,11 @@ class Actor(MotionManager, metaclass=use_on_events):
         openList.append(current)
         while openList:
             current = min(openList, key=lambda inst:inst.H)
+#            print("openlist current",current.x, current.y)
             if current == end:
                 retracePath(current)
+#                print("retrace path: ",end="")
+#                print(path)
                 return path
 
             openList.remove(current)
@@ -4055,6 +4092,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                     if tile not in openList:
                         openList.append(tile)
                     tile.parent = current
+#        print("end of astar")
         return path
 
     def _calculate_path(self, start, end):
@@ -4069,14 +4107,19 @@ class Actor(MotionManager, metaclass=use_on_events):
             return [start, end]
         walkarea = scene.walkarea
         available_points = walkarea._waypoints
-        available_points = [pt for pt in available_points if walkarea.valid(*pt)] #scrub out non-valid points.
 #        available_points.extend([start, end]) #add the current start, end points (assume valid)
         solids = []
         for o in scene._objects:
             o = get_object(self.game, o)
             if o._allow_draw == True and o != self.game.player and not isinstance(o, Emitter):
+#                print("using solid",o.name,o.solid_area.flat2)
                 solids.append(o.solid_area)
-#        print("scene solid areas",[x.serialise() for x in solids],start, end, available_points)
+                for pt in o.solid_area.waypoints:
+                    if pt not in available_points:
+                        available_points.append(pt)
+
+        available_points = [pt for pt in available_points if walkarea.valid(*pt)] #scrub out non-valid points.
+#        print("scene available points",available_points,"solids",[x.flat for x in solids])
         goto_points = self.aStar(walkarea, available_points, start, end, solids)
         return [g.point for g in goto_points]
 
@@ -4195,11 +4238,16 @@ class Actor(MotionManager, metaclass=use_on_events):
             return
 
         start = (self.x, self.y)
-        self._goto_points = self._calculate_path(start, point)[1:]
+#        print("calculating way points between",start, point)
+        path = self._calculate_path(start, point)[1:]
+        self._goto_points = path #[1:]
+#        print("calculated path",path)
         if len(self._goto_points) > 0: #follow a path there
             goto_point = self._goto_points.pop(0)
             self._goto_block = block
         else: #go there direct
+            print("no astar found so going direct")
+            log.warning("NO PATH TO POINT %s from %s, SO GOING DIRECT"%(point, start))
             goto_point = point
         self._calculate_goto(goto_point, block)
 #        print("GOTO", angle, self._goto_x, self._goto_y, self._goto_dx, self._goto_dy, math.degrees(math.atan(100/10)))
@@ -4801,6 +4849,10 @@ class WalkAreaManager(metaclass=use_on_events):
     def get_pt_y(self):
         return self._get_point(y=True)
 
+    @property
+    def scene(self):
+        return get_object(self.game, self._scene)
+
     def edit_nearest_point(self, x,y):
         self._edit_waypoint_index = -1
         self._edit_polygon_index = -1
@@ -4966,6 +5018,15 @@ class WalkAreaManager(metaclass=use_on_events):
             colour = (255, 96, 181, 255)
             for pt in self._waypoints:
                 crosshair(self.game, pt, colour)
+
+            colour = (255, 96, 31, 255)
+            if self.scene:
+                for o in self.scene._objects:
+                    o = get_object(self.game, o)
+                    if o._allow_draw == True and o != self.game.player and not isinstance(o, Emitter):
+                        for pt in o.solid_area.waypoints:
+                            if self.collide(*pt):
+                                crosshair(self.game, pt, colour)
 
 
     def pyglet_draw(self): #walkareamanager.draw
@@ -6663,6 +6724,8 @@ class Mixer(metaclass=use_on_events):
                 return
         if (self.game.settings and self.game.settings.mute) or self.game._headless:
             return
+        if self._force_mute or self._session_mute:
+            return
         if self._ambient_filename:
             self._ambient_player.play(loops=-1) # loop indefinitely
 
@@ -7491,6 +7554,10 @@ class Game(metaclass=use_on_events):
             print("finished casting")
 
         if symbol == pyglet.window.key.F9:
+            self.scene.walkarea._fill_colour = (50,244,176, 255)
+            self.scene.walkarea._editing = True
+            self.fountain.show_debug = True
+            return
             pygame.mixer.quit()
             pygame.mixer.init()
             game.mixer._music_player.load(game.mixer._music_filename)
@@ -7787,9 +7854,13 @@ class Game(metaclass=use_on_events):
                 """Same place, same button, double click shortcut"""
                 if time.clock() - self.last_mouse_release[-1] < 0.2:
                     if self.player and self.player._goto_x != None:
-                        self.player._x, self.player._y = self.player._goto_x, self.player._goto_y
+                        fx,fy = self.player._goto_x, self.player._goto_y
+                        if len(self.player._goto_points)> 0:
+                            fx,fy = self.player._goto_points[-1]
+                        self.player._x, self.player._y = fx,fy
 #                        self.player._goto_dx, self.player._goto_dy = 0, 0
                         self.player._goto_deltas = []
+                        self.player._goto_points = []
                         return
         self._info_object.display_text = " " #clear hover text
 
@@ -8911,10 +8982,11 @@ class Game(metaclass=use_on_events):
             else:
                 break
 
-        if self.scene.walkarea and self.scene.walkarea._fill_colour is not None:
-            self.scene.walkarea.pyglet_draw()
- #           pass
-#        self.scene.walkarea.debug_pyglet_draw() #XXX test walkarea
+        if self.scene.walkarea:
+            if self.scene.walkarea._editing:
+                self.scene.walkarea.debug_pyglet_draw()
+            elif self.scene.walkarea._fill_colour is not None:
+                self.scene.walkarea.pyglet_draw()
 
         scene_objects = []
         if self.scene:
