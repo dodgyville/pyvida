@@ -205,6 +205,15 @@ MOUSE_LEFT = 2
 MOUSE_RIGHT = 3
 MOUSE_EYES = 4
 
+MOUSE_CURSORS = [(MOUSE_POINTER, "pointer.png"),
+                           (MOUSE_CROSSHAIR, "cross.png"),
+                           (MOUSE_LEFT, "left.png"),
+                           (MOUSE_RIGHT, "right.png"),
+                           (MOUSE_EYES, "look.png"),
+                           ]
+
+MOUSE_CURSORS_DICT = dict(MOUSE_CURSORS)
+
 # COLLIDE TYPES
 COLLIDE_CLICKABLE = 0  # use the clickable area as the collision boundaries
 COLLIDE_NEVER = 1  # never collide (used by on_asks)
@@ -1244,6 +1253,10 @@ class Settings(object):
 
         self.invert_mouse = False  # for lefties
         self.language = "en"
+        self.disable_joystick = False # allow joystick if available
+        # joystick button remapping
+        self.joystick_interact = 0 # index to joystick.buttons that corresponds to mouse left-click
+        self.joystick_look = 1 # index to joystick.buttons that corresponds to mouse left-click
 
         #some game play information
         self._current_session_start = None #what date and time did the current session start
@@ -6696,7 +6709,7 @@ class Mixer(metaclass=use_on_events):
             else:
                 log.warning("SFX file %s missing." % absfilename)
                 return
-        if self.game.settings.mute or self.game._headless:
+        if self.game.settings.mute or self.game._headless or  self._force_mute or self._session_mute:
             return
         if self.game.settings and self.game.settings.sfx_subtitles and description:
             d = "<sound effect: %s>" % description
@@ -7246,6 +7259,7 @@ class Game(metaclass=use_on_events):
         self._window.on_mouse_release = self.on_mouse_release
         self._window.on_mouse_drag = self.on_mouse_drag
         self._window.on_mouse_scroll = self.on_mouse_scroll
+#        self._window.on_joybutton_release = self.on_joybutton_release
         self.last_mouse_release = None  # track for double clicks
         self._pyglet_batches = []
         self._gui_batch = pyglet.graphics.Batch()
@@ -7334,12 +7348,14 @@ class Game(metaclass=use_on_events):
         # what activity does a mouse click trigger?
         self.mouse_mode = MOUSE_INTERACT
         # which image to use
+        self._joystick = None # pyglet joystick
         self.mouse_cursor = self._mouse_cursor = MOUSE_POINTER
         self._mouse_object = None  # if using an Item or Actor as mouse image
         self.hide_cursor = HIDE_MOUSE
         self.mouse_down = (0, 0)  # last press
         self.mouse_position_raw = (0, 0)  # last known position of mouse
         self.mouse_position = (0, 0)  # last known position of mouse, scaled
+
         #enable the player's clickable area for one event, useful for interacting
         #with player object on occasion
         self._allow_one_player_interaction = False
@@ -7445,6 +7461,9 @@ class Game(metaclass=use_on_events):
         if not image:
             log.error("Unable to find mouse cursor for mouse mode %s" % cursor)
             return
+#        if self._joystick:
+#            self._window.set_mouse_cursor(None)
+#            return 
         cursor = pyglet.window.ImageMouseCursor(
             image, image.width / 2, image.height / 2)
         self._window.set_mouse_cursor(cursor)
@@ -7851,6 +7870,18 @@ class Game(metaclass=use_on_events):
                 obj = get_object(self, obj_name)
                 if obj.collide(x, y) and obj._drag:
                     self._drag = obj
+
+    def on_joybutton_release(self, joystick, button):
+        if not self._joystick:
+            return
+        modifiers = 0
+        x,y = self.mouse_position_raw
+        if button == self.settings.joystick_interact:
+            self.on_mouse_release(x,y, pyglet.window.mouse.LEFT, modifiers)
+        elif button == self.settings.joystick_look:
+            self.on_mouse_release(x,y, pyglet.window.mouse.RIGHT, modifiers)
+#        print(self._joystick.__dict__)
+#        self._joystick.button[
 
     def on_mouse_release(self, x, y, button, modifiers):
         """ Call the correct function depending on what the mouse has clicked on """
@@ -8474,6 +8505,14 @@ class Game(metaclass=use_on_events):
         options = self.parser.parse_args()
 #        self.mixer._force_mute =  #XXX sound disabled for first draft
         self.mixer._session_mute = True if options.mute == True else False
+        if self.settings and not self.settings.disable_joystick:
+            joysticks = pyglet.input.get_joysticks()
+            if joysticks:
+                self._joystick = joysticks[0]
+                self._joystick.open()
+                self._joystick.push_handlers(self)
+                self._window.set_mouse_visible(False)
+
         if options.output_walkthrough == True:
             self._output_walkthrough = True
             print("Walkthrough for %s"%self.name)
@@ -8888,6 +8927,18 @@ class Game(metaclass=use_on_events):
         if fn:
             fn(self, dt, single_event)
 
+        if self._joystick:
+            x = self.mouse_position_raw[0] + self._joystick.x * 40
+            y = self.mouse_position_raw[1] - self._joystick.y * 40
+            #print(x,y, self._joystick.x,  self.mouse_position_raw)
+            ox,oy = self.get_point_from_raw(x,y)
+ 
+            if y < 0: y = 0
+            if x < 0: x = 0
+            if y > self.resolution[1]: y = self.resolution[1]
+            if x > self.resolution[0]: x = self.resolution[0]
+            self.on_mouse_motion(x, y, dx=0, dy=0) # XXX dx, dy are zero
+
 #        dt = self.fps #time passed (in milliseconds)
         if self.scene:
             for obj_name in self.scene._objects:
@@ -9067,6 +9118,21 @@ class Game(metaclass=use_on_events):
             if image:
                 image.blit(*location)
 
+        if self._joystick: #draw cursor for joystick
+#            print("blit at",self.mouse_position)
+            x,y = self.mouse_position
+            value = MOUSE_CURSORS_DICT[self.mouse_cursor]
+            cursor_pwd = os.path.join(
+                os.getcwd(), os.path.join(self.directory_interface, value))
+            # TODO: move this outside the draw loop
+            cursor = Item("_joystick_cursor").smart(self.game, image=cursor_pwd)
+            cursor.load_assets(self.game)
+            cursor.x, cursor.y = x-cursor.w/2,y-cursor.h/2
+            cursor.scale = 1.0
+
+            cursor.pyglet_draw(absolute=True)
+            #image.blit(x-image.width,self.resolution[1]-y+image.height)
+
 
 #        self.fps_clock.draw()
 #        pyglet.graphics.draw(1, pyglet.gl.GL_POINTS,
@@ -9150,12 +9216,7 @@ class Game(metaclass=use_on_events):
 
     def _load_mouse_cursors(self):
         """ called by Game after display initialised to load mouse cursor images """
-        for key, value in [(MOUSE_POINTER, "pointer.png"),
-                           (MOUSE_CROSSHAIR, "cross.png"),
-                           (MOUSE_LEFT, "left.png"),
-                           (MOUSE_RIGHT, "right.png"),
-                           (MOUSE_EYES, "look.png"),
-                           ]:
+        for key, value in MOUSE_CURSORS:
             # use specific mouse cursors or use pyvida defaults
             cursor_pwd = os.path.join(
                 os.getcwd(), os.path.join(self.directory_interface, value))
