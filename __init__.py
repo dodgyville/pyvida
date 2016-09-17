@@ -3716,13 +3716,14 @@ class Actor(MotionManager, metaclass=use_on_events):
             self._actions[action.name] = action
         elif type(action) == str:
             action = self._actions[action]
+#        log.info("%s doing %s"%(self.name, action.name))
         resource = self.resource
 #        if resource:
 #            resource.opacity = max(0, min(round(self.alpha*255), 255))
 #            if action and action.name == "alive":
 #                import pdb; pdb.set_trace()
 
-        #store the callback in resources
+        #store the callback in resources        
         callback = "on_animation_end" if callback == None else getattr(callback, "__name__", callback)
         self._pyglet_animation_callback = callback
 
@@ -3761,7 +3762,6 @@ class Actor(MotionManager, metaclass=use_on_events):
         self._do(action, mode=mode)
 
     def on_do_once(self, action, next_action=None, mode=LOOP, block=False):
-#        print("Luke, this is here to remind you to fix walkthroughs and also make do_once follow block=True")
 #        log.info("do_once does not follow block=True
 #        import pdb; pdb.set_trace()
         callback = self.on_animation_end_once #if not block else self.on_animation_end_once_block
