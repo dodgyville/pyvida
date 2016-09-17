@@ -201,16 +201,20 @@ MOUSE_INTERACT = 3  # DEFAULT ACTION FOR MAIN BTN
 
 MOUSE_POINTER = 0
 MOUSE_CROSSHAIR = 1
-MOUSE_LEFT = 2
-MOUSE_RIGHT = 3
-MOUSE_EYES = 4
+MOUSE_EYES = 3
+MOUSE_LEFT = 4
+MOUSE_RIGHT = 5
+MOUSE_UP = 6
+MOUSE_DOWN = 7
 
 MOUSE_CURSORS = [(MOUSE_POINTER, "pointer.png"),
-                           (MOUSE_CROSSHAIR, "cross.png"),
-                           (MOUSE_LEFT, "left.png"),
-                           (MOUSE_RIGHT, "right.png"),
-                           (MOUSE_EYES, "look.png"),
-                           ]
+               (MOUSE_CROSSHAIR, "cross.png"),
+               (MOUSE_EYES, "look.png"),
+               (MOUSE_LEFT, "left.png"),
+               (MOUSE_RIGHT, "right.png"),
+               (MOUSE_UP, "up.png"),
+               (MOUSE_DOWN, "down.png"),
+               ]
 
 MOUSE_CURSORS_DICT = dict(MOUSE_CURSORS)
 
@@ -1233,7 +1237,7 @@ class Settings(object):
         self.allow_internet_debug = ENABLE_LOGGING
 
         self.fullscreen = DEFAULT_FULLSCREEN
-        self.show_portals = False
+        self.show_portals = True #TODO default should be false
         self.show_portal_text = DEFAULT_PORTAL_TEXT
         self.portal_exploration = DEFAULT_EXPLORATION
         self.textspeed = NORMAL
@@ -1745,6 +1749,11 @@ class Rect(object):
     @property
     def bottomright(self):
         return (self.right, self.bottom)
+
+    @property
+    def centre(self):
+        return (self.left + self.w/2, self.top + self.h/2)
+
 
     def collidepoint(self, x, y):
         return collide((self.x, self.y, self.w, self.h), x, y)
@@ -3031,7 +3040,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         Most of the information is derived from the file structure.
 
         If no <image>, smart will load all .PNG files in data/actors/<Actor Name> as actions available for this actor.
-        If there is <image>, use that file to create an action
+        If there is <image>, use that file (or list of files) to create an action (or actions)
 
         If there is an <image>, create an idle action for that.
 
@@ -3067,7 +3076,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         self._directory = myd
 
         if image:
-            images = [image]
+            images = image if type(image) == list else [image]
         else:
             images = glob.glob(os.path.join(absd, "*.png"))
             if os.path.isdir(absd) and len(glob.glob("%s/*" % absd)) == 0:
@@ -3080,7 +3089,6 @@ class Actor(MotionManager, metaclass=use_on_events):
         self._images = images
         self._smart_actions(game)  # load the actions
         self._smart_motions(game)  # load the motions
-
 
         if len(self._actions) > 0:  # do an action by default
             action = idle if idle in self._actions else list(self._actions.keys())[0]
@@ -4285,7 +4293,17 @@ class Portal(Actor, metaclass=use_on_events):
         #look and use are disabled by default for Portals
         self._allow_use = False
         self._allow_look = False
+        self._icon = None
 
+    def smart(self, *args, **kwargs): #portal.smart
+        super().smart(*args, **kwargs)
+        # create portal icon for settings.show_portals 
+        #TODO currently uses DIRECTORY_INTERFACE instead of game.directories
+        image1 = os.path.join(os.getcwd(), os.path.join(DIRECTORY_INTERFACE, "portal_active.png"))
+        image2 = os.path.join(os.getcwd(), os.path.join(DIRECTORY_INTERFACE, "portal_inactive.png"))
+        if os.path.isfile(image1) and os.path.isfile(image2):
+            self._icon = Item("%s_active"%self.name).smart(self.game, image=[image1, image2])
+            self.game.add(self._icon)
 
     def _usage(self, draw=None, update=None, look=None, interact=None, use=None):
         # XXX this is a hack for Pleasure Planet ... I accidently left on all the look and use flags
@@ -4302,12 +4320,6 @@ class Portal(Actor, metaclass=use_on_events):
     @property
     def link(self):
         return get_object(self.game, self._link)
-
-    def debug_pyglet_draw(self, absolute=False): #portal.debug.draw
-        super().debug_pyglet_draw(absolute=absolute)
-        #outpoint - red
-        self._debugs.append(crosshair(
-            self.game, (self.x + self.ox, self.y + self.oy), (255, 10, 10, 255), absolute=absolute))
 
     def set_editable(self):
         """ Set which attributes are editable in the editor """
@@ -4466,8 +4478,28 @@ class Portal(Actor, metaclass=use_on_events):
                          (actor.name, self.scene.name, link.scene.name))
         self.exit_here(actor, block=block)
         self.relocate_link(actor)
+        self.game.mouse_cursor = MOUSE_POINTER # reset mouse pointer
         self.game.camera.scene(link.scene)  # change the scene
         self.enter_link(actor, block=block)
+
+    def pyglet_draw(self, absolute=False, force=False, window=None):  # portal.draw
+        super().pyglet_draw(absolute, force, window)  # actor.draw
+        if self.game.settings.show_portals:
+            if self._icon:
+                i = "portal_active" if self.allow_interact or self.allow_look else "portal_inactive"
+                self._icon.on_do(i)
+                if not self._icon.action._loaded:
+                    self._icon.load_assets(self.game)
+#                self._icon.x, self._icon.y =(self.x + self.sx - self._icon.w*1.2, self.y + self.sy-self._icon.h/2)
+                self._icon.x, self._icon.y = self.clickable_area.centre
+                self._icon.pyglet_draw()
+        return
+
+    def debug_pyglet_draw(self, absolute=False): #portal.debug.draw
+        super().debug_pyglet_draw(absolute=absolute)
+        #outpoint - red
+        self._debugs.append(crosshair(
+            self.game, (self.x + self.ox, self.y + self.oy), (255, 10, 10, 255), absolute=absolute))
 
 
 def terminate_by_frame(game, emitter, particle):
@@ -5969,6 +6001,11 @@ class MenuManager(metaclass=use_on_events):
         else:
             sfx = _sound_resources[key] = PlayerPygameSFX(self.game)
             sfx.load(key, self.game.settings.sfx_volume)
+        if self.game:
+            if self.game._headless or (self.game.settings and self.game.settings.mute): 
+                return
+            if self.game.mixer and  self.game.mixer._force_mute or self.game.mixer._session_mute:
+                return
         sfx.play()        
 
     def on_play_enter_sfx(self):
@@ -6067,8 +6104,8 @@ class Camera(metaclass=use_on_events):  # the view manager
                 log.error(
                     "Can't change to non-existent scene, staying on current scene")
             scene = self.game.scene
-        scene = get_object(self.game, scene)
-        self.game.scene = scene
+        scene = get_object(game, scene)
+        game.scene = scene
         if DEBUG_NAMES: # output what names the player sees
             global tmp_objects_first, tmp_objects_second
             for o in scene._objects:
@@ -6709,7 +6746,7 @@ class Mixer(metaclass=use_on_events):
             else:
                 log.warning("SFX file %s missing." % absfilename)
                 return
-        if self.game.settings.mute or self.game._headless or  self._force_mute or self._session_mute:
+        if self.game.settings.mute or self.game._headless or self._force_mute or self._session_mute:
             return
         if self.game.settings and self.game.settings.sfx_subtitles and description:
             d = "<sound effect: %s>" % description
@@ -6879,6 +6916,9 @@ Game class
 def restore_object(game, obj):
     """ Call after restoring an object from a pickle """
     obj.game = game
+    if hasattr(obj, "_actions"): # refresh asset tracking
+        for a in obj._actions.values(): 
+            if a._loaded: a._loaded = False
     if hasattr(obj, "create_label"):
         obj.create_label()
     if hasattr(obj, "set_editable"):
@@ -7821,8 +7861,13 @@ class Game(metaclass=use_on_events):
                     if self.mouse_mode != MOUSE_LOOK: #change cursor if not in look mode
                         # hover over portal
                         if isinstance(obj, Portal) and self.mouse_mode != MOUSE_USE:
-                            self.mouse_cursor = MOUSE_LEFT if obj._x < self.resolution[
-                                0] / 2 else MOUSE_RIGHT
+                            dx = (obj.sx - obj.ox)
+                            dy = (obj.sy - obj.oy)
+                            if abs(dx) > abs(dy): # more horizontal vector
+                                m = MOUSE_LEFT if dx>0 else MOUSE_RIGHT
+                            else: # more vertical exit vector
+                                m = MOUSE_UP if dy>0 else MOUSE_DOWN
+                            self.mouse_cursor = m
                         else: # change to pointer
                             self.mouse_cursor = MOUSE_CROSSHAIR
                     x,y=obj.x, obj.y
