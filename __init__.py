@@ -1183,6 +1183,8 @@ class AchievementManager(object, metaclass=use_on_events):
 
             game.achievement.relocate(game.scene)
             game.achievement.motion("popup", mode=ONCE, block=True)
+            game.achievement.display_text = a.description
+            game.achievement.rename((0, -FONT_ACHIEVEMENT_SIZE*3))
             #TODO: replace with bounce Motion
 #            game.achievement.move((0,-game.achievement.h), block=True)
 #            game.player.says("Achievement unlocked: %s\n%s"%(
@@ -2087,6 +2089,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         self._goto_dx, self._goto_dy = 0, 0
         self._goto_points = []  # list of points Actor is walking through
         self._goto_block = False # is this a*star multi-step process blocking?
+        self._use_astar = False
 
         self._opacity = 255
 
@@ -4260,15 +4263,19 @@ class Actor(MotionManager, metaclass=use_on_events):
 
         start = (self.x, self.y)
 #        print("calculating way points between",start, point)
-        path = self._calculate_path(start, point)[1:]
+        if self._use_astar:
+            path = self._calculate_path(start, point)[1:]
+            if len(path) == 0:
+                print("no astar found so going direct")
+                log.warning("NO PATH TO POINT %s from %s, SO GOING DIRECT"%(point, start))
+        else: #go direct
+            path = []
         self._goto_points = path #[1:]
 #        print("calculated path",path)
         if len(self._goto_points) > 0: #follow a path there
             goto_point = self._goto_points.pop(0)
             self._goto_block = block
         else: #go there direct
-            print("no astar found so going direct")
-            log.warning("NO PATH TO POINT %s from %s, SO GOING DIRECT"%(point, start))
             goto_point = point
         self._calculate_goto(goto_point, block)
 #        print("GOTO", angle, self._goto_x, self._goto_y, self._goto_dx, self._goto_dy, math.degrees(math.atan(100/10)))
@@ -9164,7 +9171,6 @@ class Game(metaclass=use_on_events):
                 image.blit(*location)
 
         if self._joystick: #draw cursor for joystick
-#            print("blit at",self.mouse_position)
             x,y = self.mouse_position
             value = MOUSE_CURSORS_DICT[self.mouse_cursor]
             cursor_pwd = os.path.join(
