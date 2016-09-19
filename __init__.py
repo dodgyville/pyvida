@@ -2119,6 +2119,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         self.display_text_align = LEFT
         # if the player hasn't met this Actor use these "fog of war" variables.
         self._fog_display_text = None
+        self.description = None  # text for blind users
 
         self.font_speech = None  # use default font if None (from game), else filename key for _pyglet_fonts
         self.font_speech_size = None  # use default font size (from game)
@@ -5523,7 +5524,7 @@ class HTMLLabel(DocumentLabel):
     ''')
 
 
-class Text(Item):
+class Text(Item, metaclass=use_on_events):
 
     def __init__(self, name, pos=(0, 0), display_text=None,
                  colour=(255, 255, 255, 255), font=None, size=DEFAULT_TEXT_SIZE, wrap=800,
@@ -6162,7 +6163,8 @@ class Camera(metaclass=use_on_events):  # the view manager
         if scene._ambient_filename:
             self.game.mixer.on_ambient_play(scene._ambient_filename)
         else:
-            self.game.mixer.on_ambient_play() # remove ambient
+            self.game.mixer.on_ambient_play() # stop ambient
+#            self.game.mixer.on_ambient_play() # remove ambient
 
 #        if self.game.scene and self.game._window:
 #            if self.game.scene._background:
@@ -6645,6 +6647,8 @@ class Mixer(metaclass=use_on_events):
         fps = self.game.fps if self.game else DEFAULT_FPS         
         self._music_volume_target = val
         self._music_volume_step = ((val - self._music_volume)/fps)/duration
+        if self._music_volume_step == 0: #already there
+            return
         self.busy += 1
 
     def on_music_fade_out(self, duration=5):
@@ -6785,6 +6789,8 @@ class Mixer(metaclass=use_on_events):
             return
         if self._ambient_filename:
             self._ambient_player.play(loops=-1) # loop indefinitely
+        else: #no filename, so stop playing
+            self._ambient_player.stop()
 
     def on_ambient_stop(self):
         self._ambient_player.stop()
