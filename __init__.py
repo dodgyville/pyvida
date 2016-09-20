@@ -5461,6 +5461,7 @@ class Scene(MotionManager, metaclass=use_on_events):
             rule = mixer.music_rules[self._music_filename] if self._music_filename in mixer.music_rules else None
             start = rule.position if rule else 0
 #            mixer.music_fade_out(0.5)
+            print("PLAY SCENE MUSIC",self._music_filename)
             mixer.on_music_play(self._music_filename, start=start)
 
 
@@ -6388,6 +6389,7 @@ class PlayerPygameSFX():
             log.debug("loading sfx")
             log.debug(os.getcwd())
             log.debug(fname)
+        if self._sound: self._sound.stop()
         self._sound = pygame.mixer.Sound(fname)
 #        v = self.game.mixer._sfx_volume
 #        if volume is None:
@@ -6551,7 +6553,8 @@ class Mixer(metaclass=use_on_events):
         v = self.game.settings.music_volume
         if self.game.settings.mute == True:
             v = 0
-        pygame.mixer.music.set_volume(v)
+#        pygame.mixer.music.set_volume(v)
+        self.on_music_volume(v)
         self._music_volume = v
         self._music_volume_target = None
 
@@ -6600,6 +6603,7 @@ class Mixer(metaclass=use_on_events):
             By default, if a song is already playing, don't load and restart it.
             If push is True, push the current music (if any) into storage
         """
+        print("START PLAY", fname)
         if self._music_filename:
             current_rule = self.music_rules[self._music_filename]
             current_rule.position = self._music_position
@@ -6641,7 +6645,7 @@ class Mixer(metaclass=use_on_events):
 
         start = start if start else default_start
         self._music_player.play(loops=loops, start=start)
-
+        print("PLAYING", self._music_filename)
 
     def on_music_fade(self, val=0, duration=5):
         fps = self.game.fps if self.game else DEFAULT_FPS         
@@ -6738,6 +6742,7 @@ class Mixer(metaclass=use_on_events):
                 self._music_volume_step = 0
                 self._music_volume_callback = None
                 self.busy -= 1
+                print("FINISHED FADE", self._music_filename)
             self.on_music_volume(v)
 
                 
@@ -6774,6 +6779,7 @@ class Mixer(metaclass=use_on_events):
         #if sfx: sfx.stop()
 
     def on_ambient_play(self, fname=None, description=None):
+        print("play ambient",fname,"(on scene %s)"%self.game.scene.name)
         self._ambient_filename = fname
         if fname:
             absfilename = os.path.abspath(fname)                         
@@ -7406,7 +7412,7 @@ class Game(metaclass=use_on_events):
         self._mouse_object = None  # if using an Item or Actor as mouse image
         self.hide_cursor = HIDE_MOUSE
         self.mouse_down = (0, 0)  # last press
-        self.mouse_position_raw = (0, 0)  # last known position of mouse
+        self.mouse_position_raw = (-50, -50)  # last known position of mouse (init offscreen to hide joystick)
         self.mouse_position = (0, 0)  # last known position of mouse, scaled
 
         #enable the player's clickable area for one event, useful for interacting
