@@ -1255,6 +1255,7 @@ class Settings(object):
         # use this font to override main font (good for using dsylexic-friendly
         # fonts
         self.accessibility_font = None
+        self.font_size_adjust = 0 # increase or decrease font size
         self.show_gui = True  # when in-game, show a graphical user interface
 
         self.invert_mouse = False  # for lefties
@@ -1509,6 +1510,7 @@ class Motion(object):
 
 def set_resource(key, w=False, h=False, resource=False, subkey=None):
     """ If w|h|resource != False, update the value in _resources[key] """
+    """ resource is a pyglet Animation or a Label """
     if subkey: key = "%s_%s"%(key, subkey)
     ow, oh, oresource = _resources[key] if key in _resources else (0, 0, None)
     ow = w if w != False else ow
@@ -2108,6 +2110,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         # when an actor stands at this actor's stand point, request an idle
         self.idle_stand = None
         self._idle = "idle"  # the default idle action for this actor
+        self._over = "over"  # the default over action for this actor when in menu
 
         self._scale = 1.0
         self._rotate = 0
@@ -2878,7 +2881,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                         log.warning("No interact script for %s (write a def %s(game, %s, player): function)" % (
                             self.name, basic, slugify(self.name)))
                 script = None  # self._interact_default
-                self._interact_default(self.game, self, self.game.player)
+                self._interact_default(self.game, self, self.game.player if self.game else None)
 
         # do the signals for post_interact
         for receiver, sender in post_interact.receivers:
@@ -2961,7 +2964,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             c = ["They're not responding to my hails.",
                  "Perhaps they need a good poking.",
                  "They don't want to talk to me."]
-        if self.game.player:
+        if self.game and self.game.player:
             self.game.player.says(choice(c))
 
     def _use_default(self, game, actor, actee):
@@ -4490,18 +4493,9 @@ class Portal(Actor, metaclass=use_on_events):
         self.game.camera.scene(link.scene)  # change the scene
         self.enter_link(actor, block=block)
 
-    def pyglet_draw(self, absolute=False, force=False, window=None):  # portal.draw
-        super().pyglet_draw(absolute, force, window)  # actor.draw
-        if self.game.settings.show_portals:
-            if self._icon:
-                i = "portal_active" if self.allow_interact or self.allow_look else "portal_inactive"
-                self._icon.on_do(i)
-                if not self._icon.action._loaded:
-                    self._icon.load_assets(self.game)
-#                self._icon.x, self._icon.y =(self.x + self.sx - self._icon.w*1.2, self.y + self.sy-self._icon.h/2)
-                self._icon.x, self._icon.y = self.clickable_area.centre
-                self._icon.pyglet_draw()
-        return
+#    def pyglet_draw(self, absolute=False, force=False, window=None):  # portal.draw
+#        super().pyglet_draw(absolute, force, window)  # actor.draw
+#        return
 
     def debug_pyglet_draw(self, absolute=False): #portal.debug.draw
         super().debug_pyglet_draw(absolute=absolute)
@@ -6711,7 +6705,9 @@ class Mixer(metaclass=use_on_events):
         self._music_position += dt #where the current music is
 
         if self._sfx_volume_target is not None: #fade the volume up or down
+            
             v = self._sfx_volume + self._sfx_volume_step
+            if self.game._headless or self.game._walkthrough_auto: v = self._sfx_volume_target
             finish = False
             if self._sfx_volume_step < 0 and v <= self._sfx_volume_target:
                 finish = True
@@ -6729,6 +6725,7 @@ class Mixer(metaclass=use_on_events):
 
         if self._music_volume_target is not None: #fade the volume up or down
             v = self._music_volume + self._music_volume_step
+            if self.game._headless or self.game._walkthrough_auto: v = self._music_volume_target
             finish = False
             if self._music_volume_step < 0 and v <= self._music_volume_target:
                 finish = True
@@ -6744,7 +6741,6 @@ class Mixer(metaclass=use_on_events):
                 self.busy -= 1
                 print("FINISHED FADE", self._music_filename)
             self.on_music_volume(v)
-
                 
 
     def _sfx_play(self, fname=None, description=None, loops=0, fade_music=False, store=None):
@@ -7730,10 +7726,11 @@ class Game(metaclass=use_on_events):
         if len(self._menu) > 0 and self._menu_modal:
             return  # menu is in modal mode so block other objects
 
-        for obj_name in self.scene._objects:
-            obj = get_object(self, obj_name)
-            if obj and obj._interact_key == symbol:
-                obj.trigger_interact() #XXX possible user_trigger_interact()
+        if self.scene: # check objects in scene
+            for obj_name in self.scene._objects:
+                obj = get_object(self, obj_name)
+                if obj and obj._interact_key == symbol:
+                    obj.trigger_interact() #XXX possible user_trigger_interact()
 
     def get_info_position(self, obj):
         obj = get_object(self, obj)
@@ -7827,17 +7824,17 @@ class Game(metaclass=use_on_events):
                 if obj.collide(ox, oy) and allow_collide:  # absolute screen values
                     self.mouse_cursor = MOUSE_CROSSHAIR if self.mouse_cursor == MOUSE_POINTER else self.mouse_cursor
 
-                    if obj._actions and "over" in obj._actions and (obj.allow_interact or obj.allow_use or obj.allow_look):
-                        if obj._action != "over":
+                    if obj._actions and obj._over in obj._actions and (obj.allow_interact or obj.allow_use or obj.allow_look):
+                        if obj._action != obj._over:
                             self.menu.on_play_enter_sfx() #play sound if available
-                        obj._do("over")
+                        obj._do(obj._over)
 
                     if obj._mouse_motion and not menu_collide:
                         fn = get_function(self, obj._mouse_motion, obj)
                         fn(self.game, obj, self.game.player, x, y, dx, dy, ox, oy)
                     menu_collide = True
                 else:  # unhover over menu item
-                    if obj.action and obj.action.name == "over" and (obj.allow_interact or obj.allow_use or obj.allow_look):
+                    if obj.action and obj.action.name == obj._over and (obj.allow_interact or obj.allow_use or obj.allow_look):
                         idle = obj._idle  # don't use obj.default_idle as it is scene dependent
                         self.menu.on_play_exit_sfx() #play sound if available
                         if idle in obj._actions:
@@ -9122,17 +9119,31 @@ class Game(metaclass=use_on_events):
             objects = sorted(objects, key=lambda x: x.z, reverse=False)
         except AttributeError:
             import pdb; pdb.set_trace()
+        portals = []
         for item in objects:
             item.pyglet_draw(absolute=False)
+            if isinstance(item, Portal):
+                portals.append(item)
 
 #        for batch in self._pyglet_batches: #if Actor._batch is set, it will be drawn here.
 #            batch.draw()
 
-        # draw scene foregrounds (layers with z greater than 1.0)
+        # draw scene foregrounds (layers with z greater than 1.0)    
         for item in self.scene._layer:
             obj = get_object(self, item)
             if obj.z > 1.0:
                 obj.pyglet_draw(absolute=False)
+
+        if self.settings.show_portals:
+            for item in portals:    
+                if item._icon:
+                    i = "portal_active" if item.allow_interact or item.allow_look else "portal_inactive"
+                    item._icon.on_do(i)
+                    if not item._icon.action._loaded:
+                        item._icon.load_assets(self)
+                    item._icon.x, item._icon.y = item.clickable_area.centre
+                    item._icon.pyglet_draw()
+
 
         if popMatrix is True:
             glPopMatrix() #finish the scene draw
@@ -9184,16 +9195,17 @@ class Game(metaclass=use_on_events):
 
         if self._joystick: #draw cursor for joystick
             x,y = self.mouse_position
-            value = MOUSE_CURSORS_DICT[self.mouse_cursor]
-            cursor_pwd = os.path.join(
-                os.getcwd(), os.path.join(self.directory_interface, value))
-            # TODO: move this outside the draw loop
-            cursor = Item("_joystick_cursor").smart(self.game, image=cursor_pwd)
-            cursor.load_assets(self.game)
-            cursor.x, cursor.y = x-cursor.w/2,y-cursor.h/2
-            cursor.scale = 1.0
+            if (x,y) != (0,0): 
+                value = MOUSE_CURSORS_DICT[self.mouse_cursor]
+                cursor_pwd = os.path.join(
+                    os.getcwd(), os.path.join(self.directory_interface, value))
+                # TODO: move this outside the draw loop
+                cursor = Item("_joystick_cursor").smart(self.game, image=cursor_pwd)
+                cursor.load_assets(self.game)
+                cursor.x, cursor.y = x-cursor.w/2,y-cursor.h/2
+                cursor.scale = 1.0
 
-            cursor.pyglet_draw(absolute=True)
+                cursor.pyglet_draw(absolute=True)
             #image.blit(x-image.width,self.resolution[1]-y+image.height)
 
 
