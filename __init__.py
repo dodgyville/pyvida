@@ -4306,8 +4306,7 @@ class Portal(Actor, metaclass=use_on_events):
         self._allow_look = False
         self._icon = None
 
-    def smart(self, *args, **kwargs): #portal.smart
-        super().smart(*args, **kwargs)
+    def generate_icons(self):
         # create portal icon for settings.show_portals 
         #TODO currently uses DIRECTORY_INTERFACE instead of game.directories
         image1 = os.path.join(os.getcwd(), os.path.join(DIRECTORY_INTERFACE, "portal_active.png"))
@@ -4315,6 +4314,10 @@ class Portal(Actor, metaclass=use_on_events):
         if os.path.isfile(image1) and os.path.isfile(image2):
             self._icon = Item("%s_active"%self.name).smart(self.game, image=[image1, image2])
             self.game.add(self._icon)
+
+    def smart(self, *args, **kwargs): #portal.smart
+        super().smart(*args, **kwargs)
+        self.generate_icons()
 
     def _usage(self, draw=None, update=None, look=None, interact=None, use=None):
         # XXX this is a hack for Pleasure Planet ... I accidently left on all the look and use flags
@@ -5455,7 +5458,7 @@ class Scene(MotionManager, metaclass=use_on_events):
             rule = mixer.music_rules[self._music_filename] if self._music_filename in mixer.music_rules else None
             start = rule.position if rule else 0
 #            mixer.music_fade_out(0.5)
-            print("PLAY SCENE MUSIC",self._music_filename)
+#            print("PLAY SCENE MUSIC",self._music_filename)
             mixer.on_music_play(self._music_filename, start=start)
 
 
@@ -6597,7 +6600,6 @@ class Mixer(metaclass=use_on_events):
             By default, if a song is already playing, don't load and restart it.
             If push is True, push the current music (if any) into storage
         """
-        print("START PLAY", fname)
         if self._music_filename:
             current_rule = self.music_rules[self._music_filename]
             current_rule.position = self._music_position
@@ -6639,7 +6641,6 @@ class Mixer(metaclass=use_on_events):
 
         start = start if start else default_start
         self._music_player.play(loops=loops, start=start)
-        print("PLAYING", self._music_filename)
 
     def on_music_fade(self, val=0, duration=5):
         fps = self.game.fps if self.game else DEFAULT_FPS         
@@ -6775,7 +6776,7 @@ class Mixer(metaclass=use_on_events):
         #if sfx: sfx.stop()
 
     def on_ambient_play(self, fname=None, description=None):
-        print("play ambient",fname,"(on scene %s)"%self.game.scene.name)
+#        print("play ambient",fname,"(on scene %s)"%self.game.scene.name)
         self._ambient_filename = fname
         if fname:
             absfilename = os.path.abspath(fname)                         
@@ -8649,9 +8650,8 @@ class Game(metaclass=use_on_events):
             if self.settings.fastest_playthrough == None or new_time <= self.settings.fastest_playthrough:
                 self.settings.fastest_playthrough = new_time
                 r = True
-                save_settings(game, game.settings.filename)            
+                save_settings(self, self.settings.filename)            
         return r
-
 
     def on_quit(self):
         if self.settings and self.settings.filename:
@@ -9062,6 +9062,8 @@ class Game(metaclass=use_on_events):
 
         if not self.scene:
             return
+        if self._headless or self._walkthrough_auto:
+            return
 #        print("GAME DRAW")
 
         # undo alpha for pyglet drawing
@@ -9134,7 +9136,7 @@ class Game(metaclass=use_on_events):
             if obj.z > 1.0:
                 obj.pyglet_draw(absolute=False)
 
-        if self.settings.show_portals:
+        if self.settings.show_portals:            
             for item in portals:    
                 if item._icon:
                     i = "portal_active" if item.allow_interact or item.allow_look else "portal_inactive"
