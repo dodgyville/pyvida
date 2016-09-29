@@ -6481,8 +6481,15 @@ class Mixer(metaclass=use_on_events):
         self._music_filename = None
         self._music_position = 0 #where the current music is
         self._sfx_filename = None
+
         self._ambient_filename = None
         self._ambient_position = 0
+
+        #for fade in, fade out
+        self._ambient_volume = 1.0
+        self._ambient_volume_target = None
+        self._ambient_volume_step = 0
+        self._ambient_volume_callback = None
 
         self._unfade_music = None  # (channel_to_watch, new_music_volme)
         self._force_mute = False  # override settings
@@ -6705,8 +6712,7 @@ class Mixer(metaclass=use_on_events):
         """ Called by game.update to handle fades and effects """
         self._music_position += dt #where the current music is
 
-        if self._sfx_volume_target is not None: #fade the volume up or down
-            
+        if self._sfx_volume_target is not None: #fade the volume up or down            
             v = self._sfx_volume + self._sfx_volume_step
             if self.game._headless or self.game._walkthrough_auto: v = self._sfx_volume_target
             finish = False
@@ -6723,6 +6729,25 @@ class Mixer(metaclass=use_on_events):
                 self._sfx_volume_callback = None
                 self.busy -= 1
             self.on_sfx_volume(v)
+
+        if self._ambient_volume_target is not None: #fade the ambient up or down            
+            v = self._ambient_volume + self._ambient_volume_step
+            if self.game._headless or self.game._walkthrough_auto: v = self._ambient_volume_target
+            finish = False
+            if self._ambient_volume_step < 0 and v <= self._ambient_volume_target:
+                finish = True
+            if self._ambient_volume_step > 0 and v >= self._ambient_volume_target:
+                finish = True
+            if finish == True: 
+                v = self._ambient_volume_target
+                if self._ambient_volume_callback:
+                    self._ambient_volume_callback()
+                self._ambient_volume_target = None
+                self._ambient_volume_step = 0
+                self._ambient_volume_callback = None
+                self.busy -= 1
+            self.on_ambient_volume(v)
+
 
         if self._music_volume_target is not None: #fade the volume up or down
             v = self._music_volume + self._music_volume_step
@@ -6775,6 +6800,34 @@ class Mixer(metaclass=use_on_events):
 #        self._sfx_player.next_source()
         #if sfx: sfx.stop()
 
+    def on_ambient_volume(self, val=None):
+        """ val 0.0 - 1.0 """
+        val = val if val else 1 # reset
+        new_volume = self._ambient_volume = val
+        new_volume *= self.game.settings.ambient_volume if self.game and self.game.settings else 1
+        self._ambient_player.volume(new_volume)
+
+
+    def on_ambient_stop(self):
+        self._ambient_player.stop()
+
+    def on_ambient_fade(self, val, duration=5):
+        # XXX does not stop sound or reset volume if val is 0, use on_ambient_fadeout instead
+        fps = self.game.fps if self.game else DEFAULT_FPS         
+        self._ambient_volume_target = val
+        self._ambient_volume_step = ((val - self._ambient_volume)/fps)/duration
+        self.busy += 1
+
+    def _ambient_stop_callback(self):
+        """ callback used by fadeout to stop ambient """
+        self.on_ambient_stop()
+        self.on_ambient_volume(self.game.settings.ambient_volume) # reset volume
+
+    def on_ambient_fadeout(self, seconds=2):
+        self.on_ambient_fade(0, seconds)
+        self._ambient_volume_callback = self._ambient_stop_callback
+
+
     def on_ambient_play(self, fname=None, description=None):
 #        print("play ambient",fname,"(on scene %s)"%self.game.scene.name)
         self._ambient_filename = fname
@@ -6795,8 +6848,7 @@ class Mixer(metaclass=use_on_events):
         else: #no filename, so stop playing
             self._ambient_player.stop()
 
-    def on_ambient_stop(self):
-        self._ambient_player.stop()
+
 
     def on_music_finish(self, callback=None):
         return
@@ -8365,6 +8417,9 @@ class Game(metaclass=use_on_events):
             x -= w
         if align == CENTER:
             x -= int(float(w) / 2)
+#        if self.scene:
+#            x += self.scene.x
+#            y += self.scene.y
         self._info_object.x, self._info_object.y = x, y
 
     # game.smart
