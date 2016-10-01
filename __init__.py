@@ -7795,9 +7795,9 @@ class Game(metaclass=use_on_events):
 
     def get_point_from_raw(self, x,y):
         """ Take a point from the mouse on the screen and convert it to in-engine coords """
-        ox, oy = x, y
-        ox -= self._window_dx*self._scale
-        oy -= self._window_dy*self._scale
+        ox, oy = x, y #shift for fullscreen
+        ox -= self._window_dx #*self._scale
+        oy -= self._window_dy #*self._scale
 
         # if window is being scaled
         ox, oy = ox / self._scale, oy / self._scale
@@ -7985,11 +7985,19 @@ class Game(metaclass=use_on_events):
                 if obj.collide(x, y) and obj._drag:
                     self._drag = obj
 
+    def on_joyhat_motion(self, joystick, hat_x, hat_y):
+        # WIP
+#        if hat_x == 1 or hat_y == 1:
+        o = get_object(self, choice(self.scene._objects))
+        x,y = (o.x, o.y) if o else (0,0)
+        self.mouse_position_raw = (x,y)
+
     def on_joybutton_release(self, joystick, button):
         if not self._joystick:
             return
         modifiers = 0
         x,y = self.mouse_position_raw
+
         if button == self.settings.joystick_interact:
             self.on_mouse_release(x,y, pyglet.window.mouse.LEFT, modifiers)
         elif button == self.settings.joystick_look:
@@ -9044,6 +9052,7 @@ class Game(metaclass=use_on_events):
             fn(self, dt, single_event)
 
         if self._joystick:
+#            print(self._joystick.__dict__)
             x = self.mouse_position_raw[0] + self._joystick.x * 40
             y = self.mouse_position_raw[1] - self._joystick.y * 40
             #print(x,y, self._joystick.x,  self.mouse_position_raw)
