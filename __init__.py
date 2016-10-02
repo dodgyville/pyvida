@@ -1758,6 +1758,12 @@ class Rect(object):
     def centre(self):
         return (self.left + self.w/2, self.top + self.h/2)
 
+    @property
+    def center(self):
+        return self.centre
+
+    def random_point(self):
+        return (randint(self.x, self.x + self.w), randint(self.y, self.y + self.h))
 
     def collidepoint(self, x, y):
         return collide((self.x, self.y, self.w, self.h), x, y)
@@ -1804,13 +1810,6 @@ class Rect(object):
 
 #    def scale(self, v):
 #        self.w, self.h = int(self.w*v), int(self.h*v)
-
-    @property
-    def center(self):
-        return (self.x + self.w // 2, self.y + self.h // 2)
-
-    def random_point(self):
-        return (randint(self.x, self.x + self.w), randint(self.y, self.y + self.h))
 
 
 def crosshair(game, point, colour, absolute=False, txt=""):
@@ -7457,6 +7456,7 @@ class Game(metaclass=use_on_events):
         self.mouse_mode = MOUSE_INTERACT
         # which image to use
         self._joystick = None # pyglet joystick
+        self._object_index = 0 # used by joystick and blind mode to select scene objects
         self.mouse_cursor = self._mouse_cursor = MOUSE_POINTER
         self._mouse_object = None  # if using an Item or Actor as mouse image
         self.hide_cursor = HIDE_MOUSE
@@ -7804,6 +7804,17 @@ class Game(metaclass=use_on_events):
         oy = self.game.resolution[1] - oy
         return ox, oy
 
+    def get_raw_from_point(self, x,y):
+        """ Take a point from the in-engine coords and convert to raw mouse """
+        ox, oy = x, y #shift for fullscreen
+        ox += self._window_dx #*self._scale
+        oy += self._window_dy #*self._scale
+
+        # if window is being scaled
+        ox, oy = ox * self._scale, oy * self._scale
+        oy = self.game.resolution[1] - oy
+        return ox, oy
+
 
     def on_mouse_scroll(self, x, y, scroll_x, scroll_y):
         ox,oy = self.get_point_from_raw(x,y)
@@ -7986,11 +7997,28 @@ class Game(metaclass=use_on_events):
                     self._drag = obj
 
     def on_joyhat_motion(self, joystick, hat_x, hat_y):
-        # WIP
-#        if hat_x == 1 or hat_y == 1:
-        o = get_object(self, choice(self.scene._objects))
-        x,y = (o.x, o.y) if o else (0,0)
-        self.mouse_position_raw = (x,y)
+        # WIP - possibly merge with a X-Y buttons 
+        if hat_x == 1 or hat_y == 1:
+            self._object_index += 1
+        elif hat_x == -1 or hat_y == -1:
+            self._object_index -= 1
+        available_objects = []
+        for obj_name in self.scene._objects:
+            obj = get_object(self, obj_name)
+            if (obj.allow_draw and (obj.allow_interact or obj.allow_use or obj.allow_look)):
+                available_objects.append(obj)
+        if len(available_objects)>0:
+            self._object_index = self._object_index%len(available_objects)
+            o = available_objects[self._object_index]
+            print("SELECT",o.name)
+            x,y = o.position if o else (0,0)
+#            if o.name == "pod": import pdb; pdb.set_trace()
+            # calculate centre (can't use .centre because this is for raw
+            x += o._clickable_area.w//2
+            y += o._clickable_area.h//2
+            y -= o.ay
+            x += o.ax
+            self.mouse_position_raw = self.get_raw_from_point(x,y)
 
     def on_joybutton_release(self, joystick, button):
         if not self._joystick:
@@ -8874,7 +8902,7 @@ class Game(metaclass=use_on_events):
                         actor_name, self.scene.name, obj.scene.name if obj.scene else "no scene"))
             if self.player:
                 self.player.x, self.player.y = obj.x + obj.sx, obj.y + obj.sy
-            x, y = obj.clickable_area.center
+            x, y = obj.clickable_area.centre
             #output text for a walkthrough if -w enabled
             if self._trunk_step and self._output_walkthrough: 
                 if obj.name in self._actors.keys():
