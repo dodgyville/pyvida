@@ -6098,7 +6098,7 @@ class Camera(metaclass=use_on_events):  # the view manager
         """ Quick fire cuts between scenes (without triggering scene change behaviour """
         self._transition = scenes
 
-    def _scene(self, scene, camera_point=None):
+    def _scene(self, scene, camera_point=None, allow_scene_music=True):
         """ change the current scene """
 #        if self.game.scene:  # unload background when not in use
 #            self.game.scene._unload_layer()
@@ -6156,23 +6156,16 @@ class Camera(metaclass=use_on_events):  # the view manager
 #        if scene.name == "aspaceship":
 #            import pdb; pdb.set_trace()
 
-        self.game.mixer.on_ambient_stop()
-        if scene._ambient_filename:
-            self.game.mixer.on_ambient_play(scene._ambient_filename)
-        else:
-            self.game.mixer.on_ambient_play() # stop ambient
-#            self.game.mixer.on_ambient_play() # remove ambient
+        if allow_scene_music: #scene change will override current music
+            self.game.mixer.on_ambient_stop()
+            if scene._ambient_filename:
+                self.game.mixer.on_ambient_play(scene._ambient_filename)
+            else:
+                self.game.mixer.on_ambient_play() # stop ambient
+            # start music for this scene
+            scene.on_music_play()
 
-#        if self.game.scene and self.game._window:
-#            if self.game.scene._background:
-#                self.game.scene._background.blit((0,0))
-#                screen_blit(self.game.screen, self.game.scene.set_background(), (-self.game.scene.dx, -self.game.scene.dy))
-#            else:
-#                if logging: log.warning("No background for scene %s"%self.game.scene.name)
-        # start music for this scene
-        scene.on_music_play()
-
-    def on_scene(self, scene, camera_point=None):
+    def on_scene(self, scene, camera_point=None, allow_scene_music=True):
         """ change the scene """
         pyglet.gl.glClearColor(0,0,0,255) # reset clear colour to black
         if type(scene) in [str]:
@@ -6202,7 +6195,7 @@ class Camera(metaclass=use_on_events):  # the view manager
                 camera_point = (0, -scene.h + self.game.resolution[1])
             elif camera_point == TOP:
                 camera_point = (scene.x, 0)
-        self._scene(scene, camera_point)
+        self._scene(scene, camera_point, allow_scene_music)
 
         # check for a postcamera script to run
         if scene:
