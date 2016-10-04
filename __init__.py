@@ -1182,6 +1182,7 @@ class AchievementManager(object, metaclass=use_on_events):
 #            text.relocate(game.scene)
 
             game.achievement.relocate(game.scene)
+            game.mixer.sfx_play("data/sfx/achievement.ogg", "achievement")
             game.achievement.motion("popup", mode=ONCE, block=True)
             game.achievement.display_text = a.description
             game.achievement.rename((0, -FONT_ACHIEVEMENT_SIZE*3))
@@ -3398,6 +3399,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         label._usage(True, True, False, False, False)
 #        label.fullscreen(True)
         label.x, label.y = self.x + self.tx, self.y - self.ty
+        label.z = 100
 #        self.busy += 1
         self.game._add(label)
         self.game.scene._add(label.name)
