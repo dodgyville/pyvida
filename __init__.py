@@ -7341,7 +7341,11 @@ class Game(metaclass=use_on_events):
         display = pyglet.window.get_platform().get_default_display()
         w = display.get_default_screen().width
         h = display.get_default_screen().height
-        resolution, scale = fit_to_screen((w, h), resolution)
+        options = self.parser.parse_args()
+        if options.resolution and options.resolution == "0": # use game resolution with no scaling.
+            scale = 1.0
+        else:
+            resolution, scale = fit_to_screen((w, h), resolution)
         self._scale = scale
         self._bars = [] #black bars in fullscreen, (pyglet image, location)
         self._window_dx = 0 # displacement by fullscreen mode
@@ -7353,7 +7357,8 @@ class Game(metaclass=use_on_events):
         self._window_editor = None
         self._window_editor_objects = []
 
-        pyglet.gl.glScalef(scale, scale, scale)
+        if scale != 1.0:
+            pyglet.gl.glScalef(scale, scale, scale)
 
         self._window.on_key_press = self.on_key_press
         self._window.on_mouse_motion = self.on_mouse_motion
@@ -8289,7 +8294,7 @@ class Game(metaclass=use_on_events):
         self.parser.add_argument("-R", "--random", dest="target_random_steps", nargs='+',
                                  help="Randomly deviate [x] steps from walkthrough to stress test robustness of scripting")
         self.parser.add_argument("-r", "--resolution", dest="resolution",
-                                 help="Force engine to use resolution WxH or (w,h) (recommended (1600,900))")
+                                 help="Force engine to use resolution WxH or (w,h) (recommended (1600,900)). If 0, disabled scaling.")
         self.parser.add_argument(
             "-s", "--step", dest="target_step", nargs='+', help="Jump to step in walkthrough")
         self.parser.add_argument("-t", "--text", action="store_true", dest="text",
@@ -8702,7 +8707,6 @@ class Game(metaclass=use_on_events):
         if options.headless:
             self.on_set_headless(True)
             self._walkthrough_auto = True #auto advance
-
         if options.imagereactor == True:
             """ save a screenshot as requested by walkthrough """
             if self._headless is True:
