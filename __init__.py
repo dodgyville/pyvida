@@ -7681,6 +7681,16 @@ class Game(metaclass=use_on_events):
             print("finished casting")
 
         if symbol == pyglet.window.key.F9:
+            game.menu.hide()
+            game.planet_name2.remove()
+#            game.tycho.move((-400,0))
+#            game.tycho_monitor.on_says("I've got to find him.")
+            game.tycho.move((400,0))
+            game.pause(1)
+            game.tycho_monitor.on_says("Time's running out.")
+            game.pause(1)
+            game.menu.show()
+            return
             self.scene.walkarea._fill_colour = (50,244,176, 255)
             self.scene.walkarea._editing = True
             self.fountain.show_debug = True
