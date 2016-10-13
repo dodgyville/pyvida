@@ -25,6 +25,7 @@ from argparse import ArgumentParser
 from collections import Iterable
 from datetime import datetime, timedelta
 from gettext import gettext
+from gettext import gettext as _
 from random import choice, randint, uniform
 from time import sleep
 from math import sin, cos, radians
@@ -7682,6 +7683,17 @@ class Game(metaclass=use_on_events):
 
         if symbol == pyglet.window.key.F9:
             game.menu.hide()
+            s = game.scene
+            game.camera.scene("jstadium", camera_point=(0,0))
+            game.load_state("jgame", "trial")
+            game.camera.move((0,840), speed=20)
+            game.pause(5)
+            game.camera.scene(s)
+            game.menu.show()
+            return
+            game.player.goto(game.galaxy_sister, block=True)
+            game.bazzarella.says(_("I don't believe in all this new fangled technology."), position=BOTTOM)
+            return
             game.planet_name2.remove()
 #            game.tycho.move((-400,0))
 #            game.tycho_monitor.on_says("I've got to find him.")
