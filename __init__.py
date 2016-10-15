@@ -3931,6 +3931,8 @@ class Actor(MotionManager, metaclass=use_on_events):
         if self.game._headless:  # headless mode skips sound and visuals
             self.alpha = target
             return
+        if target == self.alpha: #already there.
+            return
         self._opacity_target = target
         self._opacity_delta = (
             self._opacity_target - self._opacity) / (self.game.fps * seconds)
