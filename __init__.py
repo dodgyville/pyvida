@@ -3775,16 +3775,27 @@ class Actor(MotionManager, metaclass=use_on_events):
 #        import pdb; pdb.set_trace()
         callback = self.on_animation_end_once #if not block else self.on_animation_end_once_block
         self._next_action = next_action if next_action else self.default_idle
-        if (self.game and self.game._headless is True) or not self.scene: #if headless or not on scene, jump to end
+        do_event = self.scene or (self.game and self.name in self.game._modals) or (self.game and self.name in self.game._menu)
+        if (self.game and self.game._headless is True) or not do_event: #if headless or not on screen, jump to end
+            self.busy += 1
             self.on_animation_end_once()
             result = True
+            return
         else:
             result = self._do(action, callback, mode=mode)
 
         if block:
             self.game._waiting = True
         if result:
+            if logging:
+                log.info("%s has started on_do_once, so increment %s.busy to %i." % (
+                    self.name, self.name, self.busy))
             self.busy += 1
+        else:
+            if logging:
+                log.info("%s has started on_do_once, but self._do return False so keeping %s.busy at %i." % (
+                    self.name, self.name, self.busy))
+
 
     def on_remove(self):
         """ Remove from scene """
@@ -3826,12 +3837,15 @@ class Actor(MotionManager, metaclass=use_on_events):
     def on_idle(self, seconds):
         """ delay processing the next event for this actor """
         self.busy += 1
+        if logging:
+            log.info("%s has started on_idle, so increment %s.busy to %i." % (
+                self.name, self.name, self.busy))
 
         def finish_idle(dt, start):
             self.busy -= 1
             if logging:
-                log.info("%s has finished on_idle (%s), so decrement %s.busy to %i." % (
-                    self.name, start, self.name, self.busy))
+                log.info("%s has finished on_idle, so decrement %s.busy to %i." % (
+                    self.name, self.name, self.busy))
 
         if self.game and not self.game._headless:
             pyglet.clock.schedule_once(finish_idle, seconds, datetime.now())
@@ -6267,6 +6281,10 @@ class Camera(metaclass=use_on_events):  # the view manager
         if block:
             self.game._waiting = True
             self.busy += 1
+            if logging:
+                log.info("%s has finished on_fade_out, so increment %s.busy to %i." % (
+                    self.name, self.name, self.busy))
+
 
     def on_fade_in(self, seconds=3, colour="black", block=False):
      #   items = self.game.player._says("FADE IN", None)
@@ -6282,12 +6300,19 @@ class Camera(metaclass=use_on_events):  # the view manager
         if block:
             self.game._waiting = True
             self.busy += 1
+            if logging:
+                log.info("%s has started on_fade_in with block, so increment %s.busy to %i." % (
+                    self.name, self.name, self.busy))
+
 
     def on_off(self):
+        if self.game._headless:  # headless mode skips sound and visuals
+            return
         d = pyglet.resource.get_script_home()
         mask = pyglet.image.load(os.path.join(d, 'data/special/black.png'))
         self._overlay = PyvidaSprite(mask, 0, 0)
         self._overlay_end = time.time() + 60*60*24*365*100 #one hundred yeaaaaars
+        self._overlay_start = time.time()
 
     def on_on(self):
         self._overlay = None
@@ -6651,6 +6676,10 @@ class Mixer(metaclass=use_on_events):
         if self._music_volume_step == 0: #already there
             return
         self.busy += 1
+        if logging:
+            log.info("%s has started on_music_fade, so increment %s.busy to %i." % (
+                self.name, self.name, self.busy))
+
 
     def on_music_fade_out(self, duration=5):
         self.on_music_fade(val=0, duration=duration)
@@ -6694,6 +6723,10 @@ class Mixer(metaclass=use_on_events):
         self._sfx_volume_target = val
         self._sfx_volume_step = ((val - self._sfx_volume)/fps)/duration
         self.busy += 1
+        if logging:
+            log.info("%s has started on_sfx_fade, so increment %s.busy to %i." % (
+                self.name, self.name, self.busy))
+
 
     def _sfx_stop_callback(self):
         """ callback used by fadeout to stop sfx """
@@ -6812,6 +6845,10 @@ class Mixer(metaclass=use_on_events):
         self._ambient_volume_target = val
         self._ambient_volume_step = ((val - self._ambient_volume)/fps)/duration
         self.busy += 1
+        if logging:
+            log.info("%s has started on_ambient_fade, so increment %s.busy to %i." % (
+                self.name, self.name, self.busy))
+
 
     def _ambient_stop_callback(self):
         """ callback used by fadeout to stop ambient """
@@ -9449,7 +9486,8 @@ class Game(metaclass=use_on_events):
 
     def on_remove_modal(self, item):
         i = get_object(self, item)
-        self._modals.remove(i.name)
+        if i and i.name in self._modals:
+            self._modals.remove(i.name)
 
 
     def on_menu_modal(self, modal=True):
@@ -9677,9 +9715,14 @@ class Game(metaclass=use_on_events):
             return
         self.busy += 1
         self._waiting = True
+        if logging:
+            log.info("game has started on_pause, so increment game.busy to %i." % (self.busy))
+
 
         def pause_finish(d, game):
             self.busy -= 1
+            if logging:
+                log.info("game has finished on_pause, so decrement game.busy to %i." % (self.busy))
         pyglet.clock.schedule_once(pause_finish, duration, self)
 
     def on_toggle_fullscreen(self, fullscreen=None):
