@@ -192,6 +192,7 @@ CAPTION_RIGHT = 6 #top right
 RIGHTLEFT = 7 #for languages printed right to left
 CENTER_HORIZONTAL_TOO = 8
 CENTER_TOP = 9 #center screen but near top
+BOTTOM_RIGHT = 10
 
 UP = 6
 DOWN = 7
@@ -3487,6 +3488,9 @@ class Actor(MotionManager, metaclass=use_on_events):
         elif position == CAPTION_RIGHT:
             x, y = self.game.resolution[
                 0] *0.98 - msgbox.w, self.game.resolution[1] * 0.02
+        elif position == BOTTOM_RIGHT:
+            x, y = self.game.resolution[
+                0] *0.98 - msgbox.w, self.game.resolution[1] * 0.95 - msgbox.h
 
         elif type(position) in [tuple, list]:  # assume coords
             x, y = position
@@ -3767,6 +3771,11 @@ class Actor(MotionManager, metaclass=use_on_events):
 
 #    def create_sprite(self, action, **kwargs):
 
+    def on_do_random(self, mode=LOOP):
+        """ Randomly do an action """
+        action = choice(list(self._actions.keys()))
+        self._do(action, mode=mode)
+
     def on_do(self, action, mode=LOOP):
         self._do(action, mode=mode)
 
@@ -3923,7 +3932,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         """
         self._show()
 
-    def on_fade(self, target, action=None, seconds=3, block=False):
+    def on_fade(self, target, action=None, seconds=3, block=False): #actor.fade
         """ target is 0 - 255 """
         log.info("%s fade to %i"%(self.name, target))
         if action:
@@ -6054,6 +6063,7 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._overlay_counter = 0
         self._overlay_end = None
         self._overlay_start = None
+        self._overlay_fx = None
         self._transition = [] #Just messing about, list of scenes to switch between for a rapid editing effect
 
         self.name = "Default Camera"
@@ -6307,11 +6317,14 @@ class Camera(metaclass=use_on_events):  # the view manager
                     self.name, self.name, self.busy))
 
 
-    def on_off(self):
+    def on_off(self, colour="black"):
         if self.game._headless:  # headless mode skips sound and visuals
             return
         d = pyglet.resource.get_script_home()
-        mask = pyglet.image.load(os.path.join(d, 'data/special/black.png'))
+        if colour == "black":
+            mask = pyglet.image.load(os.path.join(d, 'data/special/black.png')) #TODO create dynamically based on resolution
+        else:
+            mask = pyglet.image.load(os.path.join(d, 'data/special/white.png'))
         self._overlay = PyvidaSprite(mask, 0, 0)
         self._overlay_end = time.time() + 60*60*24*365*100 #one hundred yeaaaaars
         self._overlay_start = time.time()
