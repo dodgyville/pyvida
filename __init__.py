@@ -2102,6 +2102,9 @@ class Actor(MotionManager, metaclass=use_on_events):
         # is opacity change blocking other events
         self._opacity_target_block = False
 
+        self._flip_vertical = False
+        self._flip_horizontal = False
+
         self._sx, self._sy = 0, 0  # stand point
         self._ax, self._ay = 0, 0  # anchor point
         self._nx, self._ny = 0, 0  # displacement point for name
@@ -3147,8 +3150,11 @@ class Actor(MotionManager, metaclass=use_on_events):
             return
 
         height = self.game.resolution[1] if not window else window.height
+        width = self.game.resolution[0] if not window else window.width
         sprite = get_resource(self.resource_name)[-1]
         if sprite and self.allow_draw:
+            glPushMatrix()
+
             #if action mode is manual (static), force the frame index to the manual frame
             if self.action and self.action.mode == MANUAL:
                 sprite._frame_index = self.action._manual_index
@@ -3163,6 +3169,7 @@ class Actor(MotionManager, metaclass=use_on_events):
 
 
             x = x + self.ax
+
             if not self.game:
                 print(self.name,"has no game object")
             y = height - y - self.ay - sprite.height
@@ -3188,14 +3195,11 @@ class Actor(MotionManager, metaclass=use_on_events):
             #non-destructive motions may only be displacing the sprite.
             x += self._vx
             y += self._vy
-            glPushMatrix()
             ww,hh = self.game.resolution
             if self._rotate:
                 glTranslatef((sprite.width/2)+self.x, hh-self.y-sprite.height/2, 0) #move to middle of sprite
                 glRotatef(-self._rotate, 0.0, 0.0, 1.0)
                 glTranslatef(-((sprite.width/2)+self.x), -(hh-self.y-sprite.height/2 ), 0)
-
- 
 
             if self._fx_sway != 0:
 #                import pdb; pdb.set_trace()
@@ -3211,6 +3215,18 @@ class Actor(MotionManager, metaclass=use_on_events):
 
             pyglet.gl.glTranslatef(self._scroll_dx, 0.0, 0.0)
 #            sprite.position = (int(x), int(y))
+
+            if self._flip_horizontal:
+                glScalef(-1.0, 1.0, 1.0);
+                x = -x
+                x -= sprite.width
+ 
+            if self._flip_vertical:
+                glScalef(1.0, -1.0, 1.0);
+                y = -y
+                y -= sprite.height
+
+
             sprite.position = (x,y)
             if self._scroll_dx != 0 and self._scroll_dx + self.w < self.game.resolution[0]:
                 sprite.position = (int(x + self.w), int(y))
@@ -3899,6 +3915,10 @@ class Actor(MotionManager, metaclass=use_on_events):
     def on_respeech(self, point):
         log.warning("respeech has been renamed retext")
         self.on_retext(point)
+
+    def on_flip(self, horizontal=None, vertical=None):
+        if vertical != None: self._flip_vertical = vertical
+        if horizontal != None: self._flip_horizontal = horizontal
 
     def on_opacity(self, v):
         """ 0 - 255 """
@@ -7863,8 +7883,9 @@ class Game(metaclass=use_on_events):
         obj = get_object(self, obj)
         x,y=obj.x, obj.y
         if obj._parent:
-            x += obj._parent.x
-            y += obj._parent.y     
+            parent = get_object(self, obj._parent)
+            x += parent.x
+            y += parent.y     
         return (x + obj.nx, y + obj.ny)
 
     def get_point_from_raw(self, x,y):
