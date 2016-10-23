@@ -1176,6 +1176,7 @@ class AchievementManager(object, metaclass=use_on_events):
             text.z = 3
             text.reparent("achievement")
             text.relocate(game.scene)
+            text.load_assets(game)
 
 #            text = Text("achievement_text2", pos=(130,260), display_text=a.description, colour=FONT_ACHIEVEMENT_COLOUR2, font=FONT_ACHIEVEMENT, size=FONT_ACHIEVEMENT_SIZE)
 #            game.add(text, replace=True)
@@ -1589,7 +1590,7 @@ class Action(object):
     @property
     def resource_name(self): 
         """ The key name for this action's graphic resources in _resources"""
-        actor_name = getattr(self.actor, "name", self.actor) if self.actor else "unknown_actor"
+        actor_name = getattr(self.actor, "resource_name", self.actor) if self.actor else "unknown_actor"
         return "%s_%s"%(slugify(actor_name), slugify(self.name))
 
     @property
@@ -1653,12 +1654,20 @@ class Action(object):
         resource = False #don't update resource
         if game._headless is True: #only load defaults 
             if os.path.isfile(quickload): #read w,h without loading full image
-                with open(quickload, "r") as f:
-                    # first line is metadata (variable names and default)
-                    data = f.readlines()
-                    w,h = data[1].split(",")
-                    w, h = int(w), int(h)
-                full_load = False
+                try:
+                    with open(quickload, "r") as f:
+                        # first line is metadata (variable names and default)
+                        data = f.readlines()
+                        w,h = data[1].split(",")
+                        w, h = int(w), int(h)
+                    full_load = False
+                except IndexError: #problem with quickload file, so nuke it and full load and rebuild.
+                    print("Problem with",quickload)
+                    try:
+                        os.remove(quickload)
+                    except:
+                        pass
+                    
         if full_load is True:
             image = load_image(self._image)
             if not image:
@@ -1681,11 +1690,13 @@ class Action(object):
         set_resource(self.resource_name, resource = resource, w=w, h=h)
         self._loaded = True
        
-        if not os.path.isfile(quickload) and os.access(quickload, os.W_OK):
-            with open(quickload, "w") as f:
-                f.write("w,h\n")
-                f.write("%s,%s\n"%(w,h))
-
+        if full_load is True and not os.path.isfile(quickload):
+            try:
+                with open(quickload, "w") as f:
+                    f.write("w,h\n")
+                    f.write("%s,%s\n"%(w,h))
+            except IOError:
+                print("unable to create",quickload)
 
 class Rect(object):
 
@@ -2112,6 +2123,8 @@ class Actor(MotionManager, metaclass=use_on_events):
         self._vx, self._vy = 0, 0 # temporary visual displacement (used by motions)
         self._shakex, self._shakey = 0, 0
         self._parent = None
+        self.resource_name_override = None # override actor name to use when accessing resource dict
+
         # when an actor stands at this actor's stand point, request an idle
         self.idle_stand = None
         self._idle = "idle"  # the default idle action for this actor
@@ -3391,6 +3404,8 @@ class Actor(MotionManager, metaclass=use_on_events):
             opt = Text("option{}".format(i), display_text=text, **kwargs)
             if i in keys.keys():
                 opt.on_key(keys[i])
+            #if self.game and not self.game._headless:
+            opt.load_assets(self.game)
             padding_x = 10
             opt.x, opt.y = label.x + padding_x, label.y + label.h + i * opt.h + 5
             rx,ry,rw,rh = opt._clickable_area.flat
@@ -3541,9 +3556,11 @@ class Actor(MotionManager, metaclass=use_on_events):
             kwargs["wrap"] = mw * 0.9
         kwargs["delay"] = delay
         kwargs["step"] = step
+        kwargs["game"] = self.game
         label = self.create_text(text, **kwargs)
+        label.load_assets(self.game)
 
-        label.game = self.game
+#        label.game = self.game
         label.fullscreen(True)
         label.x, label.y = x + dx, y + dy
         if key:
@@ -3783,7 +3800,8 @@ class Actor(MotionManager, metaclass=use_on_events):
     @property
     def resource_name(self):
         """ The key name for this actor's graphic resource in _resources"""
-        return slugify(self.name)
+        name = self.resource_name_override if self.resource_name_override else slugify(self.name)
+        return name
 
 #    def create_sprite(self, action, **kwargs):
 
@@ -5273,6 +5291,7 @@ class Scene(MotionManager, metaclass=use_on_events):
 
 
     def load_assets(self, game): #scene.load
+        print("loading assets for scene",self.name)
         if not self.game: self.game = game
         for obj_name in self._objects:
             obj = get_object(self.game, obj_name)
@@ -5421,6 +5440,7 @@ class Scene(MotionManager, metaclass=use_on_events):
         if fname:
             for i in self._layer:
                 obj = get_object(self.game, i)
+               # if self.game and not self.game._headless:
                 obj.load_assets(self.game)
             log.debug("Set background for scene %s to %s" % (self.name, fname))
 #        if fname == None and self._background == None and self._background_fname: #load image
@@ -5606,10 +5626,7 @@ class Text(Item, metaclass=use_on_events):
         self.size = size
         self.font_name = font_name
         self.wrap = wrap
-        self.create_label()
-
-        self._clickable_area = Rect(
-            0, 0, self.resource.content_width, self.resource.content_height)
+#        self.create_label()
 
         wrap = self.wrap if self.wrap > 0 else 1  # don't allow 0 width labels
         tmp = Label(self._display_text,
@@ -5618,8 +5635,13 @@ class Text(Item, metaclass=use_on_events):
                                 multiline=True,
                                 width=wrap,
                                 anchor_x='left', anchor_y='top')
-        self._height = tmp.content_height
-        self._width = tmp.content_width
+        h = self._height = tmp.content_height
+        w = self._width = tmp.content_width
+
+        self._clickable_area = Rect(
+            0, 0, w, h)
+
+
 
     def __getstate__(self):
         self.__dict__ = super().__getstate__()
@@ -5630,12 +5652,19 @@ class Text(Item, metaclass=use_on_events):
         return get_resource(self.resource_name, subkey="offset")[-1]
 
     def load_assets(self, game):
+        self.game = game
         return self.create_label()
 
     def create_label(self):
         c = self.colour
         if len(c) == 3:
             c = (c[0], c[1], c[2], 255)
+
+        if self.game and self.game._headless is True: 
+            self._text_index = len(self._display_text)
+            self._animated_text = self._display_text[:self._text_index]
+            return
+
         # animate the text
         if self.delay > 0:
             self._text_index = 0
@@ -6949,30 +6978,47 @@ class Factory(object):
 
     def __init__(self, game, template):
         self.game = game
-        self.template = template
+        obj = get_object(game, template)
+        self.template = obj.name
+        self.clone_count = 0
+
+    def __getstate__(self):
+        self.game = None
+        return self.__dict__
 
     def _create_object(self, name):
-        obj = copy.copy(self.template)
-        obj.__dict__ = copy.copy(self.template.__dict__)
+
+        original = get_object(self.game, self.template)
+        obj = copy.copy(original)
+        obj.__dict__ = copy.copy(original.__dict__)
         # reload the pyglet actions for this object
         obj._smart_actions(self.game)
         obj.name = name
         obj.game = self.game
-        obj._do(self.template.action.name)
+        obj.resource_name_override = original.name # use the original object's resource.
+        obj._do(original.action.name)
+        original.game = self.game # restore game object to original
+        if original._scene: #add to current scene
+            original.scene.on_add(obj)
+
         return obj
 
-    def create(self, objects=[], num_of_objects=None):
+
+    def create(self, objects=[], num_of_objects=None, start=0):
         """
            objects : use the names in objects as the names of the new objects
            num_of_objects : create a number of objects using the template's name as the base name 
         """
         new_objects = []
-        if len(objects) > 0:
+        original = get_object(self.game, self.template)
+        if len(objects) > 0: # TODO: custom names no implemented yet
             pass
         elif num_of_objects:
+            self.clone_count = start
             for i in range(0, num_of_objects):
-                name = "{}{}".format(self.template.name, i)
+                name = "{}{}".format(original.name, i + self.clone_count)
                 new_objects.append(self._create_object(name))
+           # self.clone_count += num_of_objects # if Factory is called again, add to clones don't replace
         return new_objects
 
 
@@ -7371,6 +7417,7 @@ class Game(metaclass=use_on_events):
         self.mixer = Mixer(self)  # the sound mixer object
         self.menu = MenuManager(self)  # the menu manager object
         self._menu_factories = {}
+        self._factories = {} #TODO: not used yet
 
         self.directory_portals = DIRECTORY_PORTALS
         self.directory_items = DIRECTORY_ITEMS
@@ -7389,7 +7436,6 @@ class Game(metaclass=use_on_events):
         self._default_ok = "ok" #used by on_says
 
         self._info_object = None
-        self.reset_info_object()
 
         self._actors = {}
         self._items = {}
@@ -7547,6 +7593,7 @@ class Game(metaclass=use_on_events):
         #this is on by default to allow Motions to sync with Sprites.
         self._lock_updates_to_draws = LOCK_UPDATES_TO_DRAWS 
     
+        self.reset_info_object()
 #        pyglet.clock.schedule_interval(
 #            self._monitor_scripts, 2)  # keep reloading scripts
 
@@ -7568,6 +7615,12 @@ class Game(metaclass=use_on_events):
         modified_modules = self.check_modules()
         if modified_modules:
             self.reload_modules()
+
+    def _loaded_resources(self):
+        """ List of keys that have loaded resources """
+        for key, item in _resources.items():
+            if item[-1] != None:
+                yield key, item
 
     def __getattr__(self, a):  # game.__getattr__
         # only called as a last resort, so possibly set up a queue function
@@ -8427,6 +8480,7 @@ class Game(metaclass=use_on_events):
         size = self.font_info_size
         obj = Text(
             name, display_text=" ", font=font, colour=colour, size=size, offset=1)
+        obj.load_assets(self) #XXX loads even in headless mode?
         return obj
 
     def reset_info_object(self):
@@ -8481,6 +8535,7 @@ class Game(metaclass=use_on_events):
                            size=factory.size, offset=factory.offset)
                 obj.game = self
                 obj.interact = item[1]  # set callback
+                obj.load_assets(self.game)
             kwargs = item[2] if len(item) > 2 else {}
             obj.load_assets(self)
             obj.guess_clickable_area()
