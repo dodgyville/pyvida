@@ -2038,12 +2038,16 @@ class MotionManager(metaclass=use_on_events):
                 game, owner=self, filename=motion_file)
             self._motions[motion_name] = motion
 
-    def _do_motion(self, motion, mode=LOOP, block=False, destructive=None):
+    def _do_motion(self, motion, mode=LOOP, block=False, destructive=None, index=0):
         motion = self._motions.get(
             motion, None) if motion in self._motions.keys() else None
         if motion:
             motion.mode = mode
             motion.blocking = block
+            if index == -1:
+                motion.index = randint(0, len(motion.deltas))
+            else:
+                motion.index = index
             if destructive is not None:
                 motion.destructive = destructive
             if block is True and self.game._headless is False:
@@ -2059,14 +2063,16 @@ class MotionManager(metaclass=use_on_events):
             log.warning("Unable to find motion for actor %s"%(self.name))
         return motion
 
-    def _motion(self, motion=None, mode=LOOP, block=False, destructive=None):
-        motion = self._do_motion(motion, mode, block, destructive)
+    def _motion(self, motion=None, mode=LOOP, block=False, destructive=None, index=0):
+        motion = self._do_motion(motion, mode, block, destructive, index)
         motion = [motion] if motion else []
         self._applied_motions = motion
 
-    def on_motion(self, motion=None, mode=LOOP, block=False, destructive=None):
-        """ Clear all existing motions and do just one motion. """
-        self._motion(motion, mode, block, destructive)
+    def on_motion(self, motion=None, mode=LOOP, block=False, destructive=None, index=0):
+        """ Clear all existing motions and do just one motion. 
+            index is where in the motion to start, -1 for random.
+        """
+        self._motion(motion, mode, block, destructive, index)
 
     def on_add_motion(self, motion, mode=LOOP, block=False, destructive=None):
         motion = self._do_motion(motion, mode, block, destructive)
@@ -6993,6 +6999,8 @@ class Factory(object):
         obj.__dict__ = copy.copy(original.__dict__)
         # reload the pyglet actions for this object
         obj._smart_actions(self.game)
+        obj._smart_motions(self.game) 
+
         obj.name = name
         obj.game = self.game
         obj.resource_name_override = original.name # use the original object's resource.
