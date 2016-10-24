@@ -5757,7 +5757,7 @@ class Text(Item, metaclass=use_on_events):
             if self.resource_offset:
                 self.resource_offset.text = self._animated_text
 
-    def pyglet_draw(self, absolute=False):  # text draw
+    def pyglet_draw(self, absolute=False):  # text.draw 
         if self.game and self.game._headless:
             return
 
@@ -5774,7 +5774,7 @@ class Text(Item, metaclass=use_on_events):
                 "Unable to draw Text %s without a self.game object" % self.name)
             return
 
-        x,y = self.pyglet_draw_coords(absolute, None, self.resource.content_height)
+        x,y = self.pyglet_draw_coords(absolute, None, 0) #self.resource.content_height)
 
         if self.resource_offset:  # draw offset first
             self.resource_offset.x, self.resource_offset.y = int(
@@ -8021,11 +8021,6 @@ class Game(metaclass=use_on_events):
         self.mouse_position_raw = raw_x, raw_y
         self.mouse_position = window_x, window_y
 
-#        x,y = raw_x, raw_y
-#        self.mouse_position = x/self._scale, self.game.resolution[
-#            1] - y/self._scale  # adjusted for pyglet
-
-#        ox,oy = self.get_point_from_raw(x,y)
 
         if window_y < 0 or window_x < 0 or window_x > self.resolution[0] or window_y > self.resolution[1]: # mouse is outside game window
             self._info_object.display_text = " "  # clear info
@@ -8044,8 +8039,6 @@ class Game(metaclass=use_on_events):
                 self.mouse_cursor = MOUSE_CROSSHAIR
                 if obj._mouse_motion and not modal_collide:
                     fn = get_function(self, obj._mouse_motion, obj)
-                    log.error("ERROR: x,y,dx,dy,ox,oy no longer behave as expected here %s."%obj.name)
-                    print("ERROR: x,y,dx,dy,ox,oy no longer behave as expected here %s."%obj.name)
                     fn(self.game, obj, self.game.player, scene_x, scene_y, dx, dy, window_x, window_x)
                 modal_collide = True
             else:
@@ -8204,22 +8197,10 @@ class Game(metaclass=use_on_events):
 #        print(self._joystick.__dict__)
 #        self._joystick.button[
 
-    def on_mouse_release(self, x, y, button, modifiers):
+    def on_mouse_release(self, raw_x, raw_y, button, modifiers):
         """ Call the correct function depending on what the mouse has clicked on """
-        """
-        display = pyglet.window.get_platform().get_default_display()
-        w = display.get_default_screen().width
-        h = display.get_default_screen().height
-        resolution, scale = fit_to_screen((w, h), self.resolution)
-        sw, sh = resolution
-        dx = (w-sw)/2/scale
-        dy = (h-sh)/2/scale
-#        glTranslatef(dx, dy, 0) #move to middle of screen
-        print("RELEASE",x,y, w,h, resolution, scale, dx,dy)
-#        RELEASE 788 53 1680 1050 (1680, 945) 1.05 0.0 50.0
-        """
         if self.last_mouse_release:  # code courtesy from a stackoverflow entry by Andrew
-            if (x, y, button) == self.last_mouse_release[:-1]:
+            if (raw_x, raw_y, button) == self.last_mouse_release[:-1]:
                 """Same place, same button, double click shortcut"""
                 if time.clock() - self.last_mouse_release[-1] < 0.2:
                     if self.player and self.player._goto_x != None:
@@ -8233,33 +8214,21 @@ class Game(metaclass=use_on_events):
                         return
         self._info_object.display_text = " " #clear hover text
 
-        self.last_mouse_release = (x, y, button, time.time())
+        self.last_mouse_release = (raw_x, raw_y, button, time.time())
 
-        ox,oy = self.get_point_from_raw(x,y)
-#        print("(res), (w,h), (rawx,rawy), (windowdx, windowdy)",self.resolution, (self.w, self.h), (x,y), (self._window_dx, self._window_dy))
-        x, y = x / self._scale, y / self._scale  # if window is being scaled
+        (window_x, window_y), (scene_x, scene_y) = self.get_points_from_raw(raw_x, raw_y)
 
-        ax, ay = ox, oy  # asbolute x,y (for modals and menu)
-#        print("(scaled x, scaled y), (ox,oy)",(x,y),(ox,oy))
-        if oy < 0 or ox < 0 or ox > self.resolution[0] or oy > self.resolution[1]: # mouse is outside game window
+
+        if window_y < 0 or window_x < 0 or window_x > self.resolution[0] or window_y > self.resolution[1]: # mouse is outside game window
             return
-#        print()
 
         if self._headless or self._walkthrough_auto: return
-
-        if self.scene:
-            x -= self.scene.x  # displaced by camera
-            y += self.scene.y
-
- #       y = self.game.resolution[1] - y  # invert y-axis if needed
- #       ay = self.game.resolution[1] - ay
-        log.debug("mouse release")
 
         # we are editing something, so don't interact with objects
         if self.editor and self._selector: #select an object
             for obj_name in self.scene._objects:
                 obj = get_object(self, obj_name)
-                if obj.collide(ox, oy):
+                if obj.collide(scene_x, scene_y):
                     self.editor.set_edit_object(obj)
                     self._selector = False #turn off selector
                     return
@@ -8271,13 +8240,12 @@ class Game(metaclass=use_on_events):
             self._drag._drag(self, self._drag, self.player)
             self._drag = None
 
-
         # modals are absolute (they aren't displaced by camera)
         for name in self._modals:
             obj = get_object(self, name)
             allow_collide = True if (obj.allow_look or obj.allow_use) \
                 else False
-            if allow_collide and obj.collide(ax, ay):
+            if allow_collide and obj.collide(window_x, window_y):
                 user_trigger_interact(self, obj)
                 return
         # don't process other objects while there are modals
@@ -8289,7 +8257,7 @@ class Game(metaclass=use_on_events):
             obj = get_object(self, obj_name)
             allow_collide = True if (obj.allow_look or obj.allow_use) \
                 else False
-            if allow_collide and obj.collide(ax, ay):
+            if allow_collide and obj.collide(window_x, window_y):
                 user_trigger_interact(self, obj)
                 return
 
@@ -8333,7 +8301,7 @@ class Game(metaclass=use_on_events):
                 allow_use = (obj.allow_draw and (obj.allow_interact or obj.allow_use or obj.allow_look)) or allow_player_use
                 if self._allow_one_player_interaction: #switch off special player interact
                     self._allow_one_player_interaction = False
-                if obj.collide(ox, oy) and allow_use:
+                if obj.collide(scene_x, scene_y) and allow_use:
                     # if wanting to interact or use an object go to it. If engine
                     # says to go to object for look, do that too.
                     if (self.mouse_mode != MOUSE_LOOK or GOTO_LOOK) and (obj.allow_interact or obj.allow_use or obj.allow_look):
@@ -8363,8 +8331,8 @@ class Game(metaclass=use_on_events):
         # no objects to interact with, so just go to the point
         if self.player and self.scene and self.player.scene == self.scene:
             allow_goto_point = True if self._player_goto_behaviour in [GOTO, GOTO_EMPTY] else False
-            if allow_goto_point and valid_goto_point(self, self.scene, self.player, (ox,oy)):
-                self.player.goto((ox, oy))
+            if allow_goto_point and valid_goto_point(self, self.scene, self.player, (scene_x, scene_y)):
+                self.player.goto((scene_x, scene_y))
                 self.player.set_idle()
                 return
 
