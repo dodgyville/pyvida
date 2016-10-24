@@ -3164,56 +3164,63 @@ class Actor(MotionManager, metaclass=use_on_events):
         self._load_scripts()  # start watching the module for this actor
         return self
 
+    def pyglet_draw_coords(self, absolute, window, resource_height):
+        """ return pyglet coordinates for this object modified by all factors such as parent, camera, shaking """
+        x, y = self.x, self.y
+        if self._parent:
+            parent = get_object(self.game, self._parent)
+            x += parent.x
+            y += parent.y
+            x += parent._vx
+            y += parent._vy
+
+        x = x + self.ax
+
+        if not self.game:
+            print("WARNING",self.name,"has no game object")
+            return (x,y)
+
+        height = self.game.resolution[1] if not window else window.height
+        width = self.game.resolution[0] if not window else window.width
+        y = height - y - self.ay - resource_height
+
+        #displace if the action requires it
+        if self.action:
+            x += self.action._x
+            y += self.action._y
+
+        # displace for camera
+        if not absolute and self.game.scene:
+            x += self.game.scene.x * self.z
+            y -= self.game.scene.y * self.z
+            if self.game.camera:
+                x += randint(-self.game.camera._shake_x,
+                             self.game.camera._shake_x)
+                y += randint(-self.game.camera._shake_y,
+                             self.game.camera._shake_y)
+
+        #displace if shaking
+        x += randint(-self._shakex, self._shakex)
+        y += randint(-self._shakey, self._shakey)
+        #non-destructive motions may only be displacing the sprite.
+        x += self._vx
+        y += self._vy
+        return x,y
+
     def pyglet_draw(self, absolute=False, force=False, window=None):  # actor.draw
         if self.game and self.game._headless and not force:
             return
 
-        height = self.game.resolution[1] if not window else window.height
-        width = self.game.resolution[0] if not window else window.width
         sprite = get_resource(self.resource_name)[-1]
         if sprite and self.allow_draw:
             glPushMatrix()
+            x,y = self.pyglet_draw_coords(absolute, window, sprite.height)
 
             #if action mode is manual (static), force the frame index to the manual frame
             if self.action and self.action.mode == MANUAL:
                 sprite._frame_index = self.action._manual_index
 
-            x, y = self.x, self.y
-            if self._parent:
-                parent = get_object(self.game, self._parent)
-                x += parent.x
-                y += parent.y
-                x += parent._vx
-                y += parent._vy
 
-
-            x = x + self.ax
-
-            if not self.game:
-                print(self.name,"has no game object")
-            y = height - y - self.ay - sprite.height
-
-            #displace if the action requires it
-            if self.action:
-                x += self.action._x
-                y += self.action._y
-
-            # displace for camera
-            if not absolute and self.game.scene:
-                x += self.game.scene.x * self.z
-                y -= self.game.scene.y * self.z
-                if self.game.camera:
-                    x += randint(-self.game.camera._shake_x,
-                                 self.game.camera._shake_x)
-                    y += randint(-self.game.camera._shake_y,
-                                 self.game.camera._shake_y)
-
-            #displace if shaking
-            x += randint(-self._shakex, self._shakex)
-            y += randint(-self._shakey, self._shakey)
-            #non-destructive motions may only be displacing the sprite.
-            x += self._vx
-            y += self._vy
             ww,hh = self.game.resolution
             if self._rotate:
                 glTranslatef((sprite.width/2)+self.x, hh-self.y-sprite.height/2, 0) #move to middle of sprite
@@ -5767,17 +5774,8 @@ class Text(Item, metaclass=use_on_events):
                 "Unable to draw Text %s without a self.game object" % self.name)
             return
 
-        x, y = self.x, self.y
-        if self._parent:
-            parent = get_object(self.game, self._parent)
-            x += parent.x
-            y += parent.y
+        x,y = self.pyglet_draw_coords(absolute, None, self.resource.content_height)
 
-        if not absolute and self.game.scene:
-            x += self.game.scene.x * self.z
-            y -= self.game.scene.y * self.z
-
-        x, y = x - self.ax, self.game.resolution[1] - y + self.ay
         if self.resource_offset:  # draw offset first
             self.resource_offset.x, self.resource_offset.y = int(
                 x + self.offset), int(y - self.offset)
@@ -5882,9 +5880,10 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         self.selected = None
         return None
 
-    def _mouse_motion_collection(self, game, collection, player, x, y, dx, dy, rx, ry):
+    def _mouse_motion_collection(self, game, collection, player, scene_x, scene_y, dx, dy, window_x, window_y):
         # mouse coords are in universal format (top-left is 0,0), use rawx,
         # rawy to ignore camera
+        # XXX mid-reworking to better coordinates system. rx,ry now window_x, window_y?
         self.mx, self.my = rx, ry
         obj = self.get_object((self.mx, self.my))
         ix, iy = game.get_info_position(self)
@@ -7316,7 +7315,7 @@ def load_or_create_settings(game, fname, settings_cls=Settings):
     return existing
 
 def fit_to_screen(screen, resolution):
-    # given a screen size and the game's resolution, return a screen size and
+    # given a screen size and the game's resolution, return a window size and
     # scaling factor
 
     w, h = screen
@@ -7469,8 +7468,14 @@ class Game(metaclass=use_on_events):
         w = display.get_default_screen().width
         h = display.get_default_screen().height
         options = self.parser.parse_args()
-        if options.resolution and options.resolution == "0": # use game resolution with no scaling.
-            scale = 1.0
+        if options.resolution: 
+            if options.resolution == "0": # use game resolution with no scaling.
+                scale = 1.0
+            else: # custom window size
+                nw,nh = options.resolution.split("x")
+                nw,nh = int(nw), int(nh)
+                resolution, scale = fit_to_screen((w, h), (nw, nh))
+                self.create_bars(nw, nh)
         else:
             resolution, scale = fit_to_screen((w, h), resolution)
         self._scale = scale
@@ -7951,14 +7956,35 @@ class Game(metaclass=use_on_events):
 
     def get_point_from_raw(self, x,y):
         """ Take a point from the mouse on the screen and convert it to in-engine coords """
+        """ XXX: should this take into consider self.scene.x,y??? """
+        """ XXX: Being deprecated in favour of get_points_from_raw """
+        return 5,5
         ox, oy = x, y #shift for fullscreen
         ox -= self._window_dx #*self._scale
         oy -= self._window_dy #*self._scale
+
+        if self.scene:
+            oy += self.scene.y
+            ox -= self.scene.x       
 
         # if window is being scaled
         ox, oy = ox / self._scale, oy / self._scale
         oy = self.game.resolution[1] - oy
         return ox, oy
+
+
+    def get_points_from_raw(self, raw_x, raw_y):
+        """ Take raw pyglet points and return window and scene equivalents """
+        x = raw_x / self._scale 
+        x = x - self._window_dx
+
+        y = raw_y / self._scale 
+        y = y - self._window_dy
+    
+        window_x, window_y = x, self.resolution[1] - y
+        scene_x, scene_y = window_x - self.scene.x, window_y - self.scene.y 
+        return (window_x, window_y), (scene_x, scene_y)
+
 
     def get_raw_from_point(self, x,y):
         """ Take a point from the in-engine coords and convert to raw mouse """
@@ -7970,7 +7996,6 @@ class Game(metaclass=use_on_events):
         ox, oy = ox * self._scale, oy * self._scale
         oy = self.game.resolution[1] - oy
         return ox, oy
-
 
     def on_mouse_scroll(self, x, y, scroll_x, scroll_y):
         ox,oy = self.get_point_from_raw(x,y)
@@ -7990,26 +8015,22 @@ class Game(metaclass=use_on_events):
 #            scene_objects = self.scene.objects_sorted
 #            for obj_name in scene_objects:
 
-    def on_mouse_motion(self, x, y, dx, dy):
+    def on_mouse_motion(self, raw_x, raw_y, dx, dy):
         """ Change mouse cursor depending on what the mouse is hovering over """
-        self.mouse_position_raw = x, y
+        (window_x, window_y), (scene_x, scene_y) = self.get_points_from_raw(raw_x, raw_y)
+        self.mouse_position_raw = raw_x, raw_y
+        self.mouse_position = window_x, window_y
 
-        self.mouse_position = x/self._scale, self.game.resolution[
-            1] - y/self._scale  # adjusted for pyglet
+#        x,y = raw_x, raw_y
+#        self.mouse_position = x/self._scale, self.game.resolution[
+#            1] - y/self._scale  # adjusted for pyglet
 
-        ox,oy = self.get_point_from_raw(x,y)
+#        ox,oy = self.get_point_from_raw(x,y)
 
-        if oy < 0 or ox < 0 or ox > self.resolution[0] or oy > self.resolution[1]: # mouse is outside game window
+        if window_y < 0 or window_x < 0 or window_x > self.resolution[0] or window_y > self.resolution[1]: # mouse is outside game window
             self._info_object.display_text = " "  # clear info
             self.mouse_cursor = MOUSE_POINTER if self.mouse_mode != MOUSE_LOOK else self.mouse_cursor # reset mouse pointer
             return
-
-        if self.scene:
-            x -= self.scene.x  # displaced by camera
-            y += self.scene.y
-
-        x, y = x / self._scale, y / self._scale  # if window is being scaled
-        y = self.game.resolution[1] - y  # invert y-axis if needed
 
         if not self.scene or self._headless or self._walkthrough_auto:
             return
@@ -8019,16 +8040,18 @@ class Game(metaclass=use_on_events):
             obj = get_object(self, name)
             allow_collide = True if (obj.allow_look or obj.allow_use) \
                 else False
-            if obj.collide(ox, oy) and allow_collide:  # absolute screen values
+            if obj.collide(window_x, window_y) and allow_collide:  # absolute screen values
                 self.mouse_cursor = MOUSE_CROSSHAIR
                 if obj._mouse_motion and not modal_collide:
                     fn = get_function(self, obj._mouse_motion, obj)
-                    fn(self.game, obj, self.game.player, x, y, dx, dy, ox, oy)
+                    log.error("ERROR: x,y,dx,dy,ox,oy no longer behave as expected here %s."%obj.name)
+                    print("ERROR: x,y,dx,dy,ox,oy no longer behave as expected here %s."%obj.name)
+                    fn(self.game, obj, self.game.player, scene_x, scene_y, dx, dy, window_x, window_x)
                 modal_collide = True
             else:
                 if obj._mouse_none:
                     fn = get_function(self, obj._mouse_none, obj)
-                    fn(self.game, obj, self.game.player, x, y, dx, dy, ox, oy)
+                    fn(self.game, obj, self.game.player, scene_x, scene_y, dx, dy, window_x, window_x)
         if modal_collide:
             return
         if len(self._modals) == 0:
@@ -8041,7 +8064,7 @@ class Game(metaclass=use_on_events):
                     return
                 allow_collide = True if (obj.allow_look or obj.allow_use) \
                     else False
-                if obj.collide(ox, oy) and allow_collide:  # absolute screen values
+                if obj.collide(window_x, window_y) and allow_collide:  # absolute screen values
                     self.mouse_cursor = MOUSE_CROSSHAIR if self.mouse_cursor == MOUSE_POINTER else self.mouse_cursor
 
                     if obj._actions and obj._over in obj._actions and (obj.allow_interact or obj.allow_use or obj.allow_look):
@@ -8051,7 +8074,7 @@ class Game(metaclass=use_on_events):
 
                     if obj._mouse_motion and not menu_collide:
                         fn = get_function(self, obj._mouse_motion, obj)
-                        fn(self.game, obj, self.game.player, x, y, dx, dy, ox, oy)
+                        fn(self.game, obj, self.game.player, scene_x, scene_y, dx, dy, window_x, window_x)
                     menu_collide = True
                 else:  # unhover over menu item
                     if obj.action and obj.action.name == obj._over and (obj.allow_interact or obj.allow_use or obj.allow_look):
@@ -8075,11 +8098,11 @@ class Game(metaclass=use_on_events):
                 obj = get_object(self, obj_name)
                 if not obj.allow_draw:
                     continue
-                if obj.collide(ox, oy) and obj._mouse_motion:
+                if obj.collide(scene_x, scene_y) and obj._mouse_motion:
                     if obj._mouse_motion:
                         fn = get_function(self, obj._mouse_motion, obj)
                         fn(self.game, obj, self.game.player,
-                           x, y, dx, dy, ox, oy)
+                           scene_x, scene_y, dx, dy, window_x, window_x)
                         return
                 # hover over player object if it meets the requirements
                 allow_player_hover = (self.player and self.player == obj) and \
@@ -8087,13 +8110,8 @@ class Game(metaclass=use_on_events):
                                      (self._allow_one_player_interaction is True))
 
                 allow_hover = (obj.allow_interact or obj.allow_use or obj.allow_look) or allow_player_hover
-                if obj.collide(ox, oy) and allow_hover:
-                    if isinstance(obj, Portal):
-                        t = obj.portal_text
-                    else:
-                        t = obj.name if obj.display_text == None else obj.display_text
-                        t = obj.fog_display_text(self.player)
-
+#                if obj.name == "groom tycho" and len(self._events) == 0: import pdb; pdb.set_trace()
+                if obj.collide(scene_x, scene_y) and allow_hover:
                     if self.mouse_mode != MOUSE_LOOK: #change cursor if not in look mode
                         # hover over portal
                         if isinstance(obj, Portal) and self.mouse_mode != MOUSE_USE:
@@ -8106,19 +8124,16 @@ class Game(metaclass=use_on_events):
                             self.mouse_cursor = m
                         else: # change to pointer
                             self.mouse_cursor = MOUSE_CROSSHAIR
-                    x,y=obj.x, obj.y
-                    if obj._parent:
-                        parent = get_object(self.game, obj._parent)
-                        x += parent.x
-                        y += parent.y     
+
+                    # show some text describing the object
+                    if isinstance(obj, Portal):
+                        t = obj.portal_text
+                    else:
+                        t = obj.name if obj.display_text == None else obj.display_text
+                        t = obj.fog_display_text(self.player)
+
                     ix, iy = self.get_info_position(obj)
-#                    if self.scene: #displace for camera Note: this should be handled by actor.draw
-#                        if obj.name == "celebrant":
-#                            import pdb; pdb.set_trace()
-#                        ix += self.scene.x 
-#                        iy += self.scene.y 
-                    self.info(
-                        t, ix, iy, obj.display_text_align)
+                    self.info(t, ix, iy, obj.display_text_align)
                     return
 
         # Not over any thing of importance
@@ -8191,6 +8206,18 @@ class Game(metaclass=use_on_events):
 
     def on_mouse_release(self, x, y, button, modifiers):
         """ Call the correct function depending on what the mouse has clicked on """
+        """
+        display = pyglet.window.get_platform().get_default_display()
+        w = display.get_default_screen().width
+        h = display.get_default_screen().height
+        resolution, scale = fit_to_screen((w, h), self.resolution)
+        sw, sh = resolution
+        dx = (w-sw)/2/scale
+        dy = (h-sh)/2/scale
+#        glTranslatef(dx, dy, 0) #move to middle of screen
+        print("RELEASE",x,y, w,h, resolution, scale, dx,dy)
+#        RELEASE 788 53 1680 1050 (1680, 945) 1.05 0.0 50.0
+        """
         if self.last_mouse_release:  # code courtesy from a stackoverflow entry by Andrew
             if (x, y, button) == self.last_mouse_release[:-1]:
                 """Same place, same button, double click shortcut"""
@@ -8599,11 +8626,7 @@ class Game(metaclass=use_on_events):
         """ On screen at one time can be an info text (eg an object name or menu hover) 
             Set that here.
         """
-#        colour = (250,250,40) #yellow
-#        colour = (170, 222, 135) #pale green
-        # = Text("_info_text", display_text=text, font=font, colour=colour, size=size, offset=1)
         self._info_object.display_text = text
-#        self._info_object.game = self
         if text and len(text) == 0:
             return
         w = self._info_object.w
@@ -8611,9 +8634,6 @@ class Game(metaclass=use_on_events):
             x -= w
         if align == CENTER:
             x -= int(float(w) / 2)
-#        if self.scene:
-#            x += self.scene.x
-#            y += self.scene.y
         self._info_object.x, self._info_object.y = x, y
 
     # game.smart
@@ -9385,7 +9405,7 @@ class Game(metaclass=use_on_events):
             if obj.z > 1.0:
                 obj.pyglet_draw(absolute=False)
 
-        if self.settings.show_portals:            
+        if self.settings and self.settings.show_portals:            
             for item in portals:    
                 if item._icon:
                     i = "portal_active" if item.allow_interact or item.allow_look else "portal_inactive"
@@ -9395,6 +9415,8 @@ class Game(metaclass=use_on_events):
                     item._icon.x, item._icon.y = item.clickable_area.centre
                     item._icon.pyglet_draw()
 
+        if self._info_object.display_text != "":
+            self._info_object.pyglet_draw(absolute=False)
 
         if popMatrix is True:
             glPopMatrix() #finish the scene draw
@@ -9403,9 +9425,6 @@ class Game(metaclass=use_on_events):
             item = get_object(self, item_name)
             item.game = self
             item.pyglet_draw(absolute=True)
-
-        if self._info_object.display_text != "":
-            self._info_object.pyglet_draw(absolute=False)
 
         for name in self._modals:
             modal = get_object(self, name)
@@ -9824,6 +9843,24 @@ class Game(metaclass=use_on_events):
                 log.info("game has finished on_pause, so decrement game.busy to %i." % (self.busy))
         pyglet.clock.schedule_once(pause_finish, duration, self)
 
+    def create_bars(self, w,h):
+        resolution, scale = fit_to_screen((w, h), self.resolution)
+        sw, sh = resolution
+        self._window_dx = dx = (w-sw)/2/scale
+        self._window_dy = dy = (h-sh)/2/scale
+        glTranslatef(dx, dy, 0) #move to middle of screen
+        self._bars = []
+        pattern =  pyglet.image.SolidColorImagePattern((0, 0, 0, 255))
+        if dx > 0: # vertical bars
+            image = pattern.create_image(int(dx), int(sh/scale))
+            self._bars.append((image, (-dx,0)))
+            self._bars.append((image, (sw/scale,0)))
+        if dy > 0: # horizontal bars
+            image = pattern.create_image(int(sw/scale), int(dy))
+            self._bars.append((image, (0,-dy)))
+            self._bars.append((image, (0,sh/scale)))
+
+
     def on_toggle_fullscreen(self, fullscreen=None):
         """ Toggle fullscreen, or use <fullscreen> to set the value """
 #        glPopMatrix();
@@ -9841,31 +9878,7 @@ class Game(metaclass=use_on_events):
             display = pyglet.window.get_platform().get_default_display()
             w = display.get_default_screen().width
             h = display.get_default_screen().height
-            resolution, scale = fit_to_screen((w, h), self.resolution)
-            #pyglet.gl.glScalef(scale, scale, scale)
-            eyex,eyey,eyez,centx,centy,centz,upx,upy,upz =0, 0, 0, 0, 0,-1, 0, 1,0
-            #eyex = 0.001
-           # glMatrixMode(GL_MODELVIEW)  
-           # pyglet.gl.gluLookAt(eyex,eyey,eyez,centx,centy,centz,upx,upy,upz)
-           # glDisable(GL_SCISSOR_TEST)
-           # glScissor(0, 0, resolution[0], resolution[1])
-           # glEnable(pyglet.gl.GL_SCISSOR_TEST) 
-           # self._bar
-            sw, sh = resolution
-            self._window_dx = dx = (w-sw)/2/scale
-            self._window_dy = dy = (h-sh)/2/scale
-            glTranslatef(dx, dy, 0) #move to middle of screen
- #           print("resolution", resolution, (w,h), scale)
-            self._bars = []
-            pattern =  pyglet.image.SolidColorImagePattern((0, 0, 0, 255))
-            if dx > 0: # vertical bars
-                image = pattern.create_image(int(dx), int(sh/scale))
-                self._bars.append((image, (-dx,0)))
-                self._bars.append((image, (sw/scale,0)))
-            if dy > 0: # horizontal bars
-                image = pattern.create_image(int(sw/scale), int(dy))
-                self._bars.append((image, (0,-dy)))
-                self._bars.append((image, (0,sh/scale)))
+            self.create_bars(w, h)
         else:
             self._bars = []
             glTranslatef(-self._window_dx,-self._window_dy, 0) #move back to corner of window
