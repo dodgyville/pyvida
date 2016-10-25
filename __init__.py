@@ -264,6 +264,7 @@ EDIT_SOLID = "solid_area"
 # CAMERA FX
 FX_FADE_OUT = 0
 FX_FADE_IN = 1
+FX_DISCO = 2 # randomly tint the scene all colours
 
 # KEYS (currently bound to pyglet)
 K_ESCAPE = pyglet.window.key.ESCAPE
@@ -618,6 +619,9 @@ def rgb2gray(rgb):
     """ based on matlab """
     gray = int(0.2989 * rgb[0] + 0.5870 * rgb[1] + 0.1140 * rgb[2])
     return gray, gray, gray
+
+def random_colour(minimum=0, maximum=255):
+    return randint(minimum,maximum), randint(minimum,maximum), randint(minimum,maximum)
 
 def milliseconds(td): #milliseconds of a timedelta
     return td.days*86400000 + td.seconds*1000 + td.microseconds/1000
@@ -2634,6 +2638,9 @@ class Actor(MotionManager, metaclass=use_on_events):
     def h(self):
         return get_resource(self.resource_name)[1]
 
+    def on_remove_fog(self):
+        self._fog_display_text = None
+
     def fog_display_text(self, actor):
         """ Use this everywhere for getting the correct name of an Actor 
             eg name = game.mistriss.fog_display_text(game.player)   
@@ -3948,6 +3955,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         self.on_retext(point)
 
     def on_flip(self, horizontal=None, vertical=None):
+        """ Flip actor image """
         if vertical != None: self._flip_vertical = vertical
         if horizontal != None: self._flip_horizontal = horizontal
 
@@ -5884,7 +5892,7 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         # mouse coords are in universal format (top-left is 0,0), use rawx,
         # rawy to ignore camera
         # XXX mid-reworking to better coordinates system. rx,ry now window_x, window_y?
-        self.mx, self.my = rx, ry
+        self.mx, self.my =  window_x, window_y
         obj = self.get_object((self.mx, self.my))
         ix, iy = game.get_info_position(self)
         txt = obj.fog_display_text(None) if obj else " "
@@ -6114,9 +6122,11 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._shake_y = 0
         self._overlay = None  # image to overlay
         self._overlay_opacity_delta = 0
+        self._overlay_cycle = 0 # used with overlay counter to trigger next stage in fx
         self._overlay_counter = 0
         self._overlay_end = None
         self._overlay_start = None
+        self._overlay_tint = None
         self._overlay_fx = None
         self._transition = [] #Just messing about, list of scenes to switch between for a rapid editing effect
 
@@ -6153,7 +6163,19 @@ class Camera(metaclass=use_on_events):  # the view manager
                         self.name, self.busy))
                 self._goto_x, self._goto_y = None, None
                 self._goto_dx, self._goto_dy = 0, 0
-#                self._goto_deltas = []
+#                self._goto_deltas = [] 
+        if self._overlay_fx == FX_DISCO: # cycle disco colours
+            self._overlay_counter += 1
+            if self._overlay_counter > self._overlay_cycle:
+                self._overlay_counter = 0
+                self._overlay_tint = random_colour(minimum=200)
+                for item in self.game.scene._layer:
+                    obj = get_object(self.game, item)
+                    obj.on_tint(self._overlay_tint)
+                for obj_name in self.game.scene._objects:
+                    obj = get_object(self.game, obj_name)
+                    obj.on_tint(self._overlay_tint)
+
         if self._overlay:
             if self._overlay_end:
                 duration = self._overlay_end - self._overlay_start
@@ -6161,7 +6183,11 @@ class Camera(metaclass=use_on_events):  # the view manager
                 if complete > 1:
                     complete = 1
                     #if this was blocking, release it.
-                    if self.busy>0: self.busy = 0
+                    if self.busy>0: 
+                        if self.busy > 1: #XXX this seems like it might cause problems if 
+                            print("XXX debugging camera")
+                            import pdb; pdb.set_trace()
+                        self.busy = 0  
 
                 if self._overlay_fx == FX_FADE_OUT:
                     self._overlay.opacity = round(255 * complete)
@@ -6250,6 +6276,9 @@ class Camera(metaclass=use_on_events):  # the view manager
 
     def on_scene(self, scene, camera_point=None, allow_scene_music=True):
         """ change the scene """
+        if self._overlay_fx == FX_DISCO: # remove disco effect
+            self.on_disco_off()
+
         pyglet.gl.glClearColor(0,0,0,255) # reset clear colour to black
         if type(scene) in [str]:
             if scene in self.game._scenes:
@@ -6369,6 +6398,25 @@ class Camera(metaclass=use_on_events):  # the view manager
             if logging:
                 log.info("%s has started on_fade_in with block, so increment %s.busy to %i." % (
                     self.name, self.name, self.busy))
+
+    def on_tint(self, colour=None):
+        """ Apply a tint to every item in the scene """
+        self._overlay_tint = colour
+
+    def on_disco_on(self):
+        self._overlay_fx = FX_DISCO
+        self._overlay_cycle = 8
+
+    def on_disco_off(self):
+        self._overlay_fx = None
+        self._overlay_cycle = 0
+        # TODO: this seems sloppy
+        for item in self.game.scene._layer:
+            obj = get_object(self.game, item)
+            obj.on_tint(self._overlay_tint)
+        for obj_name in self.game.scene._objects:
+            obj = get_object(self.game, obj_name)
+            obj.on_tint(self._overlay_tint)
 
 
     def on_off(self, colour="black"):
@@ -8039,12 +8087,12 @@ class Game(metaclass=use_on_events):
                 self.mouse_cursor = MOUSE_CROSSHAIR
                 if obj._mouse_motion and not modal_collide:
                     fn = get_function(self, obj._mouse_motion, obj)
-                    fn(self.game, obj, self.game.player, scene_x, scene_y, dx, dy, window_x, window_x)
+                    fn(self.game, obj, self.game.player, scene_x, scene_y, dx, dy, window_x, window_y)
                 modal_collide = True
             else:
                 if obj._mouse_none:
                     fn = get_function(self, obj._mouse_none, obj)
-                    fn(self.game, obj, self.game.player, scene_x, scene_y, dx, dy, window_x, window_x)
+                    fn(self.game, obj, self.game.player, scene_x, scene_y, dx, dy, window_x, window_y)
         if modal_collide:
             return
         if len(self._modals) == 0:
@@ -8067,7 +8115,7 @@ class Game(metaclass=use_on_events):
 
                     if obj._mouse_motion and not menu_collide:
                         fn = get_function(self, obj._mouse_motion, obj)
-                        fn(self.game, obj, self.game.player, scene_x, scene_y, dx, dy, window_x, window_x)
+                        fn(self.game, obj, self.game.player, scene_x, scene_y, dx, dy, window_x, window_y)
                     menu_collide = True
                 else:  # unhover over menu item
                     if obj.action and obj.action.name == obj._over and (obj.allow_interact or obj.allow_use or obj.allow_look):
@@ -8095,7 +8143,7 @@ class Game(metaclass=use_on_events):
                     if obj._mouse_motion:
                         fn = get_function(self, obj._mouse_motion, obj)
                         fn(self.game, obj, self.game.player,
-                           scene_x, scene_y, dx, dy, window_x, window_x)
+                           scene_x, scene_y, dx, dy, window_x, window_y)
                         return
                 # hover over player object if it meets the requirements
                 allow_player_hover = (self.player and self.player == obj) and \
