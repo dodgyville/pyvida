@@ -3865,10 +3865,15 @@ class Actor(MotionManager, metaclass=use_on_events):
         if self.scene:
             self.scene._remove(self)
 
-    def on_mirror(self):
+    def on_mirror(self, reverse=None):
         """ mirror stand point (and perhaps other points) 
             and motions
+            if reverse is not None, force a direction.
         """
+        if reverse == True and self._mirrored: #already mirrored
+            return
+        if reverse == False and not self._mirrored: #already not mirrored
+            return
         self.sx = -self.sx
         self._mirrored = not self._mirrored
         for motion in self._motions.values():
@@ -6410,6 +6415,7 @@ class Camera(metaclass=use_on_events):  # the view manager
     def on_disco_off(self):
         self._overlay_fx = None
         self._overlay_cycle = 0
+        self._overlay_tint = None
         # TODO: this seems sloppy
         for item in self.game.scene._layer:
             obj = get_object(self.game, item)
@@ -6974,6 +6980,10 @@ class Mixer(metaclass=use_on_events):
 
     def on_ambient_fadeout(self, seconds=2):
         self.on_ambient_fade(0, seconds)
+        self._ambient_volume_callback = self._ambient_stop_callback
+
+    def on_ambient_fadein(self, seconds=2):
+        self.on_ambient_fade(1, seconds)
         self._ambient_volume_callback = self._ambient_stop_callback
 
 
