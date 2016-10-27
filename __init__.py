@@ -5191,6 +5191,7 @@ class Scene(MotionManager, metaclass=use_on_events):
         self.busy = 0
         self._music_filename = None
         self._ambient_filename = None
+        self._ambient_description = None
         self._last_load_state = None #used by editor
 
         # used by camera
@@ -5554,10 +5555,18 @@ class Scene(MotionManager, metaclass=use_on_events):
 #            print("PLAY SCENE MUSIC",self._music_filename)
             mixer.on_music_play(self._music_filename, start=start)
 
-
-    def on_ambient(self, filename):
-        """ What ambient sound to play on entering the scene? """
+    def on_ambient(self, filename=None, description=None):
+        """ What ambient sound to play on entering the scene? Blank to clear """
         self._ambient_filename = filename
+        self._ambient_description = description
+
+    def on_ambient_play(self, filename=None, description=None): 
+        """ Play this scene's ambient sound now """
+        ambient_filename = filename if filename else self._ambient_filename
+        ambient_description = description if description else  self._ambient_description
+        mixer = self.game.mixer
+        if ambient_filename:
+            mixer.on_ambient_play(ambient_filename, ambient_description)
 
     def _update(self, dt, obj=None): #scene._update can be useful in subclassing
         pass
@@ -8040,7 +8049,10 @@ class Game(metaclass=use_on_events):
         y = y - self._window_dy
     
         window_x, window_y = x, self.resolution[1] - y
-        scene_x, scene_y = window_x - self.scene.x, window_y - self.scene.y 
+        if self.scene:
+            scene_x, scene_y = window_x - self.scene.x, window_y - self.scene.y 
+        else:
+            scene_x, scene_y = window_x, window_y
         return (window_x, window_y), (scene_x, scene_y)
 
 
