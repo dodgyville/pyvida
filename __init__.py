@@ -3962,7 +3962,11 @@ class Actor(MotionManager, metaclass=use_on_events):
     def on_flip(self, horizontal=None, vertical=None):
         """ Flip actor image """
         if vertical != None: self._flip_vertical = vertical
-        if horizontal != None: self._flip_horizontal = horizontal
+        if horizontal != None: 
+            if horizontal != self._flip_horizontal: # flip anchor point too
+                self.ax = -self.ax
+            self._flip_horizontal = horizontal
+
 
     def on_opacity(self, v):
         """ 0 - 255 """
