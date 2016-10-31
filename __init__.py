@@ -2555,7 +2555,7 @@ class Actor(MotionManager, metaclass=use_on_events):
 
     @property
     def center(self):
-        return (self.x + self.ax/2, self.y + self.ay/2)
+        return self.clickable_area.center #(self.x + self.ax/2, self.y + self.ay/2)
 
 #    @property
 #    def position(self):
