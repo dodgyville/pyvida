@@ -3895,6 +3895,9 @@ class Actor(MotionManager, metaclass=use_on_events):
         self._fx_sway_angle = angle
         self._fx_sway_index = randint(0,360)
 
+    def on_sway_off(self):
+        self.on_sway(0, 0)
+
     def on_tint(self, rgb=None):
         self._set_tint(rgb)
 
