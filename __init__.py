@@ -1621,7 +1621,10 @@ class Action(object):
         montage_fname = fname + ".montage"
         self._image = os.path.relpath(filename)
         if not os.path.isfile(montage_fname):
-            w,h = get_image_size(filename)
+            if not os.path.isfile(filename): 
+                w,h = 0,0
+            else:
+                w,h = get_image_size(filename)
             num = 1 #single frame animation
         else:
             with open(montage_fname, "r") as f:
@@ -5453,6 +5456,7 @@ class Scene(MotionManager, metaclass=use_on_events):
         if type(obj) == list:
             for i in obj:
                 self._remove(i)
+
         else:
             self._remove(obj)
 
@@ -6212,9 +6216,9 @@ class Camera(metaclass=use_on_events):  # the view manager
                     if self.busy>0: 
                         if self.busy > 1: #XXX this seems like it might cause problems if 
                             print("XXX debugging camera")
-                        if self.game and not self.game.fullscreen:
-                            import pdb; pdb.set_trace()
-                        self.busy = 0  
+#                        if self.game and not self.game.fullscreen:
+#                            import pdb; pdb.set_trace()
+                        self.busy -= 1
 
                 if self._overlay_fx == FX_FADE_OUT:
                     self._overlay.opacity = round(255 * complete)
