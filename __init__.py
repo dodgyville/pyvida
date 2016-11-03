@@ -103,6 +103,7 @@ if DEBUG_NAMES:
     tmp_objects_first = {}
     tmp_objects_second = {}
 
+ENABLE_FKEYS = False # debug shortcut keys
 ENABLE_EDITOR = False  # default for editor. Caution: This starts module reloads which ruins pickles 
 ENABLE_PROFILING = False
 ENABLE_LOGGING = True
@@ -2286,6 +2287,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                 setattr(self, fn_name, fn.__name__)
 
         game = self.game
+        fullscreen = game.fullscreen if game else False
         self.game = None  # re-populated after load
         self._editable = []  # re-populated after load
 
@@ -2299,8 +2301,8 @@ class Actor(MotionManager, metaclass=use_on_events):
                     vv = v
                     print("*******UNABLE TO FIND function",
                           v.__name__, "for", k, "on", self.name)
-                    import pdb
-                    pdb.set_trace()
+                    if not fullscreen:
+                        import pdb; pdb.set_trace()
         return self.__dict__
 
     def set_editable(self):
@@ -2734,7 +2736,8 @@ class Actor(MotionManager, metaclass=use_on_events):
                 self._goto_deltas_index += 1
                 if self._goto_deltas_index > len(self._goto_deltas):
                     print("deltas have missed target")
-                    import pdb; pdb.set_trace()
+                    if self.game and not self.game.fullscreen:
+                        import pdb; pdb.set_trace()
             self.x = self.x + dx
             self.y = self.y + dy
             speed = self._goto_deltas_average_speed
@@ -3798,7 +3801,8 @@ class Actor(MotionManager, metaclass=use_on_events):
         self._action = action
 
         if action not in self._actions:
-            import pdb; pdb.set_trace()
+            if self.game and not self.game.fullscreen:
+                import pdb; pdb.set_trace()
         self.switch_asset(self._actions[action]) #create the asset to the new action's
         self._actions[action].mode = mode
 
@@ -4769,7 +4773,6 @@ class Emitter(Item, metaclass=use_on_events):
                                  self.game.camera._shake_y)
 
             if self.resource is not None:
-#                import pdb; pdb.set_trace()
                 self.resource._frame_index = p.action_index%self.action.num_of_frames
                 self.resource.scale = p.scale
 #                if i == 10: print(i, p.index, p.scale)
@@ -5325,7 +5328,7 @@ class Scene(MotionManager, metaclass=use_on_events):
 
 
     def load_assets(self, game): #scene.load
-        print("loading assets for scene",self.name)
+#        print("loading assets for scene",self.name)
         if not self.game: self.game = game
         for obj_name in self._objects:
             obj = get_object(self.game, obj_name)
@@ -5352,7 +5355,7 @@ class Scene(MotionManager, metaclass=use_on_events):
         sdir = os.path.join(
             os.getcwd(), os.path.join(self.game.directory_scenes, self.name))
         #wildcard = wildcard if wildcard else os.path.join(sdir, "*.png")
-        import pdb; pdb.set_trace()
+#        import pdb; pdb.set_trace()
         self._layer = [] #free up old layers
         for element in self._layer:  # add layers
             fname = os.path.splitext(os.path.basename(element))[0]
@@ -5592,6 +5595,8 @@ class HTMLLabel(DocumentLabel):
     
     A subset of HTML 4.01 is supported.  See `pyglet.text.formats.html` for
     details.
+
+    TODO: Work-in-progress, can't get working with pyglet.
     '''
     def __init__(self, text='', font_name=None, font_size=None, bold=False, italic=False, color=(255, 255, 255, 255), x=0, y=0, width=None, height=None, anchor_x='left', anchor_y='baseline', halign='left', multiline=False, dpi=None, batch=None, group=None):
 
@@ -6207,6 +6212,7 @@ class Camera(metaclass=use_on_events):  # the view manager
                     if self.busy>0: 
                         if self.busy > 1: #XXX this seems like it might cause problems if 
                             print("XXX debugging camera")
+                        if self.game and not self.game.fullscreen:
                             import pdb; pdb.set_trace()
                         self.busy = 0  
 
@@ -7233,8 +7239,8 @@ def save_game_pickle(game, fname):
                             print("failed on", k, x)
                     print("Error:", sys.exc_info())
                     print("failed pickling", o.name)
-                    import pdb
-                    pdb.set_trace()
+                    if game and not game.fullscreen:
+                        import pdb; pdb.set_trace()
             pickle.dump(objects, f)
             # restore game object and editables that were cleansed for pickle
             for o in objects.values():
@@ -7267,7 +7273,6 @@ def load_game_pickle(game, fname, meta_only=False, keep=[]):
         if meta_only is False:
             player_info = pickle.load(f)
             engine_info = pickle.load(f)
-#            import pdb; pdb.set_trace()
             game.set_engine(engine_info)
             game.storage = pickle.load(f)
             game.storage._last_load_time = datetime.now()
@@ -7556,6 +7561,8 @@ class Game(metaclass=use_on_events):
         self._bars = [] #black bars in fullscreen, (pyglet image, location)
         self._window_dx = 0 # displacement by fullscreen mode
         self._window_dy = 0
+        self.fullscreen = DEFAULT_FULLSCREEN # will be set by toggle_fullscreen
+
 
 #        config = pyglet.gl.Config(double_buffer=True, vsync=True)
         #config = pyglet.gl.Config(alpha_size=4)
@@ -7841,154 +7848,155 @@ class Game(metaclass=use_on_events):
             
 
         # process engine keys before game keys
+        if ENABLE_FKEYS:
+            if symbol == pyglet.window.key.F1:
+                #            edit_object(self, list(self.scene._objects.values()), 0)
+                #            self.menu_from_factory("editor", MENU_EDITOR)
+    #            editor_pgui(self)
+                self.editor = editor(self)
+     #           editor_thread = Thread(target=editor, args=(,))
+    #            editor_thread.start()
+            if symbol == pyglet.window.key.F2:
+                print("edit_object_script(game, obj) will open the editor for an object")
+                if not self.fullscreen:
+                    import pdb
+                    pdb.set_trace()
 
-        if symbol == pyglet.window.key.F1:
-            #            edit_object(self, list(self.scene._objects.values()), 0)
-            #            self.menu_from_factory("editor", MENU_EDITOR)
-#            editor_pgui(self)
-            self.editor = editor(self)
- #           editor_thread = Thread(target=editor, args=(,))
-#            editor_thread.start()
-        if symbol == pyglet.window.key.F2:
-            print("edit_object_script(game, obj) will open the editor for an object")
-            import pdb
-            pdb.set_trace()
+            if symbol == pyglet.window.key.F3: 
+                #game.menu.show()
+                pyglet_editor(self)
 
-        if symbol == pyglet.window.key.F3: 
-            #game.menu.show()
-            pyglet_editor(self)
+            if symbol == pyglet.window.key.F4:
+                print("RELOADED MODULES")
+                self._allow_editing = True
+                self.reload_modules()  # reload now to refresh existing references
+                self._allow_editing = False
 
-        if symbol == pyglet.window.key.F4:
-            print("RELOADED MODULES")
-            self._allow_editing = True
-            self.reload_modules()  # reload now to refresh existing references
-            self._allow_editing = False
-
-        if symbol == pyglet.window.key.F5:
-            from scripts.general import show_credits
-            script = show_credits
-            try:
-                script(self, self.player, "void")
-            except:
-                log.error("Exception in %s" % script.__name__)
-                print("\nError running %s\n" % script.__name__)
-                if traceback:
-                    traceback.print_exc(file=sys.stdout)
-                print("\n\n")
+            if symbol == pyglet.window.key.F5:
+                from scripts.general import show_credits
+                script = show_credits
+                try:
+                    script(self, self.player, "void")
+                except:
+                    log.error("Exception in %s" % script.__name__)
+                    print("\nError running %s\n" % script.__name__)
+                    if traceback:
+                        traceback.print_exc(file=sys.stdout)
+                    print("\n\n")
 
 
-            #game.camera.scene("phelm") if game.scene.name == "aqueue" else game.camera.scene("aqueue")
-        if symbol == pyglet.window.key.F6:
-            self.debug_collection = True
+                #game.camera.scene("phelm") if game.scene.name == "aqueue" else game.camera.scene("aqueue")
+            if symbol == pyglet.window.key.F6:
+                self.debug_collection = True
 
-        if symbol == pyglet.window.key.F7:  # start recording
-            # ffmpeg -r 16 -pattern_type glob -i '*.png' -c:v libx264 out.mp4
-            d = "screencast %s" % datetime.now()
-            d = os.path.join(DIRECTORY_SAVES, d)
-            if not os.path.isdir(d):
-                os.mkdir(d)
-            print("saving to", d)
-            self.directory_screencast = d
-        if symbol == pyglet.window.key.F8:  # stop recording
-            self.directory_screencast = None
-            print("finished casting")
+            if symbol == pyglet.window.key.F7:  # start recording
+                # ffmpeg -r 16 -pattern_type glob -i '*.png' -c:v libx264 out.mp4
+                d = "screencast %s" % datetime.now()
+                d = os.path.join(DIRECTORY_SAVES, d)
+                if not os.path.isdir(d):
+                    os.mkdir(d)
+                print("saving to", d)
+                self.directory_screencast = d
+            if symbol == pyglet.window.key.F8:  # stop recording
+                self.directory_screencast = None
+                print("finished casting")
 
-        if symbol == pyglet.window.key.F9:
-            game.menu.hide()
-            s = game.scene
-            game.camera.scene("jstadium", camera_point=(0,0))
-            game.load_state("jgame", "trial")
-            game.camera.move((0,840), speed=20)
-            game.pause(5)
-            game.camera.scene(s)
-            game.menu.show()
-            return
-            game.player.goto(game.galaxy_sister, block=True)
-            game.bazzarella.says(_("I don't believe in all this new fangled technology."), position=BOTTOM)
-            return
-            game.planet_name2.remove()
-#            game.tycho.move((-400,0))
-#            game.tycho_monitor.on_says("I've got to find him.")
-            game.tycho.move((400,0))
-            game.pause(1)
-            game.tycho_monitor.on_says("Time's running out.")
-            game.pause(1)
-            game.menu.show()
-            return
-            self.scene.walkarea._fill_colour = (50,244,176, 255)
-            self.scene.walkarea._editing = True
-            self.fountain.show_debug = True
-            return
-            pygame.mixer.quit()
-            pygame.mixer.init()
-            game.mixer._music_player.load(game.mixer._music_filename)
-            game.mixer._music_player.play()
-            return
-            from scripts.general import chip_first_attempt, cutscene_founders
-            cutscene_founders(game)
-            chip_first_attempt(game)
-            return
-            game.xian_child.do("left")
-            game.xian_gypsy.do_once("glitch", "vanished")
-            game.pause(1)
-            game.xian_child.do_once("glitchleft", "vanished")
-            game.pause(1)
-            game.xian_gypsy.do("idle")
-            game.xian_child.do("left")
-            return
-            self.scene._spin += .1
-            print("rotate")
-            return
-            self.settings.achievements.present(game, "puzzle")
-            return
-            for i in range(1,1000):
-                game.player.generate_world(i)
-                game.menu.clear()
-                game.camera.scene("orbit")
-                d = os.path.join("dev/explore", "planet_%09d.png" %i)
-                game.pause(0.01)
-                game.camera.screenshot(d)
+            if symbol == pyglet.window.key.F9:
+                game.menu.hide()
+                s = game.scene
+                game.camera.scene("jstadium", camera_point=(0,0))
+                game.load_state("jgame", "trial")
+                game.camera.move((0,840), speed=20)
+                game.pause(5)
+                game.camera.scene(s)
+                game.menu.show()
+                return
+                game.player.goto(game.galaxy_sister, block=True)
+                game.bazzarella.says(_("I don't believe in all this new fangled technology."), position=BOTTOM)
+                return
+                game.planet_name2.remove()
+    #            game.tycho.move((-400,0))
+    #            game.tycho_monitor.on_says("I've got to find him.")
+                game.tycho.move((400,0))
+                game.pause(1)
+                game.tycho_monitor.on_says("Time's running out.")
+                game.pause(1)
+                game.menu.show()
+                return
+                self.scene.walkarea._fill_colour = (50,244,176, 255)
+                self.scene.walkarea._editing = True
+                self.fountain.show_debug = True
+                return
+                pygame.mixer.quit()
+                pygame.mixer.init()
+                game.mixer._music_player.load(game.mixer._music_filename)
+                game.mixer._music_player.play()
+                return
+                from scripts.general import chip_first_attempt, cutscene_founders
+                cutscene_founders(game)
+                chip_first_attempt(game)
+                return
+                game.xian_child.do("left")
+                game.xian_gypsy.do_once("glitch", "vanished")
+                game.pause(1)
+                game.xian_child.do_once("glitchleft", "vanished")
+                game.pause(1)
+                game.xian_gypsy.do("idle")
+                game.xian_child.do("left")
+                return
+                self.scene._spin += .1
+                print("rotate")
+                return
+                self.settings.achievements.present(game, "puzzle")
+                return
+                for i in range(1,1000):
+                    game.player.generate_world(i)
+                    game.menu.clear()
+                    game.camera.scene("orbit")
+                    d = os.path.join("dev/explore", "planet_%09d.png" %i)
+                    game.pause(0.01)
+                    game.camera.screenshot(d)
 
-            return
-            game.player.move((0,0))
-            game.player.standing_still = datetime.now()
-            return
-            game.camera.scene("elagoon")
-            game.load_state("elagoon", "kiss")
-            #game.elagoon_
-            game.menu.hide()
-            game.flower.remove()
-            game.eden_kiss.display_text = " "
-            game.firework2.do("idle")
-            game.pause(0.3)
-            game.firework2.do("firework")
-            game.player.says("start recording")
-            game.pause(3)
-            game.elagoon_background.fade_out()
-        if symbol == pyglet.window.key.F10:
-            if self._motion_output is None:
-                self.player.says("Recording motion")
-                print("x,y")
-                self._motion_output = self.mouse_position
-                self._motion_output_raw = []
-            else:
-                motion = Motion("tmp")
-                motion.add_deltas(self._motion_output_raw)
-                import pdb; pdb.set_trace()
-                s = input('motion name? (no .motion)') 
-                self.player.says("Processed, saved, and turned off record motion")
-                self._motion_output = None
-                self._motion_output_raw = []
+                return
+                game.player.move((0,0))
+                game.player.standing_still = datetime.now()
+                return
+                game.camera.scene("elagoon")
+                game.load_state("elagoon", "kiss")
+                #game.elagoon_
+                game.menu.hide()
+                game.flower.remove()
+                game.eden_kiss.display_text = " "
+                game.firework2.do("idle")
+                game.pause(0.3)
+                game.firework2.do("firework")
+                game.player.says("start recording")
+                game.pause(3)
+                game.elagoon_background.fade_out()
+            if symbol == pyglet.window.key.F10:
+                if self._motion_output is None:
+                    self.player.says("Recording motion")
+                    print("x,y")
+                    self._motion_output = self.mouse_position
+                    self._motion_output_raw = []
+                else:
+                    motion = Motion("tmp")
+                    motion.add_deltas(self._motion_output_raw)
+                    import pdb; pdb.set_trace()
+                    s = input('motion name? (no .motion)') 
+                    self.player.says("Processed, saved, and turned off record motion")
+                    self._motion_output = None
+                    self._motion_output_raw = []
 
-        if symbol == pyglet.window.key.F11:
-            if self._record_walkthrough == False:
-                self.player.says("Recording walkthrough")
-            else:
-                self.player.says("Turned off record walkthrough")
-            self._record_walkthrough = not self._record_walkthrough
-        if symbol == pyglet.window.key.F12:
-            self._event = None
-            self._events = []
+            if symbol == pyglet.window.key.F11:
+                if self._record_walkthrough == False:
+                    self.player.says("Recording walkthrough")
+                else:
+                    self.player.says("Turned off record walkthrough")
+                self._record_walkthrough = not self._record_walkthrough
+            if symbol == pyglet.window.key.F12:
+                self._event = None
+                self._events = []
 
         # check modals, menus, and then scene objects for key matches
 
