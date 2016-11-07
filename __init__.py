@@ -103,7 +103,7 @@ if DEBUG_NAMES:
     tmp_objects_first = {}
     tmp_objects_second = {}
 
-ENABLE_FKEYS = False # debug shortcut keys
+ENABLE_FKEYS = True # debug shortcut keys
 ENABLE_EDITOR = False  # default for editor. Caution: This starts module reloads which ruins pickles 
 ENABLE_PROFILING = False
 ENABLE_LOGGING = True
@@ -1248,7 +1248,7 @@ class Settings(object):
         self.allow_internet_debug = ENABLE_LOGGING
 
         self.fullscreen = DEFAULT_FULLSCREEN
-        self.show_portals = True #TODO default should be false
+        self.show_portals = False
         self.show_portal_text = DEFAULT_PORTAL_TEXT
         self.portal_exploration = DEFAULT_EXPLORATION
         self.textspeed = NORMAL
@@ -1262,7 +1262,7 @@ class Settings(object):
 
         self.high_contrast = False
         # use this font to override main font (good for using dsylexic-friendly
-        # fonts
+        # fonts)
         self.accessibility_font = None
         self.font_size_adjust = 0 # increase or decrease font size
         self.show_gui = True  # when in-game, show a graphical user interface
@@ -1272,7 +1272,7 @@ class Settings(object):
         self.disable_joystick = False # allow joystick if available
         # joystick button remapping
         self.joystick_interact = 0 # index to joystick.buttons that corresponds to mouse left-click
-        self.joystick_look = 1 # index to joystick.buttons that corresponds to mouse left-click
+        self.joystick_look = 1 # index to joystick.buttons that corresponds to mouse right-click
 
         #some game play information
         self._current_session_start = None #what date and time did the current session start
@@ -3420,6 +3420,12 @@ class Actor(MotionManager, metaclass=use_on_events):
 
             if "colour" not in kwargs: #if player does not provide a colour, use a default
                 kwargs["colour"] = COLOURS["goldenrod"]
+
+            if "size" not in kwargs:
+                kwargs["size"] = DEFAULT_TEXT_SIZE
+            if self.game and self.game.settings:
+                kwargs["size"] +=self.game.settings.font_size_adjust
+
             # dim the colour of the option if we have already selected it.
             remember = (self.name, statement, text)
             if remember in self.game._selected_options and "colour" in kwargs:
@@ -3583,6 +3589,11 @@ class Actor(MotionManager, metaclass=use_on_events):
         kwargs["delay"] = delay
         kwargs["step"] = step
         kwargs["game"] = self.game
+        if "size" not in kwargs:
+            kwargs["size"] = DEFAULT_TEXT_SIZE
+        if self.game and self.game.settings:
+            kwargs["size"] +=self.game.settings.font_size_adjust
+
         label = self.create_text(text, **kwargs)
         label.load_assets(self.game)
 
@@ -7877,21 +7888,9 @@ class Game(metaclass=use_on_events):
                 self._allow_editing = False
 
             if symbol == pyglet.window.key.F5:
-                from scripts.general import show_credits
-                script = show_credits
-                try:
-                    script(self, self.player, "void")
-                except:
-                    log.error("Exception in %s" % script.__name__)
-                    print("\nError running %s\n" % script.__name__)
-                    if traceback:
-                        traceback.print_exc(file=sys.stdout)
-                    print("\n\n")
-
-
-                #game.camera.scene("phelm") if game.scene.name == "aqueue" else game.camera.scene("aqueue")
+                self.settings.font_size_adjust -= 2
             if symbol == pyglet.window.key.F6:
-                self.debug_collection = True
+                self.settings.font_size_adjust += 2
 
             if symbol == pyglet.window.key.F7:  # start recording
                 # ffmpeg -r 16 -pattern_type glob -i '*.png' -c:v libx264 out.mp4
