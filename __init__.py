@@ -4250,7 +4250,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         if not scene.walkarea:
             return [start, end]
         walkarea = scene.walkarea
-        available_points = walkarea._waypoints
+        available_points = copy.copy(walkarea._waypoints)
 #        available_points.extend([start, end]) #add the current start, end points (assume valid)
         solids = []
         for o in scene._objects:
@@ -4261,7 +4261,6 @@ class Actor(MotionManager, metaclass=use_on_events):
                 for pt in o.solid_area.waypoints:
                     if pt not in available_points:
                         available_points.append(pt)
-
         available_points = [pt for pt in available_points if walkarea.valid(*pt)] #scrub out non-valid points.
 #        print("scene available points",available_points,"solids",[x.flat for x in solids])
         goto_points = self.aStar(walkarea, available_points, start, end, solids)
