@@ -4141,6 +4141,23 @@ class Actor(MotionManager, metaclass=use_on_events):
         b = current[1] - neighbour[1]
         return math.sqrt(a**2 + b**2)
 
+    def clear_path(self, polygon, start, end, solids):
+        """ Is there a clear path between these two points """
+        clear_path = True
+        if polygon: #test the walkarea
+            w0 = w1 = polygon[0]
+            for w2 in polygon[1:]:
+                if line_seg_intersect(end, start, w1, w2): 
+                    clear_path = False
+                    return clear_path
+                w1 = w2
+            if line_seg_intersect(end, start, w2, w0): clear_path = False
+        for rect in solids: # test the solids
+            collide = rect.intersect(start, end)
+            if collide is True:
+                clear_path = False
+        return clear_path
+
     def neighbour_nodes(self, polygon, nodes, current, solids):
         """ only return nodes:
         1. are not the current node
@@ -4158,27 +4175,14 @@ class Actor(MotionManager, metaclass=use_on_events):
             max_nodes -= 1
             if max_nodes == 0: continue
             if node.point != current.point: #and (node[0] == current[0] or node[1] == current[1]):
-                append_node = True  
-                if polygon: #test the walkarea
-                    w0 = w1 = polygon[0]
-                    for w2 in polygon[1:]:
-                        if line_seg_intersect(node.point, current.point, w1, w2): 
-                            append_node = False
-                            break
-                        w1 = w2
-                    if line_seg_intersect(node.point, current.point, w2, w0): append_node = False
-                for rect in solids:
-                    collide = rect.intersect(current.point, node.point)
-#                    if collide:
-#                        print("test neighbours",current.point,node.point,"intersect with solid",rect.topleft, rect.topright, rect.bottomright, rect.bottomleft,"collides?",collide)
-                    if collide is True:
-                        append_node = False
+                append_node = self.clear_path(polygon, current.point, node.point, solids)
                 if append_node == True and node not in return_nodes: return_nodes.append(node)
 #        print("so neighbour nodes for",current.x, current.y,"are",[(pt.x, pt.y) for pt in return_nodes])
         return return_nodes
 
-    def aStar(self, walkarea, nodes, start, end, solids, ignore=False):
+    def aStar(self, walkarea, nodes, start, destination, solids, ignore=False):
         # courtesy http://stackoverflow.com/questions/4159331/python-speed-up-an-a-star-pathfinding-algorithm
+
         openList = []
         closedList = []
         path = []
@@ -4196,15 +4200,19 @@ class Actor(MotionManager, metaclass=use_on_events):
 #                return (self.x, self.y) == (other.x, other.y)
 
         current = Node(*start)
-        end = Node(*end)
+        end = Node(*destination)
+
+        # don't test for inside walkarea if ignoring walkarea
+        walkarea_polygon = None if ignore else walkarea._polygon
+        direct = self.clear_path(walkarea_polygon, start, destination, solids)
+        if direct: # don't astar, just go direct
+            return [current, end]
 
         #create a graph of nodes where each node is connected to all the others.
         graph = {}
         nodes = [Node(*n) for n in nodes] #convert points to nodes
         nodes.extend([current, end])
 #        print()
-        # don't test for inside walkarea if ignoring walkarea
-        walkarea_polygon = None if ignore else walkarea._polygon
         for key in nodes:
             #add nodes that the key node can access to the key node's map.
             graph[key] = self.neighbour_nodes(walkarea_polygon, nodes, key, solids)
@@ -4228,7 +4236,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             if current == end:
                 retracePath(current)
 #                print("retrace path: ",end="")
-#                print(path)
+#                print("found path",path)
                 return path
 
             openList.remove(current)
@@ -4239,7 +4247,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                     if tile not in openList:
                         openList.append(tile)
                     tile.parent = current
-#        print("end of astar")
+#        print("end of astar",path)
         return path
 
     def _calculate_path(self, start, end, ignore=False):
