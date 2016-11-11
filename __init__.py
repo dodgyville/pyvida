@@ -8990,6 +8990,9 @@ class Game(metaclass=use_on_events):
                 self._joystick.open()
                 self._joystick.push_handlers(self)
                 self._window.set_mouse_visible(False)
+#        if options.target_random_steps: # randomly do some options before 
+#            self.target_random_steps = options.target_random_steps
+#            self.target_random_steps_counter = options.target_random_steps
 
         if options.output_walkthrough == True:
             self._output_walkthrough = True
