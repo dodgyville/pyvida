@@ -2,6 +2,7 @@
 Python3 
 """
 import copy
+import euclid3 as eu
 import gc
 import glob
 import imghdr
@@ -18,14 +19,14 @@ import threading
 import time
 import traceback
 from threading import Thread
-from functools import total_ordering
-from os.path import expanduser
 
 from argparse import ArgumentParser
 from collections import Iterable
 from datetime import datetime, timedelta
+from functools import total_ordering
 from gettext import gettext
 from gettext import gettext as _
+from os.path import expanduser
 from random import choice, randint, uniform
 from time import sleep
 from math import sin, cos, radians
@@ -4176,7 +4177,7 @@ class Actor(MotionManager, metaclass=use_on_events):
 #        print("so neighbour nodes for",current.x, current.y,"are",[(pt.x, pt.y) for pt in return_nodes])
         return return_nodes
 
-    def aStar(self, walkarea, nodes, start, end, solids):
+    def aStar(self, walkarea, nodes, start, end, solids, ignore=False):
         # courtesy http://stackoverflow.com/questions/4159331/python-speed-up-an-a-star-pathfinding-algorithm
         openList = []
         closedList = []
@@ -4202,9 +4203,11 @@ class Actor(MotionManager, metaclass=use_on_events):
         nodes = [Node(*n) for n in nodes] #convert points to nodes
         nodes.extend([current, end])
 #        print()
+        # don't test for inside walkarea if ignoring walkarea
+        walkarea_polygon = None if ignore else walkarea._polygon
         for key in nodes:
             #add nodes that the key node can access to the key node's map.
-            graph[key] = self.neighbour_nodes(walkarea._polygon, nodes, key, solids)
+            graph[key] = self.neighbour_nodes(walkarea_polygon, nodes, key, solids)
             #graph[key] = [node for node in nodes if node != n] #nodes link to visible nodes 
 #        print("So our node graph is",graph)
 #        for key in nodes:
@@ -4239,10 +4242,18 @@ class Actor(MotionManager, metaclass=use_on_events):
 #        print("end of astar")
         return path
 
-    def _calculate_path(self, start, end):
+    def _calculate_path(self, start, end, ignore=False):
         """ Using the scene's walkarea and waypoints, calculate a list of points that reach our destination
             Using a*star
+            ignore = True | False ignore out-of-bounds areas
         """
+        x, y = end[0] - start[0], end[1] - start[1]
+        distance = math.hypot(x, y)
+        if -5 < distance < 5:
+            log.info("%s already there, so not calculating path"%self.name)
+#            self._cancel_goto()
+            return [start, end]
+
         goto_points = []
         if not self.game or not self.game.scene:
             return goto_points
@@ -4250,7 +4261,11 @@ class Actor(MotionManager, metaclass=use_on_events):
         if not scene.walkarea:
             return [start, end]
         walkarea = scene.walkarea
+
+        # initial way points are the manual waypoints and the edges of the walkarea polygon
         available_points = copy.copy(walkarea._waypoints)
+        available_points.extend(copy.copy(walkarea._polygon_waypoints))
+
 #        available_points.extend([start, end]) #add the current start, end points (assume valid)
         solids = []
         for o in scene._objects:
@@ -4258,12 +4273,13 @@ class Actor(MotionManager, metaclass=use_on_events):
             if o._allow_draw == True and o != self.game.player and not isinstance(o, Emitter):
 #                print("using solid",o.name,o.solid_area.flat2)
                 solids.append(o.solid_area)
+                # add more waypoints based on the edges of the solid areas of objects in scene
                 for pt in o.solid_area.waypoints:
                     if pt not in available_points:
                         available_points.append(pt)
         available_points = [pt for pt in available_points if walkarea.valid(*pt)] #scrub out non-valid points.
 #        print("scene available points",available_points,"solids",[x.flat for x in solids])
-        goto_points = self.aStar(walkarea, available_points, start, end, solids)
+        goto_points = self.aStar(walkarea, available_points, start, end, solids, ignore=ignore)
         return [g.point for g in goto_points]
 
 
@@ -4383,10 +4399,11 @@ class Actor(MotionManager, metaclass=use_on_events):
         start = (self.x, self.y)
 #        print("calculating way points between",start, point)
         if self._use_astar:
-            path = self._calculate_path(start, point)[1:]
+            path = self._calculate_path(start, point, ignore=ignore)[1:]
             if len(path) == 0:
-                print("no astar found so going direct")
+                print("no astar found so cancelling") 
                 log.warning("NO PATH TO POINT %s from %s, SO GOING DIRECT"%(point, start))
+#                return
         else: #go direct
             path = []
         self._goto_points = path #[1:]
@@ -4539,9 +4556,9 @@ class Portal(Actor, metaclass=use_on_events):
         if actor == None:
             actor = self.game.player
         log.warning("Actor {} exiting portal {}".format(actor.name, self.name))
-        actor.goto((self.x + self.sx, self.y + self.sy), block=block)
+        actor.goto((self.x + self.sx, self.y + self.sy), block=block, ignore=True)
         self._pre_leave(self, actor)
-        actor.goto((self.x + self.ox, self.y + self.oy), block=True)
+        actor.goto((self.x + self.ox, self.y + self.oy), block=True, ignore=True)
 
     def relocate_here(self, actor=None):
         """ Relocate actor to this portal's out point """
@@ -4939,6 +4956,46 @@ def distance(pt1, pt2):
     dist = math.sqrt( (pt2[0] - pt1[0])**2 + (pt2[1] - pt1[1])**2 )
     return dist
 
+
+def scaleadd(origin, offset, vectorx):
+    """
+    From a vector representing the origin,
+
+    a scalar offset, and a vector, returns
+    a Vector3 object representing a point 
+    offset from the origin.
+
+    (Multiply vectorx by offset and add to origin.)
+    """
+    multx = vectorx * offset
+    return multx + origin
+
+
+def getinsetpoint(pt1, pt2, pt3, offset):
+    """
+    Given three points that form a corner (pt1, pt2, pt3),
+    returns a point offset distance OFFSET to the right
+    of the path formed by pt1-pt2-pt3.
+
+    pt1, pt2, and pt3 are two tuples.
+
+    Returns a Vector3 object.
+    """
+    origin = eu.Vector3(pt2[0], pt2[1], 0.0)
+    v1 = eu.Vector3(pt1[0] - pt2[0], pt1[1] - pt2[1], 0.0)
+    v1.normalize()
+    v2 = eu.Vector3(pt3[0] - pt2[0], pt3[1] - pt2[1], 0.0)
+    v2.normalize()
+    v3 = eu.Vector3(*v1)
+    v1 = v1.cross(v2)
+    v3 += v2
+    if v1.z < 0.0:
+        retval = scaleadd(origin, -offset, v3)
+    else:
+        retval = scaleadd(origin, offset, v3)
+    return retval
+
+
 LOCKED = 0
 UNLOCKED = 1
 FREEROAM = 2
@@ -4952,6 +5009,7 @@ class WalkAreaManager(metaclass=use_on_events):
         self.game = None
         self._waypoints = []
         self._polygon = []
+        self._polygon_waypoints = [] #autogenerated waypoints from polygon
         self._state = UNLOCKED
 
         #for fast calculation of collisions
@@ -5041,7 +5099,24 @@ class WalkAreaManager(metaclass=use_on_events):
             self._edit_waypoint_index = closest_waypoint
         else:
             self._edit_polygon_index = closest_polygon
-
+  
+    def generate_waypoints(self):
+        #polygon offset courtesy http://pyright.blogspot.com/2011/07/pyeuclid-vector-math-and-polygon-offset.html
+        polyinset = []
+        OFFSET = -15
+        i = 0
+        if len(self._polygon) > 0:
+            old_points = copy.deepcopy(self._polygon)
+            old_points.insert(0,self._polygon[-1])
+            old_points.append(self._polygon[0])        
+            lenpolygon = len(old_points)
+            while i < lenpolygon - 2:
+                new_pt = getinsetpoint(old_points[i], old_points[i + 1], old_points[i + 2], OFFSET)
+                polyinset.append((int(new_pt.x), int(new_pt.y)))
+                i += 1
+        else:
+            polyinset = []
+        self._polygon_waypoints = polyinset
 
     def mirror(self, w):
         """ Flip walkarea using w(idth) of screen) 
@@ -5058,6 +5133,7 @@ class WalkAreaManager(metaclass=use_on_events):
         self._polygon_count = len(self._polygon)
         self._polygon_x = [float(p[0]) for p in self._polygon]
         self._polygon_y = [float(p[1]) for p in self._polygon]
+        self.generate_waypoints()
 
     def on_polygon(self, points):
         self._polygon = points
@@ -5125,11 +5201,11 @@ class WalkAreaManager(metaclass=use_on_events):
         self._state = FREEROAM
 
 
-    def collide(self, x,y):
+    def collide(self, x,y, ignore=False):
         """ Returns True if the point x,y collides with the polygon """
         if self._state == LOCKED: #always outside walkarea
             return False
-        elif self._state == FREEROAM: #always inside walkarea
+        elif self._state == FREEROAM or ignore == True: #always inside walkarea
             return True
         c = False
         i = 0
@@ -6168,6 +6244,8 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._overlay_start = None
         self._overlay_tint = None
         self._overlay_fx = None
+        self._overlay_transition_complete = False
+
         self._transition = [] #Just messing about, list of scenes to switch between for a rapid editing effect
 
         self.name = "Default Camera"
@@ -6222,19 +6300,19 @@ class Camera(metaclass=use_on_events):  # the view manager
                 complete = (time.time() - self._overlay_start) / duration
                 if complete > 1:
                     complete = 1
+                    self._overlay_start, self._overlay_end = None, None # stop transiton
                     #if this was blocking, release it.
-                    if self.busy>0: 
-                        if self.busy > 1: #XXX this seems like it might cause problems if 
-                            print("XXX debugging camera")
-#                        if self.game and not self.game.fullscreen:
-#                            import pdb; pdb.set_trace()
+                    if self.busy>=0:
                         self.busy -= 1
+                        if logging:
+                            log.info("Camera %s has finished overlay, so decrementing self.busy to %s." % (
+                                self.name, self.busy))
+
 
                 if self._overlay_fx == FX_FADE_OUT:
                     self._overlay.opacity = round(255 * complete)
                 elif self._overlay_fx == FX_FADE_IN:
                     self._overlay.opacity = round(255 * (1 - complete))
-    #            if complete>1: self._overlay = None #finish FX
 
         """
         Just a fun little experiment in quick cutting between scenes
@@ -6414,12 +6492,15 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._overlay_start = time.time()
         self._overlay_end = time.time() + seconds
         self._overlay_fx = FX_FADE_OUT
+        self.busy += 1
+        if logging:
+            log.info("%s has started on_fade_out, so increment %s.busy to %i." % (
+                self.name, self.name, self.busy))
         if block:
             self.game._waiting = True
-            self.busy += 1
             if logging:
-                log.info("%s has finished on_fade_out, so increment %s.busy to %i." % (
-                    self.name, self.name, self.busy))
+                log.info("%s has started on_fade_out with block, so set game._waiting to True." % (
+                    self.name))
 
 
     def on_fade_in(self, seconds=3, colour="black", block=False):
@@ -6432,12 +6513,14 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._overlay_start = time.time()
         self._overlay_end = time.time() + seconds
         self._overlay_fx = FX_FADE_IN
-
+        self.busy += 1
+        if logging:
+            log.info("%s has started on_fade_in, so increment %s.busy to %i." % (
+                self.name, self.name, self.busy))
         if block:
             self.game._waiting = True
-            self.busy += 1
             if logging:
-                log.info("%s has started on_fade_in with block, so increment %s.busy to %i." % (
+                log.info("%s has started on_fade_in with block, so set game._waiting to True." % (
                     self.name, self.name, self.busy))
 
     def on_tint(self, colour=None):
@@ -8295,6 +8378,7 @@ class Game(metaclass=use_on_events):
                         if len(self.player._goto_points)> 0:
                             fx,fy = self.player._goto_points[-1]
                         self.player._x, self.player._y = fx,fy
+                        print("ON MOUSE RELEASE, JUMP TO POINT",fx,fy)
 #                        self.player._goto_dx, self.player._goto_dy = 0, 0
                         self.player._goto_deltas = []
                         self.player._goto_points = []
