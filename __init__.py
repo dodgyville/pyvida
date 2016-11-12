@@ -1192,9 +1192,9 @@ class AchievementManager(object, metaclass=use_on_events):
 
             game.achievement.relocate(game.scene)
             game.mixer.sfx_play("data/sfx/achievement.ogg", "achievement")
-            game.achievement.motion("popup", mode=ONCE, block=True)
             game.achievement.display_text = a.description
-            game.achievement.rename((0, -FONT_ACHIEVEMENT_SIZE*3))
+            game.achievement.retext((0, -FONT_ACHIEVEMENT_SIZE*3))
+            game.achievement.motion("popup", mode=ONCE, block=True)
             #TODO: replace with bounce Motion
 #            game.achievement.move((0,-game.achievement.h), block=True)
 #            game.player.says("Achievement unlocked: %s\n%s"%(
@@ -9100,14 +9100,15 @@ class Game(metaclass=use_on_events):
         # "hint": <str> -- when this event triggers for the first time, set game.storage.hint to this value
         global benchmark_events
         t = datetime.now() - benchmark_events
-        if self._output_walkthrough is False and DEBUG_STDOUT is True:
-            print("doing step",walkthrough, t.seconds)
         benchmark_events = datetime.now()
         try:
             function_name = walkthrough[0].__name__
         except:
             import pdb
             pdb.set_trace()
+        if self._output_walkthrough is False and DEBUG_STDOUT is True:
+            print("[step]",function_name, walkthrough[1:], t.seconds, "\n [hint]", self.storage.hint if self.storage else "(no storage)")
+
         self._walkthrough_index += 1
 
         if self._walkthrough_index > self._walkthrough_target or self._walkthrough_index > len(self._walkthrough):
