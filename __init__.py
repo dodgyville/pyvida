@@ -210,6 +210,7 @@ MOUSE_LEFT = 4
 MOUSE_RIGHT = 5
 MOUSE_UP = 6
 MOUSE_DOWN = 7
+MOUSE_HOURGLASS = 8
 
 MOUSE_CURSORS = [(MOUSE_POINTER, "pointer.png"),
                (MOUSE_CROSSHAIR, "cross.png"),
@@ -218,6 +219,7 @@ MOUSE_CURSORS = [(MOUSE_POINTER, "pointer.png"),
                (MOUSE_RIGHT, "right.png"),
                (MOUSE_UP, "up.png"),
                (MOUSE_DOWN, "down.png"),
+               (MOUSE_HOURGLASS, "hourglass.png"),
                ]
 
 MOUSE_CURSORS_DICT = dict(MOUSE_CURSORS)
@@ -7574,6 +7576,11 @@ def gamestats(game):
 
 
 
+def reset_mouse_cursor(game):
+    game._info_object.display_text = " "  # clear info
+    game.mouse_cursor = MOUSE_POINTER if game.mouse_mode != MOUSE_LOOK else game.mouse_cursor # reset mouse pointer
+
+
 class Game(metaclass=use_on_events):
 
     def __init__(self, name="Untitled Game", version="v1.0", engine=VERSION_MAJOR, fullscreen=DEFAULT_FULLSCREEN, resolution=DEFAULT_RESOLUTION, fps=DEFAULT_FPS, afps=DEFAULT_ACTOR_FPS, projectsettings=None, scale=1.0):
@@ -7902,6 +7909,20 @@ class Game(metaclass=use_on_events):
         self._window.set_mouse_cursor(cursor)
 
     def set_mouse_cursor(self, cursor):
+        # don't show hourglass on a player's goto event
+        interruptable_event = True
+        player_goto_event = False
+        if len(self._events)>0:
+            interruptable_event = False
+            if self._events[0][0].__name__ == "on_goto" and self._events[0][1][0] == self.player:
+                interruptable_event = True
+                player_goto_event = False # True if we don't want strict hourglass when player is walking
+            if len(self._modals)>0: 
+                interruptable_event = True
+        # don't show hourglass on modal events
+#        interruptable_event = interruptable_event and 
+        if (self._waiting and len(self._modals) == 0 and not player_goto_event) or not interruptable_event:
+            cursor = MOUSE_HOURGLASS
         self._mouse_cursor = cursor
         self._set_mouse_cursor(self._mouse_cursor)
 
@@ -8201,8 +8222,7 @@ class Game(metaclass=use_on_events):
 
 
         if window_y < 0 or window_x < 0 or window_x > self.resolution[0] or window_y > self.resolution[1]: # mouse is outside game window
-            self._info_object.display_text = " "  # clear info
-            self.mouse_cursor = MOUSE_POINTER if self.mouse_mode != MOUSE_LOOK else self.mouse_cursor # reset mouse pointer
+            reset_mouse_cursor(game)
             return
 
         if not self.scene or self._headless or self._walkthrough_auto:
@@ -9394,6 +9414,9 @@ class Game(metaclass=use_on_events):
             #if self._event_index<len(self._events)-1: self._event_index += 1
         # auto trigger an event from the walkthrough if needed and nothing else
         # is happening
+        if del_events > 0: # potentially reset the mouse
+            reset_mouse_cursor(self)
+
         if done_events == 0 and del_events == 0 and self._walkthrough_target >= self._walkthrough_index:
             self._process_walkthrough()
         return safe_to_call_again
