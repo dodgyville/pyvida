@@ -2063,7 +2063,7 @@ class MotionManager(metaclass=use_on_events):
                 motion.destructive = destructive
             if block is True and self.game._headless is False:
                 self.busy += 1
-                self.game._waiting = True #make game wait
+                self.game.on_wait() #make game wait
                 if logging:
                     log.info("%s has started motion %s, so incrementing self.busy to %s." % (
                         self.name, motion.name, self.busy))
@@ -2206,7 +2206,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         self._directory = None  # directory this is smart loaded from (if any)
         self._images = []  # image filenames that the actions are based on
         # don't process any more events for this actor until busy is False,
-        # will block all events if game._waiting = True
+        # will block all events if game.on_wait()
         self.busy = 0
         self._batch = None
 #        self._events = []
@@ -3623,7 +3623,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             log.info("%s has started on_says (%s), so increment self.busy to %s." % (
                 self.name, text, self.busy))
         if block_for_user is True:
-            self.game._waiting = True
+            self.game.on_wait()
 
         items = [msgbox, label]
         if ok:
@@ -3750,7 +3750,7 @@ class Actor(MotionManager, metaclass=use_on_events):
 #            self.tmp_items = [label.name]
 
 #        if logging: log.info("%s has requested game to wait for on_gets to finish, so game.waiting to True."%(self.name))
-#        self.game._waiting = True
+#        self.game.on_wait()
 
         if self.game._walkthrough_auto:  # headless mode skips sound and visuals
             items[0].trigger_interact()  # auto-close the on_says
@@ -3869,7 +3869,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             result = self._do(action, callback, mode=mode)
 
         if block:
-            self.game._waiting = True
+            self.game.on_wait()
         if result:
             if logging:
                 log.info("%s has started on_do_once, so increment %s.busy to %i." % (
@@ -4039,7 +4039,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             self._opacity_target - self._opacity) / (self.game.fps * seconds)
         if block == True:
             self.busy += 1
-            self.game._waiting = True # make all other events wait too.
+            self.game.on_wait() # make all other events wait too.
             self._opacity_target_block = True
             log.info("%s fade has requested block, so increment busy to %i"%(self.name, self.busy))
 
@@ -4380,7 +4380,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             if logging:
                 log.info(
                     "%s has request game to wait for goto to finish, so game.waiting to True." % (self.name))
-            self.game._waiting = True
+            self.game.on_wait()
 
     def on_move(self, displacement, ignore=False, block=False, next_action=None):
         """ Move Actor relative to its current position """
@@ -6507,7 +6507,7 @@ class Camera(metaclass=use_on_events):  # the view manager
             log.info("%s has started on_fade_out, so increment %s.busy to %i." % (
                 self.name, self.name, self.busy))
         if block:
-            self.game._waiting = True
+            self.game.on_wait()
             if logging:
                 log.info("%s has started on_fade_out with block, so set game._waiting to True." % (
                     self.name))
@@ -6528,7 +6528,7 @@ class Camera(metaclass=use_on_events):  # the view manager
             log.info("%s has started on_fade_in, so increment %s.busy to %i." % (
                 self.name, self.name, self.busy))
         if block:
-            self.game._waiting = True
+            self.game.on_wait()
             if logging:
                 log.info("%s has started on_fade_in with block, so set game._waiting to True." % (
                     self.name, self.name, self.busy))
@@ -6641,7 +6641,7 @@ class Camera(metaclass=use_on_events):  # the view manager
         if logging:
             log.info("Camera %s has started _goto, so increment self.busy to %s and game.waiting to True." % (
                 self.name, self.busy))
-        self.game._waiting = True
+        self.game.on_wait()
 
 
 class PlayerPyglet(pyglet.media.Player):
@@ -7577,7 +7577,6 @@ def gamestats(game):
 
 
 def reset_mouse_cursor(game):
-    game._info_object.display_text = " "  # clear info
     game.mouse_cursor = MOUSE_POINTER if game.mouse_mode != MOUSE_LOOK else game.mouse_cursor # reset mouse pointer
 
 
@@ -7919,8 +7918,8 @@ class Game(metaclass=use_on_events):
                 player_goto_event = False # True if we don't want strict hourglass when player is walking
             if len(self._modals)>0: 
                 interruptable_event = True
+
         # don't show hourglass on modal events
-#        interruptable_event = interruptable_event and 
         if (self._waiting and len(self._modals) == 0 and not player_goto_event) or not interruptable_event:
             cursor = MOUSE_HOURGLASS
         self._mouse_cursor = cursor
@@ -8016,6 +8015,8 @@ class Game(metaclass=use_on_events):
                 print("finished casting")
 
             if symbol == pyglet.window.key.F9:
+                game.del_events = True
+                return
                 game.menu.hide()
                 s = game.scene
                 game.camera.scene("jstadium", camera_point=(0,0))
@@ -8222,6 +8223,7 @@ class Game(metaclass=use_on_events):
 
 
         if window_y < 0 or window_x < 0 or window_x > self.resolution[0] or window_y > self.resolution[1]: # mouse is outside game window
+            game._info_object.display_text = " "  # clear info
             reset_mouse_cursor(game)
             return
 
@@ -8435,6 +8437,7 @@ class Game(metaclass=use_on_events):
         if self._editing and self._editing_point_set:
             return
 
+ 
         if self._drag:
             self._drag._drag(self, self._drag, self.player)
             self._drag = None
@@ -9375,6 +9378,9 @@ class Game(metaclass=use_on_events):
                 # check the previous events' objects, delete if not busy
                 for event in self._events[:self._event_index]:
                     if event[1][0].busy == 0:
+                        if hasattr(self, "del_events"):
+                            print("DEL",event)
+
                         #                        if self._headless==False: import pdb; pdb.set_trace()
                         #                        if logging: log.info("%s is no longer busy, so deleting event %s."%(event[1][0].name, event))
                         #                        print("DEL",event)
@@ -9414,7 +9420,7 @@ class Game(metaclass=use_on_events):
             #if self._event_index<len(self._events)-1: self._event_index += 1
         # auto trigger an event from the walkthrough if needed and nothing else
         # is happening
-        if del_events > 0: # potentially reset the mouse
+        if (del_events > 0 or len(self._modals)>0) and self.mouse_cursor == MOUSE_HOURGLASS: # potentially reset the mouse
             reset_mouse_cursor(self)
 
         if done_events == 0 and del_events == 0 and self._walkthrough_target >= self._walkthrough_index:
@@ -9981,24 +9987,27 @@ class Game(metaclass=use_on_events):
     def on_wait(self):
         """ Wait for all scripting events to finish """
         self._waiting = True
+        reset_mouse_cursor(self) # possibly set mouse cursor to hour glass
         return
 
-    def on_autosave(self, actor, tilesize, exclude_from_screenshot=[]):
+    def on_autosave(self, actor, tilesize, exclude_from_screenshot=[], fname = None, fast=True):
         game = self
-        fname = datetime.now().strftime("%Y%m%d_%H%M%S")
+        fname = fname if fname else datetime.now().strftime("%Y%m%d_%H%M%S")
         save_game(game, os.path.join(DIRECTORY_SAVES, "%s.save"%fname))
         for i in exclude_from_screenshot:
             obj = get_object(game, i)
             obj.hide()
-        game.menu.on_hide()
-        game.pause(0.5)
+        if not fast: # take some time to do a nicer screen grab
+            game.menu.on_hide()
+            game.pause(0.4)
         game.camera.screenshot(os.path.join(DIRECTORY_SAVES, "%s.png"%fname), tilesize)
         for i in exclude_from_screenshot:
             obj = get_object(game, i)
             obj.show()
         actor = get_object(game, actor)
         actor.says(gettext("Game saved."))
-        game.menu.show()
+        if not fast:
+            game.menu.show()
 
 
     def on_pause(self, duration):
@@ -10006,7 +10015,7 @@ class Game(metaclass=use_on_events):
         if self._headless:
             return
         self.busy += 1
-        self._waiting = True
+        self.on_wait()
         if logging:
             log.info("game has started on_pause, so increment game.busy to %i." % (self.busy))
 
@@ -10075,7 +10084,7 @@ class Game(metaclass=use_on_events):
             obj = get_object(self, i)
             obj.z = 1.0
         self.busy += 1  # set Game object to busy (only time this happens?)
-        self._waiting = True  # make game wait until splash is finished
+        self.on_wait()  # make game wait until splash is finished
         # add scene to game, change over to that scene
         self.add(scene)
         self.camera._scene(scene)
