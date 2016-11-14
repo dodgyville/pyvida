@@ -8408,7 +8408,7 @@ class Game(metaclass=use_on_events):
                         if len(self.player._goto_points)> 0:
                             fx,fy = self.player._goto_points[-1]
                         self.player._x, self.player._y = fx,fy
-                        print("ON MOUSE RELEASE, JUMP TO POINT",fx,fy)
+#                        print("ON MOUSE RELEASE, JUMP TO POINT",fx,fy)
 #                        self.player._goto_dx, self.player._goto_dy = 0, 0
                         self.player._goto_deltas = []
                         self.player._goto_points = []
