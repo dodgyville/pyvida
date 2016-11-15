@@ -8678,13 +8678,13 @@ class Game(metaclass=use_on_events):
             if "help" in extras: #compile a list of helpful hints for the game
                 self._walkthrough_hints[str(key)] = extras["help"]
 
-    def create_info_object(self, name="_info_text"):
+    def create_info_object(self, text=" ", name="_info_text"):
         """ Create a Text object for the info object """
         colour = self.font_info_colour
         font = self.font_info
         size = self.font_info_size
         obj = Text(
-            name, display_text=" ", font=font, colour=colour, size=size, offset=1)
+            name, display_text=text, font=font, colour=colour, size=size, offset=1)
         obj.load_assets(self) #XXX loads even in headless mode?
         return obj
 
