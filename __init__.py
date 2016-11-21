@@ -3967,6 +3967,15 @@ class Actor(MotionManager, metaclass=use_on_events):
     def on_reparent(self, parent):
         self._set(["_parent"], [parent])
 
+    def on_sever_parent(self):
+        """ Set parent to None but relocate actor to last parented location """
+        if self._parent:
+            self.x += self._parent.x
+            self.y += self._parent.y
+        self.on_reparent(None)
+        
+
+
     def on_restand(self, point):
         self._set(("sx", "sy"), point)
 
