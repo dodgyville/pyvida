@@ -2562,8 +2562,13 @@ class Actor(MotionManager, metaclass=use_on_events):
     rotate = property(get_rotate, set_rotate)
 
     @property
-    def center(self):
+    def centre(self):
         return self.clickable_area.center #(self.x + self.ax/2, self.y + self.ay/2)
+
+
+    @property
+    def center(self):
+        return self.centre
 
 #    @property
 #    def position(self):
