@@ -6545,7 +6545,7 @@ class Camera(metaclass=use_on_events):  # the view manager
             self.game.on_wait()
             if logging:
                 log.info("%s has started on_fade_in with block, so set game._waiting to True." % (
-                    self.name, self.name, self.busy))
+                    self.name))
 
     def on_tint(self, colour=None):
         """ Apply a tint to every item in the scene """
