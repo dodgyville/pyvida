@@ -8237,8 +8237,8 @@ class Game(metaclass=use_on_events):
 
 
         if window_y < 0 or window_x < 0 or window_x > self.resolution[0] or window_y > self.resolution[1]: # mouse is outside game window
-            game._info_object.display_text = " "  # clear info
-            reset_mouse_cursor(game)
+            self._info_object.display_text = " "  # clear info
+            reset_mouse_cursor(self)
             return
 
         if not self.scene or self._headless or self._walkthrough_auto:
