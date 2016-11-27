@@ -31,10 +31,14 @@ from random import choice, randint, uniform
 from time import sleep
 from math import sin, cos, radians
 
-import tkinter as tk
-import tkinter.filedialog
-import tkinter.simpledialog
-import tkinter.messagebox
+try:
+    import tkinter as tk
+    import tkinter.filedialog
+    import tkinter.simpledialog
+    import tkinter.messagebox
+    EDITOR_AVAILABLE = True
+except ImportError:
+    EDITOR_AVAILABLE = False
 
 """
 from pyglet_gui.theme import Theme
@@ -105,7 +109,7 @@ if DEBUG_NAMES:
     tmp_objects_second = {}
 
 ENABLE_FKEYS = True # debug shortcut keys
-ENABLE_EDITOR = False  # default for editor. Caution: This starts module reloads which ruins pickles 
+ENABLE_EDITOR = False and EDITOR_AVAILABLE # default for editor. Caution: This starts module reloads which ruins pickles 
 ENABLE_PROFILING = False
 ENABLE_LOGGING = True
 DEFAULT_TEXT_EDITOR = "gedit"
@@ -10923,6 +10927,8 @@ class MyTkApp(threading.Thread):
 
 
 def editor(game):
+    if not EDITOR_AVAILABLE:
+        return None
     app = MyTkApp(game)
     return app
 
