@@ -7714,6 +7714,8 @@ class Game(metaclass=use_on_events):
         # longer busy
         self._waiting = False
         self.busy = False  # game is never busy
+        self._waiting_for_user = False # used by on_wait_for_user
+
         self._events = []
         self._event = None
         self._event_index = 0
@@ -8029,6 +8031,82 @@ class Game(metaclass=use_on_events):
                 print("finished casting")
 
             if symbol == pyglet.window.key.F9:
+                game._walkthrough_auto = False
+                game.menu.hide()
+                game.load_state("etreehouse", "tmp")
+                game.camera.scene("etreehouse")                    
+                game.player.relocate("etreehouse",(749, 495))
+                game.player.do("idle_leftdown")
+#                game.brutus_snake.relocate("etreehouse", (1200,-50))
+#                game.brutus_snake.do("hangleft")
+                game.wait_for_user()                
+                game.steve.says(_("And you're my little gingerbread man."))
+                game.wait_for_user()
+                game.player.says(_("That's so adorable."))
+                game.brutus_snake.says(_("I think I'm going to be sick."), using="msgbox_snake", position=BOTTOM)
+                game.wait_for_user()
+                return
+                game._walkthrough_auto = False
+                game.sky_sebastian_health1.remove()
+                game.sky_sebastian_health2.remove()
+                game.sky_sebastian_health3.remove()
+                game.sky_cloud.remove()
+                game.sky_shroom.remove()
+                game.sky_turing.remove()
+                game.sky_rupee.remove()
+                game.menu.hide()
+#                game.sky_tycho.relocate(game.scene, (100,100))
+                game.camera.scene("sky")
+#                game.wait_for_user()
+#                game.player = game.sky_tycho
+#                game.sky_heart.trigger_interact() #[interact, "*sky heart"],
+                game.wait_for_user()
+                game.sebastian.says(_("Perfect weather for it."))
+
+                return
+                game.load_state("spacebattle", "initial")
+                game.menu.hide()
+                game.camera.scene("spacebattle")
+                game.wait_for_user()
+                game.laserbolts.do_once("fire", "idle")
+                game.mixer.sfx_play("data/sfx/laser1.ogg", "laser shot")
+                game.pause(0.4)
+                game.explosion_space.do_once("explosion", "idle")
+                game.brutus_ship.escaped = True
+                game.brutus_ship.motion("shake", mode=ONCE)
+                game.wait_for_user()
+                game.camera.scene("alab")
+                return
+                game.menu.hide()
+                game.camera.scene("bvictory")
+                game.wait_for_user()
+                game.brutus.says(_("Bwahahahaha!"), "portrait_victory", position=TOP)
+                game.wait_for_user()
+                game.brutus.says(_("I don't normally laugh like that ..."), "portrait_victory", position=BOTTOM)
+                game.brutus.says(_("... but this place really does your head in."), "portrait_victory", position=BOTTOM)
+                game.wait_for_user()
+                game.camera.scene("alab")
+                return
+                game.menu.hide()
+                game.pod2.hide()
+                game.camera.scene("alab")
+                game.player.relocate("alab", "mistriss lab")
+                game.player.do("idle_leftup")
+                game.load_state("aenter", "initial")
+                game.mistriss_lab.do("idle")
+                game.camera.scene("aenter")
+                start_scene = "aenter"
+                game.wait_for_user()
+                game.mistriss.says(_("Look into my eye, Captain ..."), None, position=BOTTOM, using="msgbox_75")
+                game.camera.scene("alab", allow_scene_music=False)
+                game.wait_for_user()
+                game.mistriss_lab.do("arcadian")
+                game.wait_for_user()
+                game.camera.scene("aenter")
+                game.mistriss.says(_("... and relax."), None, position=BOTTOM, using="msgbox_75")
+                game.wait_for_user()
+                game.camera.scene("alab")
+                return
                 game.del_events = True
                 return
                 game.menu.hide()
@@ -8414,6 +8492,9 @@ class Game(metaclass=use_on_events):
 
     def on_mouse_release(self, raw_x, raw_y, button, modifiers):
         """ Call the correct function depending on what the mouse has clicked on """
+        if self._waiting_for_user: # special function that allows easy story beats
+            self._waiting_for_user = False
+            return
         if self.last_mouse_release:  # code courtesy from a stackoverflow entry by Andrew
             if (raw_x, raw_y, button) == self.last_mouse_release[:-1]:
                 """Same place, same button, double click shortcut"""
@@ -9365,6 +9446,8 @@ class Game(metaclass=use_on_events):
         safe_to_call_again = False  # is it safe to call _handle_events immediately after this?
         waiting_for_user = True
 #        log.info("There are %s events, game._waiting is %s, index is %s and current event is %s",len(self._events), self._waiting, self._event_index, self._event)
+        if self._waiting_for_user: # don't do anything until user clicks
+            return
 
         if self._waiting:
             """ check all the Objects with existing events, if any of them are busy, don't process the next event """
@@ -10025,6 +10108,9 @@ class Game(metaclass=use_on_events):
         if not fast:
             game.menu.show()
 
+    def on_wait_for_user(self):
+        """ Insert a modal click event """
+        self._waiting_for_user = True
 
     def on_pause(self, duration):
         """ pause the game for duration seconds """
