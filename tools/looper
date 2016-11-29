@@ -49,8 +49,10 @@ def super_loopser():
 
     if loops == -1:
         loops = total_frames/frames
+        print("Based on frames %i, calculating loops %i."%(frames, loops))
     else:
         frames = total_frames/loops
+        print("Based on loops %i, calculating frames %i."%(loops, frames))
 
     if total_frames // loops != total_frames / loops or float(loops) != int(loops):
         print("Best results are when number of images %i is cleanly divisible by number of loops %i."%(total_frames, loops))
@@ -72,6 +74,9 @@ def super_loopser():
 #        new_frames[0].paste(m, (0,0), m)
 #        break
         frame_list = []
+        if int(frames/loops) < 1:
+            print("frames/loops is less than 1 (%f). This would cause too many images per frame. Have fewer loops or more frames."%(frames/loops))
+            return
         for j in range(0, int(frames), int(frames/loops)):
             index = (i+j)%frames
             frame_list.append(index)

@@ -3055,6 +3055,10 @@ class Actor(MotionManager, metaclass=use_on_events):
                         "up": (-45, 45),
                         "down": (135, 225)
                         }
+        PATHPLANNING = {"left": (180, 360),
+                        "right": (0, 180),
+                        }
+
         self._actions = {}
         for action_file in self._images:
             action_name = os.path.splitext(os.path.basename(action_file))[0]
@@ -3062,9 +3066,9 @@ class Actor(MotionManager, metaclass=use_on_events):
                 continue
             action = Action(action_name).smart(
                 game, actor=self, filename=os.path.relpath(action_file))
-            action.available_for_pathplanning = True
             self._actions[action_name] = action
             if action_name in PATHPLANNING:
+                action.available_for_pathplanning = True
                 p = PATHPLANNING[action_name]
                 action.angle_start = p[0]
                 action.angle_end = p[1]
@@ -4328,8 +4332,14 @@ class Actor(MotionManager, metaclass=use_on_events):
 
         # 0 degrees is towards the top of the screen
         angle = math.degrees(raw_angle) + 90
-        if angle < -45:
-            angle += 360
+        path_planning_actions = [action.name for action in self._actions.values() if action.available_for_pathplanning == True]        
+        if "up" in path_planning_actions and "down" in path_planning_actions and \
+            "left" in path_planning_actions and "right" in path_planning_actions: # assume four quadrants
+            if angle < -45:
+                angle += 360
+        else: # assume only two hemispheres
+            if angle < 0:
+                angle += 360
         goto_action = None
         goto_motion = None
         self._goto_deltas = []
