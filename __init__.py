@@ -7206,7 +7206,7 @@ class Factory(object):
         self.game = None
         return self.__dict__
 
-    def _create_object(self, name):
+    def _create_object(self, name, share_resource=True):
 
         original = get_object(self.game, self.template)
         obj = copy.copy(original)
@@ -7217,7 +7217,10 @@ class Factory(object):
 
         obj.name = name
         obj.game = self.game
-        obj.resource_name_override = original.name # use the original object's resource.
+        if share_resource:
+            obj.resource_name_override = original.name # use the original object's resource.
+#        else:
+#            obj.load_assets(self.game)
         obj._do(original.action.name)
         original.game = self.game # restore game object to original
         if original._scene: #add to current scene
@@ -7226,7 +7229,7 @@ class Factory(object):
         return obj
 
 
-    def create(self, objects=[], num_of_objects=None, start=0):
+    def create(self, objects=[], num_of_objects=None, start=0, share_resource=True):
         """
            objects : use the names in objects as the names of the new objects
            num_of_objects : create a number of objects using the template's name as the base name 
@@ -7239,7 +7242,7 @@ class Factory(object):
             self.clone_count = start
             for i in range(0, num_of_objects):
                 name = "{}{}".format(original.name, i + self.clone_count)
-                new_objects.append(self._create_object(name))
+                new_objects.append(self._create_object(name, share_resource=share_resource))
            # self.clone_count += num_of_objects # if Factory is called again, add to clones don't replace
         return new_objects
 
