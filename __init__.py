@@ -1184,7 +1184,7 @@ class AchievementManager(object, metaclass=use_on_events):
 
             text = Text("achievement_text", pos=(130,240), display_text=a.name, colour=FONT_ACHIEVEMENT_COLOUR, font=FONT_ACHIEVEMENT, size=FONT_ACHIEVEMENT_SIZE)
             game.add(text, replace=True)
-            text._ay = 200
+            text._ay = -200
             text.z = 3
             text.reparent("achievement")
             text.relocate(game.scene)
@@ -8392,7 +8392,7 @@ class Game(metaclass=use_on_events):
 
 #            scene_objects = copy.copy(self.scene._objects)
             scene_objects = self.scene.objects_sorted
-            scene_objects.reverse()
+#            scene_objects.reverse()
             if (ALLOW_USE_ON_PLAYER and self.player) or \
                     (self._allow_one_player_interaction is True): #add player object
                 if self.player in scene_objects:
@@ -8605,7 +8605,7 @@ class Game(metaclass=use_on_events):
         if self.scene:
 #            scene_objects = copy.copy(self.scene._objects)
             scene_objects = self.scene.objects_sorted
-            scene_objects.reverse()
+#            scene_objects.reverse()
             if (ALLOW_USE_ON_PLAYER and self.player) or \
                     (self._allow_one_player_interaction == True): #add player object
                 if self.player in scene_objects:
