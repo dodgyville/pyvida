@@ -7952,6 +7952,9 @@ class Game(metaclass=use_on_events):
             if len(self._modals)>0: 
                 interruptable_event = True
 
+        if self.mouse_mode in [MOUSE_USE, MOUSE_LOOK]: # don't override mouse in certain mouse modes.
+            interruptable_event = True
+
         # don't show hourglass on modal events
         if (self._waiting and len(self._modals) == 0 and not player_goto_event) or not interruptable_event:
             cursor = MOUSE_HOURGLASS
