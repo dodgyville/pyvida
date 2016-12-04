@@ -73,7 +73,7 @@ except ImportError:
 
 benchmark_events = datetime.now()
 
-GAME_SAVE_NAME = "spaceout2" # XXX should match game, should be engine independent.
+GAME_SAVE_NAME = "spaceout2b7" # XXX should match game, should be engine independent.
 
 SAVE_DIR = "saves"
 if "LOCALAPPDATA" in os.environ: #win 7
