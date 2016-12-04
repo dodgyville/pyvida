@@ -1168,6 +1168,7 @@ class AchievementManager(object, metaclass=use_on_events):
     def grant(self, game, slug):
         """ Grant an achievement to the player """
         if slug in self.granted: return False #already granted
+        if slug not in self._achievements: return False # achievement doesn't exist
         new_achievement = copy.copy(self._achievements[slug])
         new_achievement.date = datetime.now()
         new_achievement.version = game.version
@@ -3914,7 +3915,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             motion.mirror()
 
     def on_speed(self, speed):
-        print("set speed for %s" % self.action.name)
+#        print("set speed for %s" % self.action.name)
         self.action.speed = speed
 
     def _set_tint(self, rgb=None):
@@ -7073,7 +7074,7 @@ class Mixer(metaclass=use_on_events):
                 self._music_volume_step = 0
                 self._music_volume_callback = None
                 self.busy -= 1
-                print("FINISHED FADE", self._music_filename)
+#                print("FINISHED FADE", self._music_filename)
             self.on_music_volume(v)
                 
 
