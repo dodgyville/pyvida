@@ -3147,7 +3147,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                 f = open(os.path.join(d, "%s/placeholder.txt" % name), "a")
                 f.close()
 
-        self._images = images
+        self._images = [os.path.relpath(x) for x in images] # make storage relative
         self._smart_actions(game)  # load the actions
         self._smart_motions(game)  # load the motions
 
