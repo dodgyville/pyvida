@@ -2,6 +2,7 @@
 Python3 
 """
 import copy
+import euclid3 as eu
 import gc
 import glob
 import imghdr
@@ -18,22 +19,26 @@ import threading
 import time
 import traceback
 from threading import Thread
-from functools import total_ordering
-from os.path import expanduser
 
 from argparse import ArgumentParser
 from collections import Iterable
 from datetime import datetime, timedelta
+from functools import total_ordering
 from gettext import gettext
 from gettext import gettext as _
+from os.path import expanduser
 from random import choice, randint, uniform
 from time import sleep
 from math import sin, cos, radians
 
-import tkinter as tk
-import tkinter.filedialog
-import tkinter.simpledialog
-import tkinter.messagebox
+try:
+    import tkinter as tk
+    import tkinter.filedialog
+    import tkinter.simpledialog
+    import tkinter.messagebox
+    EDITOR_AVAILABLE = True
+except ImportError:
+    EDITOR_AVAILABLE = False
 
 """
 from pyglet_gui.theme import Theme
@@ -103,8 +108,8 @@ if DEBUG_NAMES:
     tmp_objects_first = {}
     tmp_objects_second = {}
 
-ENABLE_FKEYS = False # debug shortcut keys
-ENABLE_EDITOR = False  # default for editor. Caution: This starts module reloads which ruins pickles 
+ENABLE_FKEYS = True # debug shortcut keys
+ENABLE_EDITOR = False and EDITOR_AVAILABLE # default for editor. Caution: This starts module reloads which ruins pickles 
 ENABLE_PROFILING = False
 ENABLE_LOGGING = True
 DEFAULT_TEXT_EDITOR = "gedit"
@@ -209,6 +214,7 @@ MOUSE_LEFT = 4
 MOUSE_RIGHT = 5
 MOUSE_UP = 6
 MOUSE_DOWN = 7
+MOUSE_HOURGLASS = 8
 
 MOUSE_CURSORS = [(MOUSE_POINTER, "pointer.png"),
                (MOUSE_CROSSHAIR, "cross.png"),
@@ -217,6 +223,7 @@ MOUSE_CURSORS = [(MOUSE_POINTER, "pointer.png"),
                (MOUSE_RIGHT, "right.png"),
                (MOUSE_UP, "up.png"),
                (MOUSE_DOWN, "down.png"),
+               (MOUSE_HOURGLASS, "hourglass.png"),
                ]
 
 MOUSE_CURSORS_DICT = dict(MOUSE_CURSORS)
@@ -1161,6 +1168,7 @@ class AchievementManager(object, metaclass=use_on_events):
     def grant(self, game, slug):
         """ Grant an achievement to the player """
         if slug in self.granted: return False #already granted
+        if slug not in self._achievements: return False # achievement doesn't exist
         new_achievement = copy.copy(self._achievements[slug])
         new_achievement.date = datetime.now()
         new_achievement.version = game.version
@@ -1177,7 +1185,7 @@ class AchievementManager(object, metaclass=use_on_events):
 
             text = Text("achievement_text", pos=(130,240), display_text=a.name, colour=FONT_ACHIEVEMENT_COLOUR, font=FONT_ACHIEVEMENT, size=FONT_ACHIEVEMENT_SIZE)
             game.add(text, replace=True)
-            text._ay = 200
+            text._ay = -200
             text.z = 3
             text.reparent("achievement")
             text.relocate(game.scene)
@@ -1191,9 +1199,9 @@ class AchievementManager(object, metaclass=use_on_events):
 
             game.achievement.relocate(game.scene)
             game.mixer.sfx_play("data/sfx/achievement.ogg", "achievement")
-            game.achievement.motion("popup", mode=ONCE, block=True)
             game.achievement.display_text = a.description
-            game.achievement.rename((0, -FONT_ACHIEVEMENT_SIZE*3))
+            game.achievement.retext((0, -FONT_ACHIEVEMENT_SIZE*3))
+            game.achievement.motion("popup", mode=ONCE, block=True)
             #TODO: replace with bounce Motion
 #            game.achievement.move((0,-game.achievement.h), block=True)
 #            game.player.says("Achievement unlocked: %s\n%s"%(
@@ -1248,7 +1256,7 @@ class Settings(object):
         self.allow_internet_debug = ENABLE_LOGGING
 
         self.fullscreen = DEFAULT_FULLSCREEN
-        self.show_portals = True #TODO default should be false
+        self.show_portals = False
         self.show_portal_text = DEFAULT_PORTAL_TEXT
         self.portal_exploration = DEFAULT_EXPLORATION
         self.textspeed = NORMAL
@@ -1262,7 +1270,7 @@ class Settings(object):
 
         self.high_contrast = False
         # use this font to override main font (good for using dsylexic-friendly
-        # fonts
+        # fonts)
         self.accessibility_font = None
         self.font_size_adjust = 0 # increase or decrease font size
         self.show_gui = True  # when in-game, show a graphical user interface
@@ -1272,7 +1280,7 @@ class Settings(object):
         self.disable_joystick = False # allow joystick if available
         # joystick button remapping
         self.joystick_interact = 0 # index to joystick.buttons that corresponds to mouse left-click
-        self.joystick_look = 1 # index to joystick.buttons that corresponds to mouse left-click
+        self.joystick_look = 1 # index to joystick.buttons that corresponds to mouse right-click
 
         #some game play information
         self._current_session_start = None #what date and time did the current session start
@@ -2060,7 +2068,7 @@ class MotionManager(metaclass=use_on_events):
                 motion.destructive = destructive
             if block is True and self.game._headless is False:
                 self.busy += 1
-                self.game._waiting = True #make game wait
+                self.game.on_wait() #make game wait
                 if logging:
                     log.info("%s has started motion %s, so incrementing self.busy to %s." % (
                         self.name, motion.name, self.busy))
@@ -2203,7 +2211,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         self._directory = None  # directory this is smart loaded from (if any)
         self._images = []  # image filenames that the actions are based on
         # don't process any more events for this actor until busy is False,
-        # will block all events if game._waiting = True
+        # will block all events if game.on_wait()
         self.busy = 0
         self._batch = None
 #        self._events = []
@@ -2559,8 +2567,13 @@ class Actor(MotionManager, metaclass=use_on_events):
     rotate = property(get_rotate, set_rotate)
 
     @property
-    def center(self):
+    def centre(self):
         return self.clickable_area.center #(self.x + self.ax/2, self.y + self.ay/2)
+
+
+    @property
+    def center(self):
+        return self.centre
 
 #    @property
 #    def position(self):
@@ -3043,6 +3056,10 @@ class Actor(MotionManager, metaclass=use_on_events):
                         "up": (-45, 45),
                         "down": (135, 225)
                         }
+        PATHPLANNING = {"left": (180, 360),
+                        "right": (0, 180),
+                        }
+
         self._actions = {}
         for action_file in self._images:
             action_name = os.path.splitext(os.path.basename(action_file))[0]
@@ -3050,9 +3067,9 @@ class Actor(MotionManager, metaclass=use_on_events):
                 continue
             action = Action(action_name).smart(
                 game, actor=self, filename=os.path.relpath(action_file))
-            action.available_for_pathplanning = True
             self._actions[action_name] = action
             if action_name in PATHPLANNING:
+                action.available_for_pathplanning = True
                 p = PATHPLANNING[action_name]
                 action.angle_start = p[0]
                 action.angle_end = p[1]
@@ -3130,7 +3147,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                 f = open(os.path.join(d, "%s/placeholder.txt" % name), "a")
                 f.close()
 
-        self._images = images
+        self._images = [os.path.relpath(x) for x in images] # make storage relative
         self._smart_actions(game)  # load the actions
         self._smart_motions(game)  # load the motions
 
@@ -3420,6 +3437,12 @@ class Actor(MotionManager, metaclass=use_on_events):
 
             if "colour" not in kwargs: #if player does not provide a colour, use a default
                 kwargs["colour"] = COLOURS["goldenrod"]
+
+            if "size" not in kwargs:
+                kwargs["size"] = DEFAULT_TEXT_SIZE
+            if self.game and self.game.settings:
+                kwargs["size"] +=self.game.settings.font_size_adjust
+
             # dim the colour of the option if we have already selected it.
             remember = (self.name, statement, text)
             if remember in self.game._selected_options and "colour" in kwargs:
@@ -3583,6 +3606,11 @@ class Actor(MotionManager, metaclass=use_on_events):
         kwargs["delay"] = delay
         kwargs["step"] = step
         kwargs["game"] = self.game
+        if "size" not in kwargs:
+            kwargs["size"] = DEFAULT_TEXT_SIZE
+        if self.game and self.game.settings:
+            kwargs["size"] +=self.game.settings.font_size_adjust
+
         label = self.create_text(text, **kwargs)
         label.load_assets(self.game)
 
@@ -3609,7 +3637,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             log.info("%s has started on_says (%s), so increment self.busy to %s." % (
                 self.name, text, self.busy))
         if block_for_user is True:
-            self.game._waiting = True
+            self.game.on_wait()
 
         items = [msgbox, label]
         if ok:
@@ -3736,7 +3764,7 @@ class Actor(MotionManager, metaclass=use_on_events):
 #            self.tmp_items = [label.name]
 
 #        if logging: log.info("%s has requested game to wait for on_gets to finish, so game.waiting to True."%(self.name))
-#        self.game._waiting = True
+#        self.game.on_wait()
 
         if self.game._walkthrough_auto:  # headless mode skips sound and visuals
             items[0].trigger_interact()  # auto-close the on_says
@@ -3855,7 +3883,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             result = self._do(action, callback, mode=mode)
 
         if block:
-            self.game._waiting = True
+            self.game.on_wait()
         if result:
             if logging:
                 log.info("%s has started on_do_once, so increment %s.busy to %i." % (
@@ -3887,7 +3915,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             motion.mirror()
 
     def on_speed(self, speed):
-        print("set speed for %s" % self.action.name)
+#        print("set speed for %s" % self.action.name)
         self.action.speed = speed
 
     def _set_tint(self, rgb=None):
@@ -3952,6 +3980,15 @@ class Actor(MotionManager, metaclass=use_on_events):
 
     def on_reparent(self, parent):
         self._set(["_parent"], [parent])
+
+    def on_sever_parent(self):
+        """ Set parent to None but relocate actor to last parented location """
+        if self._parent:
+            self.x += self._parent.x
+            self.y += self._parent.y
+        self.on_reparent(None)
+        
+
 
     def on_restand(self, point):
         self._set(("sx", "sy"), point)
@@ -4025,7 +4062,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             self._opacity_target - self._opacity) / (self.game.fps * seconds)
         if block == True:
             self.busy += 1
-            self.game._waiting = True # make all other events wait too.
+            self.game.on_wait() # make all other events wait too.
             self._opacity_target_block = True
             log.info("%s fade has requested block, so increment busy to %i"%(self.name, self.busy))
 
@@ -4129,6 +4166,23 @@ class Actor(MotionManager, metaclass=use_on_events):
         b = current[1] - neighbour[1]
         return math.sqrt(a**2 + b**2)
 
+    def clear_path(self, polygon, start, end, solids):
+        """ Is there a clear path between these two points """
+        clear_path = True
+        if polygon: #test the walkarea
+            w0 = w1 = polygon[0]
+            for w2 in polygon[1:]:
+                if line_seg_intersect(end, start, w1, w2): 
+                    clear_path = False
+                    return clear_path
+                w1 = w2
+            if line_seg_intersect(end, start, w2, w0): clear_path = False
+        for rect in solids: # test the solids
+            collide = rect.intersect(start, end)
+            if collide is True:
+                clear_path = False
+        return clear_path
+
     def neighbour_nodes(self, polygon, nodes, current, solids):
         """ only return nodes:
         1. are not the current node
@@ -4146,27 +4200,14 @@ class Actor(MotionManager, metaclass=use_on_events):
             max_nodes -= 1
             if max_nodes == 0: continue
             if node.point != current.point: #and (node[0] == current[0] or node[1] == current[1]):
-                append_node = True  
-                if polygon: #test the walkarea
-                    w0 = w1 = polygon[0]
-                    for w2 in polygon[1:]:
-                        if line_seg_intersect(node.point, current.point, w1, w2): 
-                            append_node = False
-                            break
-                        w1 = w2
-                    if line_seg_intersect(node.point, current.point, w2, w0): append_node = False
-                for rect in solids:
-                    collide = rect.intersect(current.point, node.point)
-#                    if collide:
-#                        print("test neighbours",current.point,node.point,"intersect with solid",rect.topleft, rect.topright, rect.bottomright, rect.bottomleft,"collides?",collide)
-                    if collide is True:
-                        append_node = False
+                append_node = self.clear_path(polygon, current.point, node.point, solids)
                 if append_node == True and node not in return_nodes: return_nodes.append(node)
 #        print("so neighbour nodes for",current.x, current.y,"are",[(pt.x, pt.y) for pt in return_nodes])
         return return_nodes
 
-    def aStar(self, walkarea, nodes, start, end, solids):
+    def aStar(self, walkarea, nodes, start, destination, solids, ignore=False):
         # courtesy http://stackoverflow.com/questions/4159331/python-speed-up-an-a-star-pathfinding-algorithm
+
         openList = []
         closedList = []
         path = []
@@ -4184,7 +4225,13 @@ class Actor(MotionManager, metaclass=use_on_events):
 #                return (self.x, self.y) == (other.x, other.y)
 
         current = Node(*start)
-        end = Node(*end)
+        end = Node(*destination)
+
+        # don't test for inside walkarea if ignoring walkarea
+        walkarea_polygon = None if ignore else walkarea._polygon
+        direct = self.clear_path(walkarea_polygon, start, destination, solids)
+        if direct: # don't astar, just go direct
+            return [current, end]
 
         #create a graph of nodes where each node is connected to all the others.
         graph = {}
@@ -4193,7 +4240,7 @@ class Actor(MotionManager, metaclass=use_on_events):
 #        print()
         for key in nodes:
             #add nodes that the key node can access to the key node's map.
-            graph[key] = self.neighbour_nodes(walkarea._polygon, nodes, key, solids)
+            graph[key] = self.neighbour_nodes(walkarea_polygon, nodes, key, solids)
             #graph[key] = [node for node in nodes if node != n] #nodes link to visible nodes 
 #        print("So our node graph is",graph)
 #        for key in nodes:
@@ -4214,7 +4261,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             if current == end:
                 retracePath(current)
 #                print("retrace path: ",end="")
-#                print(path)
+#                print("found path",path)
                 return path
 
             openList.remove(current)
@@ -4225,13 +4272,21 @@ class Actor(MotionManager, metaclass=use_on_events):
                     if tile not in openList:
                         openList.append(tile)
                     tile.parent = current
-#        print("end of astar")
+#        print("end of astar",path)
         return path
 
-    def _calculate_path(self, start, end):
+    def _calculate_path(self, start, end, ignore=False):
         """ Using the scene's walkarea and waypoints, calculate a list of points that reach our destination
             Using a*star
+            ignore = True | False ignore out-of-bounds areas
         """
+        x, y = end[0] - start[0], end[1] - start[1]
+        distance = math.hypot(x, y)
+        if -5 < distance < 5:
+            log.info("%s already there, so not calculating path"%self.name)
+#            self._cancel_goto()
+            return [start, end]
+
         goto_points = []
         if not self.game or not self.game.scene:
             return goto_points
@@ -4239,7 +4294,11 @@ class Actor(MotionManager, metaclass=use_on_events):
         if not scene.walkarea:
             return [start, end]
         walkarea = scene.walkarea
-        available_points = walkarea._waypoints
+
+        # initial way points are the manual waypoints and the edges of the walkarea polygon
+        available_points = copy.copy(walkarea._waypoints)
+        available_points.extend(copy.copy(walkarea._polygon_waypoints))
+
 #        available_points.extend([start, end]) #add the current start, end points (assume valid)
         solids = []
         for o in scene._objects:
@@ -4247,13 +4306,13 @@ class Actor(MotionManager, metaclass=use_on_events):
             if o._allow_draw == True and o != self.game.player and not isinstance(o, Emitter):
 #                print("using solid",o.name,o.solid_area.flat2)
                 solids.append(o.solid_area)
+                # add more waypoints based on the edges of the solid areas of objects in scene
                 for pt in o.solid_area.waypoints:
                     if pt not in available_points:
                         available_points.append(pt)
-
         available_points = [pt for pt in available_points if walkarea.valid(*pt)] #scrub out non-valid points.
 #        print("scene available points",available_points,"solids",[x.flat for x in solids])
-        goto_points = self.aStar(walkarea, available_points, start, end, solids)
+        goto_points = self.aStar(walkarea, available_points, start, end, solids, ignore=ignore)
         return [g.point for g in goto_points]
 
 
@@ -4274,8 +4333,14 @@ class Actor(MotionManager, metaclass=use_on_events):
 
         # 0 degrees is towards the top of the screen
         angle = math.degrees(raw_angle) + 90
-        if angle < -45:
-            angle += 360
+        path_planning_actions = [action.name for action in self._actions.values() if action.available_for_pathplanning == True]        
+        if "up" in path_planning_actions and "down" in path_planning_actions and \
+            "left" in path_planning_actions and "right" in path_planning_actions: # assume four quadrants
+            if angle < -45:
+                angle += 360
+        else: # assume only two hemispheres
+            if angle < 0:
+                angle += 360
         goto_action = None
         goto_motion = None
         self._goto_deltas = []
@@ -4344,7 +4409,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             if logging:
                 log.info(
                     "%s has request game to wait for goto to finish, so game.waiting to True." % (self.name))
-            self.game._waiting = True
+            self.game.on_wait()
 
     def on_move(self, displacement, ignore=False, block=False, next_action=None):
         """ Move Actor relative to its current position """
@@ -4373,10 +4438,11 @@ class Actor(MotionManager, metaclass=use_on_events):
         start = (self.x, self.y)
 #        print("calculating way points between",start, point)
         if self._use_astar:
-            path = self._calculate_path(start, point)[1:]
+            path = self._calculate_path(start, point, ignore=ignore)[1:]
             if len(path) == 0:
-                print("no astar found so going direct")
+                print("no astar found so cancelling") 
                 log.warning("NO PATH TO POINT %s from %s, SO GOING DIRECT"%(point, start))
+#                return
         else: #go direct
             path = []
         self._goto_points = path #[1:]
@@ -4529,9 +4595,9 @@ class Portal(Actor, metaclass=use_on_events):
         if actor == None:
             actor = self.game.player
         log.warning("Actor {} exiting portal {}".format(actor.name, self.name))
-        actor.goto((self.x + self.sx, self.y + self.sy), block=block)
+        actor.goto((self.x + self.sx, self.y + self.sy), block=block, ignore=True)
         self._pre_leave(self, actor)
-        actor.goto((self.x + self.ox, self.y + self.oy), block=True)
+        actor.goto((self.x + self.ox, self.y + self.oy), block=True, ignore=True)
 
     def relocate_here(self, actor=None):
         """ Relocate actor to this portal's out point """
@@ -4929,6 +4995,46 @@ def distance(pt1, pt2):
     dist = math.sqrt( (pt2[0] - pt1[0])**2 + (pt2[1] - pt1[1])**2 )
     return dist
 
+
+def scaleadd(origin, offset, vectorx):
+    """
+    From a vector representing the origin,
+
+    a scalar offset, and a vector, returns
+    a Vector3 object representing a point 
+    offset from the origin.
+
+    (Multiply vectorx by offset and add to origin.)
+    """
+    multx = vectorx * offset
+    return multx + origin
+
+
+def getinsetpoint(pt1, pt2, pt3, offset):
+    """
+    Given three points that form a corner (pt1, pt2, pt3),
+    returns a point offset distance OFFSET to the right
+    of the path formed by pt1-pt2-pt3.
+
+    pt1, pt2, and pt3 are two tuples.
+
+    Returns a Vector3 object.
+    """
+    origin = eu.Vector3(pt2[0], pt2[1], 0.0)
+    v1 = eu.Vector3(pt1[0] - pt2[0], pt1[1] - pt2[1], 0.0)
+    v1.normalize()
+    v2 = eu.Vector3(pt3[0] - pt2[0], pt3[1] - pt2[1], 0.0)
+    v2.normalize()
+    v3 = eu.Vector3(*v1)
+    v1 = v1.cross(v2)
+    v3 += v2
+    if v1.z < 0.0:
+        retval = scaleadd(origin, -offset, v3)
+    else:
+        retval = scaleadd(origin, offset, v3)
+    return retval
+
+
 LOCKED = 0
 UNLOCKED = 1
 FREEROAM = 2
@@ -4942,6 +5048,7 @@ class WalkAreaManager(metaclass=use_on_events):
         self.game = None
         self._waypoints = []
         self._polygon = []
+        self._polygon_waypoints = [] #autogenerated waypoints from polygon
         self._state = UNLOCKED
 
         #for fast calculation of collisions
@@ -5031,7 +5138,24 @@ class WalkAreaManager(metaclass=use_on_events):
             self._edit_waypoint_index = closest_waypoint
         else:
             self._edit_polygon_index = closest_polygon
-
+  
+    def generate_waypoints(self):
+        #polygon offset courtesy http://pyright.blogspot.com/2011/07/pyeuclid-vector-math-and-polygon-offset.html
+        polyinset = []
+        OFFSET = -15
+        i = 0
+        if len(self._polygon) > 0:
+            old_points = copy.deepcopy(self._polygon)
+            old_points.insert(0,self._polygon[-1])
+            old_points.append(self._polygon[0])        
+            lenpolygon = len(old_points)
+            while i < lenpolygon - 2:
+                new_pt = getinsetpoint(old_points[i], old_points[i + 1], old_points[i + 2], OFFSET)
+                polyinset.append((int(new_pt.x), int(new_pt.y)))
+                i += 1
+        else:
+            polyinset = []
+        self._polygon_waypoints = polyinset
 
     def mirror(self, w):
         """ Flip walkarea using w(idth) of screen) 
@@ -5048,6 +5172,7 @@ class WalkAreaManager(metaclass=use_on_events):
         self._polygon_count = len(self._polygon)
         self._polygon_x = [float(p[0]) for p in self._polygon]
         self._polygon_y = [float(p[1]) for p in self._polygon]
+        self.generate_waypoints()
 
     def on_polygon(self, points):
         self._polygon = points
@@ -5115,11 +5240,11 @@ class WalkAreaManager(metaclass=use_on_events):
         self._state = FREEROAM
 
 
-    def collide(self, x,y):
+    def collide(self, x,y, ignore=False):
         """ Returns True if the point x,y collides with the polygon """
         if self._state == LOCKED: #always outside walkarea
             return False
-        elif self._state == FREEROAM: #always inside walkarea
+        elif self._state == FREEROAM or ignore == True: #always inside walkarea
             return True
         c = False
         i = 0
@@ -6158,6 +6283,8 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._overlay_start = None
         self._overlay_tint = None
         self._overlay_fx = None
+        self._overlay_transition_complete = False
+
         self._transition = [] #Just messing about, list of scenes to switch between for a rapid editing effect
 
         self.name = "Default Camera"
@@ -6212,19 +6339,19 @@ class Camera(metaclass=use_on_events):  # the view manager
                 complete = (time.time() - self._overlay_start) / duration
                 if complete > 1:
                     complete = 1
+                    self._overlay_start, self._overlay_end = None, None # stop transiton
                     #if this was blocking, release it.
-                    if self.busy>0: 
-                        if self.busy > 1: #XXX this seems like it might cause problems if 
-                            print("XXX debugging camera")
-#                        if self.game and not self.game.fullscreen:
-#                            import pdb; pdb.set_trace()
+                    if self.busy>=0:
                         self.busy -= 1
+                        if logging:
+                            log.info("Camera %s has finished overlay, so decrementing self.busy to %s." % (
+                                self.name, self.busy))
+
 
                 if self._overlay_fx == FX_FADE_OUT:
                     self._overlay.opacity = round(255 * complete)
                 elif self._overlay_fx == FX_FADE_IN:
                     self._overlay.opacity = round(255 * (1 - complete))
-    #            if complete>1: self._overlay = None #finish FX
 
         """
         Just a fun little experiment in quick cutting between scenes
@@ -6404,12 +6531,15 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._overlay_start = time.time()
         self._overlay_end = time.time() + seconds
         self._overlay_fx = FX_FADE_OUT
+        self.busy += 1
+        if logging:
+            log.info("%s has started on_fade_out, so increment %s.busy to %i." % (
+                self.name, self.name, self.busy))
         if block:
-            self.game._waiting = True
-            self.busy += 1
+            self.game.on_wait()
             if logging:
-                log.info("%s has finished on_fade_out, so increment %s.busy to %i." % (
-                    self.name, self.name, self.busy))
+                log.info("%s has started on_fade_out with block, so set game._waiting to True." % (
+                    self.name))
 
 
     def on_fade_in(self, seconds=3, colour="black", block=False):
@@ -6422,13 +6552,15 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._overlay_start = time.time()
         self._overlay_end = time.time() + seconds
         self._overlay_fx = FX_FADE_IN
-
+        self.busy += 1
+        if logging:
+            log.info("%s has started on_fade_in, so increment %s.busy to %i." % (
+                self.name, self.name, self.busy))
         if block:
-            self.game._waiting = True
-            self.busy += 1
+            self.game.on_wait()
             if logging:
-                log.info("%s has started on_fade_in with block, so increment %s.busy to %i." % (
-                    self.name, self.name, self.busy))
+                log.info("%s has started on_fade_in with block, so set game._waiting to True." % (
+                    self.name))
 
     def on_tint(self, colour=None):
         """ Apply a tint to every item in the scene """
@@ -6538,7 +6670,7 @@ class Camera(metaclass=use_on_events):  # the view manager
         if logging:
             log.info("Camera %s has started _goto, so increment self.busy to %s and game.waiting to True." % (
                 self.name, self.busy))
-        self.game._waiting = True
+        self.game.on_wait()
 
 
 class PlayerPyglet(pyglet.media.Player):
@@ -6942,7 +7074,7 @@ class Mixer(metaclass=use_on_events):
                 self._music_volume_step = 0
                 self._music_volume_callback = None
                 self.busy -= 1
-                print("FINISHED FADE", self._music_filename)
+#                print("FINISHED FADE", self._music_filename)
             self.on_music_volume(v)
                 
 
@@ -7075,7 +7207,7 @@ class Factory(object):
         self.game = None
         return self.__dict__
 
-    def _create_object(self, name):
+    def _create_object(self, name, share_resource=True):
 
         original = get_object(self.game, self.template)
         obj = copy.copy(original)
@@ -7086,7 +7218,10 @@ class Factory(object):
 
         obj.name = name
         obj.game = self.game
-        obj.resource_name_override = original.name # use the original object's resource.
+        if share_resource:
+            obj.resource_name_override = original.name # use the original object's resource.
+#        else:
+#            obj.load_assets(self.game)
         obj._do(original.action.name)
         original.game = self.game # restore game object to original
         if original._scene: #add to current scene
@@ -7095,7 +7230,7 @@ class Factory(object):
         return obj
 
 
-    def create(self, objects=[], num_of_objects=None, start=0):
+    def create(self, objects=[], num_of_objects=None, start=0, share_resource=True):
         """
            objects : use the names in objects as the names of the new objects
            num_of_objects : create a number of objects using the template's name as the base name 
@@ -7108,7 +7243,7 @@ class Factory(object):
             self.clone_count = start
             for i in range(0, num_of_objects):
                 name = "{}{}".format(original.name, i + self.clone_count)
-                new_objects.append(self._create_object(name))
+                new_objects.append(self._create_object(name, share_resource=share_resource))
            # self.clone_count += num_of_objects # if Factory is called again, add to clones don't replace
         return new_objects
 
@@ -7473,6 +7608,10 @@ def gamestats(game):
 
 
 
+def reset_mouse_cursor(game):
+    game.mouse_cursor = MOUSE_POINTER if game.mouse_mode != MOUSE_LOOK else game.mouse_cursor # reset mouse pointer
+
+
 class Game(metaclass=use_on_events):
 
     def __init__(self, name="Untitled Game", version="v1.0", engine=VERSION_MAJOR, fullscreen=DEFAULT_FULLSCREEN, resolution=DEFAULT_RESOLUTION, fps=DEFAULT_FPS, afps=DEFAULT_ACTOR_FPS, projectsettings=None, scale=1.0):
@@ -7593,6 +7732,8 @@ class Game(metaclass=use_on_events):
         # longer busy
         self._waiting = False
         self.busy = False  # game is never busy
+        self._waiting_for_user = False # used by on_wait_for_user
+
         self._events = []
         self._event = None
         self._event_index = 0
@@ -7801,6 +7942,23 @@ class Game(metaclass=use_on_events):
         self._window.set_mouse_cursor(cursor)
 
     def set_mouse_cursor(self, cursor):
+        # don't show hourglass on a player's goto event
+        interruptable_event = True
+        player_goto_event = False
+        if len(self._events)>0:
+            interruptable_event = False
+            if self._events[0][0].__name__ == "on_goto" and self._events[0][1][0] == self.player:
+                interruptable_event = True
+                player_goto_event = False # True if we don't want strict hourglass when player is walking
+            if len(self._modals)>0: 
+                interruptable_event = True
+
+        if self.mouse_mode in [MOUSE_USE, MOUSE_LOOK]: # don't override mouse in certain mouse modes.
+            interruptable_event = True
+
+        # don't show hourglass on modal events
+        if (self._waiting and len(self._modals) == 0 and not player_goto_event) or not interruptable_event:
+            cursor = MOUSE_HOURGLASS
         self._mouse_cursor = cursor
         self._set_mouse_cursor(self._mouse_cursor)
 
@@ -7877,21 +8035,9 @@ class Game(metaclass=use_on_events):
                 self._allow_editing = False
 
             if symbol == pyglet.window.key.F5:
-                from scripts.general import show_credits
-                script = show_credits
-                try:
-                    script(self, self.player, "void")
-                except:
-                    log.error("Exception in %s" % script.__name__)
-                    print("\nError running %s\n" % script.__name__)
-                    if traceback:
-                        traceback.print_exc(file=sys.stdout)
-                    print("\n\n")
-
-
-                #game.camera.scene("phelm") if game.scene.name == "aqueue" else game.camera.scene("aqueue")
+                self.settings.font_size_adjust -= 2
             if symbol == pyglet.window.key.F6:
-                self.debug_collection = True
+                self.settings.font_size_adjust += 2
 
             if symbol == pyglet.window.key.F7:  # start recording
                 # ffmpeg -r 16 -pattern_type glob -i '*.png' -c:v libx264 out.mp4
@@ -7906,6 +8052,84 @@ class Game(metaclass=use_on_events):
                 print("finished casting")
 
             if symbol == pyglet.window.key.F9:
+                game._walkthrough_auto = False
+                game.menu.hide()
+                game.load_state("etreehouse", "tmp")
+                game.camera.scene("etreehouse")                    
+                game.player.relocate("etreehouse",(749, 495))
+                game.player.do("idle_leftdown")
+#                game.brutus_snake.relocate("etreehouse", (1200,-50))
+#                game.brutus_snake.do("hangleft")
+                game.wait_for_user()                
+                game.steve.says(_("And you're my little gingerbread man."))
+                game.wait_for_user()
+                game.player.says(_("That's so adorable."))
+                game.brutus_snake.says(_("I think I'm going to be sick."), using="msgbox_snake", position=BOTTOM)
+                game.wait_for_user()
+                return
+                game._walkthrough_auto = False
+                game.sky_sebastian_health1.remove()
+                game.sky_sebastian_health2.remove()
+                game.sky_sebastian_health3.remove()
+                game.sky_cloud.remove()
+                game.sky_shroom.remove()
+                game.sky_turing.remove()
+                game.sky_rupee.remove()
+                game.menu.hide()
+#                game.sky_tycho.relocate(game.scene, (100,100))
+                game.camera.scene("sky")
+#                game.wait_for_user()
+#                game.player = game.sky_tycho
+#                game.sky_heart.trigger_interact() #[interact, "*sky heart"],
+                game.wait_for_user()
+                game.sebastian.says(_("Perfect weather for it."))
+
+                return
+                game.load_state("spacebattle", "initial")
+                game.menu.hide()
+                game.camera.scene("spacebattle")
+                game.wait_for_user()
+                game.laserbolts.do_once("fire", "idle")
+                game.mixer.sfx_play("data/sfx/laser1.ogg", "laser shot")
+                game.pause(0.4)
+                game.explosion_space.do_once("explosion", "idle")
+                game.brutus_ship.escaped = True
+                game.brutus_ship.motion("shake", mode=ONCE)
+                game.wait_for_user()
+                game.camera.scene("alab")
+                return
+                game.menu.hide()
+                game.camera.scene("bvictory")
+                game.wait_for_user()
+                game.brutus.says(_("Bwahahahaha!"), "portrait_victory", position=TOP)
+                game.wait_for_user()
+                game.brutus.says(_("I don't normally laugh like that ..."), "portrait_victory", position=BOTTOM)
+                game.brutus.says(_("... but this place really does your head in."), "portrait_victory", position=BOTTOM)
+                game.wait_for_user()
+                game.camera.scene("alab")
+                return
+                game.menu.hide()
+                game.pod2.hide()
+                game.camera.scene("alab")
+                game.player.relocate("alab", "mistriss lab")
+                game.player.do("idle_leftup")
+                game.load_state("aenter", "initial")
+                game.mistriss_lab.do("idle")
+                game.camera.scene("aenter")
+                start_scene = "aenter"
+                game.wait_for_user()
+                game.mistriss.says(_("Look into my eye, Captain ..."), None, position=BOTTOM, using="msgbox_75")
+                game.camera.scene("alab", allow_scene_music=False)
+                game.wait_for_user()
+                game.mistriss_lab.do("arcadian")
+                game.wait_for_user()
+                game.camera.scene("aenter")
+                game.mistriss.says(_("... and relax."), None, position=BOTTOM, using="msgbox_75")
+                game.wait_for_user()
+                game.camera.scene("alab")
+                return
+                game.del_events = True
+                return
                 game.menu.hide()
                 s = game.scene
                 game.camera.scene("jstadium", camera_point=(0,0))
@@ -8113,7 +8337,7 @@ class Game(metaclass=use_on_events):
 
         if window_y < 0 or window_x < 0 or window_x > self.resolution[0] or window_y > self.resolution[1]: # mouse is outside game window
             self._info_object.display_text = " "  # clear info
-            self.mouse_cursor = MOUSE_POINTER if self.mouse_mode != MOUSE_LOOK else self.mouse_cursor # reset mouse pointer
+            reset_mouse_cursor(self)
             return
 
         if not self.scene or self._headless or self._walkthrough_auto:
@@ -8172,6 +8396,7 @@ class Game(metaclass=use_on_events):
 
 #            scene_objects = copy.copy(self.scene._objects)
             scene_objects = self.scene.objects_sorted
+#            scene_objects.reverse()
             if (ALLOW_USE_ON_PLAYER and self.player) or \
                     (self._allow_one_player_interaction is True): #add player object
                 if self.player in scene_objects:
@@ -8288,6 +8513,9 @@ class Game(metaclass=use_on_events):
 
     def on_mouse_release(self, raw_x, raw_y, button, modifiers):
         """ Call the correct function depending on what the mouse has clicked on """
+        if self._waiting_for_user: # special function that allows easy story beats
+            self._waiting_for_user = False
+            return
         if self.last_mouse_release:  # code courtesy from a stackoverflow entry by Andrew
             if (raw_x, raw_y, button) == self.last_mouse_release[:-1]:
                 """Same place, same button, double click shortcut"""
@@ -8297,6 +8525,7 @@ class Game(metaclass=use_on_events):
                         if len(self.player._goto_points)> 0:
                             fx,fy = self.player._goto_points[-1]
                         self.player._x, self.player._y = fx,fy
+#                        print("ON MOUSE RELEASE, JUMP TO POINT",fx,fy)
 #                        self.player._goto_dx, self.player._goto_dy = 0, 0
                         self.player._goto_deltas = []
                         self.player._goto_points = []
@@ -8325,6 +8554,7 @@ class Game(metaclass=use_on_events):
         if self._editing and self._editing_point_set:
             return
 
+ 
         if self._drag:
             self._drag._drag(self, self._drag, self.player)
             self._drag = None
@@ -8379,6 +8609,7 @@ class Game(metaclass=use_on_events):
         if self.scene:
 #            scene_objects = copy.copy(self.scene._objects)
             scene_objects = self.scene.objects_sorted
+#            scene_objects.reverse()
             if (ALLOW_USE_ON_PLAYER and self.player) or \
                     (self._allow_one_player_interaction == True): #add player object
                 if self.player in scene_objects:
@@ -8565,13 +8796,13 @@ class Game(metaclass=use_on_events):
             if "help" in extras: #compile a list of helpful hints for the game
                 self._walkthrough_hints[str(key)] = extras["help"]
 
-    def create_info_object(self, name="_info_text"):
+    def create_info_object(self, text=" ", name="_info_text"):
         """ Create a Text object for the info object """
         colour = self.font_info_colour
         font = self.font_info
         size = self.font_info_size
         obj = Text(
-            name, display_text=" ", font=font, colour=colour, size=size, offset=1)
+            name, display_text=text, font=font, colour=colour, size=size, offset=1)
         obj.load_assets(self) #XXX loads even in headless mode?
         return obj
 
@@ -8900,6 +9131,9 @@ class Game(metaclass=use_on_events):
                 self._joystick.open()
                 self._joystick.push_handlers(self)
                 self._window.set_mouse_visible(False)
+#        if options.target_random_steps: # randomly do some options before 
+#            self.target_random_steps = options.target_random_steps
+#            self.target_random_steps_counter = options.target_random_steps
 
         if options.output_walkthrough == True:
             self._output_walkthrough = True
@@ -9007,14 +9241,15 @@ class Game(metaclass=use_on_events):
         # "hint": <str> -- when this event triggers for the first time, set game.storage.hint to this value
         global benchmark_events
         t = datetime.now() - benchmark_events
-        if self._output_walkthrough is False and DEBUG_STDOUT is True:
-            print("doing step",walkthrough, t.seconds)
         benchmark_events = datetime.now()
         try:
             function_name = walkthrough[0].__name__
         except:
             import pdb
             pdb.set_trace()
+        if self._output_walkthrough is False and DEBUG_STDOUT is True:
+            print("[step]",function_name, walkthrough[1:], t.seconds, "\n [hint]", self.storage.hint if self.storage else "(no storage)")
+
         self._walkthrough_index += 1
 
         if self._walkthrough_index > self._walkthrough_target or self._walkthrough_index > len(self._walkthrough):
@@ -9232,6 +9467,8 @@ class Game(metaclass=use_on_events):
         safe_to_call_again = False  # is it safe to call _handle_events immediately after this?
         waiting_for_user = True
 #        log.info("There are %s events, game._waiting is %s, index is %s and current event is %s",len(self._events), self._waiting, self._event_index, self._event)
+        if self._waiting_for_user: # don't do anything until user clicks
+            return
 
         if self._waiting:
             """ check all the Objects with existing events, if any of them are busy, don't process the next event """
@@ -9261,6 +9498,9 @@ class Game(metaclass=use_on_events):
                 # check the previous events' objects, delete if not busy
                 for event in self._events[:self._event_index]:
                     if event[1][0].busy == 0:
+                        if hasattr(self, "del_events"):
+                            print("DEL",event)
+
                         #                        if self._headless==False: import pdb; pdb.set_trace()
                         #                        if logging: log.info("%s is no longer busy, so deleting event %s."%(event[1][0].name, event))
                         #                        print("DEL",event)
@@ -9300,6 +9540,9 @@ class Game(metaclass=use_on_events):
             #if self._event_index<len(self._events)-1: self._event_index += 1
         # auto trigger an event from the walkthrough if needed and nothing else
         # is happening
+        if (del_events > 0 or len(self._modals)>0) and self.mouse_cursor == MOUSE_HOURGLASS: # potentially reset the mouse
+            reset_mouse_cursor(self)
+
         if done_events == 0 and del_events == 0 and self._walkthrough_target >= self._walkthrough_index:
             self._process_walkthrough()
         return safe_to_call_again
@@ -9864,32 +10107,38 @@ class Game(metaclass=use_on_events):
     def on_wait(self):
         """ Wait for all scripting events to finish """
         self._waiting = True
+        reset_mouse_cursor(self) # possibly set mouse cursor to hour glass
         return
 
-    def on_autosave(self, actor, tilesize, exclude_from_screenshot=[]):
+    def on_autosave(self, actor, tilesize, exclude_from_screenshot=[], fname = None, fast=True):
         game = self
-        fname = datetime.now().strftime("%Y%m%d_%H%M%S")
+        fname = fname if fname else datetime.now().strftime("%Y%m%d_%H%M%S")
         save_game(game, os.path.join(DIRECTORY_SAVES, "%s.save"%fname))
         for i in exclude_from_screenshot:
             obj = get_object(game, i)
             obj.hide()
-        game.menu.on_hide()
-        game.pause(0.5)
+        if not fast: # take some time to do a nicer screen grab
+            game.menu.on_hide()
+            game.pause(0.4)
         game.camera.screenshot(os.path.join(DIRECTORY_SAVES, "%s.png"%fname), tilesize)
         for i in exclude_from_screenshot:
             obj = get_object(game, i)
             obj.show()
         actor = get_object(game, actor)
         actor.says(gettext("Game saved."))
-        game.menu.show()
+        if not fast:
+            game.menu.show()
 
+    def on_wait_for_user(self):
+        """ Insert a modal click event """
+        self._waiting_for_user = True
 
     def on_pause(self, duration):
         """ pause the game for duration seconds """
         if self._headless:
             return
         self.busy += 1
-        self._waiting = True
+        self.on_wait()
         if logging:
             log.info("game has started on_pause, so increment game.busy to %i." % (self.busy))
 
@@ -9958,7 +10207,7 @@ class Game(metaclass=use_on_events):
             obj = get_object(self, i)
             obj.z = 1.0
         self.busy += 1  # set Game object to busy (only time this happens?)
-        self._waiting = True  # make game wait until splash is finished
+        self.on_wait()  # make game wait until splash is finished
         # add scene to game, change over to that scene
         self.add(scene)
         self.camera._scene(scene)
@@ -10695,6 +10944,8 @@ class MyTkApp(threading.Thread):
 
 
 def editor(game):
+    if not EDITOR_AVAILABLE:
+        return None
     app = MyTkApp(game)
     return app
 
