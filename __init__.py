@@ -10358,7 +10358,9 @@ def editor_new_object(game, obj):
     game.add(obj)
     game.scene.add(obj)
 
+log.info("CHECKING FOR EDITOR")
 if EDITOR_AVAILABLE:
+    log.info("EDITOR AVAILABLE")
     class SelectDialog(tk.simpledialog.Dialog):
 
         def __init__(self, game, title, objects, *args, **kwargs):
