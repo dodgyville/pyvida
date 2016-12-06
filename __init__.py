@@ -8052,6 +8052,11 @@ class Game(metaclass=use_on_events):
                 print("finished casting")
 
             if symbol == pyglet.window.key.F9:
+                game.camera.scene("palert")
+                game.menu.hide()
+                game.mixer.music_stop()
+                game.alert.pulse = 0.65
+                return
                 game._walkthrough_auto = False
                 game.menu.hide()
                 game.load_state("etreehouse", "tmp")
