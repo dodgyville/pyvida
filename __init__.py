@@ -108,7 +108,7 @@ if DEBUG_NAMES:
     tmp_objects_first = {}
     tmp_objects_second = {}
 
-ENABLE_FKEYS = False # debug shortcut keys
+ENABLE_FKEYS = True # debug shortcut keys
 ENABLE_EDITOR = False and EDITOR_AVAILABLE # default for editor. Caution: This starts module reloads which ruins pickles 
 ENABLE_PROFILING = False
 ENABLE_LOGGING = True
@@ -1298,6 +1298,7 @@ class Settings(object):
         if logging:
             log.info("Saving settings to %s" % self.filename)
         with open(os.path.abspath(self.filename), "wb") as f:
+#            pickle.dump(self.achievements, f) # specially store achievements so they can be retrieved if settings change
             pickle.dump(self, f)
 
     def load(self, fname=None):
@@ -2242,7 +2243,6 @@ class Actor(MotionManager, metaclass=use_on_events):
             action.load_assets(game)
 
         return self.switch_asset(self.action)
-
 
     def on_refresh_assets(self, game):
         self.unload_assets()
@@ -7354,6 +7354,7 @@ def save_game_pickle(game, fname):
         pickle.dump(game._menus, f)
         pickle.dump(game._modals, f)
         pickle.dump(game.visited, f)
+        pickle.dump(game._selected_options, f)
         pickle.dump(game._modules, f)
         pickle.dump(game._sys_paths, f)
         pickle.dump(game._resident, f)
@@ -7429,6 +7430,7 @@ def load_game_pickle(game, fname, meta_only=False, keep=[]):
             game._menus = pickle.load(f)
             game._modals = pickle.load(f)
             game.visited = pickle.load(f)
+            game._selected_options = pickle.load(f)
             game._modules = pickle.load(f)
             game._sys_paths = pickle.load(f)
             sys.path.extend(game._sys_paths)
@@ -7624,7 +7626,7 @@ class Game(metaclass=use_on_events):
         self.fps = fps
         self.default_actor_fps = afps
         self.game = self
-        self.player = None
+        self._player = None
         self.scene = None
         self.version = version
         self.engine = engine
@@ -7860,6 +7862,16 @@ class Game(metaclass=use_on_events):
         for key, item in _resources.items():
             if item[-1] != None:
                 yield key, item
+
+    def set_player(self, player):
+        self._player = player
+        if player:
+            player.load_assets(self)
+
+    def get_player(self):
+        return self._player
+
+    player = property(get_player, set_player)
 
     def __getattr__(self, a):  # game.__getattr__
         # only called as a last resort, so possibly set up a queue function
@@ -8831,6 +8843,10 @@ class Game(metaclass=use_on_events):
 #        self._emitters = {}
 #        if self.ENABLE_EDITOR: #editor enabled for this game instance
 #            self._load_editor()
+        self._selected_options = []
+        self._visited = []
+#        self._resident = [] #scenes to keep in memory
+
 
     def _menu_from_factory(self, menu, items):
         """ Create a menu from a factory """
