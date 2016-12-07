@@ -6377,7 +6377,7 @@ class Camera(metaclass=use_on_events):  # the view manager
         """ Quick fire cuts between scenes (without triggering scene change behaviour """
         self._transition = scenes
 
-    def _scene(self, scene, camera_point=None, allow_scene_music=True):
+    def _scene(self, scene, camera_point=None, allow_scene_music=True, from_save_game=False):
         """ change the current scene """
 #        if self.game.scene:  # unload background when not in use
 #            self.game.scene._unload_layer()
@@ -6444,7 +6444,7 @@ class Camera(metaclass=use_on_events):  # the view manager
             # start music for this scene
             scene.on_music_play()
 
-    def on_scene(self, scene, camera_point=None, allow_scene_music=True):
+    def on_scene(self, scene, camera_point=None, allow_scene_music=True, from_save_game=False):
         """ change the scene """
         if self._overlay_fx == FX_DISCO: # remove disco effect
             self.on_disco_off()
@@ -6464,7 +6464,7 @@ class Camera(metaclass=use_on_events):  # the view manager
             precamera_fn = get_function(
                 self.game, "precamera_%s" % slugify(scene.name))
             if precamera_fn:
-                precamera_fn(self.game, scene, self.game.player)
+                precamera_fn(self.game, scene, self.game.player, from_save_game=from_save_game)
 
             if camera_point == LEFT:
                 camera_point = (0, scene.y)
@@ -6484,7 +6484,7 @@ class Camera(metaclass=use_on_events):  # the view manager
             postcamera_fn = get_function(
                 self.game, "postcamera_%s" % slugify(scene.name))
             if postcamera_fn:
-                postcamera_fn(self.game, scene, self.game.player)
+                postcamera_fn(self.game, scene, self.game.player, from_save_game=from_save_game)
 
     def on_player_scene(self):
         """ Switch the current player scene. Useful because game.player.scene
@@ -7482,7 +7482,7 @@ def load_game_pickle(game, fname, meta_only=False, keep=[]):
                 game.player = get_object(game, player_info["player"])
                 game.player.load_assets(game)
             if player_info["scene"]:
-                game.camera._scene(player_info["scene"])
+                game.camera._scene(player_info["scene"], from_save_game=True)
             for module_name in game._modules:
                 try:
                     __import__(module_name)  # load now
@@ -8078,6 +8078,9 @@ class Game(metaclass=use_on_events):
                 print("finished casting")
 
             if symbol == pyglet.window.key.F9:
+                fn = get_function(self, "interact_romy_victory")
+                fn(game, None, None)
+                return
                 game.camera.scene("bvictory")
                 return
                 game.brutus_snake.interact = "hello"
