@@ -2713,6 +2713,15 @@ class Actor(MotionManager, metaclass=use_on_events):
         self.busy += 1
     
 
+    def resolve_action(self):
+        """ Finish the current action and move into the next one or an idle """
+        if self._next_action in self._actions.keys():
+            self._do(self._next_action)
+            self._next_action = None
+        else: #try the default
+            self._do(self.default_idle)
+
+
     def _update(self, dt, obj=None):  # actor._update, use obj to override self
         self._vx, self._vy = 0, 0
         self._scroll_dx += self.scroll[0]
@@ -2788,11 +2797,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                     self._goto_x, self._goto_y = None, None
                     self._goto_dx, self._goto_dy = 0, 0
                     self._goto_deltas = []
-                    if self._next_action in self._actions.keys():
-                        self._do(self._next_action)
-                        self._next_action = None
-                    else: #try the default
-                        self._do(self.default_idle)
+                    self.resolve_action() 
          #   else:
           #      print("missed",target,self.x, self.y)
         #update the PyvidaSprite animate manually
@@ -5427,6 +5432,11 @@ class Scene(MotionManager, metaclass=use_on_events):
             objs.append(get_object(self.game, obj))
         objs.sort(key=lambda x: x.z, reverse=True)  # sort by z-value
         return objs
+
+    @property
+    def portals(self):
+        """ Return portals in this scene """
+        return [x for x in self.objects_sorted if isinstance(x, Portal)]
 
     def smart(self, game):  # scene.smart
         self.game = game
@@ -8065,6 +8075,9 @@ class Game(metaclass=use_on_events):
                 print("finished casting")
 
             if symbol == pyglet.window.key.F9:
+                game.brutus_snake.interact = "hello"
+                game.brutus_snake.restand((0,0))
+                return
                 game.camera.scene("palert")
                 game.menu.hide()
                 game.mixer.music_stop()
@@ -8649,6 +8662,8 @@ class Game(metaclass=use_on_events):
                             if valid_goto_point(self, self.scene, self.player, obj):
                                 self.player.goto(obj, block=True)
                                 self.player.set_idle(obj)
+                            else: # can't walk there, so do next_action if available to finish any stored actions.
+                                self.player.resolve_action()
                     if button & pyglet.window.mouse.RIGHT or self.mouse_mode == MOUSE_LOOK:
                         if obj.allow_look or allow_player_use:
                             user_trigger_look(self, obj)
@@ -9445,6 +9460,10 @@ class Game(metaclass=use_on_events):
             if self.scene:
                 scene = scene_search(self, self.scene, obj.name.upper())
                 if scene != False: #found a new scene
+                    portals = scene.portals
+                    portal = choice(portals) if len(portals)>0 else None            
+                    if portal:
+                        self.player.on_relocate(destination=portal.stand_point)
                     self.scene._remove(self.player) #remove from current scene
                     scene._add(self.player) #add to next scene
                     if logging:
