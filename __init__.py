@@ -1173,6 +1173,7 @@ class AchievementManager(object, metaclass=use_on_events):
         new_achievement.date = datetime.now()
         new_achievement.version = game.version
         self.granted[slug] = new_achievement
+        game.settings.save()
         return True
 
     def present(self, game, slug):
@@ -3536,10 +3537,10 @@ class Actor(MotionManager, metaclass=use_on_events):
         using = high_contrast if self.game.settings.high_contrast and os.path.isdir(
             myd) else background
         msgbox = get_object(self.game, using)
-        if not msgbox:  # assume using is a file
+        if not msgbox or len(msgbox._actions) == 0:  # assume using is a file
             msgbox_name = using if using else "msgbox" #default
             msgbox = self.game.add(
-                Item(msgbox_name).smart(self.game, using=using, assets=True))
+                Item(msgbox_name).smart(self.game, assets=True), replace=True)
         msgbox.load_assets(self.game)
     
         if ok == -1: #use the game's default ok
