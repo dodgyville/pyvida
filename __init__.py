@@ -5698,6 +5698,7 @@ class Scene(MotionManager, metaclass=use_on_events):
         mixer = self.game.mixer
         if mixer._music_filename: #store position of current track
             mixer.music_rules[mixer._music_filename].position = mixer._music_player.position()
+            if mixer.music_rules[mixer._music_filename].mode == KEEP_CURRENT: return # don't play scene song
         if self._music_filename:
             rule = mixer.music_rules[self._music_filename] if self._music_filename in mixer.music_rules else None
             start = rule.position if rule else 0
@@ -6765,6 +6766,7 @@ FRESH = 0 #restart song each time player enters scene.
 FRESH_BUT_SHARE = 1 #only restart if a different song to what is playing, else continue.
 PAIR = 2 #pair with other songs, jump to the same position in the song as the one we are leaving (good for muffling)
 REMEMBER = 3 #remember where we were in the song when we last played it.
+KEEP_CURRENT = 4
 
 class MusicRule():
     """ Container class for music rules, used by Mixer and Scenes """
@@ -6913,7 +6915,7 @@ class Mixer(metaclass=use_on_events):
             else: # no stash so just stop the current music
                 self.on_music_stop(volume=volume)
 
-    def on_music_play(self, fname=None, description=None, loops=-1, start=None, volume=None, push=False):
+    def on_music_play(self, fname=None, description=None, loops=-1, start=None, volume=None, push=False, rule_mode=FRESH_BUT_SHARE):
         """ Description is for subtitles 
             Treat as if we are playing it (remember it, etc), even if a flag stop actual audio.
             By default, if a song is already playing, don't load and restart it.
@@ -6930,6 +6932,7 @@ class Mixer(metaclass=use_on_events):
             else:
                 rule = MusicRule(fname) #default rule
                 self.music_rules[fname] = rule
+            rule.mode = rule_mode
 
             default_start = rule.position
             if self._music_filename == fname and rule.mode == FRESH_BUT_SHARE and pygame.mixer.music.get_busy() == True: #keep playing existing
@@ -8075,6 +8078,8 @@ class Game(metaclass=use_on_events):
                 print("finished casting")
 
             if symbol == pyglet.window.key.F9:
+                game.camera.scene("bvictory")
+                return
                 game.brutus_snake.interact = "hello"
                 game.brutus_snake.restand((0,0))
                 return
