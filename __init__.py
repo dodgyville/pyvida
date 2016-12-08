@@ -108,7 +108,7 @@ if DEBUG_NAMES:
     tmp_objects_first = {}
     tmp_objects_second = {}
 
-ENABLE_FKEYS = True # debug shortcut keys
+ENABLE_FKEYS = False # debug shortcut keys
 ENABLE_EDITOR = False and EDITOR_AVAILABLE # default for editor. Caution: This starts module reloads which ruins pickles 
 ENABLE_PROFILING = False
 ENABLE_LOGGING = True
@@ -4572,6 +4572,7 @@ class Portal(Actor, metaclass=use_on_events):
         for receiver, sender in post_arrive.receivers:
             receiver(self.game, portal, actor)
 
+
     def _pre_leave(self, portal, actor):
         # do the signals for post_interact
         for receiver, sender in pre_leave.receivers:
@@ -5232,6 +5233,7 @@ class WalkAreaManager(metaclass=use_on_events):
 
     def on_reset_to_default(self):
         self.on_polygon(DEFAULT_WALKAREA)
+
 
     def on_lock(self):
         """ Lock the walkarea so the player can't walk """
