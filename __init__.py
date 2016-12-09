@@ -9788,9 +9788,6 @@ class Game(metaclass=use_on_events):
                     item._icon.x, item._icon.y = item.clickable_area.centre
                     item._icon.pyglet_draw()
 
-        if self._info_object.display_text != "":
-            self._info_object.pyglet_draw(absolute=False)
-
         if popMatrix is True:
             glPopMatrix() #finish the scene draw
 
@@ -9818,6 +9815,9 @@ class Game(metaclass=use_on_events):
 #            self._mouse_object.x -= self._mouse_object.w//2
 #            self._mouse_object.y -= self._mouse_object.h//2
             self._mouse_object.pyglet_draw()
+
+        if self._info_object.display_text != "":
+            self._info_object.pyglet_draw(absolute=False)
 
         if self.editor: #draw mouse coords at mouse pos
             x,y = self.mouse_position
