@@ -3044,7 +3044,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                  "It looks unremarkable to me."]
         else:  # probably an Actor object
             c = ["They're not very interesting.",
-                 "I prefer to look at the good looking.",
+                 "I probably shouldn't stare.",
                  ]
         if self.game.player:
             self.game.player.says(choice(c))
