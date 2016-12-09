@@ -7444,6 +7444,9 @@ def load_game_pickle(game, fname, meta_only=False, keep=[]):
             game.set_engine(engine_info)
             game.storage = pickle.load(f)
             game.storage._last_load_time = datetime.now()
+            if game.mixer: # stop all music and ambient noise before rebuilding mixer
+                game.mixer.on_music_stop()
+                game.mixer.on_ambient_stop()
 
             game.mixer = pickle.load(f)
 
@@ -7471,7 +7474,6 @@ def load_game_pickle(game, fname, meta_only=False, keep=[]):
             for objects in [game._actors.values(), game._items.values(), game._scenes.values()]:
                 for o in objects:
                     restore_object(game, o)
-
 
             #switch off headless mode to force graphical assets of most recently
             #accessed scenes to load.
@@ -8612,6 +8614,13 @@ class Game(metaclass=use_on_events):
         if self._drag:
             self._drag._drag(self, self._drag, self.player)
             self._drag = None
+
+
+        # if in use mode and player right-clicks, then cancel use mode
+        if button & pyglet.window.mouse.RIGHT and self.mouse_mode == MOUSE_USE and self._mouse_object:
+            self._mouse_object = None
+            self.mouse_mode = MOUSE_INTERACT
+            return
 
         # modals are absolute (they aren't displaced by camera)
         for name in self._modals:
