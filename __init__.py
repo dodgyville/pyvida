@@ -1629,7 +1629,10 @@ class Action(object):
         self.game = game
         fname = os.path.splitext(filename)[0]
         montage_fname = fname + ".montage"
-        self._image = os.path.relpath(filename)
+        try:
+            self._image = os.path.relpath(filename)
+        except ValueError: # if relpath fails due to cx_Freeze expecting different mounts
+            self._image = filename
         if not os.path.isfile(montage_fname):
             if not os.path.isfile(filename): 
                 w,h = 0,0
@@ -3071,8 +3074,12 @@ class Actor(MotionManager, metaclass=use_on_events):
             action_name = os.path.splitext(os.path.basename(action_file))[0]
             if action_name in exclude:
                 continue
+            try:
+                relname = os.path.relpath(action_file)
+            except ValueError: # if relpath fails due to cx_Freeze expecting different mounts                
+                relname = action_file
             action = Action(action_name).smart(
-                game, actor=self, filename=os.path.relpath(action_file))
+                game, actor=self, filename=relname)
             self._actions[action_name] = action
             if action_name in PATHPLANNING:
                 action.available_for_pathplanning = True
@@ -3153,7 +3160,11 @@ class Actor(MotionManager, metaclass=use_on_events):
                 f = open(os.path.join(d, "%s/placeholder.txt" % name), "a")
                 f.close()
 
-        self._images = [os.path.relpath(x) for x in images] # make storage relative
+        try:
+            self._images = [os.path.relpath(x) for x in images] # make storage relative
+        except ValueError: # cx_Freeze on windows on different mounts may confuse relpath.
+            self._images = images
+
         self._smart_actions(game)  # load the actions
         self._smart_motions(game)  # load the motions
 
@@ -6761,7 +6772,8 @@ class PlayerPygameMusic():
             pass
 
     def volume(self, v):
-        pygame.mixer.music.set_volume(v)
+        if pygame.mixer.get_init() != None:
+            pygame.mixer.music.set_volume(v)
 
 
 FRESH = 0 #restart song each time player enters scene.
