@@ -6251,6 +6251,11 @@ class MenuManager(metaclass=use_on_events):
         """ pull a menu off the list of menus """
         if self.game._menus:
             self.game._menu = self.game._menus.pop()
+            for i in self.game._menu:
+                obj = get_object(self.game, i)
+                if obj:
+                    obj.load_assets(self.game)
+
         if logging:
             log.debug("pop menu %s" % [x for x in self.game._menu])
 
@@ -10344,7 +10349,7 @@ class Game(metaclass=use_on_events):
         args = list(args)
         args.reverse()
         for i in args:
-            obj = get_object(self, i)
+            obj = get_object(self, i)            
             if obj:
                 obj.load_assets(self)
                 self._menu.append(obj.name)
