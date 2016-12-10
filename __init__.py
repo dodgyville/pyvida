@@ -108,7 +108,7 @@ if DEBUG_NAMES:
     tmp_objects_first = {}
     tmp_objects_second = {}
 
-ENABLE_FKEYS = False # debug shortcut keys
+ENABLE_FKEYS = True # debug shortcut keys
 ENABLE_EDITOR = False and EDITOR_AVAILABLE # default for editor. Caution: This starts module reloads which ruins pickles 
 ENABLE_PROFILING = False
 ENABLE_LOGGING = True
@@ -7730,8 +7730,11 @@ class Game(metaclass=use_on_events):
                 nw,nh = int(nw), int(nh)
                 resolution, scale = fit_to_screen((w, h), (nw, nh))
                 self.create_bars(nw, nh)
-        else:
-            resolution, scale = fit_to_screen((w, h), resolution)
+        else: # only scale window if it's larger than screen.
+            if resolution[0] > w or resolution[1] > h:
+                resolution, scale = fit_to_screen((w, h), resolution)
+            else:
+                scale = 1.0
         self._scale = scale
         self._bars = [] #black bars in fullscreen, (pyglet image, location)
         self._window_dx = 0 # displacement by fullscreen mode
