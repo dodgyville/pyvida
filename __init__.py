@@ -3241,10 +3241,8 @@ class Actor(MotionManager, metaclass=use_on_events):
             x += self.game.scene.x * self.z
             y -= self.game.scene.y * self.z
             if self.game.camera:
-                x += randint(-self.game.camera._shake_x,
-                             self.game.camera._shake_x)
-                y += randint(-self.game.camera._shake_y,
-                             self.game.camera._shake_y)
+                x += self.game.camera._shake_dx
+                y += self.game.camera._shake_dy
 
         #displace if shaking
         x += randint(-self._shakex, self._shakex)
@@ -4854,10 +4852,8 @@ class Emitter(Item, metaclass=use_on_events):
                 x += self.game.scene.x * self.z
                 y -= self.game.scene.y * self.z
                 if self.game.camera:
-                    x += randint(-self.game.camera._shake_x,
-                                 self.game.camera._shake_x)
-                    y += randint(-self.game.camera._shake_y,
-                                 self.game.camera._shake_y)
+                    x += self.game.camera._shake_dx
+                    y += self.game.camera._shake_dy
 
             if self.resource is not None:
                 self.resource._frame_index = p.action_index%self.action.num_of_frames
@@ -6305,6 +6301,8 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._speed = self.speed  # current camera speed
         self._shake_x = 0
         self._shake_y = 0
+        self._shake_dx = 0
+        self._shake_dy = 0
         self._overlay = None  # image to overlay
         self._overlay_opacity_delta = 0
         self._overlay_cycle = 0 # used with overlay counter to trigger next stage in fx
@@ -6362,6 +6360,14 @@ class Camera(metaclass=use_on_events):  # the view manager
                 for obj_name in self.game.scene._objects:
                     obj = get_object(self.game, obj_name)
                     obj.on_tint(self._overlay_tint)
+
+        self._shake_dx, self._shake_dy = 0,0
+        if self._shake_x != 0:
+            self._shake_dx = randint(-self._shake_x,
+                         self._shake_x)
+        if self._shake_y != 0:
+            self._shake_dy = randint(-self._shake_y,
+                         self._shake_y)
 
         if self._overlay:
             if self._overlay_end:
@@ -8102,6 +8108,15 @@ class Game(metaclass=use_on_events):
                 print("finished casting")
 
             if symbol == pyglet.window.key.F9:
+                from scripts.classes import Kaleidoscope
+                game.camera.scene("blank")
+                mm = Kaleidoscope("hello")
+                game.add(mm)
+                game.tycho.relocate("blank", (0,0))
+                game.tycho.scale = 0.9
+                mm.relocate("blank", (800,450))
+                game._scenes["blank"].walkarea.freeroam()
+                return
                 fn = get_function(self, "interact_romy_victory")
                 fn(game, None, None)
                 return
