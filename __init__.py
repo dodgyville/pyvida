@@ -78,7 +78,7 @@ except ImportError:
 
 benchmark_events = datetime.now()
 
-GAME_SAVE_NAME = "spaceout2b9" # XXX should match game, should be engine independent.
+GAME_SAVE_NAME = "spaceout2" # XXX should match game, should be engine independent.
 
 SAVE_DIR = "saves"
 if "LOCALAPPDATA" in os.environ: #win 7
@@ -3105,6 +3105,23 @@ class Actor(MotionManager, metaclass=use_on_events):
                 __import__(module_name)  # load now
                 # reload now to refresh existing references
                 self.game.reload_modules(modules=[module_name])
+
+
+    def on_swap_actions(self, actions, prefix=None, postfix=None):
+        """ Take a list of actions and replace them with prefix_action eg set_actions(["idle", "over"], postfix="off") 
+            will make Actor._actions["idle"] = Actor._actions["idle_off"]
+        """
+        if logging: log.info("player.set_actions using prefix %s on %s"%(prefix, actions))
+        self.editor_clean = False #actor no longer has permissions as set by editor
+        for i in actions: 
+            key = i
+            if prefix:
+                key = "%s_%s"%(prefix, key)
+            if postfix:
+                key = "%s_%s"%(key, postfix)
+            if key in self._actions:
+                self._actions[i] = self._actions[key]
+
 
     # actor.smart
     def smart(self, game, image=None, using=None, idle="idle", action_prefix="", assets=False):
