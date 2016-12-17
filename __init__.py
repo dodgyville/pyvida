@@ -975,6 +975,26 @@ def get_smart_directory(game, obj):
     return d
 
 
+def get_best_directory(game, d_raw):
+    """ Test for mod high contrast, game high contrast, a mod directory, 
+        the game directory or the pyvida directory and return the best option                 
+    """
+    key = os.path.basename(os.path.normpath(d_raw))
+    HC = "_highcontrast"
+    key_hc = "%s%s"%(key, HC) # inventory_highcontrast
+    base = os.path.dirname(os.path.normpath(d))
+    d_mod_hc = os.path.join(os.path.join("mod", base), key_hc)  #eg mod/data/items/inventory_highcontrast
+    d_hc = os.path.join(os.path.join("mod", base), key_hc) #eg data/items/inventory_highcontrast
+    d_mod = os.path.join(os.path.join("mod", base), key) #eg mod/data/items/inventory
+    d = os.path.join(base, key) #eg data/items/inventory, same as d_raw
+    if self.game.settings.high_contrast:
+        directories = [d_mod_hc, d_hc, d_mod, d]
+    else: # no high contrast
+        directories = [d_mod, d]
+    for directory in directories:
+        if os.path.isdir(directory):
+            return directory
+
 def get_function(game, basic, obj=None):
     """ 
         Search memory for a function that matches this name 
@@ -3563,7 +3583,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         # do high contrast if requested and available
         log.info("%s on says %s" % (self.name, text))
         background = using if using else None
-        high_contrast = "%s_high_contrast" % ("msgbox" if not using else using)
+        high_contrast = "%s_highcontrast" % ("msgbox" if not using else using)
         myd = os.path.join(self.game.directory_items, high_contrast)
         using = high_contrast if self.game.settings.high_contrast and os.path.isdir(
             myd) else background
@@ -8066,6 +8086,10 @@ class Game(metaclass=use_on_events):
     def time_in_game(self):
         return self.storage._total_time_in_game + (datetime.now() - self.storage._last_load_time)
 
+    def on_test_arrive_at_generated_scene(self, key):
+        arrive_at_generated_scene = get_function(self, "arrive_at_generated_scene")
+        arrive_at_generated_scene(self,  key)
+
     def on_key_press(self, symbol, modifiers):
         global use_effect
         game = self
@@ -8125,6 +8149,10 @@ class Game(metaclass=use_on_events):
                 print("finished casting")
 
             if symbol == pyglet.window.key.F9:
+                for key in game.storage.backer_planets_details.keys():
+                    self.test_arrive_at_generated_scene(key)
+                    self.wait_for_user()
+                return
                 from scripts.classes import Kaleidoscope
                 game.camera.scene("blank")
                 mm = Kaleidoscope("hello")
