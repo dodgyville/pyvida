@@ -1016,7 +1016,7 @@ def get_best_file(game, f_raw):
         test_f = os.path.join(directory, f_name)
         if os.path.exists(test_f):
             return test_f
-
+    return f_raw # use default
 
 
 def get_function(game, basic, obj=None):
@@ -1714,7 +1714,7 @@ class Action(object):
             return
         actor = get_object(game, self.actor)
         
-        quickload = get_best_file(game, os.path.abspath(os.path.splitext(self._image)[0] + ".quickload"))        
+        quickload = os.path.abspath(get_best_file(game, os.path.splitext(self._image)[0] + ".quickload"))
 
         full_load = True
         resource = False #don't update resource
@@ -1755,7 +1755,6 @@ class Action(object):
 
         set_resource(self.resource_name, resource = resource, w=w, h=h)
         self._loaded = True
-       
         if full_load is True and not os.path.isfile(quickload):
             try:
                 with open(quickload, "w") as f:
@@ -7554,8 +7553,15 @@ def load_game_pickle(game, fname, meta_only=False, keep=[], responsive=False):
             sys.path.extend(game._sys_paths)
             game._resident = pickle.load(f)
             game._actors = pickle.load(f)
-            game._items = pickle.load(f)
+            new_items = pickle.load(f)
+            game._items = new_items
             game._scenes = pickle.load(f)
+            for obj in keep_scene_objects:
+                game.add(obj, replace=True)
+                scene = get_object(game, obj._scene)
+                if scene:
+                    scene._add(obj)
+#                game.scene._add(obj)
 
             # restore game object and editable info
             for objects in [game._actors.values(), game._items.values(), game._scenes.values()]:
@@ -7595,9 +7601,6 @@ def load_game_pickle(game, fname, meta_only=False, keep=[], responsive=False):
                     log.error("Unable to import {}".format(module_name))
             game.reload_modules()  # reload now to refresh existing references
 #            log.warning("POST UNPICKLE inventory %s"%(game.inventory.name))
-    for obj in keep_scene_objects:
-        game.add(obj)
-        game.scene._add(obj)
 
     if responsive:
         game._generator = None
@@ -7639,10 +7642,15 @@ def load_game(game, fname, meta_only=False, keep=[]):
         pass
     return meta
 
-def load_game_responsive(game, fname, meta_only=False, keep=[], callback=None):
+def load_game_responsive(game, fname, meta_only=False, keep=[], callback=None, progress=None):
+    """
+        callback when finished
+        progress called every yield
+    """
     if meta_only:
         raise InputError("responsive doesn't handle meta_only)")
     game._generator = load_game_pickle(game, fname, meta_only=meta_only, keep=keep, responsive=True)
+    game._generator_progress = progress
     game._generator_callback = callback
 #    game._generator_args = (game, fname, meta_only, keep)
     return None
@@ -7765,6 +7773,7 @@ class Game(metaclass=use_on_events):
         self.engine = engine
         self._generator = None # are we calling a generator while inside the run loop, block inputs
         self._generator_callback = None
+        self._generator_progress = None
 
         self.camera = Camera(self)  # the camera object
         self.settings = None # game-wide settings 
@@ -9756,15 +9765,18 @@ class Game(metaclass=use_on_events):
             fn(self, dt, single_event)
 
         if self._generator:
-            print("next generator")
             try:
                 for i in range(1,10):
                     next(self._generator)
             except StopIteration:
-                print("FINISHED GENERATOR")
                 self._generator = None
+                self._generator_progress = None
                 if self._generator_callback:
                     self._generator_callback(self)
+                    self._generator_callback = None
+
+            if self._generator_progress:
+                self._generator_progress(self)
 
         if self._joystick:
 #            print(self._joystick.__dict__)
