@@ -108,7 +108,7 @@ if DEBUG_NAMES:
     tmp_objects_first = {}
     tmp_objects_second = {}
 
-ENABLE_FKEYS = False # debug shortcut keys
+ENABLE_FKEYS = True # debug shortcut keys
 ENABLE_EDITOR = False and EDITOR_AVAILABLE # default for editor. Caution: This starts module reloads which ruins pickles 
 ENABLE_PROFILING = False
 ENABLE_LOGGING = True
@@ -982,18 +982,42 @@ def get_best_directory(game, d_raw):
     key = os.path.basename(os.path.normpath(d_raw))
     HC = "_highcontrast"
     key_hc = "%s%s"%(key, HC) # inventory_highcontrast
-    base = os.path.dirname(os.path.normpath(d))
+    base = os.path.dirname(os.path.normpath(d_raw))
     d_mod_hc = os.path.join(os.path.join("mod", base), key_hc)  #eg mod/data/items/inventory_highcontrast
     d_hc = os.path.join(os.path.join("mod", base), key_hc) #eg data/items/inventory_highcontrast
     d_mod = os.path.join(os.path.join("mod", base), key) #eg mod/data/items/inventory
     d = os.path.join(base, key) #eg data/items/inventory, same as d_raw
-    if self.game.settings.high_contrast:
+    if game.settings.high_contrast:
         directories = [d_mod_hc, d_hc, d_mod, d]
     else: # no high contrast
         directories = [d_mod, d]
     for directory in directories:
         if os.path.isdir(directory):
             return directory
+
+def get_best_file(game, f_raw):
+    """ Test for mod high contrast, game high contrast, a mod directory, 
+        the game directory or the pyvida directory and return the best option                 
+    """
+    d_raw, f_name = os.path.split(f_raw)
+    key = os.path.basename(os.path.normpath(d_raw))
+    HC = "_highcontrast"
+    key_hc = "%s%s"%(key, HC) # inventory_highcontrast
+    base = os.path.dirname(os.path.normpath(d_raw))
+    d_mod_hc = os.path.join(os.path.join("mod", base), key_hc)  #eg mod/data/items/inventory_highcontrast
+    d_hc = os.path.join(os.path.join("mod", base), key_hc) #eg data/items/inventory_highcontrast
+    d_mod = os.path.join(os.path.join("mod", base), key) #eg mod/data/items/inventory
+    d = os.path.join(base, key) #eg data/items/inventory, same as d_raw
+    if game.settings.high_contrast:
+        directories = [d_mod_hc, d_hc, d_mod, d]
+    else: # no high contrast
+        directories = [d_mod, d]
+    for directory in directories:
+        test_f = os.path.join(directory, f_name)
+        if os.path.exists(test_f):
+            return test_f
+
+
 
 def get_function(game, basic, obj=None):
     """ 
@@ -1689,7 +1713,8 @@ class Action(object):
                 self.name, getattr(self.actor, "name", self.actor)))
             return
         actor = get_object(game, self.actor)
-        quickload = os.path.abspath(os.path.splitext(self._image)[0] + ".quickload")
+        
+        quickload = get_best_file(game, os.path.abspath(os.path.splitext(self._image)[0] + ".quickload"))        
 
         full_load = True
         resource = False #don't update resource
@@ -1710,7 +1735,7 @@ class Action(object):
                         pass
                     
         if full_load is True:
-            image = load_image(self._image)
+            image = load_image(get_best_file(game, self._image))
             if not image:
                 log.error("Load action {} assets for actor {} has not loaded an image".format(
                     self.name, getattr(actor, "name", actor)))
@@ -5474,8 +5499,10 @@ class Scene(MotionManager, metaclass=use_on_events):
         """ Sort scene objects by z value """
         obj_names = copy.copy(self._objects)
         objs = []
-        for obj in obj_names:
-            objs.append(get_object(self.game, obj))
+        for obj_name in obj_names:
+            obj = get_object(self.game, obj_name)
+            if obj:
+                objs.append(obj)
         objs.sort(key=lambda x: x.z, reverse=True)  # sort by z-value
         return objs
 
@@ -5514,15 +5541,21 @@ class Scene(MotionManager, metaclass=use_on_events):
 
     def load_assets(self, game): #scene.load
 #        print("loading assets for scene",self.name)
+        for i in self.load_assets_responsive(game):
+            pass
+
+    def load_assets_responsive(self, game):
         if not self.game: self.game = game
         for obj_name in self._objects:
             obj = get_object(self.game, obj_name)
             if obj:
                 obj.load_assets(self.game)
+                yield
         for obj_name in self._layer:
             obj = get_object(self.game, obj_name)
             if obj:
                 obj.load_assets(self.game)
+                yield
 
     def unload_assets(self):  # scene.unload
         for obj_name in self._objects:
@@ -7477,7 +7510,13 @@ def load_menu_assets(game):
             obj.load_assets(game)
 
 
-def load_game_pickle(game, fname, meta_only=False, keep=[]):
+def load_game_meta_pickle(game, fname):
+    with open(fname, "rb") as f:
+        meta = pickle.load(f)
+    return meta
+
+def load_game_pickle(game, fname, meta_only=False, keep=[], responsive=False):
+    """ A generator function, call and set """
     global _pyglet_fonts
     keep_scene_objects = []
     for i in keep:
@@ -7522,6 +7561,7 @@ def load_game_pickle(game, fname, meta_only=False, keep=[]):
             for objects in [game._actors.values(), game._items.values(), game._scenes.values()]:
                 for o in objects:
                     restore_object(game, o)
+                    yield
 
             #switch off headless mode to force graphical assets of most recently
             #accessed scenes to load.
@@ -7530,7 +7570,8 @@ def load_game_pickle(game, fname, meta_only=False, keep=[]):
             for scene_name in game._resident:
                 scene = get_object(game, scene_name)
                 if scene:
-                    scene.load_assets(game)
+                    for i in scene.load_assets_responsive(game): 
+                        yield
                 else:
                     log.warning("Pickle load: scene %s is resident but not actually in Game, "%scene_name)
             load_menu_assets(game)
@@ -7557,6 +7598,9 @@ def load_game_pickle(game, fname, meta_only=False, keep=[]):
     for obj in keep_scene_objects:
         game.add(obj)
         game.scene._add(obj)
+
+    if responsive:
+        game._generator = None
     return meta
 
 
@@ -7587,10 +7631,21 @@ def save_game(game, fname):
 
 
 def load_game(game, fname, meta_only=False, keep=[]):
-    meta = load_game_pickle(game, fname, meta_only=meta_only, keep=keep)
-    if meta_only is False:
+    meta = load_game_meta_pickle(game, fname)
+    if meta_only:
+        return meta
+    # run the load game generator in place
+    for i in load_game_pickle(game, fname, meta_only=meta_only, keep=keep):
         pass
     return meta
+
+def load_game_responsive(game, fname, meta_only=False, keep=[], callback=None):
+    if meta_only:
+        raise InputError("responsive doesn't handle meta_only)")
+    game._generator = load_game_pickle(game, fname, meta_only=meta_only, keep=keep, responsive=True)
+    game._generator_callback = callback
+#    game._generator_args = (game, fname, meta_only, keep)
+    return None
 
 def save_settings(game, fname):
     """ save the game settings (eg volume, accessibilty options) """
@@ -7708,6 +7763,8 @@ class Game(metaclass=use_on_events):
         self.scene = None
         self.version = version
         self.engine = engine
+        self._generator = None # are we calling a generator while inside the run loop, block inputs
+        self._generator_callback = None
 
         self.camera = Camera(self)  # the camera object
         self.settings = None # game-wide settings 
@@ -7761,50 +7818,6 @@ class Game(metaclass=use_on_events):
         self.resolution = resolution
         self.nuke = False #nuke platform dependent files such as game.settings
 
-        # scale the game if the screen is too small
-        # don't allow game to be bigger than the available screen.
-        # we do this using a glScalef call which makes it invisible to the engine
-        # except that mouse inputs will also need to be scaled, so store the
-        # new scale factor
-        display = pyglet.window.get_platform().get_default_display()
-        w = display.get_default_screen().width
-        h = display.get_default_screen().height
-        options = self.parser.parse_args()
-        if options.resolution: 
-            if options.resolution == "0": # use game resolution with no scaling.
-                scale = 1.0
-            else: # custom window size
-                nw,nh = options.resolution.split("x")
-                nw,nh = int(nw), int(nh)
-                resolution, scale = fit_to_screen((w, h), (nw, nh))
-                self.create_bars(nw, nh)
-        else: # only scale window if it's larger than screen.
-            if resolution[0] > w or resolution[1] > h:
-                resolution, scale = fit_to_screen((w, h), resolution)
-            else:
-                scale = 1.0
-        self._scale = scale
-        self._bars = [] #black bars in fullscreen, (pyglet image, location)
-        self._window_dx = 0 # displacement by fullscreen mode
-        self._window_dy = 0
-        self.fullscreen = DEFAULT_FULLSCREEN # will be set by toggle_fullscreen
-
-
-#        config = pyglet.gl.Config(double_buffer=True, vsync=True)
-        #config = pyglet.gl.Config(alpha_size=4)
-        self._window = Window(*resolution)
-        self._window_editor = None
-        self._window_editor_objects = []
-
-        if scale != 1.0:
-            pyglet.gl.glScalef(scale, scale, scale)
-
-        self._window.on_key_press = self.on_key_press
-        self._window.on_mouse_motion = self.on_mouse_motion
-        self._window.on_mouse_press = self.on_mouse_press
-        self._window.on_mouse_release = self.on_mouse_release
-        self._window.on_mouse_drag = self.on_mouse_drag
-        self._window.on_mouse_scroll = self.on_mouse_scroll
 #        self._window.on_joybutton_release = self.on_joybutton_release
         self.last_mouse_release = None  # track for double clicks
         self._pyglet_batches = []
@@ -7879,6 +7892,10 @@ class Game(metaclass=use_on_events):
         self._editing_point_get = None  # the get fns to pump in new x,y coords
         self._editing_label = None  # what is the name of var(s) we're editing
 
+        self._window_editor = None
+        self._window_editor_objects = []
+
+
         # how many event steps in this progress block
         self._progress_bar_count = 0
         # how far along the event list are we for this progress block
@@ -7898,7 +7915,6 @@ class Game(metaclass=use_on_events):
         # which image to use
         self._joystick = None # pyglet joystick
         self._object_index = 0 # used by joystick and blind mode to select scene objects
-        self.mouse_cursor = self._mouse_cursor = MOUSE_POINTER
         self._mouse_object = None  # if using an Item or Actor as mouse image
         self.hide_cursor = HIDE_MOUSE
         self.mouse_down = (0, 0)  # last press
@@ -7915,6 +7931,42 @@ class Game(metaclass=use_on_events):
         #this is on by default to allow Motions to sync with Sprites.
         self._lock_updates_to_draws = LOCK_UPDATES_TO_DRAWS 
     
+    def init(self):
+        """ Complete all the pyglet and pygame initiliastion """
+        # scale the game if the screen is too small
+        # don't allow game to be bigger than the available screen.
+        # we do this using a glScalef call which makes it invisible to the engine
+        # except that mouse inputs will also need to be scaled, so store the
+        # new scale factor
+        self._bars = [] #black bars in fullscreen, (pyglet image, location)
+        self._window_dx = 0 # displacement by fullscreen mode
+        self._window_dy = 0
+
+        fullscreen = self.settings.fullscreen if self.settings and self.settings.fullscreen else DEFAULT_FULLSCREEN
+
+        options = self.parser.parse_args()
+        if options.fullscreen: fullscreen = True
+
+        if options.resolution: # force a resolution
+            if options.resolution == "0": # use game resolution with no scaling.
+                scale = 1.0
+            else: # custom window size
+                nw,nh = options.resolution.split("x")
+                nw,nh = int(nw), int(nh)
+                self.resolution = (nw, nh)
+        self.reset_window(fullscreen, create=True) # create self._window
+
+        self._window.on_key_press = self.on_key_press
+        self._window.on_mouse_motion = self.on_mouse_motion
+        self._window.on_mouse_press = self.on_mouse_press
+        self._window.on_mouse_release = self.on_mouse_release
+        self._window.on_mouse_drag = self.on_mouse_drag
+        self._window.on_mouse_scroll = self.on_mouse_scroll
+
+
+        # other non-window stuff
+        self.mouse_cursor = self._mouse_cursor = MOUSE_POINTER
+
         self.reset_info_object()
 #        pyglet.clock.schedule_interval(
 #            self._monitor_scripts, 2)  # keep reloading scripts
@@ -7926,8 +7978,8 @@ class Game(metaclass=use_on_events):
             pyglet.clock.set_fps_limit(self.fps)
         else:
             pyglet.clock.schedule_interval(self.combined_update, 1 / self.fps)
-
         self.fps_clock = pyglet.clock.ClockDisplay()
+
 
     def close(self):
         """ Close this window """
@@ -8574,6 +8626,8 @@ class Game(metaclass=use_on_events):
         """ If the mouse is over an object with a down action, switch to that action """
         if self.editor: #draw mouse coords at mouse pos
             print('    (%s, %s), '%(x, self.resolution[1] - y))
+        if self._generator:
+            return
 
         x, y = x / self._scale, y / self._scale  # if window is being scaled
         if self.scene:
@@ -8623,6 +8677,8 @@ class Game(metaclass=use_on_events):
             self.mouse_position_raw = self.get_raw_from_point(x,y)
 
     def on_joybutton_release(self, joystick, button):
+        if self._generator:
+            return
         if not self._joystick:
             return
         modifiers = 0
@@ -8637,6 +8693,8 @@ class Game(metaclass=use_on_events):
 
     def on_mouse_release(self, raw_x, raw_y, button, modifiers):
         """ Call the correct function depending on what the mouse has clicked on """
+        if self._generator:
+            return
         if self._waiting_for_user: # special function that allows easy story beats
             self._waiting_for_user = False
             return
@@ -8794,6 +8852,9 @@ class Game(metaclass=use_on_events):
 
 
     def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
+        if self._generator:
+            return
+
         if self._motion_output != None: #output the delta from the last point.
 #            ddx,ddy = self.mouse_position[0] - self._motion_output[0], self.mouse_position[1] - self._motion_output[1]
             print("%i,%i"%(dx,-dy))
@@ -9319,9 +9380,6 @@ class Game(metaclass=use_on_events):
                 print("WARNING, ART REACTOR CAN'T RUN IN HEADLESS MODE")
             d = "imagereactor %s" % datetime.now()
             self._imagereactor_directory = os.path.join(DIRECTORY_SAVES, d)
-
-        if options.fullscreen:
-            self.on_toggle_fullscreen(True)
             # import pdb; pdb.set_trace() #Don't do this. Lesson learned.
 
         if splash:
@@ -9697,6 +9755,17 @@ class Game(metaclass=use_on_events):
         if fn:
             fn(self, dt, single_event)
 
+        if self._generator:
+            print("next generator")
+            try:
+                for i in range(1,10):
+                    next(self._generator)
+            except StopIteration:
+                print("FINISHED GENERATOR")
+                self._generator = None
+                if self._generator_callback:
+                    self._generator_callback(self)
+
         if self._joystick:
 #            print(self._joystick.__dict__)
             x = self.mouse_position_raw[0] + self._joystick.x * 40
@@ -9713,13 +9782,17 @@ class Game(metaclass=use_on_events):
 #        dt = self.fps #time passed (in milliseconds)
         if self.scene:
             for obj_name in self.scene._objects:
-                scene_objects.append(get_object(self, obj_name))
+                obj = get_object(self, obj_name)
+                if obj:
+                    scene_objects.append(obj)
             self.scene._update(dt)
 
         modal_objects = []
         if self._modals:
             for obj_name in self._modals:
-                modal_objects.append(get_object(self, obj_name))
+                obj = get_object(self, obj_name)
+                if obj:
+                    modal_objects.append(obj)
 
         layer_objects = self.scene._layer if self.scene else []
         # update all the objects in the scene or the event queue.
@@ -9824,7 +9897,9 @@ class Game(metaclass=use_on_events):
         scene_objects = []
         if self.scene:
             for obj_name in self.scene._objects:
-                scene_objects.append(get_object(self, obj_name))
+                obj = get_object(self, obj_name)
+                if obj:
+                    scene_objects.append(obj)
         # - x._parent.y if x._parent else 0
         try:
             objects = sorted(scene_objects, key=lambda x: x.rank, reverse=False)
@@ -10290,11 +10365,22 @@ class Game(metaclass=use_on_events):
                 log.info("game has finished on_pause, so decrement game.busy to %i." % (self.busy))
         pyglet.clock.schedule_once(pause_finish, duration, self)
 
-    def create_bars(self, w,h):
-        resolution, scale = fit_to_screen((w, h), self.resolution)
-        sw, sh = resolution
+    def create_bars_and_scale(self, w, h, scale):
+        """ Fit game to requested window size """
+#        resolution, scale = fit_to_screen((w, h), self.resolution)
+        print("create and scale",w,h,scale)
+        sw, sh = w,h
+        display = pyglet.window.get_platform().get_default_display()
+        w = display.get_default_screen().width
+        h = display.get_default_screen().height
+
+
+        print("ON FULLSCREEN w==sw",w,sw,h,sh)
         self._window_dx = dx = (w-sw)/2/scale
         self._window_dy = dy = (h-sh)/2/scale
+        if scale != 1.0:
+            pyglet.gl.glScalef(scale, scale, scale)
+        print("MOVING SCENE", dx,dy, scale, scale)
         glTranslatef(dx, dy, 0) #move to middle of screen
         self._bars = []
         pattern =  pyglet.image.SolidColorImagePattern((0, 0, 0, 255))
@@ -10307,6 +10393,38 @@ class Game(metaclass=use_on_events):
             self._bars.append((image, (0,-dy)))
             self._bars.append((image, (0,sh/scale)))
 
+    def reset_window(self, fullscreen, create=False):
+        """ Make the game screen fit the window, create if requested """
+
+        display = pyglet.window.get_platform().get_default_display()
+        w = display.get_default_screen().width
+        h = display.get_default_screen().height
+
+        width, height = self.resolution
+        scale = 1.0
+
+        resolution, new_scale = fit_to_screen((w, h), self.resolution)
+        print("FULLSCREEN", fullscreen,"new resolution",resolution,self.resolution)
+
+        # only scale non-fullscreen window if it's larger than screen.
+        # or if it's fullscreen, always scale to fit screen
+        if fullscreen or (not fullscreen and (width > w or height > h)):
+            #resolution, scale = fit_to_screen((w, h), resolution)
+            width, height = resolution
+            scale = new_scale
+            print("SCALING",resolution, scale)
+
+        if create: 
+            self._window = Window(width=width, height=height, fullscreen=fullscreen) 
+        self._scale = scale
+        self.fullscreen = fullscreen #status of this session
+
+        if fullscreen: # work out blackbars if needed
+            self.create_bars_and_scale(width, height, scale)
+        else: # move back
+            self._bars = []
+            glTranslatef(-self._window_dx,-self._window_dy, 0) #move back to corner of window
+            self._window_dx, self._window_dy = 0, 0
 
     def on_toggle_fullscreen(self, fullscreen=None):
         """ Toggle fullscreen, or use <fullscreen> to set the value """
@@ -10317,21 +10435,8 @@ class Game(metaclass=use_on_events):
         if self.settings:
             self.settings.fullscreen = fullscreen
             # XXX do we need to save settings here? Or should we even be doing this here?
-
-        self.fullscreen = fullscreen #status of this session
-
         self._window.set_fullscreen(fullscreen)
-        if fullscreen: # work out blackbars if needed
-            display = pyglet.window.get_platform().get_default_display()
-            w = display.get_default_screen().width
-            h = display.get_default_screen().height
-            self.create_bars(w, h)
-        else:
-            self._bars = []
-            glTranslatef(-self._window_dx,-self._window_dy, 0) #move back to corner of window
-            self._window_dx, self._window_dy = 0, 0
-
-
+        self.reset_window(fullscreen)
 
     def on_splash(self, image, callback, duration=None, immediately=False):
         """ show a splash screen then pass to callback after duration 
