@@ -10411,18 +10411,20 @@ class Game(metaclass=use_on_events):
             width, height = resolution
             scale = new_scale
             print("SCALING",resolution, scale)
-
         if create: 
             self._window = Window(width=width, height=height, fullscreen=fullscreen) 
         self._scale = scale
         self.fullscreen = fullscreen #status of this session
 
+        self.create_bars_and_scale(width, height, scale)
+
+        """
         if fullscreen: # work out blackbars if needed
-            self.create_bars_and_scale(width, height, scale)
         else: # move back
             self._bars = []
             glTranslatef(-self._window_dx,-self._window_dy, 0) #move back to corner of window
             self._window_dx, self._window_dy = 0, 0
+        """
 
     def on_toggle_fullscreen(self, fullscreen=None):
         """ Toggle fullscreen, or use <fullscreen> to set the value """
