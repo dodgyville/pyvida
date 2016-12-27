@@ -7958,7 +7958,8 @@ class Game(metaclass=use_on_events):
         fullscreen = self.settings.fullscreen if self.settings and self.settings.fullscreen else DEFAULT_FULLSCREEN
 
         options = self.parser.parse_args()
-        if options.fullscreen: fullscreen = True
+        if options.fullscreen: 
+            fullscreen = not fullscreen
 
         if options.resolution: # force a resolution
             if options.resolution == "0": # use game resolution with no scaling.
@@ -8934,7 +8935,7 @@ class Game(metaclass=use_on_events):
         self.parser.add_argument("-e", "--exceptions", action="store_true",
                                  dest="allow_exceptions", help="Switch off exception catching.")
         self.parser.add_argument("-f", "--fullscreen", action="store_true",
-                                 dest="fullscreen", help="Play game in fullscreen mode", default=False)
+                                 dest="fullscreen", help="Toggle fullscreen mode", default=False)
         self.parser.add_argument("-g", action="store_true", dest="infill_methods",
                                  help="Launch script editor when use script missing", default=False)
         self.parser.add_argument(
