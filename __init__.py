@@ -7520,7 +7520,10 @@ def load_game_pickle(game, fname, meta_only=False, keep=[], responsive=False):
     keep_scene_objects = []
     for i in keep:
         obj = get_object(game, i)
-        keep_scene_objects.append(obj)
+        if obj:
+            keep_scene_objects.append(obj)
+        else:
+            print(i,"not in game")
 
     with open(fname, "rb") as f:
         meta = pickle.load(f)
@@ -8448,25 +8451,6 @@ class Game(metaclass=use_on_events):
             y += parent.y     
         return (x + obj.nx, y + obj.ny)
 
-    def get_point_from_raw(self, x,y):
-        """ Take a point from the mouse on the screen and convert it to in-engine coords """
-        """ XXX: should this take into consider self.scene.x,y??? """
-        """ XXX: Being deprecated in favour of get_points_from_raw """
-        return 5,5
-        ox, oy = x, y #shift for fullscreen
-        ox -= self._window_dx #*self._scale
-        oy -= self._window_dy #*self._scale
-
-        if self.scene:
-            oy += self.scene.y
-            ox -= self.scene.x       
-
-        # if window is being scaled
-        ox, oy = ox / self._scale, oy / self._scale
-        oy = self.game.resolution[1] - oy
-        return ox, oy
-
-
     def get_points_from_raw(self, raw_x, raw_y):
         """ Take raw pyglet points and return window and scene equivalents """
         x = raw_x / self._scale 
@@ -8494,13 +8478,13 @@ class Game(metaclass=use_on_events):
         oy = self.game.resolution[1] - oy
         return ox, oy
 
-    def on_mouse_scroll(self, x, y, scroll_x, scroll_y):
-        ox,oy = self.get_point_from_raw(x,y)
+    def on_mouse_scroll(self, raw_x, raw_y, scroll_x, scroll_y):
+        (window_x, window_y), (scene_x, scene_y) = self.get_points_from_raw(raw_x, raw_y)
         objs = copy.copy(self._modals)
         objs.extend(self._menu)
         for name in objs:
             obj = get_object(self, name)
-            if obj.collide(ox, oy) and getattr(obj, "_mouse_scroll", None):
+            if obj.collide(scene_x, scene_y) and getattr(obj, "_mouse_scroll", None):
                 fn = get_function(self, obj._mouse_scroll)
                 if fn:
                     fn(self, obj, scroll_x, scroll_y)
@@ -8518,6 +8502,9 @@ class Game(metaclass=use_on_events):
         self.mouse_position_raw = raw_x, raw_y
         self.mouse_position = window_x, window_y
 
+        if self._generator:
+            self.mouse_cursor = MOUSE_HOURGLASS
+            return
 
         if window_y < 0 or window_x < 0 or window_x > self.resolution[0] or window_y > self.resolution[1]: # mouse is outside game window
             self._info_object.display_text = " "  # clear info
@@ -9024,7 +9011,8 @@ class Game(metaclass=use_on_events):
 #        self._items = dict([(key,value) for key,value in self.items.items() if isinstance(value, MenuItem)])
         self._items = dict(
             [(key, value) for key, value in self._items.items() if value.name in leave])
-        self._scenes = {}
+        self._scenes = dict(
+            [(key, value) for key, value in self._scenes.items() if value.name in leave])
 #        self._emitters = {}
 #        if self.ENABLE_EDITOR: #editor enabled for this game instance
 #            self._load_editor()
@@ -9783,8 +9771,6 @@ class Game(metaclass=use_on_events):
             x = self.mouse_position_raw[0] + self._joystick.x * 40
             y = self.mouse_position_raw[1] - self._joystick.y * 40
             #print(x,y, self._joystick.x,  self.mouse_position_raw)
-            ox,oy = self.get_point_from_raw(x,y)
- 
             if y < 0: y = 0
             if x < 0: x = 0
             if y > self.resolution[1]: y = self.resolution[1]
