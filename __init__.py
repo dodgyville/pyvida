@@ -1674,7 +1674,7 @@ class Action(object):
         fname = os.path.splitext(filename)[0]
         montage_fname = fname + ".montage"
         try:
-            self._image = os.path.relpath(filename)
+            self._image = os.path.relpath(filename).replace("\\", "/")
         except ValueError: # if relpath fails due to cx_Freeze expecting different mounts
             self._image = filename
         if not os.path.isfile(montage_fname):
@@ -3166,6 +3166,11 @@ class Actor(MotionManager, metaclass=use_on_events):
             if key in self._actions:
                 self._actions[i] = self._actions[key]
 
+    def _python_path(self):
+        """ Replace // with \ in all filepaths for this object (used to repair old window save files """
+        self._images = [x.replace("\\", "/") for x in self._images]
+        for action in self._actions.values():
+            action._image = action._image.replace("\\", "/")
 
     # actor.smart
     def smart(self, game, image=None, using=None, idle="idle", action_prefix="", assets=False):
@@ -3222,7 +3227,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                 f.close()
 
         try:
-            self._images = [os.path.relpath(x) for x in images] # make storage relative
+            self._images = [os.path.relpath(x).replace("\\", "/") for x in images] # make storage relative
         except ValueError: # cx_Freeze on windows on different mounts may confuse relpath.
             self._images = images
 
@@ -5558,6 +5563,9 @@ class Scene(MotionManager, metaclass=use_on_events):
 
     def unload_assets(self):  # scene.unload
         for obj_name in self._objects:
+            if not self.game:
+                log.info("scene %s has no self.game object (possibly later scene loaded from title screen)" % (self.name))
+                continue
             obj = get_object(self.game, obj_name)
             log.debug("UNLOAD ASSETS for obj %s %s" % (obj_name, obj))
             if obj:
@@ -6181,6 +6189,9 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         w = self.clickable_area.w
         dx, dy = self.tile_size
 #        objs = self._get_sorted()
+#        if len(self._objects) == 2:
+#            print("Strange result")
+#            import pdb; pdb.set_trace()
         show = self.get_displayed_objects()
         for obj_name in show:
             obj = get_object(self.game, obj_name)
