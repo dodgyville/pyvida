@@ -7906,6 +7906,7 @@ class Game(metaclass=use_on_events):
 
         self._window_editor = None
         self._window_editor_objects = []
+        self._screen_size_override = None
 
 
         # how many event steps in this progress block
@@ -7965,7 +7966,8 @@ class Game(metaclass=use_on_events):
             else: # custom window size
                 nw,nh = options.resolution.split("x")
                 nw,nh = int(nw), int(nh)
-                self.resolution = (nw, nh)
+                self._screen_size_override = (nw, nh)
+#                self.resolution = (nw, nh)
         self.reset_window(fullscreen, create=True) # create self._window
 
         self._window.on_key_press = self.on_key_press
@@ -10365,21 +10367,16 @@ class Game(metaclass=use_on_events):
 
     def create_bars_and_scale(self, w, h, scale):
         """ Fit game to requested window size """
-#        resolution, scale = fit_to_screen((w, h), self.resolution)
-        print("create and scale",w,h,scale)
         sw, sh = w,h
-        display = pyglet.window.get_platform().get_default_display()
-        w = display.get_default_screen().width
-        h = display.get_default_screen().height
-
-
-        print("ON FULLSCREEN w==sw",w,sw,h,sh)
-        self._window_dx = dx = (w-sw)/2/scale
-        self._window_dy = dy = (h-sh)/2/scale
+        w, h = self._window.get_size() # actual size of window
+        gw, gh = self.resolution # game size
+        gw *= scale
+        gh *= scale
+        self._window_dx = dx = (w-gw)
+        self._window_dy = dy = (h-gh)
         if scale != 1.0:
             pyglet.gl.glScalef(scale, scale, scale)
-        print("MOVING SCENE", dx,dy, scale, scale)
-        glTranslatef(dx, dy, 0) #move to middle of screen
+        glTranslatef(dx/scale, dy/scale, 0) #move to middle of screen
         self._bars = []
         pattern =  pyglet.image.SolidColorImagePattern((0, 0, 0, 255))
         if dx > 0: # vertical bars
@@ -10391,28 +10388,37 @@ class Game(metaclass=use_on_events):
             self._bars.append((image, (0,-dy)))
             self._bars.append((image, (0,sh/scale)))
 
-    def reset_window(self, fullscreen, create=False):
-        """ Make the game screen fit the window, create if requested """
-
+    @property
+    def screen_size(self):
+        """ Return the physical screen size or the override """
         display = pyglet.window.get_platform().get_default_display()
         w = display.get_default_screen().width
         h = display.get_default_screen().height
+        if self._screen_size_override:
+            w, h = self._screen_size_override
+        return w,h
+
+    def reset_window(self, fullscreen, create=False):
+        """ Make the game screen fit the window, create if requested """
+        w, h = self.screen_size
 
         width, height = self.resolution
         scale = 1.0
 
         resolution, new_scale = fit_to_screen((w, h), self.resolution)
-        print("FULLSCREEN", fullscreen,"new resolution",resolution,self.resolution)
-
+#        print("FULLSCREEN", fullscreen,"resolution of screen if scaling",resolution,"game resolution",self.resolution)
+#        print("game resolution", width, height, "screen size",w,h)
         # only scale non-fullscreen window if it's larger than screen.
         # or if it's fullscreen, always scale to fit screen
         if fullscreen or (not fullscreen and (width > w or height > h)):
             #resolution, scale = fit_to_screen((w, h), resolution)
             width, height = resolution
             scale = new_scale
-            print("SCALING",resolution, scale)
+#            print("SCALING",resolution, scale)
         if create: 
-            self._window = Window(width=width, height=height, fullscreen=fullscreen) 
+#            print("creating window")
+            sw, sh = self._screen_size_override if self._screen_size_override else (width, height)
+            self._window = Window(width=sw, height=sh, fullscreen=fullscreen) 
         self._scale = scale
         self.fullscreen = fullscreen #status of this session
 
@@ -10426,7 +10432,7 @@ class Game(metaclass=use_on_events):
             self._window_dx, self._window_dy = 0, 0
         """
 
-    def on_toggle_fullscreen(self, fullscreen=None):
+    def on_toggle_fullscreen(self, fullscreen=None, execute=False):
         """ Toggle fullscreen, or use <fullscreen> to set the value """
 #        glPopMatrix();
 #        glPushMatrix();
@@ -10435,8 +10441,11 @@ class Game(metaclass=use_on_events):
         if self.settings:
             self.settings.fullscreen = fullscreen
             # XXX do we need to save settings here? Or should we even be doing this here?
-        self._window.set_fullscreen(fullscreen)
-        self.reset_window(fullscreen)
+            if self.settings.filename:
+                save_settings(self, self.settings.filename)            
+        if execute:
+            self._window.set_fullscreen(fullscreen)
+            self.reset_window(fullscreen)
 
     def on_splash(self, image, callback, duration=None, immediately=False):
         """ show a splash screen then pass to callback after duration 
