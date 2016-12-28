@@ -8770,6 +8770,13 @@ class Game(metaclass=use_on_events):
         if len(self._modals) > 0:
             return
 
+
+        # if the event queue is busy, don't allow user interaction
+        if len(self._events) == 0 or (len(self._events) == 1 and self._events[0][0].__name__ == "on_goto" and self._events[0][1][0] == self.player):
+            pass
+        else:
+            return
+
         # try menu events
         for obj_name in self._menu:
             obj = get_object(self, obj_name)
@@ -8783,8 +8790,6 @@ class Game(metaclass=use_on_events):
             return  # menu is in modal mode so block other objects
 
         # finally, try scene objects or allow a plain walk to be interrupted.
-        if len(self._events) > 1:
-            return
 
         potentially_do_idle = False
         if len(self._events) == 1:
