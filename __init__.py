@@ -108,7 +108,7 @@ if DEBUG_NAMES:
     tmp_objects_first = {}
     tmp_objects_second = {}
 
-ENABLE_FKEYS = True # debug shortcut keys
+ENABLE_FKEYS = False # debug shortcut keys
 ENABLE_EDITOR = False and EDITOR_AVAILABLE # default for editor. Caution: This starts module reloads which ruins pickles 
 ENABLE_PROFILING = False
 ENABLE_LOGGING = True
