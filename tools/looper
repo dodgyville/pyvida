@@ -1,0 +1,99 @@
+#!/usr/bin/python3
+#NOTE: Provided AS IS, no warranty for use!
+
+#looper - loops a series of images around onto a shorter set of images to create loopsing animations.
+#cobbled together from websites and gpl stuff by Luke Miller 2015
+#NOTE: Provided AS IS, no warranty for use!
+
+from PIL import *
+from PIL import Image
+from PIL import ImageChops
+#import Image
+import sys, os
+from math import ceil
+from optparse import OptionParser
+
+
+def super_loopser():
+    print("loopser v1.1 - by Luke Miller - 6/12/2015")
+    usage = "usage: looper out_file file_list\nFor use with pyvida, loops a series of images around onto a shorter set of images to create looping animations. Use either -l OR -f (not both)";
+    print("Examples:\n looper")
+    print("NOTE: Provided AS IS, no warranty for use!")
+    parser = OptionParser()
+#    parser.add_option("-", "--reverse", action="store_true", dest="reverse", help="Reverse file list", default=False)
+#    parser.add_option("-f", "--flip", action="store_true", dest="flip", help="Flip the images left-right", default=False)
+    parser.add_option("-l", "--loops", dest="loops", help="How many times to loops frames", default=-1, metavar="loops")
+    parser.add_option("-f", "--frames", dest="frames", help="How many frames to use for loops", default=-1, metavar="loops")
+    # for when images do not have an alpha
+    parser.add_option("-a", "--add", dest="fx_add", action="store_true", help="Add images together", default=False)
+    parser.add_option("-s", "--screen", dest="fx_screen", action="store_true", help="Screen images together", default=False)
+    parser.add_option("-m", "--multiply", dest="fx_multiply", action="store_true", help="Mutilply images together", default=False)
+
+    (options, args) = parser.parse_args()
+    if len(args) < 2:
+     	print(usage)
+     	return
+    ofname = args[0]
+    if os.path.isfile(ofname):
+        print("\n",ofname,"already exists.\n")
+        print(usage)
+        return
+    files = args[1:]
+    total_frames =len(files)
+    loops = int(options.loops)
+    frames = int(options.frames)
+    if loops == -1 and frames == -1:
+        print("No method for looping provided, use -l or -f.")
+        print("Best results are when number of images %i is cleanly divisible by number of loops."%(total_frames))
+        return
+
+    if loops == -1:
+        loops = total_frames/frames
+        print("Based on frames %i, calculating loops %i."%(frames, loops))
+    else:
+        frames = total_frames/loops
+        print("Based on loops %i, calculating frames %i."%(loops, frames))
+
+    if total_frames // loops != total_frames / loops or float(loops) != int(loops):
+        print("Best results are when number of images %i is cleanly divisible by number of loops %i."%(total_frames, loops))
+        return
+    print("Using %s original images, looping %s times, onto %s frames."%(total_frames, loops, frames))
+    frames = int(frames)
+    first_image = files[0]
+    first_image = Image.open(first_image)
+    print(first_image.size)
+    new_frames = [Image.new('RGBA', first_image.size, (0,0,0,0)) for x in range(0, frames)]
+#    for i in new_frames:
+#        i.paste((50,80,100,255), (0,0, i.size[0], i.size[1]))
+    fx_add = options.fx_add
+    fx_screen = options.fx_screen
+    fx_multiply = options.fx_multiply
+
+    for i, fname in enumerate(files):
+        m = Image.open(fname).convert("RGBA") #get info from first image.
+#        new_frames[0].paste(m, (0,0), m)
+#        break
+        frame_list = []
+        if int(frames/loops) < 1:
+            print("frames/loops is less than 1 (%f). This would cause too many images per frame. Have fewer loops or more frames."%(frames/loops))
+            return
+        for j in range(0, int(frames), int(frames/loops)):
+            index = (i+j)%frames
+            frame_list.append(index)
+            if fx_add:
+                new_frames[index] = ImageChops.add(new_frames[index], m)
+            elif fx_screen:
+                new_frames[index] = ImageChops.screen(new_frames[index], m)
+            elif fx_multiply:
+                new_frames[index] = ImageChops.multiply(new_frames[index], m)
+            else:
+               new_frames[index].paste(m, (0,0), m)
+#            new_frames[index] = Image.blend(new_frames[index], m, m)
+        print("pasting image %s onto frames %s"%(fname, frame_list))
+
+    name, ext = os.path.splitext(ofname)
+    for i, im in enumerate(new_frames):
+        im.save("%s%0.3d.png"%(name, i))
+
+if __name__ == '__main__':
+    super_loopser()
