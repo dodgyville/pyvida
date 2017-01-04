@@ -78,24 +78,6 @@ except ImportError:
 
 benchmark_events = datetime.now()
 
-GAME_SAVE_NAME = "spaceout2" # XXX should match game, should be engine independent.
-
-SAVE_DIR = "saves"
-if "LOCALAPPDATA" in os.environ: #win 7
-    SAVE_DIR = os.path.join(os.environ["LOCALAPPDATA"], GAME_SAVE_NAME, 'saves')
-elif "APPDATA" in os.environ: #win XP
-    SAVE_DIR = os.path.join(os.environ["APPDATA"], GAME_SAVE_NAME, 'saves')
-elif 'darwin' in sys.platform: # check for OS X support
-#    import pygame._view
-    SAVE_DIR = os.path.join(expanduser("~"), "Library", "Application Support", GAME_SAVE_NAME)
-
-READONLY = False
-if not os.path.exists(SAVE_DIR):
-    try:
-        os.makedirs(SAVE_DIR)
-    except:
-        READONLY = True
-
 
 """
 Constants
@@ -149,7 +131,7 @@ DIRECTORY_ITEMS = "data/items"
 DIRECTORY_SCENES = "data/scenes"
 DIRECTORY_FONTS = "data/fonts"
 DIRECTORY_EMITTERS = "data/emitters"
-DIRECTORY_SAVES = SAVE_DIR
+#DIRECTORY_SAVES = SAVE_DIR
 DIRECTORY_INTERFACE = "data/interface"
 
 FONT_VERA = DEFAULT_MENU_FONT = os.path.join(DIRECTORY_FONTS, "vera.ttf")
@@ -7771,8 +7753,10 @@ def reset_mouse_cursor(game):
 
 class Game(metaclass=use_on_events):
 
-    def __init__(self, name="Untitled Game", version="v1.0", engine=VERSION_MAJOR, fullscreen=DEFAULT_FULLSCREEN, resolution=DEFAULT_RESOLUTION, fps=DEFAULT_FPS, afps=DEFAULT_ACTOR_FPS, projectsettings=None, scale=1.0):
+    def __init__(self, name="Untitled Game", version="v1.0", engine=VERSION_MAJOR, save_directory = "untitledgame", fullscreen=DEFAULT_FULLSCREEN, resolution=DEFAULT_RESOLUTION, fps=DEFAULT_FPS, afps=DEFAULT_ACTOR_FPS, projectsettings=None, scale=1.0):
         self.debug_collection = False
+        self.save_directory = save_directory
+        self.setup_saves()
         self.parser = ArgumentParser()
         self.add_arguments()
 
@@ -8055,6 +8039,27 @@ class Game(metaclass=use_on_events):
 
         raise AttributeError
 #        return self.__getattribute__(self, a)
+
+    def setup_saves(self):
+        """ Setup save directory for this platform """        
+        GAME_SAVE_NAME = self.save_directory 
+
+        SAVE_DIR = "saves"
+        if "LOCALAPPDATA" in os.environ: #win 7
+            SAVE_DIR = os.path.join(os.environ["LOCALAPPDATA"], GAME_SAVE_NAME, 'saves')
+        elif "APPDATA" in os.environ: #win XP
+            SAVE_DIR = os.path.join(os.environ["APPDATA"], GAME_SAVE_NAME, 'saves')
+        elif 'darwin' in sys.platform: # check for OS X support
+        #    import pygame._view
+            SAVE_DIR = os.path.join(expanduser("~"), "Library", "Application Support", GAME_SAVE_NAME)
+
+        READONLY = False
+        if not os.path.exists(SAVE_DIR):
+            try:
+                os.makedirs(SAVE_DIR)
+            except:
+                READONLY = True
+
 
     def on_clock_schedule_interval(self, *args, **kwargs):
         """ schedule a repeating callback """
