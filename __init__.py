@@ -78,7 +78,6 @@ except ImportError:
 
 benchmark_events = datetime.now()
 
-
 """
 Constants
 """
@@ -445,6 +444,51 @@ _pyglet_fonts = {DEFAULT_MENU_FONT: "bitstream vera sans"}
 _resources = {} #graphical assets for the game, #w,h, Sprite|None
 _sound_resources = {} #sound assets for the game, # PlayerPygameSFX
 
+
+"""
+Logging
+"""
+
+def create_log(logname, log_level):
+    log = logging.getLogger(logname)
+    if logging:
+        log.setLevel(log_level)
+    return log
+
+def redirect_log(log, fname):
+    try:
+        handler = logging.handlers.RotatingFileHandler(
+            fname, maxBytes=2000000, backupCount=5)
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+        log.addHandler(handler)
+    except FileNotFoundError:
+        handler = None
+    if DEBUG_STDOUT or not handler:
+        handler = logging.StreamHandler(stream=sys.stdout)
+        handler.setLevel(logging.ERROR)
+        log.addHandler(handler)
+
+APP_DIR = "."
+if "LOCALAPPDATA" in os.environ: #win 7
+    APP_DIR = os.environ["LOCALAPPDATA"]
+elif "APPDATA" in os.environ: #win XP
+    APP_DIR = os.environ["APPDATA"]
+elif 'darwin' in sys.platform: # check for OS X support
+#    import pygame._view
+    APP_DIR = os.path.join(expanduser("~"), "Library", "Application Support")
+
+if logging:
+    if ENABLE_LOGGING:
+        log_level = logging.DEBUG  # what level of debugging
+    else:
+        log_level = logging.WARNING
+    log_level = logging.INFO
+    log = create_log("pyvida", log_level)
+    log.warning("MONTAGE IMPORT ONLY DOES A SINGLE STRIP")
+    log.warning("Actor.__getstate__ discards essential USES information")
+
+
 """
 Testing utilities
 """
@@ -526,42 +570,6 @@ def scene_search(game, scene, target):  # are scenes connected via portals?
     scene_path.pop(-1)
     return False
 
-"""
-Logging
-"""
-
-
-def create_log(logname, fname, log_level):
-    log = logging.getLogger(logname)
-    if logging:
-        log.setLevel(log_level)
-    try:
-        handler = logging.handlers.RotatingFileHandler(
-            fname, maxBytes=2000000, backupCount=5)
-        handler.setFormatter(
-            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
-        log.addHandler(handler)
-    except FileNotFoundError:
-        handler = None
-    if DEBUG_STDOUT or not handler:
-        handler = logging.StreamHandler(stream=sys.stdout)
-        handler.setLevel(logging.ERROR)
-        log.addHandler(handler)
-    return log
-
-
-if logging:
-    if ENABLE_LOGGING:
-        log_level = logging.DEBUG  # what level of debugging
-    else:
-        log_level = logging.WARNING
-    log_level = logging.INFO
-    LOG_FILENAME = os.path.join(DIRECTORY_SAVES, 'pyvida.log')
-    ANALYSIS_FILENAME = os.path.join(DIRECTORY_SAVES, 'analysis.log')
-    log = create_log("pyvida", LOG_FILENAME, log_level)
-    analysis_log = create_log("analysis", ANALYSIS_FILENAME, log_level)
-    log.warning("MONTAGE IMPORT ONLY DOES A SINGLE STRIP")
-    log.warning("Actor.__getstate__ discards essential USES information")
 
 """
 Utilities
@@ -7755,7 +7763,8 @@ class Game(metaclass=use_on_events):
 
     def __init__(self, name="Untitled Game", version="v1.0", engine=VERSION_MAJOR, save_directory = "untitledgame", fullscreen=DEFAULT_FULLSCREEN, resolution=DEFAULT_RESOLUTION, fps=DEFAULT_FPS, afps=DEFAULT_ACTOR_FPS, projectsettings=None, scale=1.0):
         self.debug_collection = False
-        self.save_directory = save_directory
+        self.writeable_directory = save_directory
+        self.save_directory = "saves"
         self.setup_saves()
         self.parser = ArgumentParser()
         self.add_arguments()
@@ -8012,9 +8021,10 @@ class Game(metaclass=use_on_events):
             player.load_assets(self)
 
     def get_player(self):
-        return self._player
+        return self._player    
 
     player = property(get_player, set_player)
+
 
     def __getattr__(self, a):  # game.__getattr__
         # only called as a last resort, so possibly set up a queue function
@@ -8042,7 +8052,7 @@ class Game(metaclass=use_on_events):
 
     def setup_saves(self):
         """ Setup save directory for this platform """        
-        GAME_SAVE_NAME = self.save_directory 
+        GAME_SAVE_NAME = self.writeable_directory 
 
         SAVE_DIR = "saves"
         if "LOCALAPPDATA" in os.environ: #win 7
@@ -8053,12 +8063,21 @@ class Game(metaclass=use_on_events):
         #    import pygame._view
             SAVE_DIR = os.path.join(expanduser("~"), "Library", "Application Support", GAME_SAVE_NAME)
 
+        self.save_directory = SAVE_DIR
         READONLY = False
         if not os.path.exists(SAVE_DIR):
             try:
                 os.makedirs(SAVE_DIR)
             except:
                 READONLY = True
+
+        if logging: # redirect log to file
+            LOG_FILENAME = os.path.join(self.save_directory, 'pyvida5.log')
+            redirect_log(log, LOG_FILENAME)
+
+
+    def log(self, txt):
+        print("*",txt)
 
 
     def on_clock_schedule_interval(self, *args, **kwargs):
@@ -8222,7 +8241,7 @@ class Game(metaclass=use_on_events):
             if symbol == pyglet.window.key.F7:  # start recording
                 # ffmpeg -r 16 -pattern_type glob -i '*.png' -c:v libx264 out.mp4
                 d = "screencast %s" % datetime.now()
-                d = os.path.join(DIRECTORY_SAVES, d)
+                d = os.path.join(self.save_directory, d)
                 if not os.path.isdir(d):
                     os.mkdir(d)
                 print("saving to", d)
@@ -9400,7 +9419,7 @@ class Game(metaclass=use_on_events):
             if self._headless is True:
                 print("WARNING, ART REACTOR CAN'T RUN IN HEADLESS MODE")
             d = "imagereactor %s" % datetime.now()
-            self._imagereactor_directory = os.path.join(DIRECTORY_SAVES, d)
+            self._imagereactor_directory = os.path.join(self.save_directory, d)
             # import pdb; pdb.set_trace() #Don't do this. Lesson learned.
 
         if splash:
@@ -9446,7 +9465,6 @@ class Game(metaclass=use_on_events):
 
     def _process_walkthrough(self):
         """ Do a step in the walkthrough """
-#        if self._walkthrough_index == 77: import pdb; pdb.set_trace()
         if len(self._walkthrough) == 0 or self._walkthrough_index >= len(self._walkthrough) or self._walkthrough_target==0:
             return  # no walkthrough
         walkthrough = self._walkthrough[self._walkthrough_index]
@@ -9516,7 +9534,7 @@ class Game(metaclass=use_on_events):
 
             log.info("FINISHED WALKTHROUGH")
             if self._walkthrough_target_name:
-                walkthrough_target = os.path.abspath(os.path.join(DIRECTORY_SAVES,"%s.save"%self._walkthrough_target_name))
+                walkthrough_target = os.path.abspath(os.path.join(self.save_directory,"%s.save"%self._walkthrough_target_name))
                 save_game(
                     self, walkthrough_target)
 #            self.player.says(gettext("Let's play."))
@@ -9679,7 +9697,7 @@ class Game(metaclass=use_on_events):
         else:
             print("UNABLE TO PROCESS %s"%function_name)
         if human_readable_name:
-            fname = os.path.join(DIRECTORY_SAVES, "{}.save".format(human_readable_name))
+            fname = os.path.join(self.save_directory, "{}.save".format(human_readable_name))
             save_game(self, fname)
 
     def _handle_events(self):
@@ -9721,9 +9739,6 @@ class Game(metaclass=use_on_events):
                         if hasattr(self, "del_events"):
                             print("DEL",event)
 
-                        #                        if self._headless==False: import pdb; pdb.set_trace()
-                        #                        if logging: log.info("%s is no longer busy, so deleting event %s."%(event[1][0].name, event))
-                        #                        print("DEL",event)
                         del_events += 1
                         self._events.remove(event)
                         self._event_index -= 1
@@ -10351,14 +10366,14 @@ class Game(metaclass=use_on_events):
     def on_autosave(self, actor, tilesize, exclude_from_screenshot=[], fname = None, fast=True):
         game = self
         fname = fname if fname else datetime.now().strftime("%Y%m%d_%H%M%S")
-        save_game(game, os.path.join(DIRECTORY_SAVES, "%s.save"%fname))
+        save_game(game, os.path.join(self.save_directory, "%s.save"%fname))
         for i in exclude_from_screenshot:
             obj = get_object(game, i)
             obj.hide()
         if not fast: # take some time to do a nicer screen grab
             game.menu.on_hide()
             game.pause(0.4)
-        game.camera.screenshot(os.path.join(DIRECTORY_SAVES, "%s.png"%fname), tilesize)
+        game.camera.screenshot(os.path.join(self.save_directory, "%s.png"%fname), tilesize)
         for i in exclude_from_screenshot:
             obj = get_object(game, i)
             obj.show()
@@ -10634,9 +10649,9 @@ def editor_new_object(game, obj):
     game.add(obj)
     game.scene.add(obj)
 
-log.info("CHECKING FOR EDITOR")
+if log: log.info("CHECKING FOR EDITOR")
 if EDITOR_AVAILABLE:
-    log.info("EDITOR AVAILABLE")
+    if log: log.info("EDITOR AVAILABLE")
     class SelectDialog(tk.simpledialog.Dialog):
 
         def __init__(self, game, title, objects, *args, **kwargs):
