@@ -7037,7 +7037,7 @@ class Mixer(metaclass=use_on_events):
                 default_start = 0
             absfilename = os.path.abspath(fname)
             if os.path.exists(absfilename): #new music
-                log.info("Loading music file %s" % absfilename)
+                log.info("Loading music file %s" % absfilename)		
                 self._music_player.load(absfilename)
                 self._music_filename = fname
 #                print("SETTING CURRENT MUSIC FILENAME TO", fname)
@@ -8251,6 +8251,10 @@ class Game(metaclass=use_on_events):
                 print("finished casting")
 
             if symbol == pyglet.window.key.F9:
+                from scripts.general import add_coords_to_helm
+                from scripts.constants import P_ARCADIA
+                add_coords_to_helm(game, P_ARCADIA)    
+                return
                 for key in game.storage.backer_planets_details.keys():
                     self.test_arrive_at_generated_scene(key)
                     self.wait_for_user()
@@ -9449,12 +9453,13 @@ class Game(metaclass=use_on_events):
 
     def on_quit(self):
         if self.settings and self.settings.filename:
+            print("SAVE SETTINGS")
             td = datetime.now() - self.settings._current_session_start
             s = milliseconds(td)
             self.settings.total_time_played += s
             self.settings._last_session_end = datetime.now()
             save_settings(self, self.settings.filename)
-
+        print("EXIT APP")
         pyglet.app.exit()
         if mixer=="pygame":
             print("SHUTDOWN PYGAME MIXER")
