@@ -1718,16 +1718,9 @@ class Action(object):
     def draw(self):
         pass
  
-    def smart(self, game, actor=None, filename=None):  # action.smart
-        # load the image and slice info if necessary
-        self.actor = actor if actor else self.actor
-        self.game = game
+    def _load_montage(self, filename):
         fname = os.path.splitext(filename)[0]
         montage_fname = fname + ".montage"
-        try:
-            self._image = os.path.relpath(filename).replace("\\", "/")
-        except ValueError: # if relpath fails due to cx_Freeze expecting different mounts
-            self._image = filename
         if not os.path.isfile(montage_fname):
             if not os.path.isfile(filename): 
                 w,h = 0,0
@@ -1744,9 +1737,20 @@ class Action(object):
                                   (self.name, montage_fname))
                     num, w, h = 0, 0, 0
         self.num_of_frames = num
+        return (w,h, num)
+
+    def smart(self, game, actor=None, filename=None):  # action.smart
+        # load the image and slice info if necessary
+        self.actor = actor if actor else self.actor
+        self.game = game
+        try:
+            self._image = os.path.relpath(filename).replace("\\", "/")
+        except ValueError: # if relpath fails due to cx_Freeze expecting different mounts
+            self._image = filename
+        w,h,num=self._load_montage(filename)
+        fname = os.path.splitext(filename)[0]
         dfname = fname + ".defaults"
         load_defaults(game, self, "%s - %s"%(actor.name, self.name), dfname)
-
         set_resource(self.resource_name, w=w, h=h)
 #        self.load_assets(game)
         return self
@@ -1765,7 +1769,13 @@ class Action(object):
             return
         actor = get_object(game, self.actor)
         
-        quickload = os.path.abspath(get_best_file(game, os.path.splitext(self._image)[0] + ".quickload"))
+        fname = os.path.splitext(self._image)[0]
+        mname = get_best_file(game, fname + ".montage")
+        if "mod" in mname:
+            log.info("mod detect for action, loading %s"%fname)
+            w,h, num = self._load_montage(mname)
+
+        quickload = os.path.abspath(get_best_file(game, fname + ".quickload"))
 
         full_load = True
         resource = False #don't update resource
@@ -6895,7 +6905,7 @@ class PlayerPygletMusic():
 
     def play(self, loops=-1, start=0):
 #        pygame.mixer.music.stop() #reset counter
-        print("PLAY MUSIC",start)
+        print("PLAY MUSIC STUB",start)
 #        pygame.mixer.music.play(loops=loops, start=start)
 
     def position(self):
