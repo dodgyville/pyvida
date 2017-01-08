@@ -68,7 +68,7 @@ elif 'darwin' in sys.platform: # check for OS X support
     APP_DIR = os.path.join(expanduser("~"), "Library", "Application Support")
 
 def load_config(fname):
-    config = {}
+    config = {"editor": False, "mixer":"pygame", "mods":True, "version":"None", "date":"Unknown"} # defaults
     if os.path.exists(fname):
         with open(fname, "r") as f:
             data = f.readlines()
@@ -121,7 +121,7 @@ if DEBUG_NAMES:
     tmp_objects_first = {}
     tmp_objects_second = {}
 
-ENABLE_FKEYS = False # debug shortcut keys
+ENABLE_FKEYS = CONFIG["editor"] # debug shortcut keys
 ENABLE_EDITOR = False and EDITOR_AVAILABLE # default for editor. Caution: This starts module reloads which ruins pickles 
 ENABLE_PROFILING = False
 ENABLE_LOGGING = True
@@ -8057,6 +8057,11 @@ class Game(metaclass=use_on_events):
         fullscreen = self.settings.fullscreen if self.settings and self.settings.fullscreen else DEFAULT_FULLSCREEN
 
         options = self.parser.parse_args()
+
+        if options.output_version:
+            print("%s, %s, %s"%(self.name, CONFIG["version"], CONFIG["date"]))
+            return
+
         if options.fullscreen: 
             fullscreen = not fullscreen
 
@@ -9102,6 +9107,9 @@ class Game(metaclass=use_on_events):
             "-s", "--step", dest="target_step", nargs='+', help="Jump to step in walkthrough")
         self.parser.add_argument("-t", "--text", action="store_true", dest="text",
                                  help="Play game in text mode (for players with disabilities who use text-to-speech output)", default=False)
+        self.parser.add_argument("-v", "--version", action="store_true", dest="output_version",
+                                 help="Print version information about game and engine.")
+
         self.parser.add_argument("-w", "--walkthrough", action="store_true", dest="output_walkthrough",
                                  help="Print a human readable walkthrough of this game, based on test suites.")
         self.parser.add_argument("-W", "--walkcreate", action="store_true", dest="create_from_walkthrough",
@@ -9472,6 +9480,8 @@ class Game(metaclass=use_on_events):
 #            self.target_random_steps = options.target_random_steps
 #            self.target_random_steps_counter = options.target_random_steps
 
+        if options.output_version == True: # init prints version number, so exit
+            return
         if options.output_walkthrough == True:
             self._output_walkthrough = True
             print("Walkthrough for %s"%self.name)
