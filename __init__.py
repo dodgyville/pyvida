@@ -75,9 +75,12 @@ def load_config(fname):
             for d in data:
                 if len(d)>2 and "=" in d:
                     key, v = d.strip().split("=")
-                    v = False if v.upper() == "FALSE" else v
-                    v = True if v.upper() == "TRUE" else v
-                    v = None if v.upper() == "DEFAULT" else v
+                    if v.upper() == "FALSE":
+                        v = False:
+                    elif v.upper() == "TRUE":
+                        v = True
+                    elif v.upper() == "DEFAULT":
+                        v = None
                     if d[0] != "#":
                         config[key] = v
     return config
