@@ -67,8 +67,24 @@ elif 'darwin' in sys.platform: # check for OS X support
 #    import pygame._view
     APP_DIR = os.path.join(expanduser("~"), "Library", "Application Support")
 
-def load_config(fname):
-    config = {"editor": False, "mixer":"pygame", "mods":True, "version":"None", "date":"Unknown"} # defaults
+def load_info(fname_raw):
+    config = {"version":"None", "date":"Unknown"} # defaults
+    fname = os.path.join("data", fname_raw) 
+    if os.path.exists(fname):
+        with open(fname, "r") as f:
+            data = f.readlines()
+            for d in data:
+                if len(d)>2 and "=" in d:
+                    key, v = d.strip().split("=")
+                    config[key] = v
+    return config
+
+def load_config(fname_raw):
+    # check wrirable appdata directory
+    fname = os.path.join(APP_DIR, fname_raw) 
+    if not os.path.exists(fname): # fallback on static directory
+        fname = os.path.join("data", fname_raw) 
+    config = {"editor": False, "mixer":"pygame", "mods":True} # defaults
     if os.path.exists(fname):
         with open(fname, "r") as f:
             data = f.readlines()
@@ -85,8 +101,18 @@ def load_config(fname):
                         config[key] = v
     return config
 
+def save_config(config, fname_raw):
+    fname = os.path.join(APP_DIR, fname_raw)
+    with open(fname, "w") as f:
+        for key, value in config.items():
+            if type(value) == str:
+                value = "default" if value.upper() == "DEFAULT" else value
+            f.write("%s=%s\n"%(key, value))
+
 # Engine configuration variables that can override settings
-CONFIG = load_config(os.path.join(APP_DIR, "game.conf"))
+INFO = load_config("game.info")
+CONFIG = load_config("game.conf")
+
 
 try:
     import android
@@ -101,7 +127,7 @@ except ImportError:
 
 
 mixer = CONFIG["mixer"] if "mixer" in CONFIG else None
-if not mixer:
+if mixer == "pygame":
     try:
         import pygame
         mixer = "pygame"
@@ -1001,9 +1027,15 @@ def get_best_directory(game, d_raw):
     d_mod = os.path.join(os.path.join("mod", base), key) #eg mod/data/items/inventory
     d = os.path.join(base, key) #eg data/items/inventory, same as d_raw
     if game.settings.high_contrast:
-        directories = [d_mod_hc, d_hc, d_mod, d]
+        if CONFIG["mods"]:
+            directories = [d_mod_hc, d_hc, d_mod, d]
+        else:
+            directories = [d_hc, d]
     else: # no high contrast
-        directories = [d_mod, d]
+        if CONFIG["mods"]:
+            directories = [d_mod, d]
+        else:
+            directories = [d]
     for directory in directories:
         if os.path.isdir(directory):
             return directory
@@ -1022,9 +1054,15 @@ def get_best_file(game, f_raw):
     d_mod = os.path.join(os.path.join("mod", base), key) #eg mod/data/items/inventory
     d = os.path.join(base, key) #eg data/items/inventory, same as d_raw
     if game.settings.high_contrast:
-        directories = [d_mod_hc, d_hc, d_mod, d]
+        if CONFIG["mods"]:
+            directories = [d_mod_hc, d_hc, d_mod, d]
+        else:
+            directories = [d_hc, d]
     else: # no high contrast
-        directories = [d_mod, d]
+        if CONFIG["mods"]:
+            directories = [d_mod, d]
+        else:
+            directories = [d]
     for directory in directories:
         test_f = os.path.join(directory, f_name)
         if os.path.exists(test_f):
@@ -8065,11 +8103,18 @@ class Game(metaclass=use_on_events):
         if options.fullscreen: 
             fullscreen = not fullscreen
 
-        if options.resolution: # force a resolution
-            if options.resolution == "0": # use game resolution with no scaling.
+        override_resolution = None
+        # two ways to override a resolution, from the game.conf file or from the commandline
+        if "resolution" in CONFIG and CONFIG["resolution"]: # use override from game.conf
+            override_resolution = CONFIG["resolution"]
+        if options.resolution: # force a resolution from the commandline
+            override_resolution = options.resolution
+
+        if override_resolution: # force a resolution
+            if override_resolution == "0": # use game resolution with no scaling.
                 scale = 1.0
             else: # custom window size
-                nw,nh = options.resolution.split("x")
+                nw,nh = override_resolution.split("x")
                 nw,nh = int(nw), int(nh)
                 self._screen_size_override = (nw, nh)
 #                self.resolution = (nw, nh)
