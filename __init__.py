@@ -8094,6 +8094,9 @@ class Game(metaclass=use_on_events):
 
         fullscreen = self.settings.fullscreen if self.settings and self.settings.fullscreen else DEFAULT_FULLSCREEN
 
+        if "fullscreen" in CONFIG and CONFIG["fullscreen"]: # use override from game.conf
+            fullscreen = CONFIG["fullscreen"]
+
         options = self.parser.parse_args()
 
         if options.output_version:
