@@ -100,12 +100,13 @@ except ImportError:
     logging = None
 
 
-try:
-    import pygame
-    mixer = "pygame"
-except ImportError:
-    mixer = "pyglet"
-#mixer = "pyglet"
+mixer = CONFIG["mixer"] if "mixer" in CONFIG else None
+if not mixer:
+    try:
+        import pygame
+        mixer = "pygame"
+    except ImportError:
+        mixer = "pyglet"
 
 benchmark_events = datetime.now()
 
