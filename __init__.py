@@ -76,7 +76,7 @@ def load_config(fname):
                 if len(d)>2 and "=" in d:
                     key, v = d.strip().split("=")
                     if v.upper() == "FALSE":
-                        v = False:
+                        v = False
                     elif v.upper() == "TRUE":
                         v = True
                     elif v.upper() == "DEFAULT":
