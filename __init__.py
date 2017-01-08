@@ -6368,7 +6368,8 @@ class MenuManager(metaclass=use_on_events):
         if key in _sound_resources:
             sfx = _sound_resources[key]
         else:
-            sfx = _sound_resources[key] = PlayerPygameSFX(self.game)
+            SFX_Class = PlayerPygameSFX if mixer == "pygame" else PlayerPygletSFX
+            sfx = _sound_resources[key] = SFX_Class(self.game)
             sfx.load(key, self.game.settings.sfx_volume)
         if self.game:
             if self.game._headless or (self.game.settings and self.game.settings.mute): 
@@ -6801,8 +6802,42 @@ class Camera(metaclass=use_on_events):  # the view manager
                 self.name, self.busy))
         self.game.on_wait()
 
+class PlayerPygletSFX():
+    def __init__(self, game):
+        self._sound = None
+        self.game = game
+        self.loops = 0
+        print("WARNING: PYGLET PLAYER SFX NOT IMPLEMENTED")
 
-class PlayerPyglet():
+
+    def load(self, fname, volume):
+        if logging:
+            log.debug("loading sfx")
+            log.debug(os.getcwd())
+            log.debug(fname)
+        if self._sound: self._sound.stop()
+#        self._sound = pygame.mixer.Sound(fname)
+        new_volume = volume
+        self.volume(new_volume)
+
+    def play(self, loops=0):
+        if self._sound:
+            self._sound.play(loops=loops)
+            self.loops = loops
+
+    def fadeout(self, seconds):
+        if self._sound:
+            self._sound.fadeout(seconds*100)
+
+    def stop(self):
+        if self._sound:
+            self._sound.stop()
+
+    def volume(self, v):
+        if self._sound is None: return
+        pass
+
+class PlayerPygletMusic():
     def __init__(self, game):
         self.game = game
         self._player = pyglet.media.Player
@@ -6835,6 +6870,9 @@ class PlayerPyglet():
 
     def volume(self, v):
         pass
+
+    def busy(self):
+        return False
 
 
 class PlayerPygameSFX():
@@ -6911,6 +6949,8 @@ class PlayerPygameMusic():
         if pygame.mixer.get_init() != None:
             pygame.mixer.music.set_volume(v)
 
+    def busy(self):
+        return pygame.mixer.music.get_busy()
 
 FRESH = 0 #restart song each time player enters scene.
 FRESH_BUT_SHARE = 1 #only restart if a different song to what is playing, else continue.
@@ -6983,9 +7023,9 @@ class Mixer(metaclass=use_on_events):
             self._sfx_player = PlayerPygameSFX(game)
             self._ambient_player = PlayerPygameSFX(game)
         else:
-            self._music_player = PlayerPyglet(game)
-            self._sfx_player = PlayerPyglet(game)
-            self._ambient_player = PlayerPyglet(game)
+            self._music_player = PlayerPygletMusic(game)
+            self._sfx_player = PlayerPygletSFX(game)
+            self._ambient_player = PlayerPygletSFX(game)
 
     def __getstate__(self): #actor.getstate
         """ Prepare the object for pickling """ 
@@ -7085,7 +7125,7 @@ class Mixer(metaclass=use_on_events):
             rule.mode = rule_mode
 
             default_start = rule.position
-            if self._music_filename == fname and rule.mode == FRESH_BUT_SHARE and pygame.mixer.music.get_busy() == True: #keep playing existing
+            if self._music_filename == fname and rule.mode == FRESH_BUT_SHARE and self._music_player.busy() == True: #keep playing existing
 #                print("KEEP PLAYING EXISTING SONG", fname)
                 return
             if rule.mode == FRESH:
