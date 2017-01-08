@@ -58,6 +58,33 @@ import pyglet.window.mouse
 
 # TODO better handling of loading/unloading assets
 
+APP_DIR = "."
+if "LOCALAPPDATA" in os.environ: #win 7
+    APP_DIR = os.environ["LOCALAPPDATA"]
+elif "APPDATA" in os.environ: #win XP
+    APP_DIR = os.environ["APPDATA"]
+elif 'darwin' in sys.platform: # check for OS X support
+#    import pygame._view
+    APP_DIR = os.path.join(expanduser("~"), "Library", "Application Support")
+
+def load_config(fname):
+    config = {}
+    if os.path.exists(fname):
+        with open(fname, "r") as f:
+            data = f.readlines()
+            for d in data:
+                if len(d)>2 and "=" in d:
+                    key, v = d.strip().split("=")
+                    v = False if v.upper() == "FALSE"
+                    v = True if v.upper() == "TRUE"
+                    v = None if v.upper() == "DEFAULT"
+                    if d[0] != "#":
+                        config[key] = v
+    return config
+
+# Engine configuration variables that can override settings
+CONFIG = load_config(os.path.join(APP_DIR, "game.conf"))
+
 try:
     import android
 except ImportError:
@@ -75,6 +102,7 @@ try:
     mixer = "pygame"
 except ImportError:
     mixer = "pyglet"
+#mixer = "pyglet"
 
 benchmark_events = datetime.now()
 
@@ -468,15 +496,6 @@ def redirect_log(log, fname):
         handler = logging.StreamHandler(stream=sys.stdout)
         handler.setLevel(logging.ERROR)
         log.addHandler(handler)
-
-APP_DIR = "."
-if "LOCALAPPDATA" in os.environ: #win 7
-    APP_DIR = os.environ["LOCALAPPDATA"]
-elif "APPDATA" in os.environ: #win XP
-    APP_DIR = os.environ["APPDATA"]
-elif 'darwin' in sys.platform: # check for OS X support
-#    import pygame._view
-    APP_DIR = os.path.join(expanduser("~"), "Library", "Application Support")
 
 if logging:
     if ENABLE_LOGGING:
@@ -6779,8 +6798,40 @@ class Camera(metaclass=use_on_events):  # the view manager
         self.game.on_wait()
 
 
-class PlayerPyglet(pyglet.media.Player):
-    pass
+class PlayerPyglet():
+    def __init__(self, game):
+        self.game = game
+        self._player = pyglet.media.Player
+        print("WARNING: PYGLET PLAYER NOT IMPLEMENTED")
+
+    def pause(self):
+        pass
+#        pygame.mixer.music.pause()
+
+    def stop(self):
+#        pygame.mixer.music.stop()
+        pass
+
+    def load(self, fname, v=1):
+        print("LOAD MUSIC",fname)
+#        pygame.mixer.music.load(fname)
+
+    def play(self, loops=-1, start=0):
+#        pygame.mixer.music.stop() #reset counter
+        print("PLAY MUSIC",start)
+#        pygame.mixer.music.play(loops=loops, start=start)
+
+    def position(self):
+        """ Note, this returns the number of seconds, for use with OGG. """
+ #       return pygame.mixer.music.get_pos()/100 
+        return 0
+
+    def queue(self, fname):
+            pass
+
+    def volume(self, v):
+        pass
+
 
 class PlayerPygameSFX():
     def __init__(self, game):
@@ -6928,9 +6979,9 @@ class Mixer(metaclass=use_on_events):
             self._sfx_player = PlayerPygameSFX(game)
             self._ambient_player = PlayerPygameSFX(game)
         else:
-            self._music_player = PlayerPyglet()
-            self._sfx_player = PlayerPyglet()
-            self._ambient_player = PlayerPyglet()
+            self._music_player = PlayerPyglet(game)
+            self._sfx_player = PlayerPyglet(game)
+            self._ambient_player = PlayerPyglet(game)
 
     def __getstate__(self): #actor.getstate
         """ Prepare the object for pickling """ 
