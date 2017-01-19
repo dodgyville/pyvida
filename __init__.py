@@ -818,7 +818,6 @@ def fonts_smart(game):
                 font = TTFont(f)
                 name, family = shortName(font)
                 filename = os.path.join("data/fonts", os.path.basename(f))
-                print(filename, name)
     #        font = get_font(self, filename, fontname)
                 if filename in _pyglet_fonts:
                     print("OVERRIDING font %s with %s (%s)"%(filename, f, name))
@@ -8462,7 +8461,13 @@ class Game(metaclass=use_on_events):
             if symbol == pyglet.window.key.F6:
                 self.settings.font_size_adjust += 2
 
-            if symbol == pyglet.window.key.F7:  # start recording
+            if symbol == pyglet.window.key.F7:  # start recording     
+                aa = Item("valentine").smart(game)
+                aa.load_assets(game)
+                game.add(aa)         
+                fn = get_function(game, "interact_valentine")
+                fn(game, None, game.tycho)
+                return
                 # ffmpeg -r 16 -pattern_type glob -i '*.png' -c:v libx264 out.mp4
                 d = "screencast %s" % datetime.now()
                 d = os.path.join(self.save_directory, d)
@@ -8477,8 +8482,9 @@ class Game(metaclass=use_on_events):
                 game.tycho.on_remember("valentine's day ending")
                 fn = get_function(game, "interact_wedding1")
                 fn(game, None, game.tycho)
-#                self.directory_screencast = None
-#                print("finished casting")
+                return
+                self.directory_screencast = None
+                print("finished casting")
 
             if symbol == pyglet.window.key.F9:
                 from scripts.general import add_coords_to_helm
