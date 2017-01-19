@@ -24,8 +24,9 @@ from argparse import ArgumentParser
 from collections import Iterable
 from datetime import datetime, timedelta
 from functools import total_ordering
+import gettext as igettext
 from gettext import gettext
-from gettext import gettext as _
+#from gettext import gettext as _
 from os.path import expanduser
 from random import choice, randint, uniform
 from time import sleep
@@ -68,7 +69,7 @@ elif 'darwin' in sys.platform: # check for OS X support
     APP_DIR = os.path.join(expanduser("~"), "Library", "Application Support")
 
 def load_info(fname_raw):
-    config = {"version":"None", "date":"Unknown"} # defaults
+    config = {"version":"None", "date":"Unknown", "slug":"pyvidagame"} # defaults
     fname = os.path.join("data", fname_raw) 
     if os.path.exists(fname):
         with open(fname, "r") as f:
@@ -84,7 +85,7 @@ def load_config(fname_raw):
     fname = os.path.join(APP_DIR, fname_raw) 
     if not os.path.exists(fname): # fallback on static directory
         fname = os.path.join("data", fname_raw) 
-    config = {"editor": False, "mixer":"pygame", "mods":True} # defaults
+    config = {"editor": False, "mixer":"pygame", "mods":True, "language":None} # defaults
     if os.path.exists(fname):
         with open(fname, "r") as f:
             data = f.readlines()
@@ -113,6 +114,14 @@ def save_config(config, fname_raw):
 INFO = load_config("game.info")
 CONFIG = load_config("game.conf")
 
+language = CONFIG["language"]
+
+if language:
+    t = igettext.translation(INFO["slug"], localedir=os.path.join('data', 'locale'), languages=[language])
+else:
+    t = igettext.translation(INFO["slug"], localedir=os.path.join('data', 'locale'), fallback=True)
+
+t.install()
 
 try:
     import android
@@ -773,6 +782,49 @@ def get_font(game, filename, fontname):
     return font
 
 
+FONT_SPECIFIER_NAME_ID = 4
+FONT_SPECIFIER_FAMILY_ID = 1
+def shortName( font ):
+    """ Get the short name from the font's names table
+        Courtesy: https://gist.github.com/pklaus/dce37521579513c574d0
+    """
+    name = ""
+    family = ""
+    for record in font['name'].names:
+        if b'\x00' in record.string:
+            name_str = record.string.decode('utf-16-be')
+        else:   
+            name_str = record.string.decode('latin-1')
+        if record.nameID == FONT_SPECIFIER_NAME_ID and not name:
+            name = name_str
+        elif record.nameID == FONT_SPECIFIER_FAMILY_ID and not family: 
+            family = name_str
+        if name and family: break
+    return name, family
+
+
+def fonts_smart(game):
+    """ Find all the fonts in this game and load them for pyglet """
+    from fontTools.ttLib import TTFont
+    
+    font_dirs = [""]
+    if language:
+        font_dirs.append("data/locale/%s"%language)
+    font_files = []
+    for d_raw in font_dirs:
+        for t in ['data/fonts/*.otf', 'data/fonts/*.ttf']:
+            for f in glob.glob(os.path.join(d_raw, t)):
+                font_files.append(f)
+                font = TTFont(f)
+                name, family = shortName(font)
+                filename = os.path.join("data/fonts", os.path.basename(f))
+                print(filename, name)
+    #        font = get_font(self, filename, fontname)
+                if filename in _pyglet_fonts:
+                    print("OVERRIDING font %s with %s (%s)"%(filename, f, name))
+                _pyglet_fonts[filename] = name
+#    game.add_font(val, font_name)
+
 def get_point(game, destination, actor=None):
     """ get a point from a tuple, str or destination """
     obj = None
@@ -1014,31 +1066,39 @@ def get_smart_directory(game, obj):
     return d
 
 
-def get_best_directory(game, d_raw):
-    """ Test for mod high contrast, game high contrast, a mod directory, 
-        the game directory or the pyvida directory and return the best option                 
+def get_best_directory(game, d_raw_name):
+    """ First using the selected language, test for mod high contrast, game high 
+        contrast, a mod directory, the game directory or the pyvida directory and 
+        return the best option                 
     """
-    key = os.path.basename(os.path.normpath(d_raw))
-    HC = "_highcontrast"
-    key_hc = "%s%s"%(key, HC) # inventory_highcontrast
-    base = os.path.dirname(os.path.normpath(d_raw))
-    d_mod_hc = os.path.join(os.path.join("mod", base), key_hc)  #eg mod/data/items/inventory_highcontrast
-    d_hc = os.path.join(os.path.join("mod", base), key_hc) #eg data/items/inventory_highcontrast
-    d_mod = os.path.join(os.path.join("mod", base), key) #eg mod/data/items/inventory
-    d = os.path.join(base, key) #eg data/items/inventory, same as d_raw
-    if game.settings.high_contrast:
-        if CONFIG["mods"]:
-            directories = [d_mod_hc, d_hc, d_mod, d]
-        else:
-            directories = [d_hc, d]
-    else: # no high contrast
-        if CONFIG["mods"]:
-            directories = [d_mod, d]
-        else:
-            directories = [d]
-    for directory in directories:
-        if os.path.isdir(directory):
-            return directory
+    if language:
+        l = os.path.join(os.path.join('data', 'locale'), language)
+        d_raws = [os.path.join(l, d_raw_name), d_raw_name]
+    else:
+        d_raws = [d_raw_name]
+    for d_raw in d_raws:
+        key = os.path.basename(os.path.normpath(d_raw))
+        HC = "_highcontrast"
+        key_hc = "%s%s"%(key, HC) # inventory_highcontrast
+        base = os.path.dirname(os.path.normpath(d_raw))
+        d_mod_hc = os.path.join(os.path.join("mod", base), key_hc)  #eg mod/data/items/inventory_highcontrast
+        d_hc = os.path.join(os.path.join("mod", base), key_hc) #eg data/items/inventory_highcontrast
+        d_mod = os.path.join(os.path.join("mod", base), key) #eg mod/data/items/inventory
+        d = os.path.join(base, key) #eg data/items/inventory, same as d_raw
+        if game.settings and game.settings.high_contrast:
+            if CONFIG["mods"]:
+                directories = [d_mod_hc, d_hc, d_mod, d]
+            else:
+                directories = [d_hc, d]
+        else: # no high contrast
+            if CONFIG["mods"]:
+                directories = [d_mod, d]
+            else:
+                directories = [d]
+        for directory in directories:
+            if os.path.isdir(directory):
+                return directory
+    return None
 
 def get_best_file(game, f_raw):
     """ Test for mod high contrast, game high contrast, a mod directory, 
@@ -5931,6 +5991,7 @@ class Text(Item, metaclass=use_on_events):
                  offset=None, interact=None, look=None, delay=0, step=2,
                  game=None):
         """
+        font: the filepath to the font
         delay : How fast to display chunks of the text
         step : How many characters to advance during delayed display
         """
@@ -7180,7 +7241,7 @@ class Mixer(metaclass=use_on_events):
                 default_start = 0
             absfilename = os.path.abspath(fname)
             if os.path.exists(absfilename): #new music
-                log.info("Loading music file %s" % absfilename)		
+                log.info("Loading music file %s" % absfilename)        
                 self._music_player.load(absfilename)
                 self._music_filename = fname
 #                print("SETTING CURRENT MUSIC FILENAME TO", fname)
@@ -7716,6 +7777,9 @@ def load_game_pickle(game, fname, meta_only=False, keep=[], responsive=False):
                     restore_object(game, o)
                     yield
 
+            # restore fonts
+            fonts_smart(game) #load fonts, pick up any overrides such as language
+    
             #switch off headless mode to force graphical assets of most recently
             #accessed scenes to load.
             headless = game._headless
@@ -8092,7 +8156,9 @@ class Game(metaclass=use_on_events):
         self._lock_updates_to_draws = LOCK_UPDATES_TO_DRAWS 
     
     def init(self):
-        """ Complete all the pyglet and pygame initiliastion """
+        """ Complete all the pyglet and pygame initialisation """
+        fonts_smart(self) #load fonts
+
         # scale the game if the screen is too small
         # don't allow game to be bigger than the available screen.
         # we do this using a glScalef call which makes it invisible to the engine
@@ -8405,8 +8471,14 @@ class Game(metaclass=use_on_events):
                 print("saving to", d)
                 self.directory_screencast = d
             if symbol == pyglet.window.key.F8:  # stop recording
-                self.directory_screencast = None
-                print("finished casting")
+                game.storage.brutus_wedding_stage = 17
+                game.load_state("wedding", "brutus")
+                game.camera.scene("wedding")
+                game.tycho.on_remember("valentine's day ending")
+                fn = get_function(game, "interact_wedding1")
+                fn(game, None, game.tycho)
+#                self.directory_screencast = None
+#                print("finished casting")
 
             if symbol == pyglet.window.key.F9:
                 from scripts.general import add_coords_to_helm
