@@ -6525,6 +6525,11 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._motion = []
         self._motion_index = 0
 
+        self._zoom_start = 1
+        self._zoom_factor = 0.9
+        self._zoom_target = None
+        self._zoom_steps = None
+
 
     def _update(self, dt, obj=None): #camera.update
         if self.game.scene:
@@ -6590,6 +6595,19 @@ class Camera(metaclass=use_on_events):  # the view manager
                     self._overlay.opacity = round(255 * complete)
                 elif self._overlay_fx == FX_FADE_IN:
                     self._overlay.opacity = round(255 * (1 - complete))
+
+        # experimental zoom feature
+        if self._zoom_steps:
+            zz = self._zoom_factor
+            ww, hh = self._zoom_target
+            hh = self.game.resolution[1] - hh
+            glTranslatef(ww, hh, 0)
+            glScalef(zz, zz, 1)
+            glTranslatef(-ww, -hh, 0)
+            self._zoom_steps -= 1
+            if self._zoom_steps <= 0:
+                self._zoom_steps = None
+                glPopMatrix() #undo the zoom effect
 
         """
         Just a fun little experiment in quick cutting between scenes
@@ -6718,6 +6736,17 @@ class Camera(metaclass=use_on_events):  # the view manager
         :return:
         """
         self._scene(self.game.player.scene)
+
+    def on_zoom(self, start, factor, steps=40, target=None):   
+        glPushMatrix()
+        self._zoom_start = start
+        zz = self._zoom_factor = factor
+        ww, hh = self._zoom_target = target
+        hh = self.game.resolution[1] - hh
+        self._zoom_steps = steps
+        glTranslatef(ww, hh, 0)
+        glScalef(start, start, 1)
+        glTranslatef(-ww, -hh, 0)
 
     def on_shake(self, xy=0, x=None, y=None, seconds=None):
         self._shake_x = x if x else xy
@@ -8459,6 +8488,9 @@ class Game(metaclass=use_on_events):
             if symbol == pyglet.window.key.F5:
                 self.settings.font_size_adjust -= 2
             if symbol == pyglet.window.key.F6:
+                t = (954, 353)
+                game.camera.zoom(start=3, factor=0.98, steps=40, target=t)
+                return
                 self.settings.font_size_adjust += 2
 
             if symbol == pyglet.window.key.F7:  # start recording     
