@@ -69,6 +69,7 @@ elif 'darwin' in sys.platform: # check for OS X support
     APP_DIR = os.path.join(expanduser("~"), "Library", "Application Support")
 
 def load_info(fname_raw):
+    """ Used by developer to describe game """
     config = {"version":"None", "date":"Unknown", "slug":"pyvidagame"} # defaults
     fname = os.path.join("data", fname_raw) 
     if os.path.exists(fname):
@@ -81,11 +82,12 @@ def load_info(fname_raw):
     return config
 
 def load_config(fname_raw):
-    # check wrirable appdata directory
+    """ Used by player to override game settings """
+    # check wrirable appdata directory, 
     fname = os.path.join(APP_DIR, fname_raw) 
     if not os.path.exists(fname): # fallback on static directory
         fname = os.path.join("data", fname_raw) 
-    config = {"editor": False, "mixer":"pygame", "mods":True, "language":None} # defaults
+    config = {"editor": False, "mixer":"pygame", "mods":True, "language":None, "internet":None} # defaults
     if os.path.exists(fname):
         with open(fname, "r") as f:
             data = f.readlines()
@@ -6607,6 +6609,7 @@ class Camera(metaclass=use_on_events):  # the view manager
             self._zoom_steps -= 1
             if self._zoom_steps <= 0:
                 self._zoom_steps = None
+                self.busy -= 1
                 glPopMatrix() #undo the zoom effect
 
         """
@@ -6737,7 +6740,7 @@ class Camera(metaclass=use_on_events):  # the view manager
         """
         self._scene(self.game.player.scene)
 
-    def on_zoom(self, start, factor, steps=40, target=None):   
+    def on_zoom(self, start, factor, steps=40, target=None, block=False):
         glPushMatrix()
         self._zoom_start = start
         zz = self._zoom_factor = factor
@@ -6747,6 +6750,9 @@ class Camera(metaclass=use_on_events):  # the view manager
         glTranslatef(ww, hh, 0)
         glScalef(start, start, 1)
         glTranslatef(-ww, -hh, 0)
+        self.busy += 1
+        if block == True:
+            self.game.on_wait() # make all other events wait too.
 
     def on_shake(self, xy=0, x=None, y=None, seconds=None):
         self._shake_x = x if x else xy
@@ -8461,6 +8467,13 @@ class Game(metaclass=use_on_events):
             
 
         # process engine keys before game keys
+
+        # font adjust is always available
+        if symbol == pyglet.window.key.F5:
+            self.settings.font_size_adjust -= 2
+        if symbol == pyglet.window.key.F6:
+            self.settings.font_size_adjust += 2
+
         if ENABLE_FKEYS:
             if symbol == pyglet.window.key.F1:
                 #            edit_object(self, list(self.scene._objects.values()), 0)
@@ -8485,21 +8498,8 @@ class Game(metaclass=use_on_events):
                 self.reload_modules()  # reload now to refresh existing references
                 self._allow_editing = False
 
-            if symbol == pyglet.window.key.F5:
-                self.settings.font_size_adjust -= 2
-            if symbol == pyglet.window.key.F6:
-                t = (954, 353)
-                game.camera.zoom(start=3, factor=0.98, steps=40, target=t)
-                return
-                self.settings.font_size_adjust += 2
 
             if symbol == pyglet.window.key.F7:  # start recording     
-                aa = Item("valentine").smart(game)
-                aa.load_assets(game)
-                game.add(aa)         
-                fn = get_function(game, "interact_valentine")
-                fn(game, None, game.tycho)
-                return
                 # ffmpeg -r 16 -pattern_type glob -i '*.png' -c:v libx264 out.mp4
                 d = "screencast %s" % datetime.now()
                 d = os.path.join(self.save_directory, d)
