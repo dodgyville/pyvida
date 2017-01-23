@@ -10725,7 +10725,7 @@ class Game(metaclass=use_on_events):
 #        print("game resolution", width, height, "screen size",w,h)
         # only scale non-fullscreen window if it's larger than screen.
         # or if it's fullscreen, always scale to fit screen
-        if fullscreen or (not fullscreen and (width > w or height > h)):
+        if fullscreen or (not fullscreen and (width != w or height != h)):
             #resolution, scale = fit_to_screen((w, h), resolution)
             width, height = resolution
             scale = new_scale
@@ -10736,7 +10736,6 @@ class Game(metaclass=use_on_events):
             self._window = Window(width=sw, height=sh, fullscreen=fullscreen) 
         self._scale = scale
         self.fullscreen = fullscreen #status of this session
-
         self.create_bars_and_scale(width, height, scale)
 
         """
