@@ -822,7 +822,7 @@ def fonts_smart(game):
                 filename = os.path.join("data/fonts", os.path.basename(f))
     #        font = get_font(self, filename, fontname)
                 if filename in _pyglet_fonts:
-                    print("OVERRIDING font %s with %s (%s)"%(filename, f, name))
+                    log.warning("OVERRIDING font %s with %s (%s)"%(filename, f, name))
                 _pyglet_fonts[filename] = name
 #    game.add_font(val, font_name)
 
