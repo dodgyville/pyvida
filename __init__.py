@@ -110,7 +110,8 @@ def save_config(config, fname_raw):
         for key, value in config.items():
             if type(value) == str:
                 value = "default" if value.upper() == "DEFAULT" else value
-            f.write("%s=%s\n"%(key, value))
+            value = "default" if value == None else value
+            f.write("%s=%s\n"%(key, str(value).lower()))
 
 # Engine configuration variables that can override settings
 INFO = load_config("game.info")
