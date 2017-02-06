@@ -1835,7 +1835,7 @@ class Action(object):
         mname = get_best_file(game, fname + ".montage")
         if "mod" in mname:
             log.info("mod detect for action, loading %s"%fname)
-            w,h, num = self._load_montage(mname)
+        w,h, num = self._load_montage(mname) # always reload incase mod is added or removed
 
         quickload = os.path.abspath(get_best_file(game, fname + ".quickload"))
 
