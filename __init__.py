@@ -8087,6 +8087,10 @@ class Game(metaclass=use_on_events):
         self._waiting = False
         self.busy = False  # game is never busy
         self._waiting_for_user = False # used by on_wait_for_user
+       
+        self._skip_key = None # if in a cutscene and allowing players to skip
+        self._skip_callback = None 
+        self._skipping = False
 
         self._events = []
         self._event = None
@@ -8723,6 +8727,11 @@ class Game(metaclass=use_on_events):
             if symbol == pyglet.window.key.F12:
                 self._event = None
                 self._events = []
+
+        # if we are allowing events to be skipped, check for that first.
+        if self._skip_key and self._skip_key == symbol:
+            self.attempt_skip()
+            return
 
         # check modals, menus, and then scene objects for key matches
 
@@ -10641,6 +10650,40 @@ class Game(metaclass=use_on_events):
         self._waiting = True
         reset_mouse_cursor(self) # possibly set mouse cursor to hour glass
         return
+
+    def attempt_skip(self):
+        if len(self._events) > 0:
+            # if the only event is a goto for the player to a uninteresting point, clear it.        
+            for i, event in enumerate(self._events):
+                print(event[0].__name__)
+                if event[0].__name__ == "on_end_skippable":
+                    print("CAN SKIP TO HERE:",i)
+                    if len(self._modals)>0: # try and clear modals
+                        m = get_object(self, self._modals[0])
+                        if m:
+                            m.trigger_interact()
+                    self._skipping = True
+                    self.on_set_headless(True)
+                    self._walkthrough_auto = True #auto advance                
+
+        else:
+            log.warning("ATTEMPT SKIP BUT NOT EVENTS TO SKIP")
+
+    def on_start_skippable(self, key=K_ESCAPE, callback=None):
+        self._skip_key = K_ESCAPE
+        self._skip_callback = callback 
+        log.warning("skip callback not implemented yet")
+
+    def on_end_skippable(self):
+        """ If this special event is in the event queue and the user has triggered "attempt_skip"
+            clear all events to here.
+        """
+        if self._skipping:
+            self._skipping = False
+            self._skip_key = None
+            self._skip_callback = None
+            self.on_set_headless(False)
+            self._walkthrough_auto = False #stop auto advance
 
     def on_autosave(self, actor, tilesize, exclude_from_screenshot=[], fname = None, fast=True):
         game = self
