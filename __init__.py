@@ -9069,6 +9069,7 @@ class Game(metaclass=use_on_events):
             obj = get_object(self, name)
             allow_collide = True if (obj.allow_look or obj.allow_use) \
                 else False
+#            print(obj.name, allow_collide, obj.collide(window_x, window_y), window_x, window_y, obj.interact)
             if allow_collide and obj.collide(window_x, window_y):
                 user_trigger_interact(self, obj)
                 return
@@ -10738,11 +10739,11 @@ class Game(metaclass=use_on_events):
         glTranslatef(dx/scale, dy/scale, 0) #move to middle of screen
         self._bars = []
         pattern =  pyglet.image.SolidColorImagePattern((0, 0, 0, 255))
-        if dx > 0: # vertical bars
+        if int(dx) > 0: # vertical bars
             image = pattern.create_image(int(dx), int(sh/scale))
             self._bars.append((image, (-dx,0)))
             self._bars.append((image, (sw/scale,0)))
-        if dy > 0: # horizontal bars
+        if int(dy) > 0: # horizontal bars
             image = pattern.create_image(int(sw/scale), int(dy))
             self._bars.append((image, (0,-dy)))
             self._bars.append((image, (0,sh/scale)))
