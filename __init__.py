@@ -8524,6 +8524,28 @@ class Game(metaclass=use_on_events):
                 print("finished casting")
 
             if symbol == pyglet.window.key.F9:
+                game.camera.scene("linside")
+                game.tycho.says(_("You can't wish your problems away, Brutus."))
+                game.brutus.says(_("Watch me, Tycho."))
+                return
+                game.camera.scene("afoyer")
+                game.mistriss.says(_("Welcome to Pleasure Planet!"))
+                game.mistriss.says(_("Tell me your fantasy and I will make it come true."))
+                game.camera.scene("fleft")
+                game.jo.says(_("Can you make me straight?"))
+                game.tycho.says(_("Err..."), "sheesh")
+                game.brutus.says(_("Of course!"))
+                game.camera.scene("ebar")
+                game.adam.says(_("Can you get me a better boyfriend?"))
+                game.tycho.says(_("Um..."), "perplexed")
+                game.brutus.says(_("Hairy or smooth?"))
+                game.camera.scene("bvictory")
+                game.astronaut2.says(_("Can you help me conquer the galaxy?"))
+                game.tycho.says(_("No!"), "angry")
+                game.brutus.says(_("I'll see what I can do."))
+
+#                self.settings.high_contrast = not self.settings.high_contrast
+                return
                 from scripts.general import add_coords_to_helm
                 from scripts.constants import P_ARCADIA
                 add_coords_to_helm(game, P_ARCADIA)    
@@ -9716,6 +9738,12 @@ class Game(metaclass=use_on_events):
             self.add(scene)
             self.camera.scene(scene)
 
+        # setup high contrast mode
+        # XXX this image is missing from pyvida, and is not resolution independent.
+        contrast_item = Item("_contrast").smart(self, image="data/interface/contrast.png")
+        self.add(contrast_item)
+        contrast_item.load_assets(self)
+
         if callback:
             callback(0, self)
         self.last_clock_tick = self.current_clock_tick = int(
@@ -10207,12 +10235,28 @@ class Game(metaclass=use_on_events):
         pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0)
         # draw scene backgroundsgrounds (layers with z equal or less than 1.0)
         for item in self.scene._layer:
-            obj = get_object(self, item)
-            obj.game = self
-            if obj.z <= 1.0:
-                obj.pyglet_draw(absolute=False)
+            background_obj = get_object(self, item)
+            background_obj.game = self
+            if background_obj.z <= 1.0:
+                background_obj.pyglet_draw(absolute=False)
             else:
                 break
+
+        if self.scene and self.settings and self.settings.high_contrast:           
+            old_surface = pyglet.image.get_buffer_manager().get_color_buffer().get_image_data()
+            self._contrast.pyglet_draw() # dim the entire screen
+            #now brighten areas 
+            for obj_name in self.scene._objects:
+                obj = get_object(self, obj_name)
+                if obj:
+                    #draw a high contrast rectangle over the clickable area if a portal or obj has no image
+                    if not obj.resource or isinstance(obj, Portal):
+                        r = obj.clickable_area #.inflate(10,10)     
+                        pic = background_obj.resource.image.frames[0].image
+                        x,y,w,h = int(r.x), int(r.y), int(r.w), int(r.h)
+                        x, y = max(0, x), max(0, y)
+                        subimage = pic.get_region(x,y,w,h)
+                        subimage.blit(x, self.resolution[1]-y-h, 0)
 
         if self.scene.walkarea:
             if self.scene.walkarea._editing:
