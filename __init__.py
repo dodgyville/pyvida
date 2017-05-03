@@ -1307,6 +1307,10 @@ class Achievement(object):
         self.date = None
         self.version = None
 
+    def neat(self):
+        """ Print a neat description of this achievement """
+        return self.slug, self.name, self.description, self.date, self.version
+
 class AchievementManager(object, metaclass=use_on_events):
     """ Basic achievement system, hopefully to plug into Steam and other
     services one day """
@@ -1321,6 +1325,15 @@ class AchievementManager(object, metaclass=use_on_events):
         """ Register an achievement """
         if slug not in self._achievements:
             self._achievements[slug] = Achievement(slug, name, description, filename)
+
+    def library(self, only_granted=False):
+        """ List all achievements (or just the ones granted) """
+        achievements = self.granted if only_granted else self._achievements 
+        for key, achievement in achievements.items():
+            if key in self.granted:
+                print(self.granted[key].neat())
+            else:
+                print(achievement.neat())
 
     def grant(self, game, slug):
         """ Grant an achievement to the player """
@@ -8253,6 +8266,9 @@ class Game(metaclass=use_on_events):
 #        pyglet.clock.schedule_interval(
 #            self._monitor_scripts, 2)  # keep reloading scripts
 
+        # Force game to draw AT least 30 fps.
+        pyglet.clock.schedule_interval(self.lock_update, 1.0/30.0)
+
         # the pyvida game scripting event loop, XXX: limited to actor fps
         if not self._lock_updates_to_draws:
             pyglet.clock.schedule_interval(self.update, 1 / self.default_actor_fps)
@@ -8261,6 +8277,9 @@ class Game(metaclass=use_on_events):
         else:
             pyglet.clock.schedule_interval(self.combined_update, 1 / self.fps)
         self.fps_clock = pyglet.clock.ClockDisplay()
+
+    def lock_update(self, dt):
+        pass
 
 
     def close(self):
@@ -8524,6 +8543,7 @@ class Game(metaclass=use_on_events):
                 print("finished casting")
 
             if symbol == pyglet.window.key.F9:
+                return
                 game.camera.scene("linside")
                 game.tycho.says(_("You can't wish your problems away, Brutus."))
                 game.brutus.says(_("Watch me, Tycho."))
