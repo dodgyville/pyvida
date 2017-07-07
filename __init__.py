@@ -2460,8 +2460,8 @@ class Actor(MotionManager, metaclass=use_on_events):
             sprite.color = self._tint
         if self._scale:
             sprite.scale = self.scale
-        if self.rotate:
-            sprite.rotation = self.rotate
+#        if self.rotate:
+#            sprite.rotation = self.rotate
         sprite.opacity = self.alpha
 
         sprite.on_animation_end = sprite_callback
@@ -3469,6 +3469,7 @@ class Actor(MotionManager, metaclass=use_on_events):
 
 
             ww,hh = self.game.resolution
+#            if self.name == "lbrain": import pdb; pdb.set_trace()
             if self._rotate:
                 glTranslatef((sprite.width/2)+self.x, hh-self.y-sprite.height/2, 0) #move to middle of sprite
                 glRotatef(-self._rotate, 0.0, 0.0, 1.0)
@@ -8169,7 +8170,7 @@ class Game(metaclass=use_on_events):
 
         self._window_editor = None
         self._window_editor_objects = []
-        self._screen_size_override = None
+        self._screen_size_override = None # game.resolution for the game, this is the window size.
 
 
         # how many event steps in this progress block
@@ -8248,7 +8249,6 @@ class Game(metaclass=use_on_events):
                 nw,nh = override_resolution.split("x")
                 nw,nh = int(nw), int(nh)
                 self._screen_size_override = (nw, nh)
-#                self.resolution = (nw, nh)
         self.reset_window(fullscreen, create=True) # create self._window
 
         self._window.on_key_press = self.on_key_press
@@ -8396,10 +8396,18 @@ class Game(metaclass=use_on_events):
 
     @property
     def w(self):
-        return self._window.get_size()[0]
+        return self.resolution[0]
 
     @property
     def h(self):
+        return self.resolution[1]
+
+    @property
+    def window_w(self):
+        return self._window.get_size()[0]
+
+    @property
+    def window_h(self):
         return self._window.get_size()[1]
 
     def _set_mouse_cursor(self, cursor):
@@ -9263,7 +9271,7 @@ class Game(metaclass=use_on_events):
                 closest_distance = 10000.0
                 r = getattr(self._editing, self._editing_point_get, None)
                 editing_index = None
-                y = self.h - y
+                y = self.h - y #XXX this may need to use self.screen_h
                 # possible select new point
                 for i, pt in enumerate([(r.left, r.top), (r.right, r.bottom)]):
                     dist = math.sqrt((pt[0] - x) ** 2 + (pt[1] - y) ** 2)

@@ -2,8 +2,6 @@ pyvida
 ======
 #### an easy-to-use fully-featured cross platform point-and-click adventure game engine ####
 
-June 2014: Active development of pyvida is currently occurring in the pyglet branch. This version is hardware accelerated, has a simpler API, and many other new features. However it is currently not ready for production.
-
 ### Features ###
 
 * cross platform - windows, mac and linux
@@ -18,7 +16,7 @@ June 2014: Active development of pyvida is currently occurring in the pyglet bra
 * fully scriptable menus
 * easily switch between playable characters
 * supports any image and sound formats supported by SDL (we recommend PNG for images and OGG for sound)
-* supports any screen size (default is 1024x768)
+* supports any screen size
 * supports any colour depth
 * alpha blending on graphics
 * walkareas, hotspots, walk behinds, etc
