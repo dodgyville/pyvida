@@ -193,6 +193,7 @@ ALLOW_SILENT_ACHIEVEMENTS = True #don't break immersion by displaying achievemen
 DEFAULT_RESOLUTION = (1920, 1080)
 DEFAULT_FPS = 16
 DEFAULT_ACTOR_FPS = 16
+DEFAULT_ENGINE_FPS = 30 # if locking engine to a draw rate
 
 DIRECTORY_ACTORS = "data/actors"
 DIRECTORY_PORTALS = "data/portals"
@@ -1432,6 +1433,7 @@ class Settings(object):
         self.portal_exploration = DEFAULT_EXPLORATION
         self.textspeed = NORMAL
         self.fps = DEFAULT_FPS
+        self.lock_engine_fps = DEFAULT_ENGINE_FPS # lock pyvida to forcing a draw at this rate (NONE to not lock)    
         self.stereoscopic = False  # display game in stereoscopic (3D)
         self.hardware_accelerate = False
         self.backend = BACKEND
@@ -1481,6 +1483,8 @@ class Settings(object):
         try:
             with open(os.path.abspath(self.filename), "rb") as f:
                 data = pickle.load(f)
+                if not hasattr(data, "lock_engine_fps"): # compatible with older games
+                    data.lock_engine_fps = DEFAULT_ENGINE_FPS
             return data # use loaded settings
         except:  # if any problems, use default settings
             log.warning(
@@ -8266,8 +8270,9 @@ class Game(metaclass=use_on_events):
 #        pyglet.clock.schedule_interval(
 #            self._monitor_scripts, 2)  # keep reloading scripts
 
-        # Force game to draw AT least 30 fps.
-        pyglet.clock.schedule_interval(self.lock_update, 1.0/30.0)
+        # Force game to draw at least at a certain fps (default is 30 fps)
+        if self.settings.lock_engine_fps != None:
+            pyglet.clock.schedule_interval(self.lock_update, 1.0/self.settings.lock_engine_fps)
 
         # the pyvida game scripting event loop, XXX: limited to actor fps
         if not self._lock_updates_to_draws:
