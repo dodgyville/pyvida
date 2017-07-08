@@ -1113,7 +1113,7 @@ def get_best_file(game, f_raw):
     key_hc = "%s%s"%(key, HC) # inventory_highcontrast
     base = os.path.dirname(os.path.normpath(d_raw))
     d_mod_hc = os.path.join(os.path.join("mod", base), key_hc)  #eg mod/data/items/inventory_highcontrast
-    d_hc = os.path.join(os.path.join("mod", base), key_hc) #eg data/items/inventory_highcontrast
+    d_hc = os.path.join(base, key_hc) #eg data/items/inventory_highcontrast
     d_mod = os.path.join(os.path.join("mod", base), key) #eg mod/data/items/inventory
     d = os.path.join(base, key) #eg data/items/inventory, same as d_raw
     if game.settings.high_contrast:
@@ -8265,9 +8265,12 @@ class Game(metaclass=use_on_events):
         # setup high contrast mode
         # XXX this image is missing from pyvida, and is not resolution independent.
         contrast_item = Item("_contrast").smart(self, image="data/interface/contrast.png")
-#        self.add(contrast_item)
         self._contrast = contrast_item
         contrast_item.load_assets(self)
+
+        # sadly this approach of directly blitting _contrast ignores transparency 
+#        sheet = pyglet.image.SolidColorImagePattern(color=(255,255,255,200))
+#        self._contrast = sheet.create_image(*self.game.resolution)
 
         # other non-window stuff
         self.mouse_cursor = self._mouse_cursor = MOUSE_POINTER
