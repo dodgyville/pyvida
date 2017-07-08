@@ -10284,7 +10284,8 @@ class Game(metaclass=use_on_events):
                 if obj:
                     #draw a high contrast rectangle over the clickable area if a portal or obj has no image
                     if not obj.resource or isinstance(obj, Portal):
-                        r = obj.clickable_area #.inflate(10,10)     
+                        r = obj.clickable_area #.inflate(10,10)  
+                        if r.w == 0 or r.h == 0: continue # empty obj or tiny   
                         pic = background_obj.resource.image.frames[0].image
                         x,y,w,h = int(r.x), int(r.y), int(r.w), int(r.h)
                         x, y = max(0, x), max(0, y)
