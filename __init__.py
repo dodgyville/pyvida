@@ -8262,6 +8262,12 @@ class Game(metaclass=use_on_events):
         self._window.on_mouse_drag = self.on_mouse_drag
         self._window.on_mouse_scroll = self.on_mouse_scroll
 
+        # setup high contrast mode
+        # XXX this image is missing from pyvida, and is not resolution independent.
+        contrast_item = Item("_contrast").smart(self, image="data/interface/contrast.png")
+#        self.add(contrast_item)
+        self._contrast = contrast_item
+        contrast_item.load_assets(self)
 
         # other non-window stuff
         self.mouse_cursor = self._mouse_cursor = MOUSE_POINTER
@@ -9771,12 +9777,6 @@ class Game(metaclass=use_on_events):
             self.add(scene)
             self.camera.scene(scene)
 
-        # setup high contrast mode
-        # XXX this image is missing from pyvida, and is not resolution independent.
-        contrast_item = Item("_contrast").smart(self, image="data/interface/contrast.png")
-        self.add(contrast_item)
-        contrast_item.load_assets(self)
-
         if callback:
             callback(0, self)
         self.last_clock_tick = self.current_clock_tick = int(
@@ -10275,10 +10275,14 @@ class Game(metaclass=use_on_events):
             else:
                 break
 
-        if self.scene and self.settings and self.settings.high_contrast:           
-            old_surface = pyglet.image.get_buffer_manager().get_color_buffer().get_image_data()
-            self._contrast.pyglet_draw() # dim the entire screen
-            #now brighten areas 
+        if self.scene and self.settings and self.settings.high_contrast:
+            # get the composited background
+#            old_surface = pyglet.image.get_buffer_manager().get_color_buffer().get_image_data()
+
+            # dim the entire background
+            self._contrast.pyglet_draw() 
+
+            #now brighten areas of interest that have no sprite
             for obj_name in self.scene._objects:
                 obj = get_object(self, obj_name)
                 if obj:
@@ -10286,11 +10290,12 @@ class Game(metaclass=use_on_events):
                     if not obj.resource or isinstance(obj, Portal):
                         r = obj.clickable_area #.inflate(10,10)  
                         if r.w == 0 or r.h == 0: continue # empty obj or tiny   
-                        pic = background_obj.resource.image.frames[0].image
-                        x,y,w,h = int(r.x), int(r.y), int(r.w), int(r.h)
-                        x, y = max(0, x), max(0, y)
-                        subimage = pic.get_region(x,y,w,h)
-                        subimage.blit(x, self.resolution[1]-y-h, 0)
+                        if background_obj and background_obj.resource and background_obj.resource.image:
+                            pic = background_obj.resource.image.frames[0].image #XXX only uses one background layer
+                            x,y,w,h = int(r.x), int(r.y), int(r.w), int(r.h)
+                            x, y = max(0, x), max(0, y)
+                            subimage = pic.get_region(x,y,w,h)
+                            subimage.blit(x, self.resolution[1]-y-h, 0)
 
         if self.scene.walkarea:
             if self.scene.walkarea._editing:
