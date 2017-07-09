@@ -89,7 +89,7 @@ def load_config(fname_raw):
     fname = os.path.join(APP_DIR, fname_raw) 
     if not os.path.exists(fname): # fallback on static directory
         fname = os.path.join("data", fname_raw) 
-    config = {"editor": False, "mixer":"pygame", "mods":True, "language":None, "internet":None} # defaults
+    config = {"editor": False, "mixer":"pygame", "mods":True, "language":None, "internet":None, "lowmemory":None} # defaults
     if os.path.exists(fname):
         with open(fname, "r") as f:
             data = f.readlines()
@@ -1079,7 +1079,8 @@ def get_smart_directory(game, obj):
 def get_best_directory(game, d_raw_name):
     """ First using the selected language, test for mod high contrast, game high 
         contrast, a mod directory, the game directory or the pyvida directory and 
-        return the best option                 
+        return the best option     
+        XXX: Possibly not used, see get_best_file_below            
     """
     if language:
         l = os.path.join(os.path.join('data', 'locale'), language)
@@ -1113,17 +1114,30 @@ def get_best_directory(game, d_raw_name):
 def get_best_file(game, f_raw):
     """ Test for mod high contrast, game high contrast, a mod directory, 
         the game directory or the pyvida directory and return the best option                 
+        TODO: Low memory ignores high contrast.
     """
     d_raw, f_name = os.path.split(f_raw)
     key = os.path.basename(os.path.normpath(d_raw))
-    HC = "_highcontrast"
-    key_hc = "%s%s"%(key, HC) # inventory_highcontrast
     base = os.path.dirname(os.path.normpath(d_raw))
+
+    LM = "_lowmemory"
+    key_lm = "%s%s"%(key, LM) # eg inventory_lowmemory
+    d_mod_lm = os.path.join(os.path.join("mod", base), key_lm)  #eg mod/data/items/inventory_lowmemory
+    d_lm = os.path.join(base, key_lm) #eg data/items/inventory_lowmemory
+
+    HC = "_highcontrast"
+    key_hc = "%s%s"%(key, HC) # eg inventory_highcontrast
     d_mod_hc = os.path.join(os.path.join("mod", base), key_hc)  #eg mod/data/items/inventory_highcontrast
     d_hc = os.path.join(base, key_hc) #eg data/items/inventory_highcontrast
     d_mod = os.path.join(os.path.join("mod", base), key) #eg mod/data/items/inventory
     d = os.path.join(base, key) #eg data/items/inventory, same as d_raw
-    if game.settings.high_contrast:
+
+    if game.low_memory:
+        if CONFIG["mods"]:
+            directories = [d_mod_lm, d_lm, d_mod_hc, d_hc, d_mod, d]
+        else:
+            directories = [d_lm, d_hc, d]
+    elif game.settings.high_contrast:
         if CONFIG["mods"]:
             directories = [d_mod_hc, d_hc, d_mod, d]
         else:
@@ -1454,6 +1468,7 @@ class Settings(object):
         self.accessibility_font = None
         self.font_size_adjust = 0 # increase or decrease font size
         self.show_gui = True  # when in-game, show a graphical user interface
+        self.low_memory = False # game is running on a low memory machine (up to developer to decide what that means)
 
         self.invert_mouse = False  # for lefties
         self.language = "en"
@@ -1492,6 +1507,8 @@ class Settings(object):
                 data = pickle.load(f)
                 if not hasattr(data, "lock_engine_fps"): # compatible with older games
                     data.lock_engine_fps = DEFAULT_ENGINE_FPS
+                if not hasattr(data, "low_memory"): # compatible with older games
+                    data.low_memory = False
             return data # use loaded settings
         except:  # if any problems, use default settings
             log.warning(
@@ -2469,7 +2486,10 @@ class Actor(MotionManager, metaclass=use_on_events):
             return
 
         kwargs["subpixel"] = True
+#        try:
         sprite = PyvidaSprite(action_animation, **kwargs)
+#        except MemoryError:
+#       log.error?
         if self._tint:
             sprite.color = self._tint
         if self._scale:
@@ -8187,6 +8207,7 @@ class Game(metaclass=use_on_events):
         self._window_editor_objects = []
         self._screen_size_override = None # game.resolution for the game, this is the window size.
 
+        self.low_memory = False # low memory mode for this session (from CONFIG or Settings)
 
         # how many event steps in this progress block
         self._progress_bar_count = 0
@@ -8236,6 +8257,9 @@ class Game(metaclass=use_on_events):
         self._window_dx = 0 # displacement by fullscreen mode
         self._window_dy = 0
 
+        if "lowmemory" in CONFIG and CONFIG["lowmemory"]: # use override from game.conf
+            self.low_memory =  CONFIG["lowmemory"]
+
         fullscreen = self.settings.fullscreen if self.settings and self.settings.fullscreen else DEFAULT_FULLSCREEN
 
         if "fullscreen" in CONFIG and CONFIG["fullscreen"]: # use override from game.conf
@@ -8281,7 +8305,7 @@ class Game(metaclass=use_on_events):
 
         # setup on screen messages
         self.message_duration = 5 #how many seconds to display each message
-        self.message_position = (10, 600) #position of message queue
+        self.message_position = (CENTER, BOTTOM) #position of message queue
         #special object for onscreen messages 
         self._message_object = Text("_message object",  colour=FONT_MESSAGE_COLOUR, font=FONT_MESSAGE, size=FONT_MESSAGE_SIZE, offset=2) 
         self._message_object.load_assets(self)
@@ -10304,8 +10328,8 @@ class Game(metaclass=use_on_events):
 #            old_surface = pyglet.image.get_buffer_manager().get_color_buffer().get_image_data()
 
             # dim the entire background only if scene allows.
-            if getattr(self.scene, "_ignore_highcontrast", False) is False:
-                self._contrast.pyglet_draw() 
+            if getattr(self.scene, "_ignore_highcontrast", False) is False and self._contrast:
+                self._contrast.pyglet_draw(absolute=True) 
 
                 #now brighten areas of interest that have no sprite
                 for obj_name in self.scene._objects:
@@ -10313,14 +10337,16 @@ class Game(metaclass=use_on_events):
                     if obj:
                         #draw a high contrast rectangle over the clickable area if a portal or obj has no image
                         if not obj.resource or isinstance(obj, Portal):
-                            r = obj.clickable_area #.inflate(10,10)  
+                            r = obj._clickable_area #.inflate(10,10)  
                             if r.w == 0 or r.h == 0: continue # empty obj or tiny   
                             if background_obj and background_obj.resource and background_obj.resource.image:
                                 pic = background_obj.resource.image.frames[0].image #XXX only uses one background layer
-                                x,y,w,h = int(r.x), int(r.y), int(r.w), int(r.h)
+                                x,y,w,h = int(obj.x + obj.ay + r.x), int(r.y), int(r.w), int(r.h)
+                                resY = self.resolution[1]
+                                y = int(resY - obj.y - obj.ay - r.y - r.h)
                                 x, y = max(0, x), max(0, y)
                                 subimage = pic.get_region(x,y,w,h)
-                                subimage.blit(x, self.resolution[1]-y-h, 0)
+                                subimage.blit(x, y, 0)
 
         if self.scene.walkarea:
             if self.scene.walkarea._editing:
@@ -10385,14 +10411,20 @@ class Game(metaclass=use_on_events):
         self._gui_batch.draw()
 
         if self._message_object and len(self.messages)>0: #update message_object.
-            self._message_object.x, self._message_object.y = self.message_position
             for message in self.messages:
                 m, t = message
                 if t < datetime.now() - timedelta(seconds=self.message_duration):
                     self.messages.remove(message) #remove out-of-date messages
             txt = "\n".join([n[0] for n in self.messages]) if len(self.messages) > 0 else " "
             self._message_object.display_text = txt
+            # place object
+            mx,my = self.message_position
+            mx = self.resolution[0]//2 - self._message_object.w//2 if mx == CENTER else mx
+            my = self.resolution[1]*0.95 if my == BOTTOM else my  
+            self._message_object.x, self._message_object.y = mx,my
             self._message_object.y -= self._message_object.h
+
+
             self._message_object.pyglet_draw(absolute=True)
             #self._message_object._update(dt)
 
