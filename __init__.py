@@ -10290,6 +10290,7 @@ class Game(metaclass=use_on_events):
 
         pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0)
         # draw scene backgroundsgrounds (layers with z equal or less than 1.0)
+        background_obj = None
         for item in self.scene._layer:
             background_obj = get_object(self, item)
             background_obj.game = self
