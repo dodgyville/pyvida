@@ -31,6 +31,8 @@ from os.path import expanduser
 from random import choice, randint, uniform
 from time import sleep
 from math import sin, cos, radians
+from fontTools.ttLib import TTFont
+
 
 try:
     import tkinter as tk
@@ -222,6 +224,14 @@ FONT_ACHIEVEMENT = FONT_VERA
 FONT_ACHIEVEMENT_SIZE = 10
 FONT_ACHIEVEMENT_COLOUR = (245, 245, 255)
 FONT_ACHIEVEMENT_COLOUR2 = (215, 215, 225)
+
+#ENGINE MESSAGE DEFAULT
+
+FONT_MESSAGE = FONT_VERA
+FONT_MESSAGE_SIZE = 24
+FONT_MESSAGE_COLOUR = (245, 225, 0)
+FONT_MESSAGE_COLOUR2 = (0, 0, 0)
+
 
 # LAYOUTS FOR MENUS and MENU FACTORIES
 HORIZONTAL = 0
@@ -776,9 +786,9 @@ def get_font(game, filename, fontname):
     try:
         pyglet.font.add_file(filename)
         font = pyglet.font.load(fontname)
-        fonts = [x[0] for x in font._memory_fonts.keys()]
-        if fontname.lower() not in fonts:
-            log.error("Font %s appeared to not load, fontname must match name in TTF file. Real name might be in: %s"%(fontname, font._memory_fonts.keys()))
+#        fonts = [x[0].lower() for x in font._memory_fonts.keys()]
+#        if font.name.lower() not in fonts:
+#            log.error("Font %s appears not be in our font dictionary, fontname must match name in TTF file. Real name might be in: %s"%(fontname, font._memory_fonts.keys()))
     except FileNotFoundError:
         font = None
     except AttributeError:
@@ -809,7 +819,6 @@ def shortName( font ):
 
 def fonts_smart(game):
     """ Find all the fonts in this game and load them for pyglet """
-    from fontTools.ttLib import TTFont
     
     font_dirs = [""]
     if language:
@@ -822,11 +831,9 @@ def fonts_smart(game):
                 font = TTFont(f)
                 name, family = shortName(font)
                 filename = os.path.join("data/fonts", os.path.basename(f))
-    #        font = get_font(self, filename, fontname)
                 if filename in _pyglet_fonts:
                     log.warning("OVERRIDING font %s with %s (%s)"%(filename, f, name))
                 _pyglet_fonts[filename] = name
-#    game.add_font(val, font_name)
 
 def get_point(game, destination, actor=None):
     """ get a point from a tuple, str or destination """
@@ -1726,8 +1733,7 @@ def load_defaults(game, obj, name, filename):
             try:
                 defaults = json.loads(f.read())
             except ValueError:
-                print("unable to load %s.defaults"%name)
-                if logging: log.error("Error loading %s.defaults"%name)
+                if logging: log.error("Error loading %s.defaults file."%name)
                 defaults = {}
         for key, val in defaults.items():
             if key == "interact_key":
@@ -1743,9 +1749,13 @@ def load_defaults(game, obj, name, filename):
                 elif val in COLOURS:
                     val = COLOURS[val]
             if key == "font_speech":
-                font_name = os.path.splitext(os.path.basename(val))[0]
-                game.add_font(val, font_name)
-                obj.font_speech = val
+                try:
+                    font = TTFont(val) # load the font to get the name to add to the dict.
+                    font_name, family = shortName(font)
+                    game.add_font(val, font_name) # make sure font is available if new
+                    obj.font_speech = val
+                except FileNotFoundError:
+                    if logging: log.error(f"Error loading font {val} from {name}.defaults")
 
             obj.__dict__[key] = val
 
@@ -5574,6 +5584,7 @@ class Scene(MotionManager, metaclass=use_on_events):
 
         self.walkarea = WalkAreaManager(self)
         self._colour = None  #clear colour (0-255, 0-255, 0-255)
+        self._ignore_highcontrast = False # if True, then game._contrast will not be blitted on this scene.
 
 
         self.walkareas = OldWalkAreaManager(self, game)  # pyvida4 compatability
@@ -7849,8 +7860,8 @@ def load_game_pickle(game, fname, meta_only=False, keep=[], responsive=False):
             game._headless = headless
 
             # load pyglet fonts
-            for k, v in _pyglet_fonts.items():
-                game.add_font(k, v)
+            for fontfile, fontname in _pyglet_fonts.items():
+                game.add_font(fontfile, fontname)
 
             # change camera to scene
             if player_info["player"]:
@@ -8268,6 +8279,13 @@ class Game(metaclass=use_on_events):
         self._contrast = contrast_item
         contrast_item.load_assets(self)
 
+        # setup on screen messages
+        self.message_duration = 5 #how many seconds to display each message
+        self.message_position = (10, 600) #position of message queue
+        #special object for onscreen messages 
+        self._message_object = Text("_message object",  colour=FONT_MESSAGE_COLOUR, font=FONT_MESSAGE, size=FONT_MESSAGE_SIZE, offset=2) 
+        self._message_object.load_assets(self)
+
         # sadly this approach of directly blitting _contrast ignores transparency 
 #        sheet = pyglet.image.SolidColorImagePattern(color=(255,255,255,200))
 #        self._contrast = sheet.create_image(*self.game.resolution)
@@ -8565,6 +8583,8 @@ class Game(metaclass=use_on_events):
                 print("finished casting")
 
             if symbol == pyglet.window.key.F9:
+                d = "<sound effect: Hello World>"
+                self.message(d)
                 return
                 game.camera.scene("linside")
                 game.tycho.says(_("You can't wish your problems away, Brutus."))
@@ -10282,23 +10302,24 @@ class Game(metaclass=use_on_events):
             # get the composited background
 #            old_surface = pyglet.image.get_buffer_manager().get_color_buffer().get_image_data()
 
-            # dim the entire background
-            self._contrast.pyglet_draw() 
+            # dim the entire background only if scene allows.
+            if getattr(self.scene, "_ignore_highcontrast", False) is False:
+                self._contrast.pyglet_draw() 
 
-            #now brighten areas of interest that have no sprite
-            for obj_name in self.scene._objects:
-                obj = get_object(self, obj_name)
-                if obj:
-                    #draw a high contrast rectangle over the clickable area if a portal or obj has no image
-                    if not obj.resource or isinstance(obj, Portal):
-                        r = obj.clickable_area #.inflate(10,10)  
-                        if r.w == 0 or r.h == 0: continue # empty obj or tiny   
-                        if background_obj and background_obj.resource and background_obj.resource.image:
-                            pic = background_obj.resource.image.frames[0].image #XXX only uses one background layer
-                            x,y,w,h = int(r.x), int(r.y), int(r.w), int(r.h)
-                            x, y = max(0, x), max(0, y)
-                            subimage = pic.get_region(x,y,w,h)
-                            subimage.blit(x, self.resolution[1]-y-h, 0)
+                #now brighten areas of interest that have no sprite
+                for obj_name in self.scene._objects:
+                    obj = get_object(self, obj_name)
+                    if obj:
+                        #draw a high contrast rectangle over the clickable area if a portal or obj has no image
+                        if not obj.resource or isinstance(obj, Portal):
+                            r = obj.clickable_area #.inflate(10,10)  
+                            if r.w == 0 or r.h == 0: continue # empty obj or tiny   
+                            if background_obj and background_obj.resource and background_obj.resource.image:
+                                pic = background_obj.resource.image.frames[0].image #XXX only uses one background layer
+                                x,y,w,h = int(r.x), int(r.y), int(r.w), int(r.h)
+                                x, y = max(0, x), max(0, y)
+                                subimage = pic.get_region(x,y,w,h)
+                                subimage.blit(x, self.resolution[1]-y-h, 0)
 
         if self.scene.walkarea:
             if self.scene.walkarea._editing:
@@ -10361,6 +10382,19 @@ class Game(metaclass=use_on_events):
             modal.pyglet_draw(absolute=True)
 
         self._gui_batch.draw()
+
+        if self._message_object and len(self.messages)>0: #update message_object.
+            self._message_object.x, self._message_object.y = self.message_position
+            for message in self.messages:
+                m, t = message
+                if t < datetime.now() - timedelta(seconds=self.message_duration):
+                    self.messages.remove(message) #remove out-of-date messages
+            txt = "\n".join([n[0] for n in self.messages]) if len(self.messages) > 0 else " "
+            self._message_object.display_text = txt
+            self._message_object.y -= self._message_object.h
+            self._message_object.pyglet_draw(absolute=True)
+            #self._message_object._update(dt)
+
 
         # and hasattr(self._mouse_object, "pyglet_draw"):
         if self._mouse_object:
@@ -10901,6 +10935,7 @@ class Game(metaclass=use_on_events):
             duration = 0.1  # skip delay on splash when editing
         name = "Untitled scene" if not image else image
         scene = Scene(name, game=self)
+        scene._ignore_highcontrast = True # never dim splash
         if image:
             scene._set_background(image)
         for i in scene._layer:
