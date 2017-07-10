@@ -9830,7 +9830,7 @@ class Game(metaclass=use_on_events):
             round(time.time() * 1000))
         pyglet.app.run()
 
-    def is_fastest_playthrough(self):
+    def is_fastest_playthrough(self, remember=False):
         """ Call at game over time, store and return true if this is the fastest playthrough """
         r = False
         td = datetime.now() - self.storage._last_load_time
@@ -9838,9 +9838,10 @@ class Game(metaclass=use_on_events):
         new_time = milliseconds(self.storage._total_time_in_game + td)
         if self.settings and self.settings.filename:
             if self.settings.fastest_playthrough == None or new_time <= self.settings.fastest_playthrough:
-                self.settings.fastest_playthrough = new_time
+                if remember:
+                    self.settings.fastest_playthrough = new_time
+                    save_settings(self, self.settings.filename)            
                 r = True
-                save_settings(self, self.settings.filename)            
         return r
 
     def on_quit(self):
