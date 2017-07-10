@@ -10423,7 +10423,7 @@ class Game(metaclass=use_on_events):
             mx = self.resolution[0]//2 - self._message_object.w//2 if mx == CENTER else mx
             my = self.resolution[1]*0.98 if my == BOTTOM else my  
             self._message_object.x, self._message_object.y = mx,my
-            self._message_object.y -= self._message_object.h
+            self._message_object.y -= self._message_object.h * len(self.messages)
 
 
             self._message_object.pyglet_draw(absolute=True)
