@@ -4005,7 +4005,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             text = "%s gets %s!" % (self.name, name)
 
         # Actor can only spawn events belonging to it.
-        items = self._says(text, action="portrait", ok=ok)        
+        items = self._says(text, action=action, ok=ok)        
         if self.game:
             msgbox = items[0]
             item.load_assets(self.game)
@@ -11410,7 +11410,10 @@ if EDITOR_AVAILABLE:
                     self.game.scene.add(self.game.player)
 
             def initial_state(*args, **kwargs):
-                player_in_scene = self.game.player.name in self.game.scene._objects
+                if self.game.player:
+                    player_in_scene = self.game.player.name in self.game.scene._objects
+                else:
+                    player_in_scene = None
                 self.game.load_state(self.game.scene, "initial")
                 if player_in_scene: self.game.scene.add(self.game.player)
 
