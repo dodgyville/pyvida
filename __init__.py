@@ -3801,10 +3801,14 @@ class Actor(MotionManager, metaclass=use_on_events):
             ok.load_assets(self.game)
 
         kwargs = self._get_text_details(font=font, size=size)
-        # position 10% off the bottom
         if position == None:
+            # position 10% off the bottom
+#            x, y = self.game.resolution[
+#                0] // 2 - msgbox.w // 2, self.game.resolution[1] * 0.8 - msgbox.h
+            # msgbox weighted slight higher than centre to draw natural eyeline to speech in centre of screen.
             x, y = self.game.resolution[
-                0] // 2 - msgbox.w // 2, self.game.resolution[1] * 0.8 - msgbox.h
+                0] // 2 - msgbox.w // 2, self.game.resolution[1] * 0.38
+
         elif position == TOP:
             x, y = self.game.resolution[
                 0] // 2 - msgbox.w // 2, self.game.resolution[1] * 0.1
