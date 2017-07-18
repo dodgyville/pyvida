@@ -1772,7 +1772,7 @@ def load_defaults(game, obj, name, filename):
                     game.add_font(val, font_name) # make sure font is available if new
                     obj.font_speech = val
                 except FileNotFoundError:
-                    if logging: log.error(f"Error loading font {val} from {name}.defaults")
+                    if logging: log.error("Error loading font %s from %s.defaults"%(val, name))
 
             obj.__dict__[key] = val
 
