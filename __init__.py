@@ -52,7 +52,11 @@ from pyglet_gui.containers import VerticalContainer, HorizontalContainer
 from pyglet_gui.option_selectors import Dropdown
 """
 
-from pyglet.gl import *
+try:
+    from pyglet.gl import *
+except pyglet.window.NoSuchConfigException
+    pass
+
 from pyglet.gl.gl import c_float
 
 from pyglet.image.codecs.png import PNGImageDecoder
