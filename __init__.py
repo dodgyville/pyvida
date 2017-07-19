@@ -54,7 +54,7 @@ from pyglet_gui.option_selectors import Dropdown
 
 try:
     from pyglet.gl import *
-except pyglet.window.NoSuchConfigException
+except pyglet.window.NoSuchConfigException:
     pass
 
 from pyglet.gl.gl import c_float
