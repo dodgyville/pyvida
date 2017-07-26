@@ -8330,8 +8330,7 @@ class Game(metaclass=use_on_events):
 #            self._monitor_scripts, 2)  # keep reloading scripts
 
         # Force game to draw at least at a certain fps (default is 30 fps)
-        if self.settings.lock_engine_fps != None:
-            pyglet.clock.schedule_interval(self.lock_update, 1.0/self.settings.lock_engine_fps)
+        self.start_engine_lock()
 
         # the pyvida game scripting event loop, XXX: limited to actor fps
         if not self._lock_updates_to_draws:
@@ -8341,6 +8340,16 @@ class Game(metaclass=use_on_events):
         else:
             pyglet.clock.schedule_interval(self.combined_update, 1 / self.fps)
         self.fps_clock = pyglet.clock.ClockDisplay()
+
+    def start_engine_lock(self):
+        # Force game to draw at least at a certain fps (default is 30 fps)
+        if self.settings.lock_engine_fps != None:
+            print("Start engine lock")
+            pyglet.clock.schedule_interval(self.lock_update, 1.0/self.settings.lock_engine_fps)
+
+    def stop_engine_lock(self):
+        print("Stop engine lock")
+        pyglet.clock.unschedule(self.lock_update)
 
     def lock_update(self, dt):
         pass
