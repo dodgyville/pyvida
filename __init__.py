@@ -1268,12 +1268,45 @@ Classes
 """
 
 class PyvidaSprite(pyglet.sprite.Sprite):
-    """ A pyglet sprite but frame animate is handled manually """
+    """ A pyglet sprite but frame animate is handled manually 
+        And the width/height behaviour of pyglet 1.2.4 preserved.
+    """
     def __init__(self, *args, **kwargs):
         pyglet.sprite.Sprite.__init__(self, *args, **kwargs)
         self._frame_index = 0
         if self._animation:
             pyglet.clock.unschedule(self._animate) #make it manual
+
+
+    def _get_width(self):
+        if self._subpixel:
+            return self._texture.width * self._scale
+        else:
+            return int(self._texture.width * self._scale)
+
+    width = property(_get_width,
+                     doc='''Scaled width of the sprite.
+
+    Read-only.  Invariant under rotation.
+
+    :type: int
+    ''')
+
+    def _get_height(self):
+        if self._subpixel:
+            return self._texture.height * self._scale
+        else:
+            return int(self._texture.height * self._scale)
+
+    height = property(_get_height,
+                      doc='''Scaled height of the sprite.
+
+    Read-only.  Invariant under rotation.
+
+    :type: int
+    ''')
+
+
 
 
     def _animate(self, dt):
@@ -3469,6 +3502,7 @@ class Actor(MotionManager, metaclass=use_on_events):
 
         height = self.game.resolution[1] if not window else window.height
         width = self.game.resolution[0] if not window else window.width
+
         y = height - y - self.ay - resource_height
 
         #displace if the action requires it
@@ -3537,7 +3571,6 @@ class Actor(MotionManager, metaclass=use_on_events):
                 glScalef(1.0, -1.0, 1.0);
                 y = -y
                 y -= sprite.height
-
 
             sprite.position = (x,y)
             if self._scroll_dx != 0 and self._scroll_dx + self.w < self.game.resolution[0]:
@@ -8624,6 +8657,12 @@ class Game(metaclass=use_on_events):
                 print("finished casting")
 
             if symbol == pyglet.window.key.F9:
+                game.blink.relocate(game.scene)
+                game.blink.ay = 0
+                game.blink.y = 0
+                game.blink.do("out")
+                game.blink.scale = 1
+                return
                 d = "<sound effect: Hello World>"
                 self.message(d)
                 return
