@@ -11,7 +11,35 @@ import json
 import math
 import os
 import pickle
+import pyglet.clock
+
+# override clock unschedule to fix a bug in pyglet 1.3.0b1
+class PyvidaClock(pyglet.clock.Clock): 
+    def unschedule(self, func):
+        '''Remove a function from the schedule.
+
+        If the function appears in the schedule more than once, all occurrences
+        are removed.  If the function was not scheduled, no error is raised.
+
+        :Parameters:
+            `func` : function
+                The function to remove from the schedule.
+
+        '''
+        # clever remove item without disturbing the heap:
+        # 1. set function to an empty lambda -- original function is not called
+        # 2. set interval to 0               -- item will be removed from heap eventually
+        for item in set(item for item in self._schedule_interval_items if item.func == func):
+            item.interval = 0
+            item.func = lambda x, *args, **kwargs: x
+
+        self._schedule_items = [i for i in self._schedule_items if i.func != func]    
+
+# use a custom clock method to avoid bug in pyglet 1.3.0b1
+pyglet.clock.Clock.unschedule = PyvidaClock.unschedule
+
 import pyglet
+
 import struct
 import subprocess
 import sys
@@ -142,6 +170,8 @@ try:
     import logging.handlers
 except ImportError:
     logging = None
+
+
 
 
 mixer = CONFIG["mixer"] if "mixer" in CONFIG else None
@@ -8284,6 +8314,7 @@ class Game(metaclass=use_on_events):
         #force pyglet to draw every frame. Requires restart
         #this is on by default to allow Motions to sync with Sprites.
         self._lock_updates_to_draws = LOCK_UPDATES_TO_DRAWS 
+
     
     def init(self):
         """ Complete all the pyglet and pygame initialisation """
@@ -8358,6 +8389,7 @@ class Game(metaclass=use_on_events):
         # other non-window stuff
         self.mouse_cursor = self._mouse_cursor = MOUSE_POINTER
 
+
         self.reset_info_object()
 #        pyglet.clock.schedule_interval(
 #            self._monitor_scripts, 2)  # keep reloading scripts
@@ -8373,6 +8405,8 @@ class Game(metaclass=use_on_events):
         else:
             pyglet.clock.schedule_interval(self.combined_update, 1 / self.fps)
         self.fps_clock = pyglet.clock.ClockDisplay()
+
+
 
     def start_engine_lock(self):
         # Force game to draw at least at a certain fps (default is 30 fps)
@@ -9884,6 +9918,7 @@ class Game(metaclass=use_on_events):
             callback(0, self)
         self.last_clock_tick = self.current_clock_tick = int(
             round(time.time() * 1000))
+
         pyglet.app.run()
 
     def is_fastest_playthrough(self, remember=False):
