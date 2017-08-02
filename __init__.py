@@ -1933,7 +1933,9 @@ class Action(object):
         set_resource(self.resource_name, resource=None)
         self._loaded = False
 
-    def load_assets(self, game): #action.load_assets
+    def load_assets(self, game, skip_if_loaded=False): #action.load_assets
+        if skip_if_loaded and self._loaded:
+            return
         if game:
             self.game = game
         else:
@@ -2517,12 +2519,12 @@ class Actor(MotionManager, metaclass=use_on_events):
             action.unload_assets()      
         set_resource(self.resource_name, resource=None)
 
-    def load_assets(self, game, **kwargs): #actor.load_assets
+    def load_assets(self, game, skip_if_loaded=False): #actor.load_assets
         self.game = game
         if not game: import pdb; pdb.set_trace()
         #load actions
         for action in self._actions.values():
-            action.load_assets(game)
+            action.load_assets(game, skip_if_loaded=skip_if_loaded)
 
         return self.switch_asset(self.action)
 
@@ -10620,7 +10622,8 @@ class Game(metaclass=use_on_events):
                 if replace == False:
                     continue
                 elif replace == True:
-                    print("REPLACING", obj.name)
+                    if logging:
+                        log.info("replacing %s"%obj.name)
             try:
                 obj.game = self
             except:
