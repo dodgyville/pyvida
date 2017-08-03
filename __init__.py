@@ -148,7 +148,7 @@ def save_config(config, fname_raw):
             f.write("%s=%s\n"%(key, str(value).lower()))
 
 # Engine configuration variables that can override settings
-INFO = load_config("game.info")
+INFO = load_info("game.info")
 CONFIG = load_config("game.conf")
 
 language = CONFIG["language"]
@@ -5875,6 +5875,13 @@ class Scene(MotionManager, metaclass=use_on_events):
                 except ValueError:
                     log.error("Unable to load details from %s" %
                               details_filename)
+        if len(layers) == 0: # fall back to loading any "background.png"
+            wildcard = os.path.join(absdir, "background.png")
+            for element in glob.glob(wildcard):  # add layers
+                fname = os.path.splitext(os.path.basename(element))[0]
+                layer = self._load_layer(os.path.join(sdir, os.path.basename(element)), cls=cls)
+                layers.append(layer)
+                log.warning("Falling back to background.png with no details for scene %s"%self.name)
 
         layers.sort(key=lambda x: x.z)  # sort by z-value
         if len(layers) > 0:  # use the lowest layer as the scene size
@@ -6612,10 +6619,12 @@ class MenuManager(metaclass=use_on_events):
         sfx.play()        
 
     def on_play_enter_sfx(self):
-        self.on_play_menu_sfx(self.game._menu_enter_filename)
+        if self.game._menu_enter_filename:
+            self.on_play_menu_sfx(self.game._menu_enter_filename)
 
     def on_play_exit_sfx(self):
-        self.on_play_menu_sfx(self.game._menu_exit_filename)
+        if self.game._menu_exit_filename:
+            self.on_play_menu_sfx(self.game._menu_exit_filename)
       
 
 class Camera(metaclass=use_on_events):  # the view manager
