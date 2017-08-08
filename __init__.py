@@ -282,6 +282,7 @@ POSITION_TEXT = 3  # play at text point of actor
 # collection sorting
 ALPHABETICAL = 0
 CHRONOLOGICAL = 1 #sort by time they were added
+UNSORTED = 2
 
 # ANCHORS FOR MENUS and MENU FACTORIES (and on_says)
 LEFT = 0
@@ -6320,6 +6321,7 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         self._mouse_motion = self._mouse_motion_collection
         self._mouse_scroll = None
         self.mx, self.my = 0, 0  # in pyglet format
+        self.header = (0,0) #XXX not implemented. where to displace the collection items (for fancy collection backgrounds)
 
         self.callback = callback
         self.padding = padding
@@ -6356,24 +6358,39 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         self.dimensions = dimensions if dimensions else (self.clickable_area.w, self.clickable_area.h)
         return self
 
-    def on_add(self, obj, callback=None):  # collection.add
+    def on_add(self, objs, callback=None):  # collection.add
         """ Add an object to this collection and set up an event handler for it in the event it gets selected """
-        obj = get_object(self.game, obj)
-        if obj.game == None:
-            # set game object if object exists only in collection
-            self.game.add(obj)
+        if type(objs) != list:
+            objs = [objs]
 
-#        obj.push_handlers(self) #TODO
-        self._objects.append(obj.name)
-        self._sorted_objects = None
-        if callback:
-            obj._collection_select = callback
+        for obj in objs:
+            obj = get_object(self.game, obj)
+            if obj.game == None:
+                # set game object if object exists only in collection
+                self.game.add(obj)
+
+    #        obj.push_handlers(self) #TODO
+            self._objects.append(obj.name)
+            self._sorted_objects = None
+            if callback:
+                obj._collection_select = callback
 
     def _get_sorted(self):
         if self._sorted_objects == None:
             show = self._objects
-            self._sorted_objects = sorted(
-                show, key=lambda x: x.lower(), reverse=self.reverse_sort)
+            sort_fn = None
+            if self.sort_by == ALPHABETICAL:
+                sort_fn = "lower" 
+            elif self.sort_by == CHRONOLOGICAL:
+                sort_fn = "lower"
+                if logging:
+                    log.error(
+                        "Sort function CHRONOLOGICAL not implemented on collection %s" % (self.name))            
+            if sort_fn:       
+                self._sorted_objects = sorted(
+                    show, key=lambda x: x.lower(), reverse=self.reverse_sort)
+            else:        
+                self._sorted_objects = show
         return self._sorted_objects
 
     def get_displayed_objects(self):
