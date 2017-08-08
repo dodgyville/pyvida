@@ -6138,6 +6138,7 @@ class Text(Item, metaclass=use_on_events):
         self._width = None  # width of full text
         self.game = game
         self.delay = delay
+        self.align = LEFT  # LEFT x, CENTER around x, RIGHT x - self.w
 
         if len(colour) == 3:
             # add an alpha value if needed
@@ -6193,7 +6194,7 @@ class Text(Item, metaclass=use_on_events):
             return
 
         # animate the text
-        if self.delay > 0:
+        if self.delay and self.delay > 0:
             self._text_index = 0
             pyglet.clock.schedule_interval(self._animate_text, self.delay)
         else:
@@ -6289,6 +6290,11 @@ class Text(Item, metaclass=use_on_events):
             return
 
         x,y = self.pyglet_draw_coords(absolute, None, 0) #self.resource.content_height)
+
+        if self.align == RIGHT:
+            x -= self.w
+        elif self.align == CENTER:
+            x = x - self.w//2
 
         if self.resource_offset:  # draw offset first
             self.resource_offset.x, self.resource_offset.y = int(
