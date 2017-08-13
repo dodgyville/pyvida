@@ -9058,6 +9058,7 @@ class Game(metaclass=use_on_events):
             self.mouse_cursor = MOUSE_HOURGLASS
             return
 
+#        print(self.mouse_position_raw, self.mouse_position, self.resolution, self.w, self.h)
         if window_y < 0 or window_x < 0 or window_x > self.resolution[0] or window_y > self.resolution[1]: # mouse is outside game window
             self._info_object.display_text = " "  # clear info
             reset_mouse_cursor(self)
@@ -10333,10 +10334,13 @@ class Game(metaclass=use_on_events):
             x = self.mouse_position_raw[0] + self._joystick.x * 40
             y = self.mouse_position_raw[1] - self._joystick.y * 40
             #print(x,y, self._joystick.x,  self.mouse_position_raw)
+
+            # stop joystick going off screen.
             if y < 0: y = 0
             if x < 0: x = 0
-            if y > self.resolution[1]: y = self.resolution[1]
-            if x > self.resolution[0]: x = self.resolution[0]
+            if y > self.resolution[1] * self._scale : y = self.resolution[1] * self._scale
+            if x > self.resolution[0] * self._scale: x = self.resolution[0] * self._scale
+
             self.on_mouse_motion(x, y, dx=0, dy=0) # XXX dx, dy are zero
 
 #        dt = self.fps #time passed (in milliseconds)
