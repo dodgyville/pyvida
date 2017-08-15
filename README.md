@@ -37,9 +37,12 @@ python setup.py install
 
 ### Dependencies ###
 
- * pyglet 1.2a
+ * pyglet 1.2a or above
  * pygame (for music and sound)
  * python 3.3+
+
+Currently testing on pyglet 1.3. To install use:
+pip install https://bitbucket.org/pyglet/pyglet/get/tip.zip#egg=pyglet-1.3.0
 
 ### Writing a game in pyvida ###
 
