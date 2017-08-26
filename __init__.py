@@ -13,6 +13,12 @@ import os
 import pickle
 import pyglet.clock
 
+"""
+len(pyglet.clock._default._schedule_interval_items)
+[print(i, x.func) for i,x in enumerate(pyglet.clock._default._schedule_interval_items)]
+
+"""
+
 # override clock unschedule to fix a bug in pyglet 1.3.0b1
 class PyvidaClock(pyglet.clock.Clock): 
     def unschedule(self, func):
@@ -29,6 +35,8 @@ class PyvidaClock(pyglet.clock.Clock):
         # clever remove item without disturbing the heap:
         # 1. set function to an empty lambda -- original function is not called
         # 2. set interval to 0               -- item will be removed from heap eventually
+#        if len(self._schedule_interval_items) == 10:
+#            import pdb; pdb.set_trace()        
         for item in set(item for item in self._schedule_interval_items if item.func == func):
             item.interval = 0
             item.func = lambda x, *args, **kwargs: x
@@ -36,7 +44,7 @@ class PyvidaClock(pyglet.clock.Clock):
         self._schedule_items = [i for i in self._schedule_items if i.func != func]    
 
 # use a custom clock method to avoid bug in pyglet 1.3.0b1
-pyglet.clock.Clock.unschedule = PyvidaClock.unschedule
+#pyglet.clock.Clock.unschedule = PyvidaClock.unschedule
 
 import pyglet
 
@@ -1032,7 +1040,9 @@ def option_mouse_motion(game, btn, player, *args, **kwargs2):
     btn.resource.color = (255, 255, 255, 255)
 
 def close_on_says(game, obj, player):
-    """ Close an actor's msgbox and associated items """
+    """ Default close an actor's msgbox and associated items 
+        Also kill any pyglet scheduled events for animated text on Text
+    """
     # REMOVE ITEMS from obj.items instead
     if not hasattr(obj, "tmp_creator"):
         log.warning("%s has no tmp_creator in close_on_says. Might not be a problem in walkthrough_auto mode.", obj.name)
@@ -1042,6 +1052,11 @@ def close_on_says(game, obj, player):
         for item in actor.tmp_modals:
             if item in game._modals:
                 game._modals.remove(item)
+                # test if this item is mid-animated text and unschedule if needed
+                mobj = get_object(game, item)
+                if getattr(mobj, "_pyglet_animate_scheduled", False): 
+                    mobj._unschedule_animated_text() 
+
     except TypeError:
         log.warning("%s has no tmp_items in close_on_says. Might not be a problem in walkthrough_auto mode.", actor.name)
         return
@@ -3842,9 +3857,9 @@ class Actor(MotionManager, metaclass=use_on_events):
         if self.game._walkthrough_auto:  # headless mode skips sound and visuals
             items[0].trigger_interact()  # auto-close the on_says
 
-    def create_text(self, text, *args, **kwargs):
+    def create_text(self, name, *args, **kwargs):
         """ Create a Text object using this actor's values """
-        return Text(text, *args, **kwargs)
+        return Text(name, *args, **kwargs)
 
     def _says(self, text, action="portrait", font=None, size=None, using=None, position=None, align=LEFT, offset=None, delay=0.01, step=3, ok=-1, interact=close_on_says, block_for_user=True, key=K_SPACE):
         """
@@ -3936,8 +3951,9 @@ class Actor(MotionManager, metaclass=use_on_events):
             kwargs["size"] = DEFAULT_TEXT_SIZE
         if self.game and self.game.settings:
             kwargs["size"] +=self.game.settings.font_size_adjust
-
-        label = self.create_text(text, **kwargs)
+        kwargs["display_text"] = text
+        name = "_%s_text_obj"%self.name
+        label = self.create_text(name, **kwargs)
         label.load_assets(self.game)
 
 #        label.game = self.game
@@ -6139,6 +6155,7 @@ class Text(Item, metaclass=use_on_events):
         self._width = None  # width of full text
         self.game = game
         self.delay = delay
+        self._pyglet_animate_scheduled = False # is a clock function scheduled
         self.align = LEFT  # LEFT x, CENTER around x, RIGHT x - self.w
 
         if len(colour) == 3:
@@ -6198,6 +6215,7 @@ class Text(Item, metaclass=use_on_events):
         if self.delay and self.delay > 0:
             self._text_index = 0
             pyglet.clock.schedule_interval(self._animate_text, self.delay)
+            self._pyglet_animate_scheduled = True
         else:
             self._text_index = len(self._display_text)
 
@@ -6261,17 +6279,27 @@ class Text(Item, metaclass=use_on_events):
         v = self._height if self._height else self.resource.content_height
         return v
 
+    def _unschedule_animated_text(self):
+        """ remove the scheduled animated text call from pyglet """
+#        print("*** UNSCHEDULE ",len(pyglet.clock._default._schedule_interval_items), self.display_text[:60])
+        self._pyglet_animate_scheduled = False
+        pyglet.clock.unschedule(self._animate_text)
+
+    def _update(self, dt, obj=None):  # Text.update
+        if self._pyglet_animate_scheduled and self._text_index >= len(self.display_text): 
+            self._unschedule_animated_text() # animated text might be finished
+        super()._update(dt, obj=obj)
+    
     def _animate_text(self, dt):
         """ called by the clock at regular intervals """
-        if self._text_index >= len(self.display_text):
-            pyglet.clock.unschedule(self._animate_text)
-        else:
-            self._text_index += self.step
-            self._animated_text = self.display_text[:self._text_index]
-            if self.resource:
-                self.resource.text = self._animated_text
-            if self.resource_offset:
-                self.resource_offset.text = self._animated_text
+        if self._text_index >= len(self.display_text): # finished animated, waiting to be unscheduled.
+            return
+        self._text_index += self.step
+        self._animated_text = self.display_text[:self._text_index]
+        if self.resource:
+            self.resource.text = self._animated_text
+        if self.resource_offset:
+            self.resource_offset.text = self._animated_text
 
     def pyglet_draw(self, absolute=False):  # text.draw 
         if self.game and self.game._headless:
@@ -8097,34 +8125,6 @@ def fit_to_screen(screen, resolution):
     return resolution, scale
 
 
-def idle( self ):
-    """An alternate idle loop than Pyglet's default.
- 
-    By default, pyglet calls on_draw after EVERY batch of events
-    which without hooking into, causes ghosting
-
-    Courtesy Twisted Pair:
-    https://twistedpairdevelopment.wordpress.com/2011/06/28/pyglet-mouse-events-and-rendering/
-    """
-#    print("PYGLET IDLE")
-    pyglet.clock.tick( poll = True )
-    # don't call on_draw
-    return pyglet.clock.get_sleep_time( sleep_idle = True )
- 
-def patch_idle_loop():
-    """Replaces the default Pyglet idle look with the :py:func:`idle` function in this module.
-    """
-    # check that the event loop has been over-ridden
-    if pyglet.app.EventLoop.idle != idle:
-        # over-ride the default event loop
-        pyglet.app.EventLoop.idle = idle
-
-LOCK_UPDATES_TO_DRAWS = False
-
-if LOCK_UPDATES_TO_DRAWS:
-    patch_idle_loop()
-
-
 class Window(pyglet.window.Window):
     def __init__(self, *args, **kwargs):
         super(Window, self).__init__(*args, **kwargs)
@@ -8155,8 +8155,9 @@ def reset_mouse_cursor(game):
     game.mouse_cursor = MOUSE_POINTER if game.mouse_mode != MOUSE_LOOK else game.mouse_cursor # reset mouse pointer
 
 
-class Game(metaclass=use_on_events):
+LOCK_UPDATES_TO_DRAWS = False # deprecated
 
+class Game(metaclass=use_on_events):
     def __init__(self, name="Untitled Game", version="v1.0", engine=VERSION_MAJOR, save_directory = "untitledgame", fullscreen=DEFAULT_FULLSCREEN, resolution=DEFAULT_RESOLUTION, fps=DEFAULT_FPS, afps=DEFAULT_ACTOR_FPS, projectsettings=None, scale=1.0):
         self.debug_collection = False
         self.writeable_directory = save_directory
@@ -8432,15 +8433,9 @@ class Game(metaclass=use_on_events):
         self.start_engine_lock()
 
         # the pyvida game scripting event loop, XXX: limited to actor fps
-        if not self._lock_updates_to_draws:
-            pyglet.clock.schedule_interval(self.update, 1 / self.default_actor_fps)
-            self._window.on_draw = self.pyglet_draw
-            pyglet.clock.set_fps_limit(self.fps)
-        else:
-            pyglet.clock.schedule_interval(self.combined_update, 1 / self.fps)
-        self.fps_clock = pyglet.clock.ClockDisplay()
-
-
+        pyglet.clock.schedule_interval(self.update, 1 / self.default_actor_fps)
+        self._window.on_draw = self.pyglet_draw
+        pyglet.clock.set_fps_limit(self.fps)
 
     def start_engine_lock(self):
         # Force game to draw at least at a certain fps (default is 30 fps)
@@ -8454,7 +8449,6 @@ class Game(metaclass=use_on_events):
 
     def lock_update(self, dt):
         pass
-
 
     def close(self):
         """ Close this window """
@@ -8543,13 +8537,10 @@ class Game(metaclass=use_on_events):
     def on_publish_fps(self, fps=None):
         """ Make the engine run at the requested fps """
         fps = self.fps if fps is None else fps
-        if not self._lock_updates_to_draws:
-            pyglet.clock.unschedule(self.update)
-            pyglet.clock.schedule_interval(self.update, 1 / self.default_actor_fps)
-            pyglet.clock.set_fps_limit(fps)
-        else:
-            pyglet.clock.unschedule(self.combined_update)
-            pyglet.clock.schedule_interval(self.combined_update, 1 / fps)
+        pyglet.clock.unschedule(self.update)
+        pyglet.clock.schedule_interval(self.update, 1 / self.default_actor_fps)
+        pyglet.clock.set_fps_limit(fps)
+
 
     def on_set_fps(self, v):
         self.fps = v
