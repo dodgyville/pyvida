@@ -6286,7 +6286,8 @@ class Text(Item, metaclass=use_on_events):
         pyglet.clock.unschedule(self._animate_text)
 
     def _update(self, dt, obj=None):  # Text.update
-        if self._pyglet_animate_scheduled and self._text_index >= len(self.display_text): 
+        animated = getattr(self, "_pyglet_animate_scheduled", False) # getattr for backwards compat
+        if animated and self._text_index >= len(self.display_text): 
             self._unschedule_animated_text() # animated text might be finished
         super()._update(dt, obj=obj)
     
@@ -6320,9 +6321,11 @@ class Text(Item, metaclass=use_on_events):
 
         x,y = self.pyglet_draw_coords(absolute, None, 0) #self.resource.content_height)
 
-        if self.align == RIGHT:
+        alignment = getattr(self, "align", LEFT) # check for attr to make backwards compat
+
+        if alignment == RIGHT:
             x -= self.w
-        elif self.align == CENTER:
+        elif alignment == CENTER:
             x = x - self.w//2
 
         if self.resource_offset:  # draw offset first
