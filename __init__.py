@@ -374,9 +374,10 @@ EDIT_CLICKABLE = "clickable_area"
 EDIT_SOLID = "solid_area"
 
 
-# CAMERA FX
+# CAMERA FX 
 FX_FADE_OUT = 0
 FX_FADE_IN = 1
+FX_CUT_QUICK = 3
 FX_DISCO = 2 # randomly tint the scene all colours
 
 # KEYS (currently bound to pyglet)
@@ -407,6 +408,15 @@ K_6 = pyglet.window.key._6
 K_7 = pyglet.window.key._7
 K_8 = pyglet.window.key._8
 K_9 = pyglet.window.key._9
+
+K_LEFT = pyglet.window.key.LEFT
+K_RIGHT = pyglet.window.key.RIGHT
+K_UP = pyglet.window.key.UP
+K_DOWN = pyglet.window.key.DOWN
+K_HOME = pyglet.window.key.HOME
+K_END = pyglet.window.key.END
+K_PAGEUP = pyglet.window.key.PAGEUP
+K_PAGEDOWN = pyglet.window.key.PAGEDOWN
 
 # COLOURS
 COLOURS = {
@@ -4844,9 +4854,17 @@ class Portal(Actor, metaclass=use_on_events):
 #        if self.link.scene
 #        return self.__dict__
 
-    @property
-    def link(self):
+#    @property
+#    def link(self):
+
+    def get_link(self):
         return get_object(self.game, self._link)
+
+    def set_link(self, v):
+        obj = get_object(self.game, v)
+        self._link = obj.name if obj else getattr(v, "name", v)
+
+    link = property(get_link, set_link)
 
     def set_editable(self):
         """ Set which attributes are editable in the editor """
@@ -5244,7 +5262,7 @@ class Emitter(Item, metaclass=use_on_events):
         self.particles = []
 
     def get_a_direction(self):
-        return randint(self.direction - float(self.fov / 2), self.direction + float(self.fov / 2))
+        return randint(int(self.direction - float(self.fov / 2)), int(self.direction + float(self.fov / 2)))
 
     def get_a_scale(self):
         return uniform(self.size_spawn_min, self.size_spawn_max)
@@ -6569,7 +6587,7 @@ class MenuManager(metaclass=use_on_events):
             obj._usage(draw=True, interact=True)
             self.game._menu.append(obj.name)
 
-    def on_show(self):
+    def on_show(self): #menu.show
         self._show()
 
     def _show(self):
@@ -6610,7 +6628,7 @@ class MenuManager(metaclass=use_on_events):
             log.debug("hide menu using place %s" %
                       [x for x in self.game._menu])
 
-    def on_hide(self, menu_items=None):
+    def on_hide(self, menu_items=None): #menu.hide
         self._hide(menu_items=menu_items)
 
     def on_fade_out(self):
@@ -8487,6 +8505,10 @@ class Game(metaclass=use_on_events):
         if a == "items":
             log.warning("game.items deprecated, update")
             return self._items
+        if a == "scenes":
+            log.warning("game.scene deprecated, update")
+            return self._scenes
+
         q = getattr(self, "on_%s" % a, None) if a[:3] != "on_" else None
         if q:
             f = create_event(q)
@@ -8499,7 +8521,7 @@ class Game(metaclass=use_on_events):
                     return self._actors[s]
                 elif s in self._items:
                     return self._items[s]
-
+        print("Unable to find",a)
         raise AttributeError
 #        return self.__getattribute__(self, a)
 
@@ -8618,6 +8640,13 @@ class Game(metaclass=use_on_events):
     def get_mouse_cursor(self):
         return self._mouse_cursor
     mouse_cursor = property(get_mouse_cursor, set_mouse_cursor)
+
+    def cursor_hide(self):
+        print("cursor_hide deprecated")
+
+    def cursor_show(self):
+        print("cursor_show deprecated")
+
 
     @property
     def get_game_info(self):
@@ -11170,6 +11199,55 @@ class Game(metaclass=use_on_events):
                     log.error("Menu item %s not found in Item collection" % i)
         if logging:
             log.debug("set menu to %s" % [x for x in self._menu])
+
+"""
+Porting older game to pyglet pyvdida.
+"""
+
+EMITTER_SMOKE = {"name":"smoke", "number":10, "frames":20, "direction":0, "fov":30, "speed":3, "acceleration":(0, 0), "size_start":0.5, "size_end":1.0, "alpha_start":1.0, "alpha_end":0.0, "random_index":True}
+
+EMITTER_SPARK = {"name":"spark", "number":10, "frames":12, "direction":190, "fov":20, "speed":4, "acceleration":(0, 0), "size_start":1.0, "size_end":1.0, "alpha_start":1.0, "alpha_end":0.0, "random_index":True}
+
+EMITTER_BUBBLE = {"name":"bubble", "number":10, "frames":120, "direction":0, "fov":20, "speed":7, "acceleration":(0, 0), "size_start":1.0, "size_end":1.0, "alpha_start":1.0, "alpha_end":0.0, "random_index":True}
+
+
+class MenuItem(Item):
+    def __init__(self, *args, **kwargs):
+        print("*** ERROR: MENUITEM DEPRECATED IN PYVIDA, REPLACE IMMEDIATELY.")
+        super().__init__(*args, **kwargs)
+
+class ModalItem(Item):
+    def __init__(self, *args, **kwargs):
+        print("*** ERROR: MODALITEM DEPRECATED IN PYVIDA, REPLACE IMMEDIATELY.")
+        super().__init__(*args, **kwargs)
+
+MENU_COLOUR = (42, 127, 255)
+DEFAULT_FONT = os.path.join("data/fonts/", "vera.ttf")
+
+class MenuText(Text):
+#    def __init__(self, *args, **kwargs):
+     def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=MENU_COLOUR, size=26, wrap=2000, interact=None, spos=(None, None), hpos=(None, None), key=None, font=DEFAULT_FONT, offset=2):
+        print("*** ERROR: MENUTEXT DEPRECATED IN PYVIDA, REPLACE IMMEDIATELY.")
+        print("Try instead:")
+        print(f"""
+item = game.add(Text({name}, {pos}, {text}, size={size}, wrap={wrap}, interact={interact}, font="{font}", colour={colour})
+item.on_key({key})
+""")
+        super().__init__(name, pos, text, colour, font, size, wrap, offset=None, interact=interact)
+        
+        # old example game.add(MenuText(i[0], (280,80), (840,170), i[1], wrap=800, interact=i[2], spos=(x, y+dy*i[4]), hpos=(x, y+dy*i[4]+ody),key=i[3], font=MENU_FONT, size=38), False, MenuItem)
+        # spos, hpos were for animation and no longer supported.
+        # the second tuple is dimensions and is no longer supported
+        # new example
+    #    def __init__(self, name, pos=(0, 0), display_text=None,
+     #            colour=(255, 255, 255, 255), font=None, size=DEFAULT_TEXT_SIZE, wrap=800,
+     #            offset=None, interact=None, look=None, delay=0, step=2,
+     #            game=None):
+      # item = Text(i[0], (280,80), i[1], interact=i[2], wrap=800, font=MENU_FONT, size=38, game)
+      # item.on_key(i[3])
+      # game.add(item)
+
+
 
 """
 Editor stuff
