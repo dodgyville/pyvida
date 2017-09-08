@@ -3392,7 +3392,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             if len(action_names)>0:
                 self.on_set_pathplanning_actions(action_names)
 
-    def on_set_pathplanning_actions(self, action_names):
+    def on_set_pathplanning_actions(self, action_names, speeds=[]):
         # smart actions for pathplanning and which arcs they cover (in degrees)
         if len(action_names) == 1:
             print("WARNING: %s ONLY ONE ACTION %s USED FOR PATHPLANNING"%(self.name, action_names[0]))
@@ -3412,12 +3412,14 @@ class Actor(MotionManager, metaclass=use_on_events):
             print("Number of pathplanning actions does not match the templates built into pyvida.")
             import pdb; pdb.set_trace()           
 
-        for action_name in action_names:
+        for i, action_name in enumerate(action_names):
             action = self._actions[action_name]
             action.available_for_pathplanning = True
             p = PATHPLANNING[action_name]
             action.angle_start = p[0]
             action.angle_end = p[1]
+            if len(action_names) == len(speeds):
+                action.speed = speeds[i]
 
     def _load_scripts(self):
         # potentially load some interact/use/look scripts for this actor but
@@ -3439,20 +3441,23 @@ class Actor(MotionManager, metaclass=use_on_events):
                 self.game.reload_modules(modules=[module_name])
 
 
-    def on_swap_actions(self, actions, prefix=None, postfix=None):
+    def on_swap_actions(self, actions, prefix=None, postfix=None, speeds=[]):
         """ Take a list of actions and replace them with prefix_action eg set_actions(["idle", "over"], postfix="off") 
             will make Actor._actions["idle"] = Actor._actions["idle_off"]
         """
         if logging: log.info("player.set_actions using prefix %s on %s"%(prefix, actions))
         self.editor_clean = False #actor no longer has permissions as set by editor
-        for i in actions: 
-            key = i
+        for i, action in enumerate(actions):
+            key = action
             if prefix:
                 key = "%s_%s"%(prefix, key)
             if postfix:
                 key = "%s_%s"%(key, postfix)
             if key in self._actions:
-                self._actions[i] = self._actions[key]
+                self._actions[action] = self._actions[key]
+                if len(actions) == len(speeds):
+                    self._actions[action].speed = speeds[i]
+
 
     def _python_path(self):
         """ Replace // with \ in all filepaths for this object (used to repair old window save files """
@@ -4739,9 +4744,11 @@ class Actor(MotionManager, metaclass=use_on_events):
         log.info("%s preferred goto action is %s"%(self.name, goto_action))
         if goto_motion is None: #create a set of evenly spaced deltas to get us there:
             # how far we can travel along the distance in one update
-            d = self.action.speed / distance
-            self._goto_deltas = [(x * d, y * d)]*int(distance/self.action.speed)
-            self._goto_deltas_average_speed = self.action.speed
+            # use the action that will be doing the goto and use its speed for our deltas
+            acton = goto_action if goto_action else self.action
+            d = action.speed / distance
+            self._goto_deltas = [(x * d, y * d)]*int(distance/action.speed)
+            self._goto_deltas_average_speed = action.speed
         else: #use the goto_motion to create a list of deltas
             motion = self._motions[goto_motion]
             speed = math.hypot(motion._average_dx, motion._average_dy)
