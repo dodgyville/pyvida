@@ -4717,9 +4717,8 @@ class Actor(MotionManager, metaclass=use_on_events):
 
         # 0 degrees is towards the top of the screen
         angle = math.degrees(raw_angle) + 90
-        path_planning_actions = [action.name for action in self._actions.values() if action.available_for_pathplanning == True]        
-        if "up" in path_planning_actions and "down" in path_planning_actions and \
-            "left" in path_planning_actions and "right" in path_planning_actions: # assume four quadrants
+        path_planning_actions = set([action.name for action in self._actions.values() if action.available_for_pathplanning == True])
+        if len(path_planning_actions)>=4: # assume four quadrants XXX may need to handle 8 segments (eg upleft, upright)
             if angle < -45:
                 angle += 360
         else: # assume only two hemispheres
@@ -11279,10 +11278,10 @@ class MenuText(Text):
         print("*** ERROR: MENUTEXT DEPRECATED IN PYVIDA, REPLACE IMMEDIATELY.")
         print("Try instead:")
         print(f"""
-item = game.add(Text("{name}", {pos}, "{text}", size={size}, wrap={wrap}, interact={interact}, font="{font}", colour={colour})
+item = game.add(Text("{name}", {pos}, "{text}", size={size}, wrap={wrap}, interact={interact}, font="{font}", colour={colour}, offset=2)
 item.on_key({key})
 """)
-        super().__init__(name, pos, text, colour, font, size, wrap, offset=None, interact=interact)
+        super().__init__(name, pos, text, colour, font, size, wrap, offset=2, interact=interact)
         
         # old example game.add(MenuText(i[0], (280,80), (840,170), i[1], wrap=800, interact=i[2], spos=(x, y+dy*i[4]), hpos=(x, y+dy*i[4]+ody),key=i[3], font=MENU_FONT, size=38), False, MenuItem)
         # spos, hpos were for animation and no longer supported.
