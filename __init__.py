@@ -203,7 +203,7 @@ if DEBUG_NAMES:
     tmp_objects_first = {}
     tmp_objects_second = {}
 
-ENABLE_FKEYS = CONFIG["editor"] # debug shortcut keys
+#ENABLE_FKEYS = CONFIG["editor"] # debug shortcut keys
 ENABLE_EDITOR = False and EDITOR_AVAILABLE # default for editor. Caution: This starts module reloads which ruins pickles 
 ENABLE_PROFILING = False
 ENABLE_LOGGING = True
@@ -2952,10 +2952,13 @@ class Actor(MotionManager, metaclass=use_on_events):
         elif self.resource:
             self.resource.opacity = self._opacity
 
-
     def get_alpha(self):
         return self._opacity
     alpha = property(get_alpha, set_alpha)
+
+    def on_opacity(self, v): 
+        """ 0 - 255 """
+        self.alpha = v
 
     @property
     def resource(self):
@@ -3367,17 +3370,6 @@ class Actor(MotionManager, metaclass=use_on_events):
 
     def _smart_actions(self, game, exclude=[]):
         """ smart load the actions """
-
-        # smart actions for pathplanning and which arcs they cover (in degrees)
-        PATHPLANNING = {"left": (225, 315),
-                        "right": (45, 135),
-                        "up": (-45, 45),
-                        "down": (135, 225)
-                        }
-        PATHPLANNING = {"left": (180, 360),
-                        "right": (0, 180),
-                        }
-
         self._actions = {}
         for action_file in self._images:
             action_name = os.path.splitext(os.path.basename(action_file))[0]
@@ -3390,11 +3382,42 @@ class Actor(MotionManager, metaclass=use_on_events):
             action = Action(action_name).smart(
                 game, actor=self, filename=relname)
             self._actions[action_name] = action
+            action_names = []
+            # default only uses two path planning actions to be compatible with spaceout2
+            PATHPLANNING = {"left": (180, 360),
+                        "right": (0, 180),
+                        }
             if action_name in PATHPLANNING:
-                action.available_for_pathplanning = True
-                p = PATHPLANNING[action_name]
-                action.angle_start = p[0]
-                action.angle_end = p[1]
+                action_names.append(action_name)
+            if len(action_names)>0:
+                self.on_set_pathplanning_actions(action_names)
+
+    def on_set_pathplanning_actions(self, action_names):
+        # smart actions for pathplanning and which arcs they cover (in degrees)
+        if len(action_names) == 1:
+            print("WARNING: %s ONLY ONE ACTION %s USED FOR PATHPLANNING"%(self.name, action_names[0]))
+            PATHPLANNING = {action_names[0]: (0, 360)}
+        elif len(action_names) == 2:
+            PATHPLANNING = {"left": (180, 360),
+                        "right": (0, 180),
+                        }
+        elif len(action_names) == 4:
+            PATHPLANNING = {"left": (225, 315),
+                        "right": (45, 135),
+                        "up": (-45, 45),
+                        "down": (135, 225)
+                        }
+        else:
+            # TODO: ["left", "right", "up", "down", "upleft", "upright", "downleft", "downright"]
+            print("Number of pathplanning actions does not match the templates built into pyvida.")
+            import pdb; pdb.set_trace()           
+
+        for action_name in action_names:
+            action = self._actions[action_name]
+            action.available_for_pathplanning = True
+            p = PATHPLANNING[action_name]
+            action.angle_start = p[0]
+            action.angle_end = p[1]
 
     def _load_scripts(self):
         # potentially load some interact/use/look scripts for this actor but
@@ -3477,6 +3500,12 @@ class Actor(MotionManager, metaclass=use_on_events):
                       (myd, this_dir))
             myd = os.path.join(this_dir, d, name)
             absd = os.path.join(os.getcwd(), myd)
+        if not os.path.isdir(absd):  # fallback to deprecated menu default if item 
+            print("***WARNING",d,name, "might need to be moved to items/ or emitters/, trying menu/ for now.")
+            if d == "data/items":
+                d = "data/menu"
+                myd = os.path.join(d, name)
+                absd = os.path.join(os.getcwd(), myd)
 
         self._directory = myd
 
@@ -3945,9 +3974,14 @@ class Actor(MotionManager, metaclass=use_on_events):
             portrait = self.game.add(portrait)
 #            portrait_x, portrait_y = 5, 5 #top corner for portrait offset
  #           portrait_w, portrait_h = portrait.w, portrait.h
-            portrait.x, portrait.y = 6, 6
+            if INFO["slug"] == "spaceout":
+                self.portrait_offset_x, self.portrait_offset_y = 12, 11
+            elif INFO["slug"] == "spaceout2":
+                self.portrait_offset_x, self.portrait_offset_y = 6, 6
+
+            portrait.x, portrait.y = self.portrait_offset_x, self.portrait_offset_y
             portrait._parent = msgbox
-            dx += portrait.w
+            dx += portrait.w + self.portrait_offset_x
 
         if "wrap" not in kwargs:
             mw = msgbox.w
@@ -4315,7 +4349,10 @@ class Actor(MotionManager, metaclass=use_on_events):
             setattr(self, a, v)
 
     def on_reanchor(self, point):
-        self._set(("_ax", "_ay"), point)
+        ax, ay = point
+        ax = -ax if self.game and self.game.flip_anchor else ax
+        ay = -ay if self.game and self.game.flip_anchor else ay
+        self._set(("_ax", "_ay"), (ax, ay))
 
     def on_reclickable(self, rect):
         self._clickable_mask = None  # clear the mask
@@ -4365,11 +4402,6 @@ class Actor(MotionManager, metaclass=use_on_events):
             if horizontal != self._flip_horizontal: # flip anchor point too
                 self.ax = -self.ax
             self._flip_horizontal = horizontal
-
-
-    def on_opacity(self, v):
-        """ 0 - 255 """
-        self.alpha = v
 
     def _hide(self):
         self._usage(draw=False, update=False)
@@ -4895,14 +4927,16 @@ class Portal(Actor, metaclass=use_on_events):
 
 
     def guess_link(self):
-        links = self.name.split("_to_")
         guess_link = None
-        if len(links) > 1:  # name format matches guess
-            guess_link = "%s_to_%s" % (links[1].lower(), links[0].lower())
-        if guess_link and guess_link in self.game._items:
-            self._link = self.game._items[
-                guess_link].name if self.game._items[guess_link] else None
-        else:
+        for i in ["_to_", "_To_", "_TO_"]:
+            links = self.name.split(i)
+            if len(links) > 1:  # name format matches guess
+#                guess_link = "%s_to_%s" % (links[1].lower(), links[0].lower())
+                guess_link = "%s%s%s" % (links[1], i, links[0])
+            if guess_link and guess_link in self.game._items:
+                self._link = self.game._items[
+                    guess_link].name if self.game._items[guess_link] else None
+        if not guess_link:
             if logging:
                 log.warning(
                     "game.smart unable to guess link for %s" % self.name)
@@ -5253,7 +5287,10 @@ class Emitter(Item, metaclass=use_on_events):
 
     def on_reanchor(self, pt):
         """ queue event for changing the anchor points """
-        self._ax, self._ay = pt[0], pt[1]
+        ax = -pt[0] if self.game and self.game.flip_anchor else pt[0]
+        ay = -pt[1] if self.game and self.game.flip_anchor else pt[1]
+           
+        self._ax, self._ay = ax, ay
         for p in self.particles:
             p.ax, p.ay = self._ax, self._ay
 
@@ -6660,6 +6697,10 @@ class MenuManager(metaclass=use_on_events):
         if logging:
             log.debug("pop menu %s" % [x for x in self.game._menu])
 
+    def on_clear_all(self):
+        self.game._menu = []
+        self.game._menus = []
+
     def on_clear(self, menu_items=None):
         """ clear current menu """
         if not menu_items:
@@ -6978,7 +7019,7 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._goto_dx = dx
         self._goto_dy = dy
 
-    def on_opacity(self, opacity=255, colour="black"):
+    def on_opacity(self, opacity=255, colour="black"): # camera opacity
         d = pyglet.resource.get_script_home()
         if colour == "black":
             mask = pyglet.image.load(os.path.join(d, 'data/special/black.png')) #TODO create dynamically based on resolution
@@ -8335,6 +8376,7 @@ class Game(metaclass=use_on_events):
         self._screen_size_override = None # game.resolution for the game, this is the window size.
 
         self.low_memory = False # low memory mode for this session (from CONFIG or Settings)
+        self.flip_anchor = False # toggle behaviour of relocate for backwards compat
 
         # how many event steps in this progress block
         self._progress_bar_count = 0
@@ -8521,7 +8563,7 @@ class Game(metaclass=use_on_events):
                     return self._actors[s]
                 elif s in self._items:
                     return self._items[s]
-        print("Unable to find",a)
+#        print("Unable to find",a)
         raise AttributeError
 #        return self.__getattribute__(self, a)
 
@@ -8554,13 +8596,13 @@ class Game(metaclass=use_on_events):
     def log(self, txt):
         print("*",txt)
 
-
     def on_clock_schedule_interval(self, *args, **kwargs):
         """ schedule a repeating callback """
         pyglet.clock.schedule_interval(*args, **kwargs)
 
     def on_publish_fps(self, fps=None):
         """ Make the engine run at the requested fps """
+        print("**** WARNING: This can not unschedule in pyglet 1.3 because it is called from the scheduled function self.update")
         fps = self.fps if fps is None else fps
         pyglet.clock.unschedule(self.update)
         pyglet.clock.schedule_interval(self.update, 1 / self.default_actor_fps)
@@ -8703,7 +8745,7 @@ class Game(metaclass=use_on_events):
         if symbol == pyglet.window.key.F6:
             self.settings.font_size_adjust += 2
 
-        if ENABLE_FKEYS:
+        if CONFIG["editor"]:
             if symbol == pyglet.window.key.F1:
                 #            edit_object(self, list(self.scene._objects.values()), 0)
                 #            self.menu_from_factory("editor", MENU_EDITOR)
@@ -10253,7 +10295,7 @@ class Game(metaclass=use_on_events):
         waiting_for_user = True
 #        log.info("There are %s events, game._waiting is %s, index is %s and current event is %s",len(self._events), self._waiting, self._event_index, self._event)
         if self._waiting_for_user: # don't do anything until user clicks
-            return
+            return safe_to_call_again
 
         if self._waiting:
             """ check all the Objects with existing events, if any of them are busy, don't process the next event """
@@ -10302,6 +10344,7 @@ class Game(metaclass=use_on_events):
 #                print("Start",e[0], e[1][0].name, datetime.now(), e[1][0].busy)
                 done_events += 1
 #                print("DOING",e)
+#                print("doing event",e)
                 # call the function with the args and kwargs
                 e[0](*e[1], **e[2])
 #                if self._event_index < len(self._events) - 1:
@@ -10310,11 +10353,15 @@ class Game(metaclass=use_on_events):
                 # if, after running the event, the obj is not busy, then it's
                 # OK to do the next event immediately.
                 if obj.busy == 0:
+#                    print("safe to call again immediately")
                     safe_to_call_again = True
                     if len(self._events)<5 or len(self._events)%10 == 0:
                         log.debug("Game not busy, events not busy, and the current object is not busy, so do another event (%s)" % (
                             len(self._events)))
                     return safe_to_call_again
+
+#                else:
+#                    print("not safe to call again immediately")
                 if obj.busy < 0:
                     log.error("obj.busy below zero, this should never happen.")
                     import pdb
@@ -10403,8 +10450,10 @@ class Game(metaclass=use_on_events):
             self._handle_events()  # run the event handler only once
         else:
             # loop while there are events safe to process
+#            print("\n\n\n\nSTARTING HANDLE EVENTS\n\n\n\n")
             while self._handle_events():
                 pass
+#            print("\n\n\n\nENDING HANDLE EVENTS\n\n\n\n")
 
 #        print("game update", self._headless, self._walkthrough_target>self._walkthrough_index, len(self._modals)>0, len(self._events))
 
@@ -10934,7 +10983,7 @@ class Game(metaclass=use_on_events):
                 data = f.read()
                 code = compile(data, sfname, 'exec')
                 exec(code, variables)
-
+                print("exec code",sfname)
             variables['load_state'](self, scene)
         self._last_load_state = state
         return scene
@@ -11230,7 +11279,7 @@ class MenuText(Text):
         print("*** ERROR: MENUTEXT DEPRECATED IN PYVIDA, REPLACE IMMEDIATELY.")
         print("Try instead:")
         print(f"""
-item = game.add(Text({name}, {pos}, {text}, size={size}, wrap={wrap}, interact={interact}, font="{font}", colour={colour})
+item = game.add(Text("{name}", {pos}, "{text}", size={size}, wrap={wrap}, interact={interact}, font="{font}", colour={colour})
 item.on_key({key})
 """)
         super().__init__(name, pos, text, colour, font, size, wrap, offset=None, interact=interact)
