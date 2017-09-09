@@ -12,39 +12,8 @@ import math
 import os
 import pickle
 import pyglet.clock
-
-"""
-len(pyglet.clock._default._schedule_interval_items)
-[print(i, x.func) for i,x in enumerate(pyglet.clock._default._schedule_interval_items)]
-
-"""
-
-# override clock unschedule to fix a bug in pyglet 1.3.0b1
-class PyvidaClock(pyglet.clock.Clock): 
-    def unschedule(self, func):
-        '''Remove a function from the schedule.
-
-        If the function appears in the schedule more than once, all occurrences
-        are removed.  If the function was not scheduled, no error is raised.
-
-        :Parameters:
-            `func` : function
-                The function to remove from the schedule.
-
-        '''
-        # clever remove item without disturbing the heap:
-        # 1. set function to an empty lambda -- original function is not called
-        # 2. set interval to 0               -- item will be removed from heap eventually
-#        if len(self._schedule_interval_items) == 10:
-#            import pdb; pdb.set_trace()        
-        for item in set(item for item in self._schedule_interval_items if item.func == func):
-            item.interval = 0
-            item.func = lambda x, *args, **kwargs: x
-
-        self._schedule_items = [i for i in self._schedule_items if i.func != func]    
-
-# use a custom clock method to avoid bug in pyglet 1.3.0b1
-#pyglet.clock.Clock.unschedule = PyvidaClock.unschedule
+import queue
+import webbrowser
 
 import pyglet
 
@@ -68,6 +37,8 @@ from random import choice, randint, uniform
 from time import sleep
 from math import sin, cos, radians
 from fontTools.ttLib import TTFont
+
+PORT = 8000 + randint(0,100)
 
 
 try:
@@ -98,6 +69,7 @@ from pyglet.gl.gl import c_float
 from pyglet.image.codecs.png import PNGImageDecoder
 import pyglet.window.mouse
 
+editor_queue = queue.Queue() # used to share info between editor and game
 
 # TODO better handling of loading/unloading assets
 
@@ -8608,7 +8580,6 @@ class Game(metaclass=use_on_events):
 
     def on_publish_fps(self, fps=None):
         """ Make the engine run at the requested fps """
-        print("**** WARNING: This can not unschedule in pyglet 1.3 because it is called from the scheduled function self.update")
         fps = self.fps if fps is None else fps
         pyglet.clock.unschedule(self.update)
         pyglet.clock.schedule_interval(self.update, 1 / self.default_actor_fps)
@@ -8731,17 +8702,16 @@ class Game(metaclass=use_on_events):
         global use_effect
         game = self
         player = self.player
-        if game.editor and game.editor.obj:
+        if game.editor and game._editing:
             """ editor, editing a point, allow arrow keys """
             if symbol == pyglet.window.key.UP:
-                game.editor.obj.y -= 1
+                game._editing.y -= 1
             if symbol == pyglet.window.key.DOWN:
-                game.editor.obj.y += 1
+                game._editing.y += 1
             if symbol == pyglet.window.key.LEFT:
-                game.editor.obj.x -= 1
+                game._editing.x -= 1
             if symbol == pyglet.window.key.RIGHT:
-                game.editor.obj.x += 1
-            
+                game._editing.x += 1         
 
         # process engine keys before game keys
 
@@ -8755,8 +8725,11 @@ class Game(metaclass=use_on_events):
             if symbol == pyglet.window.key.F1:
                 #            edit_object(self, list(self.scene._objects.values()), 0)
                 #            self.menu_from_factory("editor", MENU_EDITOR)
+                html_editor(game)
+                self.editor = True
+                webbrowser.open("http://127.0.0.1:%i"%PORT)
+                #self.editor = editor(self)
     #            editor_pgui(self)
-                self.editor = editor(self)
      #           editor_thread = Thread(target=editor, args=(,))
     #            editor_thread.start()
             if symbol == pyglet.window.key.F2:
@@ -10386,6 +10359,20 @@ class Game(metaclass=use_on_events):
     def update(self, dt, single_event=False):  # game.update
         """ Run update on scene objects """
 #        print("GAME UPDATE")
+
+        if self.editor: # let editor have a go for a moment.
+            try:
+                request_game_object = editor_queue.get(block=False)
+            except queue.Empty:
+                request_game_object = None
+            if type(request_game_object) is RequestGameObject:
+                editor_queue.task_done() # finished task with request_game_object
+                print("hand over to editor")
+                editor_queue.put(self)
+                print("put game object on queue, waiting until editor finishes with it")
+                editor_queue.join()
+                print("editor finished with game object")
+
         scene_objects = []
         fn = get_function(self, "game_update") #special update function game can use
         if fn:
@@ -12012,4 +11999,124 @@ def pyglet_editor(game):
 #        o.load_assets(game)
 #        o.x, o.y = i[1]
 #    game._window_editor_objects = [i[0] for i in EDITOR_ITEMS]
+
+
+#html editor
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import socketserver
+
+class RequestGameObject:
+    pass
+
+class HTTPEditorServer(BaseHTTPRequestHandler):
+    def _set_headers(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html')
+        self.end_headers()
+
+    def do_GET(self):
+        self._set_headers()
+        message = "<html><body><h1>hi!</h1></body></html>"
+        self.wfile.write(bytes(message, "utf8"))
+        editor_queue.put(RequestGameObject())
+        print("put game object request")
+        editor_queue.join()
+        print("waiting to get game object in editor")
+        game = editor_queue.get()
+        if game is None:
+            print("no game object handed to editor")
+            return
+        objs = copy.copy(game.scene._objects)
+        objs.sort()
+        for o in objs:
+            obj = get_object(game, o)
+            OBJECT_FORM = f"""
+<form class="form-horizontal">
+<fieldset>
+<!-- Form Name -->
+<legend>Form Name {obj.name}</legend>
+<!-- Multiple Radios -->
+<div class="form-group">
+  <label class="col-md-4 control-label" for="radios">Drag</label>
+  <div class="col-md-4">
+  <div class="radio">
+    <label for="radios-0">
+      <input name="radios" id="radios-0" value="1" checked="checked" type="radio">
+      scale
+    </label>
+	</div>
+  <div class="radio">
+    <label for="radios-1">
+      <input name="radios" id="radios-1" value="2" type="radio">
+      position
+    </label>
+	</div>
+  <div class="radio">
+    <label for="radios-2">
+      <input name="radios" id="radios-2" value="3" type="radio">
+      anchor
+    </label>
+	</div>
+  <div class="radio">
+    <label for="radios-3">
+      <input name="radios" id="radios-3" value="4" type="radio">
+      stand point
+    </label>
+	</div>
+  <div class="radio">
+    <label for="radios-4">
+      <input name="radios" id="radios-4" value="5" type="radio">
+      info text
+    </label>
+	</div>
+  </div>
+</div>
+
+</fieldset>
+</form>
+"""
+            print("hello")
+            self.wfile.write(bytes(OBJECT_FORM, "utf8"))
+
+        print("Have game object for",game.name)
+        editor_queue.task_done()
+        print("now release")
+
+    def do_HEAD(self):
+        self._set_headers()
+        
+    def do_POST(self):
+        # Doesn't do anything with posted data
+        self._set_headers()
+        message = "<html><body><h1>POST!</h1></body></html>"
+        self.wfile.write(bytes(message, "utf8"))
+
+
+def my_tcp_server():
+    import http.server
+    import socketserver
+
+    Handler = HTTPEditorServer #http.server.SimpleHTTPRequestHandler
+    keep_running = True
+    with socketserver.TCPServer(("", PORT), Handler) as httpd:
+        print("serving at port", PORT)
+#        import pdb; pdb.set_trace()
+#        httpd.serve_forever()
+        while keep_running:
+            """
+            if game == None:
+                print("No game")
+            else:
+                if game._window == None:
+                    keep_running = False
+                print("game")
+            editor_queue.task_done()
+            print("done, handing back")
+            """
+            print("hello")
+            httpd.handle_request()
+
+def html_editor(game):
+    import threading
+    threading.Thread(target=my_tcp_server).start()
 
