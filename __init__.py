@@ -3601,6 +3601,9 @@ class Actor(MotionManager, metaclass=use_on_events):
     def pyglet_draw(self, absolute=False, force=False, window=None):  # actor.draw
         if self.game and self.game._headless and not force:
             return
+        if not self.game:
+            print(self.name,"has no game attribute")
+            return
 
         sprite = get_resource(self.resource_name)[-1]
         if sprite and self.allow_draw:
@@ -3611,8 +3614,8 @@ class Actor(MotionManager, metaclass=use_on_events):
             if self.action and self.action.mode == MANUAL:
                 sprite._frame_index = self.action._manual_index
 
-
             ww,hh = self.game.resolution
+
 #            if self.name == "lbrain": import pdb; pdb.set_trace()
             if self._rotate:
                 glTranslatef((sprite.width/2)+self.x, hh-self.y-sprite.height/2, 0) #move to middle of sprite
@@ -8731,12 +8734,10 @@ class Game(metaclass=use_on_events):
 
         if CONFIG["editor"]:
             if symbol == pyglet.window.key.F1:
+                self.editor = editor(self)
+                return
                 #            edit_object(self, list(self.scene._objects.values()), 0)
                 #            self.menu_from_factory("editor", MENU_EDITOR)
-                html_editor(game)
-                self.editor = True
-                webbrowser.open("http://127.0.0.1:%i"%PORT)
-                #self.editor = editor(self)
     #            editor_pgui(self)
      #           editor_thread = Thread(target=editor, args=(,))
     #            editor_thread.start()
@@ -8747,8 +8748,9 @@ class Game(metaclass=use_on_events):
                     pdb.set_trace()
 
             if symbol == pyglet.window.key.F3: 
-                #game.menu.show()
-                pyglet_editor(self)
+                html_editor(game)
+                self.editor = True
+                webbrowser.open("http://127.0.0.1:%i"%PORT)
 
             if symbol == pyglet.window.key.F4:
                 print("RELOADED MODULES")
@@ -9805,7 +9807,7 @@ class Game(metaclass=use_on_events):
                             a = player_class(name)
                         else:
                             a = obj_cls(name)
-                        self._add(a)
+                        self._add(a, replace=True)
                     else:  # if just refreshing, then use the existing object
                         a = self._actors.get(
                             name, self._items.get(name, self._scenes.get(name, None)))
@@ -10984,7 +10986,6 @@ class Game(metaclass=use_on_events):
                 data = f.read()
                 code = compile(data, sfname, 'exec')
                 exec(code, variables)
-                print("exec code",sfname)
             variables['load_state'](self, scene)
         self._last_load_state = state
         return scene
@@ -12017,15 +12018,40 @@ class RequestGameObject:
     pass
 
 class HTTPEditorServer(BaseHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.game = None
+
+    def _navigate(self, delta):
+        objects = self.game.scene._objects + self.game.scene._layer
+        num_objects = len(objects)
+        if num_objects == 0:
+            print("No objects in scene")
+            return
+        obj = objects[self.index]
+        obj = get_object(self.game, obj)
+        obj.show_debug = False
+        self.index += delta
+        if self.index < 0:
+            self.index = num_objects - 1
+        if self.index >= num_objects:
+            self.index = 0
+        obj = objects[self.index]
+        self.set_edit_object(obj)
+
+    def prev(self):
+        _navigate(-1)  # decrement navigation
+
+    def next(self):
+        _navigate(1)  # increment navigation
+
+
     def _set_headers(self):
         self.send_response(200)
         self.send_header('Content-type', 'text/html')
         self.end_headers()
 
-    def do_GET(self):
-        self._set_headers()
-        message = "<html><body><h1>hi!</h1></body></html>"
-        self.wfile.write(bytes(message, "utf8"))
+    def grab_game_object(self):
         editor_queue.put(RequestGameObject())
         print("put game object request")
         editor_queue.join()
@@ -12034,17 +12060,32 @@ class HTTPEditorServer(BaseHTTPRequestHandler):
         if game is None:
             print("no game object handed to editor")
             return
-        objs = copy.copy(game.scene._objects)
+        print("Have game object for",game.name)
+        self.game = game
+
+    def release_game_object(self):
+        editor_queue.task_done()
+        print("now release")
+
+    def do_GET(self):
+        self.grab_game_object()
+        self._set_headers()
+        message = "<html><body><h1>hi!</h1></body></html>"
+        objs = copy.copy(self.game.scene._objects)
         objs.sort()
+        set_edit_object(self.game, objs[0], None)
+        txt = message
         for o in objs:
-            obj = get_object(game, o)
+            obj = get_object(self.game, o)
+            slug = slugify(obj.name)
+            print("form for",obj.name)
             OBJECT_FORM = f"""
-<form class="form-horizontal">
+<form name="{slug}" class="form-horizontal" method="post">
 <fieldset>
 <!-- Form Name -->
 <legend>Form Name {obj.name}</legend>
 <!-- Multiple Radios -->
-<div class="form-group">
+<div id="form-group-{slug}">
   <label class="col-md-4 control-label" for="radios">Drag</label>
   <div class="col-md-4">
   <div class="radio">
@@ -12080,15 +12121,104 @@ class HTTPEditorServer(BaseHTTPRequestHandler):
   </div>
 </div>
 
+  <label class="col-md-4 control-label" for="checkboxes">Allow</label>
+  <div class="col-md-4">
+  <div class="checkbox">
+    <label for="checkboxes-0">
+      <input name="checkboxes" id="checkboxes-0" value="draw" type="checkbox">
+      draw
+    </label>
+	</div>
+  <div class="checkbox">
+    <label for="checkboxes-1">
+      <input name="checkboxes" id="checkboxes-1" value="interact" type="checkbox">
+      interact
+    </label>
+	</div>
+  <div class="checkbox">
+    <label for="checkboxes-2">
+      <input name="checkboxes" id="checkboxes-2" value="look" type="checkbox">
+      look
+    </label>
+	</div>
+  <div class="checkbox">
+    <label for="checkboxes-3">
+      <input name="checkboxes" id="checkboxes-3" value="use" type="checkbox">
+      update
+    </label>
+	</div>
+  <div class="checkbox">
+    <label for="checkboxes-4">
+      <input name="checkboxes" id="checkboxes-4" value="update" type="checkbox">
+      editor save
+    </label>
+	</div>
+  <div class="checkbox">
+    <label for="checkboxes-5">
+      <input name="checkboxes" id="checkboxes-5" value="editor save" type="checkbox">
+      use
+    </label>
+	</div>
+  </div>
+</div>
+
+<!-- Button Drop Down -->
+<div class="form-group">
+  <label class="col-md-4 control-label" for="buttondropdown">Action</label>
+  <div class="col-md-4">
+    <div class="input-group">
+      <input id="buttondropdown" name="buttondropdown" class="form-control" placeholder="placeholder" type="text">
+      <div class="input-group-btn">
+        <button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">
+          Edit
+          <span class="caret"></span>
+        </button>
+        <ul class="dropdown-menu pull-right">
+          <li><a href="#">idle</a></li>
+          <li><a href="#">left</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Button Drop Down -->
+<div class="form-group">
+  <label class="col-md-4 control-label" for="buttondropdown">Default Idle</label>
+  <div class="col-md-4">
+    <div class="input-group">
+      <input id="buttondropdown" name="buttondropdown" class="form-control" placeholder="placeholder" type="text">
+      <div class="input-group-btn">
+        <button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">
+          Set
+          <span class="caret"></span>
+        </button>
+        <ul class="dropdown-menu pull-right">
+          <li><a href="#">idle</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Button -->
+<div class="form-group">
+  <label class="col-md-4 control-label" for="singlebutton">Single Button</label>
+  <div class="col-md-4">
+    <button id="{slug}" name="singlebutton" class="btn btn-primary">Button</button>
+  </div>
+</div>
+
+
+
 </fieldset>
 </form>
 """
-            print("hello")
-            self.wfile.write(bytes(OBJECT_FORM, "utf8"))
 
-        print("Have game object for",game.name)
-        editor_queue.task_done()
-        print("now release")
+#            self.wfile.write(bytes(OBJECT_FORM, "utf8"))
+            txt += OBJECT_FORM
+        self.wfile.write(bytes(txt, "utf8"))
+        self.release_game_object()
 
     def do_HEAD(self):
         self._set_headers()
