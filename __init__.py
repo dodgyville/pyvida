@@ -3413,9 +3413,10 @@ class Actor(MotionManager, metaclass=use_on_events):
                 self.game.reload_modules(modules=[module_name])
 
 
-    def on_swap_actions(self, actions, prefix=None, postfix=None, speeds=[]):
+    def on_swap_actions(self, actions, prefix=None, postfix=None, speeds=[], pathplanning=[]):
         """ Take a list of actions and replace them with prefix_action eg set_actions(["idle", "over"], postfix="off") 
             will make Actor._actions["idle"] = Actor._actions["idle_off"]
+            Will also force pathplanning to the ones listed in pathplanning.
         """
         if logging: log.info("player.set_actions using prefix %s on %s"%(prefix, actions))
         self.editor_clean = False #actor no longer has permissions as set by editor
@@ -3429,6 +3430,13 @@ class Actor(MotionManager, metaclass=use_on_events):
                 self._actions[action] = self._actions[key]
                 if len(actions) == len(speeds):
                     self._actions[action].speed = speeds[i]
+        if len(pathplanning) > 0:
+            for key, action in self._actions.items():
+                if key in pathplanning:
+                    action.available_for_pathplanning = True
+                else:
+                    action.available_for_pathplanning = False
+
 
 
     def _python_path(self):
