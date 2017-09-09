@@ -5259,6 +5259,9 @@ class Emitter(Item, metaclass=use_on_events):
             if self.game and self.game._headless:
                 self.particles.remove(p)
 
+    def on_fastforward(self, frames, something):
+        print("**** ERROR: emitter.fastforward not ported yet")
+
     def on_start(self):
         """ switch emitter on and start with fresh particles """
         self.behaviour = BEHAVIOUR_FRESH
@@ -8604,7 +8607,7 @@ class Game(metaclass=use_on_events):
         self._headless = v
         if self._headless is True: #speed up
             print("FASTER FPS")
-            self.on_publish_fps(200)
+            self.on_publish_fps(300)
         else:
             self.on_publish_fps(self.fps)
 
@@ -10060,7 +10063,7 @@ class Game(metaclass=use_on_events):
             import pdb
             pdb.set_trace()
         if self._output_walkthrough is False and DEBUG_STDOUT is True:
-            print("[step]",function_name, walkthrough[1:], t.seconds, "\n [hint]", self.storage.hint if self.storage else "(no storage)")
+            print("[step]",function_name, walkthrough[1:], t.seconds, "   [hint]", self.storage.hint if self.storage else "(no storage)")
 
         self._walkthrough_index += 1
 
@@ -10982,10 +10985,16 @@ class Game(metaclass=use_on_events):
                           (sfname, scene.name))
             scene._last_state = sfname
 #            execfile("somefile.py", global_vars, local_vars)
+            current_headless = self._headless
+            if not current_headless:
+                print("will set headless for load_state")
+                self.set_headless_value(True)
             with open(sfname) as f:
                 data = f.read()
                 code = compile(data, sfname, 'exec')
                 exec(code, variables)
+            if not current_headless: # restore non-headless
+                self.set_headless_value(False)
             variables['load_state'](self, scene)
         self._last_load_state = state
         return scene
