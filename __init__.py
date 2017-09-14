@@ -6028,8 +6028,9 @@ class Scene(MotionManager, metaclass=use_on_events):
     def on_clean(self, objs=[]):
         check_objects = copy.copy(self._objects)
         for i in check_objects:
-            if i not in objs and not isinstance(i, Portal) \
-                    and i != self.game.player:
+            obj = get_object(self.game, i)
+            if i not in objs and not isinstance(obj, Portal) \
+                    and obj != self.game.player:
                 self._remove(i)
 
     def on_set_background(self, fname=None):
