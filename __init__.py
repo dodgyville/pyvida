@@ -7,8 +7,10 @@ import gc
 import glob
 import imghdr
 import imp
+import itertools
 import json
 import math
+from operator import sub
 import os
 import pickle
 import pyglet.clock
@@ -3636,7 +3638,7 @@ class Actor(MotionManager, metaclass=use_on_events):
 
             pyglet.gl.glTranslatef(self._scroll_dx, 0.0, 0.0)
 #            sprite.position = (int(x), int(y))
-
+            original_scale = self.scale
             if self._flip_horizontal:
                 glScalef(-1.0, 1.0, 1.0);
                 x = -x
@@ -3649,8 +3651,79 @@ class Actor(MotionManager, metaclass=use_on_events):
 
             if self._use_astar and self.game.scene: # scale based on waypoints
                 distances = []
-                wp = [w for w in self.game.scene.walkarea._waypoints if len(w)==3] # get waypoints with z values
-#                import pdb; pdb.set_trace()
+                total_distances = 0
+                # get waypoints with z values
+#So for a triangle p1, p2, p3, if the vector U = p2 - p1 and the vector V = p3 - p1 then the normal N = U x V and can be calculated by:
+
+#Nx = UyVz - UzVy
+#Ny = UzVx - UxVz
+#Nz = UxVy - UyVx
+                def normal2(p1, p2, p3):
+                    U = tuple(map(sub, p2, p1))
+                    V = tuple(map(sub, p3, p1))
+#                    normal = itertools.product([a,b])
+                    Nx = U[1]*V[2] - U[2]*V[1]
+                    Ny = U[2]*V[0] - U[0]*V[2]
+                    Nz = U[0]*V[1] - U[1]*V[0]
+                    return Nx, Ny, Nz
+
+                def solvez(vs, x,y):
+                    a,b,c = normal2(*vs)
+                    x0, y0, z0 = v0 = vs[0]
+                    
+                    #a*(x-x0) + b*(y-y0) + c*(z-z0) = 0
+#                    c = (c*z0 - a*(x-x0) - b*(y-y0))/z
+                    if c==0:
+                        print("c is zero",vs)
+                        return 0
+                    z = (-a*(x-x0) - b*(y-y0) + c*z0)/c
+                    return z
+                    
+
+                def solvez2(vs, x,y):
+                    x1,y1,z1 = vs[0]
+                    x2,y2,z2 = vs[1]
+                    x3,y3,z3 = vs[2]
+                    A = y1*(z2-z3) + y2*(z3-z1) + y3*(z1-z2)
+                    B = z1*(x2-x3) + z2*(x3-x1) + z3*(x1-x2)
+                    C = x1*(y2-y3) + x2*(y3-y1) + x3*(y1-y2)
+                    D = -x1*(y2*z3 - y3*z2) - x2*(y3*z1 - y1*z3) - x3*(y1*z2 - y2*z1)
+                    if C == 0:
+                        print("c is zero",vs)
+                        return 0
+                    z = (D-A*x-B*y)/C
+                    return z
+                def normal(v1, v2, v3):
+                   a = tuple(map(sub, v1, v2)) 
+                   b = tuple(map(sub, v1, v3))
+                   return itertools.product([a,b])   
+
+                px, py = self.x, self.y
+                wps = [w for w in self.game.scene.walkarea._waypoints if len(w)==3]
+                for wp in wps:
+#                    pt = wp[0], height-wp[1] # invert waypoint y for pyglet
+                    d = distance(wp, (px, py)) #XXX ignores parents, scrolling.                
+                    distances.append((d, wp[-1]))
+                    total_distances += d
+                if total_distances>0:
+                    weights = []
+                    weights_raw = []    
+                    weights_raw0 = []                
+                    for d in distances: 
+                        weights_raw0.append(d[0]/total_distances)
+                        w = 1 - (d[0]/total_distances)
+                        weights.append(w*d[1])
+                        weights_raw.append(w)
+                    print("player, wps, distances, weights raw, weights, weight sums", px, py, wps, distances, weights_raw, weights, sum(weights))
+                    print("weights raw0,  raw, weights",weights_raw0, weights_raw, weights)
+                    z = sum(weights)/(len(distances)-1)
+#                    vs=self.game.scene.walkarea._waypoints[:3]
+#                    v4s = (0,0,0), (100,0,0), (0,200,0)
+#                    v5s = (0,0,0), (0,0,100), (200,0,100)
+#                    z = solvez(vs, px, py)/3
+#                    z = solvez2(vs, px, py)
+                    print("scaling",self.scale, z, self.scale*z)
+                    self.scale = self.scale * z
 
             sprite.position = (x,y)
             if self._scroll_dx != 0 and self._scroll_dx + self.w < self.game.resolution[0]:
@@ -3659,6 +3732,8 @@ class Actor(MotionManager, metaclass=use_on_events):
                 sprite.position = (int(x - self.w), int(y))
             if not self._batch:
                 sprite.draw()
+            self.scale = original_scale
+
             # draw extra tiles if needed
             if self._scroll_dx != 0 and self._scroll_mode == SCROLL_TILE_HORIZONTAL:
                 if sprite.x > 0:
@@ -4590,7 +4665,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         path = []
 #        @total_ordering
         class Node():
-            def __init__(self, x,y):
+            def __init__(self, x,y,z=None):
                 self.x = x
                 self.y = y
                 self.H = 100000
@@ -5675,7 +5750,7 @@ class WalkAreaManager(metaclass=use_on_events):
             i += 1
         return c
 
-    def valid(self, x, y):
+    def valid(self, x, y, z=None):
         """ Returns True if the point is safe to walk to
          1. Check inside polygon
          2. Check not inside scene's objects' solid area
