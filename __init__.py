@@ -674,6 +674,21 @@ def scene_search(game, scene, target):  # are scenes connected via portals?
 Utilities
 """
 
+def easeInOutQuad(t, b, c, d):
+    """
+    Easing method to animate between two points
+
+    t = current position of tween
+    b = initial value
+    c = total change in value
+    d = total time
+    """
+    t /= d/2
+    if (t < 1):
+        return c/2*t*t + b
+    t -= 1
+    return -c/2 * (t*(t-2) - 1) + b
+
 #get PNG image size info without loading into video memory
 #courtesy Fred the Fantastic - http://stackoverflow.com/questions/8032642/how-to-obtain-image-size-using-standard-python-class-without-using-external-lib
 def get_image_size(fname):
@@ -3700,30 +3715,57 @@ class Actor(MotionManager, metaclass=use_on_events):
 
                 px, py = self.x, self.y
                 wps = [w for w in self.game.scene.walkarea._waypoints if len(w)==3]
+                #1. Find nearest wp
+                #2. check other wps to find if we form two angles less than 90 degrees, if so, use those wps.
+                #3. use the (one or) two points to work out scale factor
+                # XXX current implementation only uses 1 or 2 z-scaling waypoints.
                 for wp in wps:
 #                    pt = wp[0], height-wp[1] # invert waypoint y for pyglet
                     d = distance(wp, (px, py)) #XXX ignores parents, scrolling.                
-                    distances.append((d, wp[-1]))
+                    distances.append((d, wp))
                     total_distances += d
-                if total_distances>0:
-                    weights = []
-                    weights_raw = []    
-                    weights_raw0 = []                
-                    for d in distances: 
-                        weights_raw0.append(d[0]/total_distances)
-                        w = 1 - (d[0]/total_distances)
-                        weights.append(w*d[1])
-                        weights_raw.append(w)
-                    print("player, wps, distances, weights raw, weights, weight sums", px, py, wps, distances, weights_raw, weights, sum(weights))
-                    print("weights raw0,  raw, weights",weights_raw0, weights_raw, weights)
-                    z = sum(weights)/(len(distances)-1)
-#                    vs=self.game.scene.walkarea._waypoints[:3]
-#                    v4s = (0,0,0), (100,0,0), (0,200,0)
-#                    v5s = (0,0,0), (0,0,100), (200,0,100)
-#                    z = solvez(vs, px, py)/3
-#                    z = solvez2(vs, px, py)
-                    print("scaling",self.scale, z, self.scale*z)
+                if total_distances>=2: #only use first two z-values, scenes should only have two.
+                    distances.sort() #for many waypoints, we would sort and use nearest as basic for finding best triangle.
+                    nearest = distances.pop(0)[1]
+                    second = distances.pop(0)[1]
+                    a = distance((px, py), nearest)
+                    b = distance((px, py), second)
+                    c = distance(nearest, second)
+                    angle_c = math.acos( (a**2 + b**2 - c**2) / (2*a*b) )
+                    angle_a = math.acos( (b**2 + c**2 - a**2) / (2*b*c) )
+                    angle_b = math.acos( (c**2 + a**2 - b**2) / (2*c*a) ) 
+                    #self.game.scene.walkarea._editing = True
+                    if angle_a < math.pi/2 and angle_b < math.pi/2: # player is "between" the two weigh points, so scale
+                        total_distance = a + b
+                        a_scale = nearest[-1]
+                        b_scale = second[-1]
+                        # we need to project onto C, create new right triangle using player and nearest and perp to full triangle
+
+                        #project = a * cos(angle_a) = 20.59 #should be 20 exactly?
+                        angle_a2 = (math.pi/2) - angle_b
+                        c2 = a
+                        angle_c2 = math.pi/2 #90 degrees
+                        project = a2 = sin(angle_a2) * (c2/sin(angle_c2))
+                        z = (1-(project/c))*a_scale + ((project/c))*b_scale
+                        #print((px, py), nearest, second, total_distance, "project",project, "distance from a to player",a, "distance from a to b", c, a_scale, b, b_scale, z)
+                        """
+                        Easing method to animate between two points
+
+                        t = current position of tween
+                        b = initial value
+                        c = total change in value
+                        d = total time
+                        """
+                        #import pdb; pdb.set_trace()
+                        def easeInQuad(t, b, c, d):
+	                        t /= d
+	                        return c*t*t + b
+                       # z = easeInQuad(project, a_scale, b_scale-a_scale, c)
+                    else: # use nearest
+                        z = a_scale = nearest[-1]
                     self.scale = self.scale * z
+               # elif total_distances==1: 
+
 
             sprite.position = (x,y)
             if self._scroll_dx != 0 and self._scroll_dx + self.w < self.game.resolution[0]:
