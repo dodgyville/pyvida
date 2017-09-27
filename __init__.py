@@ -4804,7 +4804,6 @@ class Actor(MotionManager, metaclass=use_on_events):
 class Item(Actor):
     pass
 
-
 class Portal(Actor, metaclass=use_on_events):
 
     def __init__(self, *args, **kwargs):
@@ -9614,8 +9613,10 @@ class Game(metaclass=use_on_events):
             obj.load_assets(self)
             obj.guess_clickable_area()
             for k, v in kwargs.items():
-                setattr(obj, k, v)
- #               if k == "key": obj.key = get_keycode(v)
+                if k == "key": 
+                    obj.on_key(v) #set _interact_key
+                else:
+                    setattr(obj, k, v)                    
 # if "text" in kwargs.keys(): obj.update_text() #force update on MenuText
             self._add(obj)
             new_menu.append(obj)
