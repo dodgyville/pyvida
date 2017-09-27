@@ -1531,6 +1531,7 @@ class Settings(object):
         self.allow_internet_debug = ENABLE_LOGGING
 
         self.fullscreen = DEFAULT_FULLSCREEN
+        self.preferred_screen = None # for multi-monitors
         self.show_portals = False
         self.show_portal_text = DEFAULT_PORTAL_TEXT
         self.portal_exploration = DEFAULT_EXPLORATION
@@ -1591,6 +1592,8 @@ class Settings(object):
                     data.lock_engine_fps = DEFAULT_ENGINE_FPS
                 if not hasattr(data, "low_memory"): # compatible with older games
                     data.low_memory = False
+                if not hasattr(data, "preferred_screen"): # compatible with older games
+                    data.preferred_screen = None
             return data # use loaded settings
         except:  # if any problems, use default settings
             log.warning(
@@ -8889,7 +8892,9 @@ class Game(metaclass=use_on_events):
     #            editor_thread.start()
             if symbol == pyglet.window.key.F2:
                 print("edit_object_script(game, obj) will open the editor for an object")
-                if not self.fullscreen:
+                if self.fullscreen and len(self.screens)<=1:
+                    print("Unable to enter debug when fullscreen mode on a single screen.")
+                else:
                     import pdb
                     pdb.set_trace()
 
@@ -11263,12 +11268,29 @@ class Game(metaclass=use_on_events):
     @property
     def screen_size(self):
         """ Return the physical screen size or the override """
-        display = pyglet.window.get_platform().get_default_display()
-        w = display.get_default_screen().width
-        h = display.get_default_screen().height
+        w = self.screen.width
+        h = self.screen.height
         if self._screen_size_override:
             w, h = self._screen_size_override
         return w,h
+    
+    @property
+    def screen(self):
+        """ Return the screen being used to display the game. """
+        display = pyglet.window.get_platform().get_default_display()
+        if self.settings and self.settings.preferred_screen is not None:
+            try:
+                screen = display.get_screens()[self.settings.preferred_screen]
+            except IndexError:
+                screen = display.get_default_screen()
+        else:
+            screen = display.get_default_screen()
+        return screen
+    
+    @property
+    def screens(self):
+        """ return available screens """
+        return pyglet.window.get_platform().get_default_display().get_screens()
 
     def reset_window(self, fullscreen, create=False):
         """ Make the game screen fit the window, create if requested """
@@ -11290,7 +11312,7 @@ class Game(metaclass=use_on_events):
         if create: 
 #            print("creating window")
             sw, sh = self._screen_size_override if self._screen_size_override else (width, height)
-            self._window = Window(width=sw, height=sh, fullscreen=fullscreen) 
+            self._window = Window(width=sw, height=sh, fullscreen=fullscreen, screen=self.screen) 
         self._scale = scale
         self.fullscreen = fullscreen #status of this session
         self.create_bars_and_scale(width, height, scale)
