@@ -7,44 +7,15 @@ import gc
 import glob
 import imghdr
 import imp
+import itertools
 import json
 import math
+from operator import sub
 import os
 import pickle
 import pyglet.clock
-
-"""
-len(pyglet.clock._default._schedule_interval_items)
-[print(i, x.func) for i,x in enumerate(pyglet.clock._default._schedule_interval_items)]
-
-"""
-
-# override clock unschedule to fix a bug in pyglet 1.3.0b1
-class PyvidaClock(pyglet.clock.Clock): 
-    def unschedule(self, func):
-        '''Remove a function from the schedule.
-
-        If the function appears in the schedule more than once, all occurrences
-        are removed.  If the function was not scheduled, no error is raised.
-
-        :Parameters:
-            `func` : function
-                The function to remove from the schedule.
-
-        '''
-        # clever remove item without disturbing the heap:
-        # 1. set function to an empty lambda -- original function is not called
-        # 2. set interval to 0               -- item will be removed from heap eventually
-#        if len(self._schedule_interval_items) == 10:
-#            import pdb; pdb.set_trace()        
-        for item in set(item for item in self._schedule_interval_items if item.func == func):
-            item.interval = 0
-            item.func = lambda x, *args, **kwargs: x
-
-        self._schedule_items = [i for i in self._schedule_items if i.func != func]    
-
-# use a custom clock method to avoid bug in pyglet 1.3.0b1
-#pyglet.clock.Clock.unschedule = PyvidaClock.unschedule
+import queue
+import webbrowser
 
 import pyglet
 
@@ -68,6 +39,8 @@ from random import choice, randint, uniform
 from time import sleep
 from math import sin, cos, radians
 from fontTools.ttLib import TTFont
+
+PORT = 8000 + randint(0,100)
 
 
 try:
@@ -98,6 +71,7 @@ from pyglet.gl.gl import c_float
 from pyglet.image.codecs.png import PNGImageDecoder
 import pyglet.window.mouse
 
+editor_queue = queue.Queue() # used to share info between editor and game
 
 # TODO better handling of loading/unloading assets
 
@@ -203,7 +177,7 @@ if DEBUG_NAMES:
     tmp_objects_first = {}
     tmp_objects_second = {}
 
-ENABLE_FKEYS = CONFIG["editor"] # debug shortcut keys
+#ENABLE_FKEYS = CONFIG["editor"] # debug shortcut keys
 ENABLE_EDITOR = False and EDITOR_AVAILABLE # default for editor. Caution: This starts module reloads which ruins pickles 
 ENABLE_PROFILING = False
 ENABLE_LOGGING = True
@@ -374,9 +348,10 @@ EDIT_CLICKABLE = "clickable_area"
 EDIT_SOLID = "solid_area"
 
 
-# CAMERA FX
+# CAMERA FX 
 FX_FADE_OUT = 0
 FX_FADE_IN = 1
+FX_CUT_QUICK = 3
 FX_DISCO = 2 # randomly tint the scene all colours
 
 # KEYS (currently bound to pyglet)
@@ -407,6 +382,15 @@ K_6 = pyglet.window.key._6
 K_7 = pyglet.window.key._7
 K_8 = pyglet.window.key._8
 K_9 = pyglet.window.key._9
+
+K_LEFT = pyglet.window.key.LEFT
+K_RIGHT = pyglet.window.key.RIGHT
+K_UP = pyglet.window.key.UP
+K_DOWN = pyglet.window.key.DOWN
+K_HOME = pyglet.window.key.HOME
+K_END = pyglet.window.key.END
+K_PAGEUP = pyglet.window.key.PAGEUP
+K_PAGEDOWN = pyglet.window.key.PAGEDOWN
 
 # COLOURS
 COLOURS = {
@@ -689,6 +673,21 @@ def scene_search(game, scene, target):  # are scenes connected via portals?
 """
 Utilities
 """
+
+def easeInOutQuad(t, b, c, d):
+    """
+    Easing method to animate between two points
+
+    t = current position of tween
+    b = initial value
+    c = total change in value
+    d = total time
+    """
+    t /= d/2
+    if (t < 1):
+        return c/2*t*t + b
+    t -= 1
+    return -c/2 * (t*(t-2) - 1) + b
 
 #get PNG image size info without loading into video memory
 #courtesy Fred the Fantastic - http://stackoverflow.com/questions/8032642/how-to-obtain-image-size-using-standard-python-class-without-using-external-lib
@@ -2942,10 +2941,13 @@ class Actor(MotionManager, metaclass=use_on_events):
         elif self.resource:
             self.resource.opacity = self._opacity
 
-
     def get_alpha(self):
         return self._opacity
     alpha = property(get_alpha, set_alpha)
+
+    def on_opacity(self, v): 
+        """ 0 - 255 """
+        self.alpha = v
 
     @property
     def resource(self):
@@ -3357,17 +3359,6 @@ class Actor(MotionManager, metaclass=use_on_events):
 
     def _smart_actions(self, game, exclude=[]):
         """ smart load the actions """
-
-        # smart actions for pathplanning and which arcs they cover (in degrees)
-        PATHPLANNING = {"left": (225, 315),
-                        "right": (45, 135),
-                        "up": (-45, 45),
-                        "down": (135, 225)
-                        }
-        PATHPLANNING = {"left": (180, 360),
-                        "right": (0, 180),
-                        }
-
         self._actions = {}
         for action_file in self._images:
             action_name = os.path.splitext(os.path.basename(action_file))[0]
@@ -3380,11 +3371,44 @@ class Actor(MotionManager, metaclass=use_on_events):
             action = Action(action_name).smart(
                 game, actor=self, filename=relname)
             self._actions[action_name] = action
+            action_names = []
+            # default only uses two path planning actions to be compatible with spaceout2
+            PATHPLANNING = {"left": (180, 360),
+                        "right": (0, 180),
+                        }
             if action_name in PATHPLANNING:
-                action.available_for_pathplanning = True
-                p = PATHPLANNING[action_name]
-                action.angle_start = p[0]
-                action.angle_end = p[1]
+                action_names.append(action_name)
+            if len(action_names)>0:
+                self.on_set_pathplanning_actions(action_names)
+
+    def on_set_pathplanning_actions(self, action_names, speeds=[]):
+        # smart actions for pathplanning and which arcs they cover (in degrees)
+        if len(action_names) == 1:
+            print("WARNING: %s ONLY ONE ACTION %s USED FOR PATHPLANNING"%(self.name, action_names[0]))
+            PATHPLANNING = {action_names[0]: (0, 360)}
+        elif len(action_names) == 2:
+            PATHPLANNING = {"left": (180, 360),
+                        "right": (0, 180),
+                        }
+        elif len(action_names) == 4:
+            PATHPLANNING = {"left": (225, 315),
+                        "right": (45, 135),
+                        "up": (-45, 45),
+                        "down": (135, 225)
+                        }
+        else:
+            # TODO: ["left", "right", "up", "down", "upleft", "upright", "downleft", "downright"]
+            print("Number of pathplanning actions does not match the templates built into pyvida.")
+            import pdb; pdb.set_trace()           
+
+        for i, action_name in enumerate(action_names):
+            action = self._actions[action_name]
+            action.available_for_pathplanning = True
+            p = PATHPLANNING[action_name]
+            action.angle_start = p[0]
+            action.angle_end = p[1]
+            if len(action_names) == len(speeds):
+                action.speed = speeds[i]
 
     def _load_scripts(self):
         # potentially load some interact/use/look scripts for this actor but
@@ -3406,20 +3430,31 @@ class Actor(MotionManager, metaclass=use_on_events):
                 self.game.reload_modules(modules=[module_name])
 
 
-    def on_swap_actions(self, actions, prefix=None, postfix=None):
+    def on_swap_actions(self, actions, prefix=None, postfix=None, speeds=[], pathplanning=[]):
         """ Take a list of actions and replace them with prefix_action eg set_actions(["idle", "over"], postfix="off") 
             will make Actor._actions["idle"] = Actor._actions["idle_off"]
+            Will also force pathplanning to the ones listed in pathplanning.
         """
         if logging: log.info("player.set_actions using prefix %s on %s"%(prefix, actions))
         self.editor_clean = False #actor no longer has permissions as set by editor
-        for i in actions: 
-            key = i
+        for i, action in enumerate(actions):
+            key = action
             if prefix:
                 key = "%s_%s"%(prefix, key)
             if postfix:
                 key = "%s_%s"%(key, postfix)
             if key in self._actions:
-                self._actions[i] = self._actions[key]
+                self._actions[action] = self._actions[key]
+                if len(actions) == len(speeds):
+                    self._actions[action].speed = speeds[i]
+        if len(pathplanning) > 0:
+            for key, action in self._actions.items():
+                if key in pathplanning:
+                    action.available_for_pathplanning = True
+                else:
+                    action.available_for_pathplanning = False
+
+
 
     def _python_path(self):
         """ Replace // with \ in all filepaths for this object (used to repair old window save files """
@@ -3467,6 +3502,12 @@ class Actor(MotionManager, metaclass=use_on_events):
                       (myd, this_dir))
             myd = os.path.join(this_dir, d, name)
             absd = os.path.join(os.getcwd(), myd)
+        if not os.path.isdir(absd):  # fallback to deprecated menu default if item 
+            print("***WARNING",d,name, "might need to be moved to items/ or emitters/, trying menu/ for now.")
+            if d == "data/items":
+                d = "data/menu"
+                myd = os.path.join(d, name)
+                absd = os.path.join(os.getcwd(), myd)
 
         self._directory = myd
 
@@ -3577,6 +3618,9 @@ class Actor(MotionManager, metaclass=use_on_events):
     def pyglet_draw(self, absolute=False, force=False, window=None):  # actor.draw
         if self.game and self.game._headless and not force:
             return
+        if not self.game:
+            print(self.name,"has no game attribute")
+            return
 
         sprite = get_resource(self.resource_name)[-1]
         if sprite and self.allow_draw:
@@ -3587,8 +3631,8 @@ class Actor(MotionManager, metaclass=use_on_events):
             if self.action and self.action.mode == MANUAL:
                 sprite._frame_index = self.action._manual_index
 
-
             ww,hh = self.game.resolution
+
 #            if self.name == "lbrain": import pdb; pdb.set_trace()
             if self._rotate:
                 glTranslatef((sprite.width/2)+self.x, hh-self.y-sprite.height/2, 0) #move to middle of sprite
@@ -3609,7 +3653,7 @@ class Actor(MotionManager, metaclass=use_on_events):
 
             pyglet.gl.glTranslatef(self._scroll_dx, 0.0, 0.0)
 #            sprite.position = (int(x), int(y))
-
+            original_scale = self.scale
             if self._flip_horizontal:
                 glScalef(-1.0, 1.0, 1.0);
                 x = -x
@@ -3620,6 +3664,109 @@ class Actor(MotionManager, metaclass=use_on_events):
                 y = -y
                 y -= sprite.height
 
+            if self._use_astar and self.game.scene: # scale based on waypoints
+                distances = []
+                total_distances = 0
+                # get waypoints with z values
+#So for a triangle p1, p2, p3, if the vector U = p2 - p1 and the vector V = p3 - p1 then the normal N = U x V and can be calculated by:
+
+#Nx = UyVz - UzVy
+#Ny = UzVx - UxVz
+#Nz = UxVy - UyVx
+                def normal2(p1, p2, p3):
+                    U = tuple(map(sub, p2, p1))
+                    V = tuple(map(sub, p3, p1))
+#                    normal = itertools.product([a,b])
+                    Nx = U[1]*V[2] - U[2]*V[1]
+                    Ny = U[2]*V[0] - U[0]*V[2]
+                    Nz = U[0]*V[1] - U[1]*V[0]
+                    return Nx, Ny, Nz
+
+                def solvez(vs, x,y):
+                    a,b,c = normal2(*vs)
+                    x0, y0, z0 = v0 = vs[0]
+                    
+                    #a*(x-x0) + b*(y-y0) + c*(z-z0) = 0
+#                    c = (c*z0 - a*(x-x0) - b*(y-y0))/z
+                    if c==0:
+                        print("c is zero",vs)
+                        return 0
+                    z = (-a*(x-x0) - b*(y-y0) + c*z0)/c
+                    return z
+                    
+
+                def solvez2(vs, x,y):
+                    x1,y1,z1 = vs[0]
+                    x2,y2,z2 = vs[1]
+                    x3,y3,z3 = vs[2]
+                    A = y1*(z2-z3) + y2*(z3-z1) + y3*(z1-z2)
+                    B = z1*(x2-x3) + z2*(x3-x1) + z3*(x1-x2)
+                    C = x1*(y2-y3) + x2*(y3-y1) + x3*(y1-y2)
+                    D = -x1*(y2*z3 - y3*z2) - x2*(y3*z1 - y1*z3) - x3*(y1*z2 - y2*z1)
+                    if C == 0:
+                        print("c is zero",vs)
+                        return 0
+                    z = (D-A*x-B*y)/C
+                    return z
+                def normal(v1, v2, v3):
+                   a = tuple(map(sub, v1, v2)) 
+                   b = tuple(map(sub, v1, v3))
+                   return itertools.product([a,b])   
+
+                px, py = self.x, self.y
+                wps = [w for w in self.game.scene.walkarea._waypoints if len(w)==3]
+                #1. Find nearest wp
+                #2. check other wps to find if we form two angles less than 90 degrees, if so, use those wps.
+                #3. use the (one or) two points to work out scale factor
+                # XXX current implementation only uses 1 or 2 z-scaling waypoints.
+                for wp in wps:
+#                    pt = wp[0], height-wp[1] # invert waypoint y for pyglet
+                    d = distance(wp, (px, py)) #XXX ignores parents, scrolling.                
+                    distances.append((d, wp))
+                    total_distances += d
+                if total_distances>=2: #only use first two z-values, scenes should only have two.
+                    distances.sort() #for many waypoints, we would sort and use nearest as basic for finding best triangle.
+                    nearest = distances.pop(0)[1]
+                    second = distances.pop(0)[1]
+                    a = distance((px, py), nearest)
+                    b = distance((px, py), second)
+                    c = distance(nearest, second)
+                    angle_c = math.acos( (a**2 + b**2 - c**2) / (2*a*b) )
+                    angle_a = math.acos( (b**2 + c**2 - a**2) / (2*b*c) )
+                    angle_b = math.acos( (c**2 + a**2 - b**2) / (2*c*a) ) 
+                    #self.game.scene.walkarea._editing = True
+                    if angle_a < math.pi/2 and angle_b < math.pi/2: # player is "between" the two weigh points, so scale
+                        total_distance = a + b
+                        a_scale = nearest[-1]
+                        b_scale = second[-1]
+                        # we need to project onto C, create new right triangle using player and nearest and perp to full triangle
+
+                        #project = a * cos(angle_a) = 20.59 #should be 20 exactly?
+                        angle_a2 = (math.pi/2) - angle_b
+                        c2 = a
+                        angle_c2 = math.pi/2 #90 degrees
+                        project = a2 = sin(angle_a2) * (c2/sin(angle_c2))
+                        z = (1-(project/c))*a_scale + ((project/c))*b_scale
+                        #print((px, py), nearest, second, total_distance, "project",project, "distance from a to player",a, "distance from a to b", c, a_scale, b, b_scale, z)
+                        """
+                        Easing method to animate between two points
+
+                        t = current position of tween
+                        b = initial value
+                        c = total change in value
+                        d = total time
+                        """
+                        #import pdb; pdb.set_trace()
+                        def easeInQuad(t, b, c, d):
+	                        t /= d
+	                        return c*t*t + b
+                       # z = easeInQuad(project, a_scale, b_scale-a_scale, c)
+                    else: # use nearest
+                        z = a_scale = nearest[-1]
+                    self.scale = self.scale * z
+               # elif total_distances==1: 
+
+
             sprite.position = (x,y)
             if self._scroll_dx != 0 and self._scroll_dx + self.w < self.game.resolution[0]:
                 sprite.position = (int(x + self.w), int(y))
@@ -3627,6 +3774,8 @@ class Actor(MotionManager, metaclass=use_on_events):
                 sprite.position = (int(x - self.w), int(y))
             if not self._batch:
                 sprite.draw()
+            self.scale = original_scale
+
             # draw extra tiles if needed
             if self._scroll_dx != 0 and self._scroll_mode == SCROLL_TILE_HORIZONTAL:
                 if sprite.x > 0:
@@ -3935,9 +4084,14 @@ class Actor(MotionManager, metaclass=use_on_events):
             portrait = self.game.add(portrait)
 #            portrait_x, portrait_y = 5, 5 #top corner for portrait offset
  #           portrait_w, portrait_h = portrait.w, portrait.h
-            portrait.x, portrait.y = 6, 6
+            if INFO["slug"] == "spaceout":
+                self.portrait_offset_x, self.portrait_offset_y = 12, 11
+            elif INFO["slug"] == "spaceout2":
+                self.portrait_offset_x, self.portrait_offset_y = 6, 6
+
+            portrait.x, portrait.y = self.portrait_offset_x, self.portrait_offset_y
             portrait._parent = msgbox
-            dx += portrait.w
+            dx += portrait.w + self.portrait_offset_x
 
         if "wrap" not in kwargs:
             mw = msgbox.w
@@ -4305,7 +4459,10 @@ class Actor(MotionManager, metaclass=use_on_events):
             setattr(self, a, v)
 
     def on_reanchor(self, point):
-        self._set(("_ax", "_ay"), point)
+        ax, ay = point
+        ax = -ax if self.game and self.game.flip_anchor else ax
+        ay = -ay if self.game and self.game.flip_anchor else ay
+        self._set(("_ax", "_ay"), (ax, ay))
 
     def on_reclickable(self, rect):
         self._clickable_mask = None  # clear the mask
@@ -4355,11 +4512,6 @@ class Actor(MotionManager, metaclass=use_on_events):
             if horizontal != self._flip_horizontal: # flip anchor point too
                 self.ax = -self.ax
             self._flip_horizontal = horizontal
-
-
-    def on_opacity(self, v):
-        """ 0 - 255 """
-        self.alpha = v
 
     def _hide(self):
         self._usage(draw=False, update=False)
@@ -4555,7 +4707,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         path = []
 #        @total_ordering
         class Node():
-            def __init__(self, x,y):
+            def __init__(self, x,y,z=None):
                 self.x = x
                 self.y = y
                 self.H = 100000
@@ -4675,9 +4827,8 @@ class Actor(MotionManager, metaclass=use_on_events):
 
         # 0 degrees is towards the top of the screen
         angle = math.degrees(raw_angle) + 90
-        path_planning_actions = [action.name for action in self._actions.values() if action.available_for_pathplanning == True]        
-        if "up" in path_planning_actions and "down" in path_planning_actions and \
-            "left" in path_planning_actions and "right" in path_planning_actions: # assume four quadrants
+        path_planning_actions = set([action.name for action in self._actions.values() if action.available_for_pathplanning == True])
+        if len(path_planning_actions)>=4: # assume four quadrants XXX may need to handle 8 segments (eg upleft, upright)
             if angle < -45:
                 angle += 360
         else: # assume only two hemispheres
@@ -4698,9 +4849,11 @@ class Actor(MotionManager, metaclass=use_on_events):
         log.info("%s preferred goto action is %s"%(self.name, goto_action))
         if goto_motion is None: #create a set of evenly spaced deltas to get us there:
             # how far we can travel along the distance in one update
-            d = self.action.speed / distance
-            self._goto_deltas = [(x * d, y * d)]*int(distance/self.action.speed)
-            self._goto_deltas_average_speed = self.action.speed
+            # use the action that will be doing the goto and use its speed for our deltas
+            acton = goto_action if goto_action else self.action
+            d = action.speed / distance
+            self._goto_deltas = [(x * d, y * d)]*int(distance/action.speed)
+            self._goto_deltas_average_speed = action.speed
         else: #use the goto_motion to create a list of deltas
             motion = self._motions[goto_motion]
             speed = math.hypot(motion._average_dx, motion._average_dy)
@@ -4843,9 +4996,17 @@ class Portal(Actor, metaclass=use_on_events):
 #        if self.link.scene
 #        return self.__dict__
 
-    @property
-    def link(self):
+#    @property
+#    def link(self):
+
+    def get_link(self):
         return get_object(self.game, self._link)
+
+    def set_link(self, v):
+        obj = get_object(self.game, v)
+        self._link = obj.name if obj else getattr(v, "name", v)
+
+    link = property(get_link, set_link)
 
     def set_editable(self):
         """ Set which attributes are editable in the editor """
@@ -4876,14 +5037,16 @@ class Portal(Actor, metaclass=use_on_events):
 
 
     def guess_link(self):
-        links = self.name.split("_to_")
         guess_link = None
-        if len(links) > 1:  # name format matches guess
-            guess_link = "%s_to_%s" % (links[1].lower(), links[0].lower())
-        if guess_link and guess_link in self.game._items:
-            self._link = self.game._items[
-                guess_link].name if self.game._items[guess_link] else None
-        else:
+        for i in ["_to_", "_To_", "_TO_"]:
+            links = self.name.split(i)
+            if len(links) > 1:  # name format matches guess
+#                guess_link = "%s_to_%s" % (links[1].lower(), links[0].lower())
+                guess_link = "%s%s%s" % (links[1], i, links[0])
+            if guess_link and guess_link in self.game._items:
+                self._link = self.game._items[
+                    guess_link].name if self.game._items[guess_link] else None
+        if not guess_link:
             if logging:
                 log.warning(
                     "game.smart unable to guess link for %s" % self.name)
@@ -5217,6 +5380,9 @@ class Emitter(Item, metaclass=use_on_events):
             if self.game and self.game._headless:
                 self.particles.remove(p)
 
+    def on_fastforward(self, frames, something):
+        print("**** ERROR: emitter.fastforward not ported yet")
+
     def on_start(self):
         """ switch emitter on and start with fresh particles """
         self.behaviour = BEHAVIOUR_FRESH
@@ -5234,7 +5400,10 @@ class Emitter(Item, metaclass=use_on_events):
 
     def on_reanchor(self, pt):
         """ queue event for changing the anchor points """
-        self._ax, self._ay = pt[0], pt[1]
+        ax = -pt[0] if self.game and self.game.flip_anchor else pt[0]
+        ay = -pt[1] if self.game and self.game.flip_anchor else pt[1]
+           
+        self._ax, self._ay = ax, ay
         for p in self.particles:
             p.ax, p.ay = self._ax, self._ay
 
@@ -5243,7 +5412,7 @@ class Emitter(Item, metaclass=use_on_events):
         self.particles = []
 
     def get_a_direction(self):
-        return randint(self.direction - float(self.fov / 2), self.direction + float(self.fov / 2))
+        return randint(int(self.direction - float(self.fov / 2)), int(self.direction + float(self.fov / 2)))
 
     def get_a_scale(self):
         return uniform(self.size_spawn_min, self.size_spawn_max)
@@ -5386,7 +5555,7 @@ class WalkAreaManager(metaclass=use_on_events):
     def __init__(self,  scene):
         self._scene = scene.name
         self.game = None
-        self._waypoints = []
+        self._waypoints = [] # (x,y,z=[scale for astar]) (z is optional)
         self._polygon = []
         self._polygon_waypoints = [] #autogenerated waypoints from polygon
         self._state = UNLOCKED
@@ -5403,7 +5572,7 @@ class WalkAreaManager(metaclass=use_on_events):
 
         self.busy = 0
 
-    def _set_point(self, x=None, y=None):
+    def _set_point(self, x=None, y=None, z=None):
         i = -1
         if self._edit_polygon_index >= 0:
             i = self._edit_polygon_index
@@ -5414,14 +5583,22 @@ class WalkAreaManager(metaclass=use_on_events):
             pts = self._waypoints
             a = "_waypoints"
         if i >= 0:
-            ox, oy = pts[i]
+            oz = None
+            if len(pts[i]) == 2: 
+                ox, oy = pts[i]
+            else: 
+                ox, oy, oz = pts[i]
             x = x if x else ox
             y = y if y else oy
-            updated = pts[:i] + [(x,y)] + pts[i+1:]
+            z = z if z else oz
+            new_pt = (x, y)
+            if z:
+                new_pt = (x, y, z)
+            updated = pts[:i] + [new_pt] + pts[i+1:]
             setattr(self, a, updated)
             self._update_walkarea()
 
-    def _get_point(self, x=False, y=False):
+    def _get_point(self, x=False, y=False, z=False):
         i = -1
         pts = []
         if self._edit_polygon_index >= 0:
@@ -5431,12 +5608,16 @@ class WalkAreaManager(metaclass=use_on_events):
             i = self._edit_waypoint_index
             pts = self._waypoints
         if i >= 0:
-            ox, oy = pts[i]
+            if len(pts[i]) == 2: 
+                ox, oy = pts[i]
+            else:
+                ox, oy, oz = pts[i]
         if x is True:
             return ox
-        else:
+        elif y is True:
             return oy
-
+        else:
+            return oz
 
     def set_pt_x(self, v):
         self._set_point(x=v)
@@ -5444,11 +5625,18 @@ class WalkAreaManager(metaclass=use_on_events):
     def set_pt_y(self, v):
         self._set_point(y=v)
 
+    def set_pt_z(self, v):
+        self._set_point(z=v)
+
     def get_pt_x(self):
         return self._get_point(x=True)
 
     def get_pt_y(self):
         return self._get_point(y=True)
+
+    def get_pt_z(self):
+        return self._get_point(z=True)
+
 
     @property
     def scene(self):
@@ -5469,7 +5657,8 @@ class WalkAreaManager(metaclass=use_on_events):
         closest_waypoint = 0
         closest_distance_waypoint = 10000
         for i, pt in enumerate(self._waypoints):
-            d = distance((x,y), pt)
+            px, py = pt[0], pt[1] #ignore possible z value
+            d = distance((x,y), (px, py))
             if d < closest_distance_waypoint:
                 closest_waypoint = i
                 closest_distance_waypoint = d
@@ -5480,6 +5669,7 @@ class WalkAreaManager(metaclass=use_on_events):
             self._edit_polygon_index = closest_polygon
   
     def generate_waypoints(self):
+        """ Autogenerated waypoints do not have z values and so do not affect astar scaling. """
         #polygon offset courtesy http://pyright.blogspot.com/2011/07/pyeuclid-vector-math-and-polygon-offset.html
         polyinset = []
         OFFSET = -15
@@ -5601,7 +5791,7 @@ class WalkAreaManager(metaclass=use_on_events):
             i += 1
         return c
 
-    def valid(self, x, y):
+    def valid(self, x, y, z=None):
         """ Returns True if the point is safe to walk to
          1. Check inside polygon
          2. Check not inside scene's objects' solid area
@@ -5954,8 +6144,9 @@ class Scene(MotionManager, metaclass=use_on_events):
     def on_clean(self, objs=[]):
         check_objects = copy.copy(self._objects)
         for i in check_objects:
-            if i not in objs and not isinstance(i, Portal) \
-                    and i != self.game.player:
+            obj = get_object(self.game, i)
+            if i not in objs and not isinstance(obj, Portal) \
+                    and obj != self.game.player:
                 self._remove(i)
 
     def on_set_background(self, fname=None):
@@ -6568,7 +6759,7 @@ class MenuManager(metaclass=use_on_events):
             obj._usage(draw=True, interact=True)
             self.game._menu.append(obj.name)
 
-    def on_show(self):
+    def on_show(self): #menu.show
         self._show()
 
     def _show(self):
@@ -6609,7 +6800,7 @@ class MenuManager(metaclass=use_on_events):
             log.debug("hide menu using place %s" %
                       [x for x in self.game._menu])
 
-    def on_hide(self, menu_items=None):
+    def on_hide(self, menu_items=None): #menu.hide
         self._hide(menu_items=menu_items)
 
     def on_fade_out(self):
@@ -6640,6 +6831,10 @@ class MenuManager(metaclass=use_on_events):
 
         if logging:
             log.debug("pop menu %s" % [x for x in self.game._menu])
+
+    def on_clear_all(self):
+        self.game._menu = []
+        self.game._menus = []
 
     def on_clear(self, menu_items=None):
         """ clear current menu """
@@ -6959,7 +7154,7 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._goto_dx = dx
         self._goto_dy = dy
 
-    def on_opacity(self, opacity=255, colour="black"):
+    def on_opacity(self, opacity=255, colour="black"): # camera opacity
         d = pyglet.resource.get_script_home()
         if colour == "black":
             mask = pyglet.image.load(os.path.join(d, 'data/special/black.png')) #TODO create dynamically based on resolution
@@ -8316,6 +8511,7 @@ class Game(metaclass=use_on_events):
         self._screen_size_override = None # game.resolution for the game, this is the window size.
 
         self.low_memory = False # low memory mode for this session (from CONFIG or Settings)
+        self.flip_anchor = False # toggle behaviour of relocate for backwards compat
 
         # how many event steps in this progress block
         self._progress_bar_count = 0
@@ -8486,6 +8682,10 @@ class Game(metaclass=use_on_events):
         if a == "items":
             log.warning("game.items deprecated, update")
             return self._items
+        if a == "scenes":
+            log.warning("game.scene deprecated, update")
+            return self._scenes
+
         q = getattr(self, "on_%s" % a, None) if a[:3] != "on_" else None
         if q:
             f = create_event(q)
@@ -8498,7 +8698,7 @@ class Game(metaclass=use_on_events):
                     return self._actors[s]
                 elif s in self._items:
                     return self._items[s]
-
+#        print("Unable to find",a)
         raise AttributeError
 #        return self.__getattribute__(self, a)
 
@@ -8531,7 +8731,6 @@ class Game(metaclass=use_on_events):
     def log(self, txt):
         print("*",txt)
 
-
     def on_clock_schedule_interval(self, *args, **kwargs):
         """ schedule a repeating callback """
         pyglet.clock.schedule_interval(*args, **kwargs)
@@ -8551,7 +8750,7 @@ class Game(metaclass=use_on_events):
         self._headless = v
         if self._headless is True: #speed up
             print("FASTER FPS")
-            self.on_publish_fps(200)
+            self.on_publish_fps(300)
         else:
             self.on_publish_fps(self.fps)
 
@@ -8618,6 +8817,13 @@ class Game(metaclass=use_on_events):
         return self._mouse_cursor
     mouse_cursor = property(get_mouse_cursor, set_mouse_cursor)
 
+    def cursor_hide(self):
+        print("cursor_hide deprecated")
+
+    def cursor_show(self):
+        print("cursor_show deprecated")
+
+
     @property
     def get_game_info(self):
         """ Information required to read/write run a save file """
@@ -8653,17 +8859,16 @@ class Game(metaclass=use_on_events):
         global use_effect
         game = self
         player = self.player
-        if game.editor and game.editor.obj:
+        if game.editor and game._editing:
             """ editor, editing a point, allow arrow keys """
             if symbol == pyglet.window.key.UP:
-                game.editor.obj.y -= 1
+                game._editing.y -= 1
             if symbol == pyglet.window.key.DOWN:
-                game.editor.obj.y += 1
+                game._editing.y += 1
             if symbol == pyglet.window.key.LEFT:
-                game.editor.obj.x -= 1
+                game._editing.x -= 1
             if symbol == pyglet.window.key.RIGHT:
-                game.editor.obj.x += 1
-            
+                game._editing.x += 1         
 
         # process engine keys before game keys
 
@@ -8673,12 +8878,13 @@ class Game(metaclass=use_on_events):
         if symbol == pyglet.window.key.F6:
             self.settings.font_size_adjust += 2
 
-        if ENABLE_FKEYS:
+        if CONFIG["editor"]:
             if symbol == pyglet.window.key.F1:
+                self.editor = editor(self)
+                return
                 #            edit_object(self, list(self.scene._objects.values()), 0)
                 #            self.menu_from_factory("editor", MENU_EDITOR)
     #            editor_pgui(self)
-                self.editor = editor(self)
      #           editor_thread = Thread(target=editor, args=(,))
     #            editor_thread.start()
             if symbol == pyglet.window.key.F2:
@@ -8688,8 +8894,9 @@ class Game(metaclass=use_on_events):
                     pdb.set_trace()
 
             if symbol == pyglet.window.key.F3: 
-                #game.menu.show()
-                pyglet_editor(self)
+                html_editor(game)
+                self.editor = True
+                webbrowser.open("http://127.0.0.1:%i"%PORT)
 
             if symbol == pyglet.window.key.F4:
                 print("RELOADED MODULES")
@@ -9748,7 +9955,7 @@ class Game(metaclass=use_on_events):
                             a = player_class(name)
                         else:
                             a = obj_cls(name)
-                        self._add(a)
+                        self._add(a, replace=True)
                     else:  # if just refreshing, then use the existing object
                         a = self._actors.get(
                             name, self._items.get(name, self._scenes.get(name, None)))
@@ -10001,7 +10208,7 @@ class Game(metaclass=use_on_events):
             import pdb
             pdb.set_trace()
         if self._output_walkthrough is False and DEBUG_STDOUT is True:
-            print("[step]",function_name, walkthrough[1:], t.seconds, "\n [hint]", self.storage.hint if self.storage else "(no storage)")
+            print("[step]",function_name, walkthrough[1:], t.seconds, "   [hint]", self.storage.hint if self.storage else "(no storage)")
 
         self._walkthrough_index += 1
 
@@ -10225,7 +10432,7 @@ class Game(metaclass=use_on_events):
         waiting_for_user = True
 #        log.info("There are %s events, game._waiting is %s, index is %s and current event is %s",len(self._events), self._waiting, self._event_index, self._event)
         if self._waiting_for_user: # don't do anything until user clicks
-            return
+            return safe_to_call_again
 
         if self._waiting:
             """ check all the Objects with existing events, if any of them are busy, don't process the next event """
@@ -10274,6 +10481,7 @@ class Game(metaclass=use_on_events):
 #                print("Start",e[0], e[1][0].name, datetime.now(), e[1][0].busy)
                 done_events += 1
 #                print("DOING",e)
+#                print("doing event",e)
                 # call the function with the args and kwargs
                 e[0](*e[1], **e[2])
 #                if self._event_index < len(self._events) - 1:
@@ -10282,11 +10490,15 @@ class Game(metaclass=use_on_events):
                 # if, after running the event, the obj is not busy, then it's
                 # OK to do the next event immediately.
                 if obj.busy == 0:
+#                    print("safe to call again immediately")
                     safe_to_call_again = True
                     if len(self._events)<5 or len(self._events)%10 == 0:
                         log.debug("Game not busy, events not busy, and the current object is not busy, so do another event (%s)" % (
                             len(self._events)))
                     return safe_to_call_again
+
+#                else:
+#                    print("not safe to call again immediately")
                 if obj.busy < 0:
                     log.error("obj.busy below zero, this should never happen.")
                     import pdb
@@ -10305,6 +10517,20 @@ class Game(metaclass=use_on_events):
     def update(self, dt, single_event=False):  # game.update
         """ Run update on scene objects """
 #        print("GAME UPDATE")
+
+        if self.editor: # let editor have a go for a moment.
+            try:
+                request_game_object = editor_queue.get(block=False)
+            except queue.Empty:
+                request_game_object = None
+            if type(request_game_object) is RequestGameObject:
+                editor_queue.task_done() # finished task with request_game_object
+                print("hand over to editor")
+                editor_queue.put(self)
+                print("put game object on queue, waiting until editor finishes with it")
+                editor_queue.join()
+                print("editor finished with game object")
+
         scene_objects = []
         fn = get_function(self, "game_update") #special update function game can use
         if fn:
@@ -10375,8 +10601,10 @@ class Game(metaclass=use_on_events):
             self._handle_events()  # run the event handler only once
         else:
             # loop while there are events safe to process
+#            print("\n\n\n\nSTARTING HANDLE EVENTS\n\n\n\n")
             while self._handle_events():
                 pass
+#            print("\n\n\n\nENDING HANDLE EVENTS\n\n\n\n")
 
 #        print("game update", self._headless, self._walkthrough_target>self._walkthrough_index, len(self._modals)>0, len(self._events))
 
@@ -10902,11 +11130,16 @@ class Game(metaclass=use_on_events):
                           (sfname, scene.name))
             scene._last_state = sfname
 #            execfile("somefile.py", global_vars, local_vars)
+            current_headless = self._headless
+            if not current_headless:
+                print("will set headless for load_state")
+                self.set_headless_value(True)
             with open(sfname) as f:
                 data = f.read()
                 code = compile(data, sfname, 'exec')
                 exec(code, variables)
-
+            if not current_headless: # restore non-headless
+                self.set_headless_value(False)
             variables['load_state'](self, scene)
         self._last_load_state = state
         return scene
@@ -10965,7 +11198,7 @@ class Game(metaclass=use_on_events):
             self.on_set_headless(False)
             self._walkthrough_auto = False #stop auto advance
 
-    def on_autosave(self, actor, tilesize, exclude_from_screenshot=[], fname = None, fast=True):
+    def on_autosave(self, actor, tilesize, exclude_from_screenshot=[], fname = None, fast=True, action="portrait"):
         game = self
         fname = fname if fname else datetime.now().strftime("%Y%m%d_%H%M%S")
         save_game(game, os.path.join(self.save_directory, "%s.save"%fname))
@@ -10980,7 +11213,7 @@ class Game(metaclass=use_on_events):
             obj = get_object(game, i)
             obj.show()
         actor = get_object(game, actor)
-        actor.says(gettext("Game saved."))
+        actor.says(gettext("Game saved."), action=action)
         if not fast:
             game.menu.show()
 
@@ -11171,6 +11404,55 @@ class Game(metaclass=use_on_events):
                     log.error("Menu item %s not found in Item collection" % i)
         if logging:
             log.debug("set menu to %s" % [x for x in self._menu])
+
+"""
+Porting older game to pyglet pyvdida.
+"""
+
+EMITTER_SMOKE = {"name":"smoke", "number":10, "frames":20, "direction":0, "fov":30, "speed":3, "acceleration":(0, 0), "size_start":0.5, "size_end":1.0, "alpha_start":1.0, "alpha_end":0.0, "random_index":True}
+
+EMITTER_SPARK = {"name":"spark", "number":10, "frames":12, "direction":190, "fov":20, "speed":4, "acceleration":(0, 0), "size_start":1.0, "size_end":1.0, "alpha_start":1.0, "alpha_end":0.0, "random_index":True}
+
+EMITTER_BUBBLE = {"name":"bubble", "number":10, "frames":120, "direction":0, "fov":20, "speed":7, "acceleration":(0, 0), "size_start":1.0, "size_end":1.0, "alpha_start":1.0, "alpha_end":0.0, "random_index":True}
+
+
+class MenuItem(Item):
+    def __init__(self, *args, **kwargs):
+        print("*** ERROR: MENUITEM DEPRECATED IN PYVIDA, REPLACE IMMEDIATELY.")
+        super().__init__(*args, **kwargs)
+
+class ModalItem(Item):
+    def __init__(self, *args, **kwargs):
+        print("*** ERROR: MODALITEM DEPRECATED IN PYVIDA, REPLACE IMMEDIATELY.")
+        super().__init__(*args, **kwargs)
+
+MENU_COLOUR = (42, 127, 255)
+DEFAULT_FONT = os.path.join("data/fonts/", "vera.ttf")
+
+class MenuText(Text):
+#    def __init__(self, *args, **kwargs):
+     def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=MENU_COLOUR, size=26, wrap=2000, interact=None, spos=(None, None), hpos=(None, None), key=None, font=DEFAULT_FONT, offset=2):
+        print("*** ERROR: MENUTEXT DEPRECATED IN PYVIDA, REPLACE IMMEDIATELY.")
+        print("Try instead:")
+        print(f"""
+item = game.add(Text("{name}", {pos}, "{text}", size={size}, wrap={wrap}, interact={interact}, font="{font}", colour={colour}, offset=2)
+item.on_key({key})
+""")
+        super().__init__(name, pos, text, colour, font, size, wrap, offset=2, interact=interact)
+        
+        # old example game.add(MenuText(i[0], (280,80), (840,170), i[1], wrap=800, interact=i[2], spos=(x, y+dy*i[4]), hpos=(x, y+dy*i[4]+ody),key=i[3], font=MENU_FONT, size=38), False, MenuItem)
+        # spos, hpos were for animation and no longer supported.
+        # the second tuple is dimensions and is no longer supported
+        # new example
+    #    def __init__(self, name, pos=(0, 0), display_text=None,
+     #            colour=(255, 255, 255, 255), font=None, size=DEFAULT_TEXT_SIZE, wrap=800,
+     #            offset=None, interact=None, look=None, delay=0, step=2,
+     #            game=None):
+      # item = Text(i[0], (280,80), i[1], interact=i[2], wrap=800, font=MENU_FONT, size=38, game)
+      # item.on_key(i[3])
+      # game.add(item)
+
+
 
 """
 Editor stuff
@@ -11880,4 +12162,260 @@ def pyglet_editor(game):
 #        o.load_assets(game)
 #        o.x, o.y = i[1]
 #    game._window_editor_objects = [i[0] for i in EDITOR_ITEMS]
+
+
+#html editor
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import socketserver
+
+class RequestGameObject:
+    pass
+
+class HTTPEditorServer(BaseHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.game = None
+
+    def _navigate(self, delta):
+        objects = self.game.scene._objects + self.game.scene._layer
+        num_objects = len(objects)
+        if num_objects == 0:
+            print("No objects in scene")
+            return
+        obj = objects[self.index]
+        obj = get_object(self.game, obj)
+        obj.show_debug = False
+        self.index += delta
+        if self.index < 0:
+            self.index = num_objects - 1
+        if self.index >= num_objects:
+            self.index = 0
+        obj = objects[self.index]
+        self.set_edit_object(obj)
+
+    def prev(self):
+        _navigate(-1)  # decrement navigation
+
+    def next(self):
+        _navigate(1)  # increment navigation
+
+
+    def _set_headers(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html')
+        self.end_headers()
+
+    def grab_game_object(self):
+        editor_queue.put(RequestGameObject())
+        print("put game object request")
+        editor_queue.join()
+        print("waiting to get game object in editor")
+        game = editor_queue.get()
+        if game is None:
+            print("no game object handed to editor")
+            return
+        print("Have game object for",game.name)
+        self.game = game
+
+    def release_game_object(self):
+        editor_queue.task_done()
+        print("now release")
+
+    def do_GET(self):
+        self.grab_game_object()
+        self._set_headers()
+        game = self.game
+        this_dir, this_filename = os.path.split(__file__)
+        with open(os.path.join(this_dir, 'editor.html')) as f:
+            editor_html = f.read()
+        with open(os.path.join(this_dir,'project.html')) as f:
+            project = f.read()
+        scene_options = "\n".join([f"<option value='{s.name}'>{s.name}</option>" for s in game._scenes.values()])
+#        with open('editor.html') as f:
+#            editor_html = f.read()
+#        with open('editor.html') as f:
+#            editor_html = f.read()
+        html = editor_html%{"scene_options":scene_options, "project":project}
+        objs = copy.copy(self.game.scene._objects)
+        objs.sort()
+        set_edit_object(self.game, objs[0], None)
+        for o in objs:
+            obj = get_object(self.game, o)
+            slug = slugify(obj.name)
+            print("form for",obj.name)
+            OBJECT_FORM = f"""
+<form name="{slug}" class="form-horizontal" method="post">
+<fieldset>
+<!-- Form Name -->
+<legend>Form Name {obj.name}</legend>
+<!-- Multiple Radios -->
+<div id="form-group-{slug}">
+  <label class="col-md-4 control-label" for="radios">Drag</label>
+  <div class="col-md-4">
+  <div class="radio">
+    <label for="radios-0">
+      <input name="radios" id="radios-0" value="1" checked="checked" type="radio">
+      scale
+    </label>
+	</div>
+  <div class="radio">
+    <label for="radios-1">
+      <input name="radios" id="radios-1" value="2" type="radio">
+      position
+    </label>
+	</div>
+  <div class="radio">
+    <label for="radios-2">
+      <input name="radios" id="radios-2" value="3" type="radio">
+      anchor
+    </label>
+	</div>
+  <div class="radio">
+    <label for="radios-3">
+      <input name="radios" id="radios-3" value="4" type="radio">
+      stand point
+    </label>
+	</div>
+  <div class="radio">
+    <label for="radios-4">
+      <input name="radios" id="radios-4" value="5" type="radio">
+      info text
+    </label>
+	</div>
+  </div>
+</div>
+
+  <label class="col-md-4 control-label" for="checkboxes">Allow</label>
+  <div class="col-md-4">
+  <div class="checkbox">
+    <label for="checkboxes-0">
+      <input name="checkboxes" id="checkboxes-0" value="draw" type="checkbox">
+      draw
+    </label>
+	</div>
+  <div class="checkbox">
+    <label for="checkboxes-1">
+      <input name="checkboxes" id="checkboxes-1" value="interact" type="checkbox">
+      interact
+    </label>
+	</div>
+  <div class="checkbox">
+    <label for="checkboxes-2">
+      <input name="checkboxes" id="checkboxes-2" value="look" type="checkbox">
+      look
+    </label>
+	</div>
+  <div class="checkbox">
+    <label for="checkboxes-3">
+      <input name="checkboxes" id="checkboxes-3" value="use" type="checkbox">
+      update
+    </label>
+	</div>
+  <div class="checkbox">
+    <label for="checkboxes-4">
+      <input name="checkboxes" id="checkboxes-4" value="update" type="checkbox">
+      editor save
+    </label>
+	</div>
+  <div class="checkbox">
+    <label for="checkboxes-5">
+      <input name="checkboxes" id="checkboxes-5" value="editor save" type="checkbox">
+      use
+    </label>
+	</div>
+  </div>
+</div>
+
+<!-- Button Drop Down -->
+<div class="form-group">
+  <label class="col-md-4 control-label" for="buttondropdown">Action</label>
+  <div class="col-md-4">
+    <div class="input-group">
+      <input id="buttondropdown" name="buttondropdown" class="form-control" placeholder="placeholder" type="text">
+      <div class="input-group-btn">
+        <button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">
+          Edit
+          <span class="caret"></span>
+        </button>
+        <ul class="dropdown-menu pull-right">
+          <li><a href="#">idle</a></li>
+          <li><a href="#">left</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Button Drop Down -->
+<div class="form-group">
+  <label class="col-md-4 control-label" for="buttondropdown">Default Idle</label>
+  <div class="col-md-4">
+    <div class="input-group">
+      <input id="buttondropdown" name="buttondropdown" class="form-control" placeholder="placeholder" type="text">
+      <div class="input-group-btn">
+        <button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">
+          Set
+          <span class="caret"></span>
+        </button>
+        <ul class="dropdown-menu pull-right">
+          <li><a href="#">idle</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Button -->
+<div class="form-group">
+  <label class="col-md-4 control-label" for="singlebutton">Single Button</label>
+  <div class="col-md-4">
+    <button id="{slug}" name="singlebutton" class="btn btn-primary">Button</button>
+  </div>
+</div>
+</fieldset>
+</form>
+"""
+
+#            self.wfile.write(bytes(OBJECT_FORM, "utf8"))
+            html += OBJECT_FORM
+        self.wfile.write(bytes(f"{html}", "utf8"))
+        self.release_game_object()
+
+    def do_HEAD(self):
+        self._set_headers()
+        
+    def do_POST(self):
+        # Doesn't do anything with posted data
+        self._set_headers()
+        message = "<html><body><h1>POST!</h1></body></html>"
+        self.wfile.write(bytes(message, "utf8"))
+
+
+def my_tcp_server():
+    import http.server
+    import socketserver
+
+    Handler = HTTPEditorServer #http.server.SimpleHTTPRequestHandler
+    keep_running = True
+    with socketserver.TCPServer(("", PORT), Handler) as httpd:
+        print("serving at port", PORT)
+#        import pdb; pdb.set_trace()
+#        httpd.serve_forever()
+        while keep_running:
+            """
+            if game == None:
+                print("No game")
+            else:
+                if game._window == None:
+                    keep_running = False
+                print("game")
+            editor_queue.task_done()
+            print("done, handing back")
+            """
+            print("hello")
+            httpd.handle_request()
+
+def html_editor(game):
+    import threading
+    threading.Thread(target=my_tcp_server).start()
 
