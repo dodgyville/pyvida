@@ -2470,6 +2470,9 @@ class Actor(MotionManager, metaclass=use_on_events):
         self.font_speech = None  # use default font if None (from game), else filename key for _pyglet_fonts
         self.font_speech_size = None  # use default font size (from game)
         self.font_colour = None  # use default
+        self.portrait_offset_x = 0
+        self.portrait_offset_y = 0
+
 
         self._solid_area = Rect(0, 0, 60, 100)
         # always used for x,y and also w,h if clickable_mask if one is
@@ -4087,6 +4090,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             portrait = self.game.add(portrait)
 #            portrait_x, portrait_y = 5, 5 #top corner for portrait offset
  #           portrait_w, portrait_h = portrait.w, portrait.h
+ 
             if INFO["slug"] == "spaceout":
                 self.portrait_offset_x, self.portrait_offset_y = 12, 11
             elif INFO["slug"] == "spaceout2":
