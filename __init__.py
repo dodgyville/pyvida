@@ -11463,7 +11463,7 @@ class MenuText(Text):
         print("""
 item = game.add(Text("{name}", {pos}, "{text}", size={size}, wrap={wrap}, interact={interact}, font="{font}", colour={colour}, offset=2)
 item.on_key({key})
-""".format(*locals()))
+""".format(**locals()))
         super().__init__(name, pos, text, colour, font, size, wrap, offset=2, interact=interact)
         
         # old example game.add(MenuText(i[0], (280,80), (840,170), i[1], wrap=800, interact=i[2], spos=(x, y+dy*i[4]), hpos=(x, y+dy*i[4]+ody),key=i[3], font=MENU_FONT, size=38), False, MenuItem)
@@ -12256,7 +12256,7 @@ class HTTPEditorServer(BaseHTTPRequestHandler):
             editor_html = f.read()
         with open(os.path.join(this_dir,'project.html')) as f:
             project = f.read()
-        scene_options = "\n".join(["<option value='{s.name}'>{s.name}</option>".format(*locals) for s in game._scenes.values()])
+        scene_options = "\n".join(["<option value='{s.name}'>{s.name}</option>".format(**locals) for s in game._scenes.values()])
 #        with open('editor.html') as f:
 #            editor_html = f.read()
 #        with open('editor.html') as f:
@@ -12400,11 +12400,11 @@ class HTTPEditorServer(BaseHTTPRequestHandler):
 </div>
 </fieldset>
 </form>
-""".format(*locals)
+""".format(**locals)
 
 #            self.wfile.write(bytes(OBJECT_FORM, "utf8"))
             html += OBJECT_FORM
-        self.wfile.write(bytes("{html}".format(*locals), "utf8"))
+        self.wfile.write(bytes("{html}".format(**locals), "utf8"))
         self.release_game_object()
 
     def do_HEAD(self):
