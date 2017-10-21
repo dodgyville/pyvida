@@ -9301,7 +9301,7 @@ class Game(metaclass=use_on_events):
                 if not obj:
                     log.warning("Menu object %s not found in Game items or actors"%obj_name)
                     return
-                allow_collide = True if (obj.allow_look or obj.allow_use) \
+                allow_collide = True if (obj.allow_interact) \
                     else False
                 if obj.collide(window_x, window_y) and allow_collide:  # absolute screen values
                     self.mouse_cursor = MOUSE_CROSSHAIR if self.mouse_cursor == MOUSE_POINTER else self.mouse_cursor
@@ -9407,6 +9407,9 @@ class Game(metaclass=use_on_events):
         if self.scene:
             for obj_name in self.scene._objects:
                 obj = get_object(self, obj_name)
+                if not obj:
+                    print("Unable to find",obj_name)
+                    import pdb; pdb.set_trace()
                 if obj.collide(x, y) and obj._drag:
                     self._drag = obj
 
@@ -9529,8 +9532,8 @@ class Game(metaclass=use_on_events):
         # try menu events
         for obj_name in self._menu:
             obj = get_object(self, obj_name)
-            allow_collide = True if (obj.allow_look or obj.allow_use) \
-                else False
+            #(obj.allow_look or obj.allow_use) 
+            allow_collide = True if obj.allow_interact else False
             if allow_collide and obj.collide(window_x, window_y):
                 user_trigger_interact(self, obj)
                 return
