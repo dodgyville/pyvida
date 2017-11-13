@@ -9213,18 +9213,32 @@ class Game(metaclass=use_on_events):
         return (x + obj.nx, y + obj.ny)
 
     def get_points_from_raw(self, raw_x, raw_y):
-        """ Take raw pyglet points and return window and scene equivalents """
+        """ Take raw pyglet points and return window and scene equivalents 
+            raw_x, raw_y is the OS reported position on the screen (ignores gl scaling)
+            0,0 is the bottom left corner.
+        """
+
+        """
         x = raw_x / self._scale 
+#        x = raw_x
         x = x - self._window_dx
 
         y = raw_y / self._scale 
+        #y = raw_y
         y = y - self._window_dy
-    
-        window_x, window_y = x, self.resolution[1] - y
+        
+        # flip based on window height
+        window_x, window_y = x, self._window.height - y
+        """
+        window_x = (raw_x- self._window_dx)/self._scale
+        window_y = (self._window.height - (raw_y - self._window_dy))/self._scale
+        
+#        window_x, window_y = x, self.resolution[1] - y
         if self.scene:
             scene_x, scene_y = window_x - self.scene.x, window_y - self.scene.y 
         else:
             scene_x, scene_y = window_x, window_y
+        
         return (window_x, window_y), (scene_x, scene_y)
 
 
@@ -9236,7 +9250,7 @@ class Game(metaclass=use_on_events):
 
         # if window is being scaled
         ox, oy = ox * self._scale, oy * self._scale
-        oy = self.game.resolution[1] - oy
+        oy = self.game.resolution[1] - oy #XXX should potentially by window.height
         return ox, oy
 
     def on_mouse_scroll(self, raw_x, raw_y, scroll_x, scroll_y):
