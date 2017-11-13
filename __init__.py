@@ -3392,7 +3392,7 @@ class Actor(MotionManager, metaclass=use_on_events):
     def on_set_pathplanning_actions(self, action_names, speeds=[]):
         # smart actions for pathplanning and which arcs they cover (in degrees)
         if len(action_names) == 1:
-            print("WARNING: %s ONLY ONE ACTION %s USED FOR PATHPLANNING"%(self.name, action_names[0]))
+            #print("WARNING: %s ONLY ONE ACTION %s USED FOR PATHPLANNING"%(self.name, action_names[0]))
             PATHPLANNING = {action_names[0]: (0, 360)}
         elif len(action_names) == 2:
             PATHPLANNING = {"left": (180, 360),
@@ -3510,7 +3510,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             myd = os.path.join(this_dir, d, name)
             absd = os.path.join(os.getcwd(), myd)
         if not os.path.isdir(absd):  # fallback to deprecated menu default if item 
-            print("***WARNING",d,name, "might need to be moved to items/ or emitters/, trying menu/ for now.")
+            log.warning("***WARNING %s %s might need to be moved to items/ or emitters/, trying menu/ for now."%(d,name))
             if d == "data/items":
                 d = "data/menu"
                 myd = os.path.join(d, name)
