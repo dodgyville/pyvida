@@ -3365,6 +3365,12 @@ class Actor(MotionManager, metaclass=use_on_events):
 
     def _smart_actions(self, game, exclude=[]):
         """ smart load the actions """
+        action_names = []
+        # default only uses two path planning actions to be compatible with spaceout2
+        PATHPLANNING = {"left": (180, 360),
+                    "right": (0, 180),
+                    }
+        
         self._actions = {}
         for action_file in self._images:
             action_name = os.path.splitext(os.path.basename(action_file))[0]
@@ -3377,15 +3383,11 @@ class Actor(MotionManager, metaclass=use_on_events):
             action = Action(action_name).smart(
                 game, actor=self, filename=relname)
             self._actions[action_name] = action
-            action_names = []
-            # default only uses two path planning actions to be compatible with spaceout2
-            PATHPLANNING = {"left": (180, 360),
-                        "right": (0, 180),
-                        }
             if action_name in PATHPLANNING:
                 action_names.append(action_name)
-            if len(action_names)>0:
-                self.on_set_pathplanning_actions(action_names)
+                
+        if len(action_names)>0:
+            self.on_set_pathplanning_actions(action_names)
 
     def on_set_pathplanning_actions(self, action_names, speeds=[]):
         # smart actions for pathplanning and which arcs they cover (in degrees)
@@ -3406,7 +3408,6 @@ class Actor(MotionManager, metaclass=use_on_events):
             # TODO: ["left", "right", "up", "down", "upleft", "upright", "downleft", "downright"]
             print("Number of pathplanning actions does not match the templates built into pyvida.")
             import pdb; pdb.set_trace()           
-
         for i, action_name in enumerate(action_names):
             action = self._actions[action_name]
             action.available_for_pathplanning = True
@@ -9233,8 +9234,12 @@ class Game(metaclass=use_on_events):
         # flip based on window height
         window_x, window_y = x, self._window.height - y
         """
+        y = raw_y - self._window_dy
+        
         window_x = (raw_x- self._window_dx)/self._scale
-        window_y = (self._window.height - (raw_y - self._window_dy))/self._scale
+#        window_y = (self._window.height - y)/self._scale
+#        window_y = (self.resolution[1] - y)/self._scale
+        window_y = (self._window.height - raw_y)/self._scale
         
 #        window_x, window_y = x, self.resolution[1] - y
         if self.scene:
@@ -11322,6 +11327,9 @@ class Game(metaclass=use_on_events):
 
     def reset_window(self, fullscreen, create=False):
         """ Make the game screen fit the window, create if requested """
+        #if fullscreen: # if fullscreen, use the window we are currently on.
+        #    w, h = self._window.get_size()
+        #else:
         w, h = self.screen_size
 
         width, height = self.resolution
