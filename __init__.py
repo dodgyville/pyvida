@@ -8760,7 +8760,6 @@ class Game(metaclass=use_on_events):
     def set_headless_value(self, v):
         self._headless = v
         if self._headless is True: #speed up
-            print("FASTER FPS")
             self.on_publish_fps(300)
         else:
             self.on_publish_fps(self.fps)
@@ -11170,7 +11169,6 @@ class Game(metaclass=use_on_events):
 #            execfile("somefile.py", global_vars, local_vars)
             current_headless = self._headless
             if not current_headless:
-                print("will set headless for load_state")
                 self.set_headless_value(True)
             with open(sfname) as f:
                 data = f.read()
