@@ -42,7 +42,7 @@ python setup.py install
  * python 3.3+
 
 Currently testing on pyglet 1.3. To install use:
-pip install https://bitbucket.org/pyglet/pyglet/get/tip.zip#egg=pyglet-1.3.0
+pip install --upgrade https://bitbucket.org/pyglet/pyglet/get/tip.zip#egg=pyglet-1.3.0
 
 ### Writing a game in pyvida ###
 

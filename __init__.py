@@ -348,7 +348,7 @@ EDIT_CLICKABLE = "clickable_area"
 EDIT_SOLID = "solid_area"
 
 
-# CAMERA FX 
+# CAMERA AND MUSIC FX 
 FX_FADE_OUT = 0
 FX_FADE_IN = 1
 FX_CUT_QUICK = 3
@@ -6252,6 +6252,8 @@ class Scene(MotionManager, metaclass=use_on_events):
             mixer.music_rules[mixer._music_filename].position = mixer._music_player.position()
             if mixer.music_rules[mixer._music_filename].mode == KEEP_CURRENT: return # don't play scene song
         if self._music_filename:
+            if type(self._music_filename) == int: # backwards compat with older version
+                return
             rule = mixer.music_rules[self._music_filename] if self._music_filename in mixer.music_rules else None
             start = rule.position if rule else 0
 #            mixer.music_fade_out(0.5)
@@ -8416,6 +8418,7 @@ class Game(metaclass=use_on_events):
         self.font_info = FONT_VERA
         self.font_info_size = 16
         self.font_info_colour = (255, 220, 0)  # off yellow
+        self.font_info_offset = 1
         self._default_ok = "ok" #used by on_says
 
         self._info_object = None
@@ -9315,7 +9318,7 @@ class Game(metaclass=use_on_events):
                 if not obj:
                     log.warning("Menu object %s not found in Game items or actors"%obj_name)
                     return
-                allow_collide = True if (obj.allow_look or obj.allow_use) \
+                allow_collide = True if (obj.allow_interact) \
                     else False
                 if obj.collide(window_x, window_y) and allow_collide:  # absolute screen values
                     self.mouse_cursor = MOUSE_CROSSHAIR if self.mouse_cursor == MOUSE_POINTER else self.mouse_cursor
@@ -9421,6 +9424,9 @@ class Game(metaclass=use_on_events):
         if self.scene:
             for obj_name in self.scene._objects:
                 obj = get_object(self, obj_name)
+                if not obj:
+                    print("Unable to find",obj_name)
+                    import pdb; pdb.set_trace()
                 if obj.collide(x, y) and obj._drag:
                     self._drag = obj
 
@@ -9543,8 +9549,8 @@ class Game(metaclass=use_on_events):
         # try menu events
         for obj_name in self._menu:
             obj = get_object(self, obj_name)
-            allow_collide = True if (obj.allow_look or obj.allow_use) \
-                else False
+            #(obj.allow_look or obj.allow_use) 
+            allow_collide = True if obj.allow_interact else False
             if allow_collide and obj.collide(window_x, window_y):
                 user_trigger_interact(self, obj)
                 return
@@ -9775,9 +9781,10 @@ class Game(metaclass=use_on_events):
         """ Create a Text object for the info object """
         colour = self.font_info_colour
         font = self.font_info
-        size = self.font_info_size
+        size = self.font_info_size        
+        offset = self.font_info_offset
         obj = Text(
-            name, display_text=text, font=font, colour=colour, size=size, offset=1)
+            name, display_text=text, font=font, colour=colour, size=size, offset=offset)
         obj.load_assets(self) #XXX loads even in headless mode?
         return obj
 
@@ -11070,8 +11077,11 @@ class Game(metaclass=use_on_events):
                     f.write('    %s.usage(%s, %s, %s, %s, %s)\n' % (
                         slug, obj.allow_draw, obj.allow_update, obj.allow_look, obj.allow_interact, obj.allow_use))
                     f.write('    %s.rescale(%0.2f)\n' % (slug, obj.scale))
+                    ax, ay = obj._ax, obj._ay
+                    if game.flip_anchor:
+                        ax, ay = -ax,-ay
                     f.write('    %s.reanchor((%i, %i))\n' %
-                            (slug, obj._ax, obj._ay))
+                            (slug, ax, ay))
                     f.write('    %s.restand((%i, %i))\n' %
                             (slug, obj._sx, obj._sy))
                     f.write('    %s.rename((%i, %i))\n' %
@@ -11317,7 +11327,10 @@ class Game(metaclass=use_on_events):
         width, height = self.resolution
         scale = 1.0
 
+        #if fullscreen:
         resolution, new_scale = fit_to_screen((w, h), self.resolution)
+        #else: # not fullscreen and game does not want to scale in window mode
+        #    resolution, new_scale = 
 #        print("FULLSCREEN", fullscreen,"resolution of screen if scaling",resolution,"game resolution",self.resolution)
 #        print("game resolution", width, height, "screen size",w,h)
         # only scale non-fullscreen window if it's larger than screen.
@@ -11474,10 +11487,10 @@ class MenuText(Text):
      def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=MENU_COLOUR, size=26, wrap=2000, interact=None, spos=(None, None), hpos=(None, None), key=None, font=DEFAULT_FONT, offset=2):
         print("*** ERROR: MENUTEXT DEPRECATED IN PYVIDA, REPLACE IMMEDIATELY.")
         print("Try instead:")
-        print(f"""
+        print("""
 item = game.add(Text("{name}", {pos}, "{text}", size={size}, wrap={wrap}, interact={interact}, font="{font}", colour={colour}, offset=2)
 item.on_key({key})
-""")
+""".format(**locals()))
         super().__init__(name, pos, text, colour, font, size, wrap, offset=2, interact=interact)
         
         # old example game.add(MenuText(i[0], (280,80), (840,170), i[1], wrap=800, interact=i[2], spos=(x, y+dy*i[4]), hpos=(x, y+dy*i[4]+ody),key=i[3], font=MENU_FONT, size=38), False, MenuItem)
@@ -12270,7 +12283,7 @@ class HTTPEditorServer(BaseHTTPRequestHandler):
             editor_html = f.read()
         with open(os.path.join(this_dir,'project.html')) as f:
             project = f.read()
-        scene_options = "\n".join([f"<option value='{s.name}'>{s.name}</option>" for s in game._scenes.values()])
+        scene_options = "\n".join(["<option value='{s.name}'>{s.name}</option>".format(**locals) for s in game._scenes.values()])
 #        with open('editor.html') as f:
 #            editor_html = f.read()
 #        with open('editor.html') as f:
@@ -12283,7 +12296,7 @@ class HTTPEditorServer(BaseHTTPRequestHandler):
             obj = get_object(self.game, o)
             slug = slugify(obj.name)
             print("form for",obj.name)
-            OBJECT_FORM = f"""
+            OBJECT_FORM = """
 <form name="{slug}" class="form-horizontal" method="post">
 <fieldset>
 <!-- Form Name -->
@@ -12414,11 +12427,11 @@ class HTTPEditorServer(BaseHTTPRequestHandler):
 </div>
 </fieldset>
 </form>
-"""
+""".format(**locals)
 
 #            self.wfile.write(bytes(OBJECT_FORM, "utf8"))
             html += OBJECT_FORM
-        self.wfile.write(bytes(f"{html}", "utf8"))
+        self.wfile.write(bytes("{html}".format(**locals), "utf8"))
         self.release_game_object()
 
     def do_HEAD(self):
