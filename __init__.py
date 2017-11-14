@@ -86,25 +86,43 @@ elif 'darwin' in sys.platform: # check for OS X support
 
 # detect pyinstaller on mac
 frozen = False
-if getattr(sys, 'frozen', False):
-        # we are running in a bundle
-    frozen = True
-    working_dir = sys._MEIPASS
-    script_filename = os.path.join(sys._MEIPASS, os.path.basename(__file__))
+frozen = True
+if getattr(sys, 'frozen', False): # we are running in a bundle            
+    frozen = True    
+if frozen:
+    #working_dir = sys._MEIPASS
+    working_dir = "/home/luke/Projects/spaceout-pleasure"
+    #script_filename = os.path.join(working_dir, os.path.basename(__file__))
+    print("Frozen bundle, pyvida directories are at",__file__, working_dir)
+    script_filename = __file__
 else:
     # we are running in a normal Python environment
-    working_dir = os.path.dirname(os.path.abspath(__file__))
-    script_filename = os.path.abspath(__file__)
+    working_dir = os.path.dirname(os.path.abspath(sys.argv[0])) #os.path.dirname(os.path.abspath(__file__))
+    script_filename = os.path.abspath(__file__) #pyvida script
+    print("Normal environment, pyvida directories at", working_dir)
+
 
 def get_safe_path(relative):
     """ return a path safe for mac bundles and other situations """
     if os.path.isabs(relative): # return a relative path unchanged
         return relative
 
+    safe = os.path.join(working_dir, relative)
+    """
     if frozen: #inside a mac bundle
         safe = os.path.join(working_dir, relative)
+#        print("return safe",relative, safe)
     else:
         safe = relative #TODO perhaps force entire engine to use working_dir
+    """
+    return safe
+
+def get_relative_path(path):
+    """ Get a safe relative path based on the game working directory, not necessarily the executing working directory """
+    if os.path.isabs(path):
+        safe = os.path.relpath(path, working_dir)
+    else: # already relative
+        safe = path
     return safe
 
 
@@ -718,7 +736,8 @@ def easeInOutQuad(t, b, c, d):
 def get_image_size(fname):
     '''Determine the image type of fhandle and return its size.
     from draco'''
-    fhandle = open(fname, 'rb')
+    fname = get_safe_path(fname)
+    fhandle = open(fname, 'rb')    
     head = fhandle.read(24)
     if len(head) != 24:
         return
@@ -850,7 +869,7 @@ def load_image(fname, convert_alpha=False, eight_bit=False):
 def get_font(game, filename, fontname):
     # XXX should fallback to pyvida subdirectories if not in game subdirectory
     try:
-        pyglet.font.add_file(filename)
+        pyglet.font.add_file(get_safe_path(filename))
         font = pyglet.font.load(fontname)
 #        fonts = [x[0].lower() for x in font._memory_fonts.keys()]
 #        if font.name.lower() not in fonts:
@@ -892,7 +911,7 @@ def fonts_smart(game):
     font_files = []
     for d_raw in font_dirs:
         for t in ['data/fonts/*.otf', 'data/fonts/*.ttf']:
-            for f in glob.glob(os.path.join(d_raw, t)):
+            for f in glob.glob(get_safe_path(os.path.join(d_raw, t))):
                 font_files.append(f)
                 font = TTFont(f)
                 name, family = shortName(font)
@@ -1146,8 +1165,9 @@ def get_smart_directory(game, obj):
         d = game.directory_actors
     elif isinstance(obj, Scene):
         d = game.directory_scenes
-    if frozen: #inside a mac bundle
-        d = os.path.join(working_dir, d)
+    #if frozen: #inside a mac bundle
+    #    d = os.path.join(working_dir, d)
+    d = get_safe_path(d)
     return d
   
 
@@ -1182,10 +1202,7 @@ def get_best_directory(game, d_raw_name):
             else:
                 directories = [d]
         for directory in directories:
-            if frozen: #inside a mac bundle
-                safe_dir = os.path.join(working_dir, directory)
-            else:
-                safe_dir = directory
+            safe_dir = get_safe_path(directory)
             if os.path.isdir(safe_dir):
                 return safe_dir
     return None
@@ -1604,8 +1621,8 @@ class Settings(object):
         if fname:
             self.filename = fname
         if logging:
-            log.info("Saving settings to %s" % self.filename)
-        with open(os.path.abspath(self.filename), "wb") as f:
+            log.info("Saving settings to %s" % get_safe_path(self.filename))
+        with open(get_safe_path(self.filename), "wb") as f:
 #            pickle.dump(self.achievements, f) # specially store achievements so they can be retrieved if settings change
             pickle.dump(self, f)
 
@@ -1614,9 +1631,9 @@ class Settings(object):
         if fname:
             self.filename = fname
         if logging:
-            log.info("Loading settings from %s" % self.filename)
+            log.info("Loading settings from %s" % get_safe_path(self.filename))
         try:
-            with open(os.path.abspath(self.filename), "rb") as f:
+            with open(get_safe_path(self.filename), "rb") as f:
                 data = pickle.load(f)
                 if not hasattr(data, "lock_engine_fps"): # compatible with older games
                     data.lock_engine_fps = DEFAULT_ENGINE_FPS
@@ -1883,7 +1900,7 @@ def load_defaults(game, obj, name, filename):
                     val = COLOURS[val]
             if key == "font_speech":
                 try:
-                    font = TTFont(val) # load the font to get the name to add to the dict.
+                    font = TTFont(get_safe_path(val)) # load the font to get the name to add to the dict.
                     font_name, family = shortName(font)
                     game.add_font(val, font_name) # make sure font is available if new
                     obj.font_speech = val
@@ -1943,8 +1960,9 @@ class Action(object):
     def _load_montage(self, filename):
         fname = os.path.splitext(filename)[0]
         montage_fname = get_safe_path(fname + ".montage")
+        
         if not os.path.isfile(montage_fname):
-            if not os.path.isfile(filename): 
+            if not os.path.isfile(get_safe_path(filename)):
                 w,h = 0,0
             else:
                 w,h = get_image_size(filename)
@@ -1966,12 +1984,12 @@ class Action(object):
         self.actor = actor if actor else self.actor
         self.game = game
         try:
-            self._image = os.path.relpath(filename).replace("\\", "/")
+            self._image = get_relative_path(filename).replace("\\", "/")
         except ValueError: # if relpath fails due to cx_Freeze expecting different mounts
             self._image = filename
         w,h,num=self._load_montage(filename)
         fname = os.path.splitext(filename)[0]
-        dfname = fname + ".defaults"
+        dfname = get_safe_path(fname + ".defaults")
         load_defaults(game, self, "%s - %s"%(actor.name, self.name), dfname)
         set_resource(self.resource_name, w=w, h=h)
 #        self.load_assets(game)
@@ -2000,7 +2018,6 @@ class Action(object):
         w,h, num = self._load_montage(mname) # always reload incase mod is added or removed
 
         quickload = os.path.abspath(get_best_file(game, fname + ".quickload"))
-
         full_load = True
         resource = False #don't update resource
         if game._headless is True: #only load defaults 
@@ -3403,16 +3420,19 @@ class Actor(MotionManager, metaclass=use_on_events):
                     }
         
         self._actions = {}
+
         for action_file in self._images:
             action_name = os.path.splitext(os.path.basename(action_file))[0]
             if action_name in exclude:
                 continue
             try:
-                relname = os.path.relpath(action_file)
+                relname =  get_relative_path(action_file)
             except ValueError: # if relpath fails due to cx_Freeze expecting different mounts                
                 relname = action_file
+
             action = Action(action_name).smart(
                 game, actor=self, filename=relname)
+
             self._actions[action_name] = action
             if action_name in PATHPLANNING:
                 action_names.append(action_name)
@@ -3452,12 +3472,12 @@ class Actor(MotionManager, metaclass=use_on_events):
         # potentially load some interact/use/look scripts for this actor but
         # only if editor is enabled (it interferes with game pickling)
         if self.game:  # and self.game._allow_editing:
-            filepath = os.path.join(
-                self._directory, "%s.py" % slugify(self.name).lower())
+            filepath = get_safe_path(os.path.join(
+                self._directory, "%s.py" % slugify(self.name).lower()))
             if os.path.isfile(filepath):
                 # add file directory to path so that import can find it
                 if os.path.dirname(filepath) not in self.game._sys_paths:
-                    self.game._sys_paths.append(os.path.dirname(filepath))
+                    self.game._sys_paths.append(get_relative_path(os.path.dirname(filepath)))
                 if os.path.dirname(filepath) not in sys.path:
                     sys.path.append(os.path.dirname(filepath))
                 # add to the list of modules we are tracking
@@ -3519,7 +3539,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         If <action_prefix>, prefix value to defaults (eg astar, idle), useful for swapping clothes on actor, etc 
         """
         DEFAULT_CLICKABLE = Rect(0, 0, 70, 110)
-        self.game = game
+        self.game = game       
 
         if using:
             if logging:
@@ -3532,20 +3552,24 @@ class Actor(MotionManager, metaclass=use_on_events):
             name = self.name
             d = get_smart_directory(game, self)
 
-        myd = os.path.join(d, name)
-        absd = os.path.join(os.getcwd(), myd)
+        # first test inside the game
+        myd = os.path.join(d, name) # potentially an absolute path
+        if os.path.isabs(myd):
+            absd = myd
+        else:
+            absd = os.path.join(working_dir, myd)
         if not os.path.isdir(absd):  # fallback to pyvida defaults
-            this_dir, this_filename = os.path.split(script_filename)
+            this_dir, this_filename = os.path.split(script_filename) #script_filename is absolute location of pyvida
             log.debug("Unable to find %s, falling back to %s" %
                       (myd, this_dir))
-            myd = os.path.join(this_dir, d, name)
-            absd = os.path.join(os.getcwd(), myd)
+            myd = os.path.join(this_dir, get_relative_path(d), name)
+            absd = get_safe_path(myd)
         if not os.path.isdir(absd):  # fallback to deprecated menu default if item 
             log.warning("***WARNING %s %s might need to be moved to items/ or emitters/, trying menu/ for now."%(d,name))
-            if d == "data/items":
+            if "data/items" in d:
                 d = "data/menu"
                 myd = os.path.join(d, name)
-                absd = os.path.join(os.getcwd(), myd)
+                absd = get_safe_path(myd)
 
         self._directory = myd
 
@@ -3561,7 +3585,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                 f.close()
 
         try:
-            self._images = [os.path.relpath(x).replace("\\", "/") for x in images] # make storage relative
+            self._images = [get_relative_path(x).replace("\\", "/") for x in images] # make storage relative
         except ValueError: # cx_Freeze on windows on different mounts may confuse relpath.
             self._images = images
 
@@ -3579,6 +3603,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             self._nx, self._ny = self._ax * 0.5, self._ay  # name point
             # text when using POSITION_TEXT
             self._tx, self._ty = int(self.w + 10), int(self.h)
+
 
         # guessestimate the clickable mask for this actor (at this point this might always be 0,0,0,0?)
         self._clickable_area = Rect(0, 0, self.w, self.h)
@@ -5013,8 +5038,8 @@ class Portal(Actor, metaclass=use_on_events):
     def generate_icons(self):
         # create portal icon for settings.show_portals 
         #TODO currently uses DIRECTORY_INTERFACE instead of game.directories
-        image1 = os.path.join(os.getcwd(), os.path.join(DIRECTORY_INTERFACE, "portal_active.png"))
-        image2 = os.path.join(os.getcwd(), os.path.join(DIRECTORY_INTERFACE, "portal_inactive.png"))
+        image1 = get_safe_path(os.path.join(DIRECTORY_INTERFACE, "portal_active.png"))
+        image2 = get_safe_path(os.path.join(DIRECTORY_INTERFACE, "portal_inactive.png"))
         if os.path.isfile(image1) and os.path.isfile(image2):
             self._icon = Item("%s_active"%self.name).smart(self.game, image=[image1, image2])
             self.game.add(self._icon)
@@ -6009,8 +6034,7 @@ class Scene(MotionManager, metaclass=use_on_events):
         self.game = game
         self._load_layers(game)
 
-        sdir = os.path.join(
-            os.getcwd(), os.path.join(game.directory_scenes, self.name))
+        sdir = get_safe_path(os.path.join(game.directory_scenes, self.name))
 
         # if there is an initial state, load that automatically
         state_name = os.path.join(sdir, "initial.py")
@@ -6067,8 +6091,7 @@ class Scene(MotionManager, metaclass=use_on_events):
 #            l.unload()
 
     def _save_layers(self):
-        sdir = os.path.join(
-            os.getcwd(), os.path.join(self.game.directory_scenes, self.name))
+        sdir = get_safe_path(os.path.join(self.game.directory_scenes, self.name))
         #wildcard = wildcard if wildcard else os.path.join(sdir, "*.png")
 #        import pdb; pdb.set_trace()
         self._layer = [] #free up old layers
@@ -6084,13 +6107,13 @@ class Scene(MotionManager, metaclass=use_on_events):
         layer = self.game._add(
             cls("%s_%s" % (self.name, fname)).smart(self.game, image=element),
             replace=True)
+
         self._layer.append(layer.name)  # add layer items as items
         return layer
 
     def _load_layers(self, game, wildcard=None, cls=Item):
         sdir = os.path.join(game.directory_scenes, self.name)
-        absdir = os.path.join(
-            os.getcwd(), sdir)
+        absdir = get_safe_path(sdir)
         wildcard = wildcard if wildcard else os.path.join(absdir, "*.png")
         self._layer = [] #clear old layers
         layers = []
@@ -6899,7 +6922,7 @@ class MenuManager(metaclass=use_on_events):
         else:
             SFX_Class = PlayerPygameSFX if mixer == "pygame" else PlayerPygletSFX
             sfx = _sound_resources[key] = SFX_Class(self.game)
-            sfx.load(key, self.game.settings.sfx_volume)
+            sfx.load(get_safe_path(key), self.game.settings.sfx_volume)
         if self.game:
             if self.game._headless or (self.game.settings and self.game.settings.mute): 
                 return
@@ -7321,7 +7344,6 @@ class Camera(metaclass=use_on_events):  # the view manager
         y = self.game.resolution[1] - self.game.scene.h if bottom else y
 
         y = self.game.resolution[1] - self.game.scene.h*percent_vertical if percent_vertical else y
-
         self._goto((x, y), speed)
 
     def on_move(self, displacement, speed=None):
@@ -7694,7 +7716,8 @@ class Mixer(metaclass=use_on_events):
                 return
             if rule.mode == FRESH:
                 default_start = 0
-            absfilename = os.path.abspath(fname)
+            absfilename = get_safe_path(fname)
+
             if os.path.exists(absfilename): #new music
                 log.info("Loading music file %s" % absfilename)        
                 self._music_player.load(absfilename)
@@ -7853,8 +7876,8 @@ class Mixer(metaclass=use_on_events):
         description = <string> -> human readable description of sfx
         """
         self._sfx_player.stop()
-        if fname:
-            absfilename = os.path.abspath(fname)                         
+        if fname:                
+            absfilename = get_safe_path(fname)                         
             if os.path.exists(absfilename):
                 log.info("Loading sfx file %s" % absfilename)
                 self._sfx_player.load(absfilename, self.game.settings.sfx_volume)
@@ -7917,7 +7940,7 @@ class Mixer(metaclass=use_on_events):
 #        print("play ambient",fname,"(on scene %s)"%self.game.scene.name)
         self._ambient_filename = fname
         if fname:
-            absfilename = os.path.abspath(fname)                         
+            absfilename = get_safe_path(fname)
             if os.path.exists(absfilename):
                 log.info("Loading ambient file %s" % absfilename)
                 self._ambient_player.load(absfilename, self.game.settings.ambient_volume)
@@ -8212,8 +8235,12 @@ def load_game_pickle(game, fname, meta_only=False, keep=[], responsive=False):
             game.visited = pickle.load(f)
             game._selected_options = pickle.load(f)
             game._modules = pickle.load(f)
-            game._sys_paths = pickle.load(f)
-            sys.path.extend(game._sys_paths)
+            paths = pickle.load(f)
+            paths = [get_relative_path(x) for x in paths]
+            game._sys_paths = paths
+            for path in paths:
+                if path not in sys.path:
+                    sys.path.append(get_safe_path(path))
             game._resident = pickle.load(f)
             game._actors = pickle.load(f)
             new_items = pickle.load(f)
@@ -8296,6 +8323,9 @@ class PyvidaEncoder(json.JSONEncoder):
 
 
 def save_game(game, fname):
+    """ save the game
+        NOTE: This is a raw function and does not make the fname safe
+    """
     save_game_pickle(game, fname)
 
 
@@ -8329,11 +8359,11 @@ def load_or_create_settings(game, fname, settings_cls=Settings):
     """ load the game settings (eg volume, accessibilty options) """
     existing = True
     options = game.parser.parse_args()
-    if options.nuke and os.path.isfile(fname): # nuke
+    if options.nuke and os.path.isfile(get_safe_path(fname)): # nuke
         os.remove(fname)
     game.settings = settings_cls() # setup default settings
-    game.settings.filename = fname        
-    if not os.path.isfile(fname): #settings file not available, create new object
+    game.settings.filename = fname
+    if not os.path.isfile(get_safe_path(fname)): #settings file not available, create new object
         existing = False
     else:
         game.settings = game.settings.load(fname)
@@ -8758,15 +8788,16 @@ class Game(metaclass=use_on_events):
             SAVE_DIR = os.path.join(expanduser("~"), "Library", "Application Support", GAME_SAVE_NAME)
 
         self.save_directory = SAVE_DIR
+        safe = get_safe_path(SAVE_DIR)
         READONLY = False
-        if not os.path.exists(SAVE_DIR):
+        if not os.path.exists(safe):
             try:
-                os.makedirs(SAVE_DIR)
+                os.makedirs(safe)
             except:
                 READONLY = True
 
         if logging: # redirect log to file
-            LOG_FILENAME = os.path.join(self.save_directory, 'pyvida5.log')
+            LOG_FILENAME = get_safe_path(os.path.join(self.save_directory, 'pyvida5.log'))
             redirect_log(log, LOG_FILENAME)
 
 
@@ -9981,20 +10012,23 @@ class Game(metaclass=use_on_events):
 
         portals = []
         # estimate size of all loads
+        
         for obj_cls in [Actor, Item, Emitter, Portal, Scene]:
             dname = "directory_%ss" % obj_cls.__name__.lower()
-            if not os.path.exists(getattr(self, dname)):
+            safe_dir = get_safe_path(getattr(self, dname))
+            if not os.path.exists(safe_dir):
                 continue  # skip directory if non-existent
-            for name in os.listdir(getattr(self, dname)):
+            for name in os.listdir(safe_dir):
                 if draw_progress_bar:  # estimate the size of the loading
                     self._progress_bar_count += 1
 
         for obj_cls in [Actor, Item, Emitter, Portal, Scene]:
             dname = "directory_%ss" % obj_cls.__name__.lower()
 #            dname = get_smart_directory(self, obj)
-            if not os.path.exists(getattr(self, dname)):
+            safe_dir = get_safe_path(getattr(self, dname))
+            if not os.path.exists(safe_dir):
                 continue  # skip directory if non-existent
-            for name in os.listdir(getattr(self, dname)):
+            for name in os.listdir(safe_dir):
                 if only and name not in only:
                     continue  # only load specific objects
 #                if draw_progress_bar:
@@ -10042,9 +10076,9 @@ class Game(metaclass=use_on_events):
             self.player = player
 
         # menu sounds
-        if os.path.isfile("data/sfx/menu_enter.ogg"):
+        if os.path.isfile(get_safe_path("data/sfx/menu_enter.ogg")):
             self._menu_enter_filename = "data/sfx/menu_enter.ogg" 
-        if os.path.isfile("data/sfx/menu_enter.ogg"):
+        if os.path.isfile(get_safe_path("data/sfx/menu_enter.ogg")):
             self._menu_exit_filename = "data/sfx/menu_exit.ogg" 
 
         if use_quick_load:  # save quick load file
@@ -10325,7 +10359,7 @@ class Game(metaclass=use_on_events):
 
             log.info("FINISHED WALKTHROUGH")
             if self._walkthrough_target_name:
-                walkthrough_target = os.path.abspath(os.path.join(self.save_directory,"%s.save"%self._walkthrough_target_name))
+                walkthrough_target = get_safe_path(os.path.join(self.save_directory,"%s.save"%self._walkthrough_target_name))
                 save_game(
                     self, walkthrough_target)
 #            self.player.says(gettext("Let's play."))
@@ -10488,7 +10522,7 @@ class Game(metaclass=use_on_events):
         else:
             print("UNABLE TO PROCESS %s"%function_name)
         if human_readable_name:
-            fname = os.path.join(self.save_directory, "{}.save".format(human_readable_name))
+            fname = get_safe_path(os.path.join(self.save_directory, "{}.save".format(human_readable_name)))
             save_game(self, fname)
 
     def _handle_events(self):
@@ -10880,8 +10914,7 @@ class Game(metaclass=use_on_events):
             x,y = self.mouse_position
             if (x,y) != (0,0): 
                 value = MOUSE_CURSORS_DICT[self.mouse_cursor]
-                cursor_pwd = os.path.join(
-                    os.getcwd(), os.path.join(self.directory_interface, value))
+                cursor_pwd = get_safe_path(os.path.join(self.directory_interface, value))
                 # TODO: move this outside the draw loop
                 cursor = Item("_joystick_cursor").smart(self.game, image=cursor_pwd)
                 cursor.load_assets(self.game)
@@ -10977,8 +11010,7 @@ class Game(metaclass=use_on_events):
         """ called by Game after display initialised to load mouse cursor images """
         for key, value in MOUSE_CURSORS:
             # use specific mouse cursors or use pyvida defaults
-            cursor_pwd = os.path.join(
-                os.getcwd(), os.path.join(self.directory_interface, value))
+            cursor_pwd = get_safe_path(os.path.join(self.directory_interface, value))
             image = load_image(cursor_pwd, convert_alpha=True)
             if not image:
                 if logging:
@@ -11186,7 +11218,7 @@ class Game(metaclass=use_on_events):
                 return
         sfname = os.path.join(
             self.directory_scenes, os.path.join(scene.name, state))
-        sfname = "%s.py" % sfname
+        sfname = get_safe_path("%s.py" % sfname)
         variables = {}
         if not os.path.exists(sfname):
             if logging:
@@ -11196,7 +11228,7 @@ class Game(metaclass=use_on_events):
             if logging:
                 log.debug("load state: load %s for scene %s" %
                           (sfname, scene.name))
-            scene._last_state = sfname
+            scene._last_state = get_relative_path(sfname)
 #            execfile("somefile.py", global_vars, local_vars)
             current_headless = self._headless
             if not current_headless:
@@ -11268,14 +11300,14 @@ class Game(metaclass=use_on_events):
     def on_autosave(self, actor, tilesize, exclude_from_screenshot=[], fname = None, fast=True, action="portrait"):
         game = self
         fname = fname if fname else datetime.now().strftime("%Y%m%d_%H%M%S")
-        save_game(game, os.path.join(self.save_directory, "%s.save"%fname))
+        save_game(game, get_safe_path(os.path.join(self.save_directory, "%s.save"%fname)))
         for i in exclude_from_screenshot:
             obj = get_object(game, i)
             obj.hide()
         if not fast: # take some time to do a nicer screen grab
             game.menu.on_hide()
             game.pause(0.4)
-        game.camera.screenshot(os.path.join(self.save_directory, "%s.png"%fname), tilesize)
+        game.camera.screenshot(get_safe_path(os.path.join(self.save_directory, "%s.png"%fname)), tilesize)
         for i in exclude_from_screenshot:
             obj = get_object(game, i)
             obj.show()
