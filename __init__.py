@@ -89,7 +89,7 @@ frozen = False
 if getattr(sys, 'frozen', False): # we are running in a bundle            
     frozen = True    
 if frozen:
-    working_dir = sys._MEIPASS
+    working_dir = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(sys.argv[0]))) # get pyinstaller variable or use a default (perhaps cx_freeze)
     #working_dir = "/home/luke/Projects/spaceout-pleasure"
     #script_filename = os.path.join(working_dir, os.path.basename(__file__))
     print("Frozen bundle, pyvida directories are at",__file__, working_dir)
@@ -627,6 +627,9 @@ if logging:
     log = create_log("pyvida", log_level)
     log.warning("MONTAGE IMPORT ONLY DOES A SINGLE STRIP")
     log.warning("Actor.__getstate__ discards essential USES information")
+    log.info("Global variable working_dir set to %s"%working_dir)
+    log.info("Global variable script_filename set to %s"%script_filename)
+    log.info("Frozen is %s"%frozen)
 
 
 """
