@@ -99,7 +99,7 @@ else:
 def load_info(fname_raw):
     """ Used by developer to describe game """
     config = {"version":"None", "date":"Unknown", "slug":"pyvidagame"} # defaults
-    fname = os.path.join("data", fname_raw) 
+    fname = get_safe_path(os.path.join("data", fname_raw))
     if os.path.exists(fname):
         with open(fname, "r") as f:
             data = f.readlines()
@@ -112,9 +112,9 @@ def load_info(fname_raw):
 def load_config(fname_raw):
     """ Used by player to override game settings """
     # check wrirable appdata directory, 
-    fname = os.path.join(APP_DIR, fname_raw) 
+    fname = get_safe_path(os.path.join(APP_DIR, fname_raw))
     if not os.path.exists(fname): # fallback on static directory
-        fname = os.path.join("data", fname_raw) 
+        fname = get_safe_path(os.path.join("data", fname_raw))
     config = {"editor": False, "mixer":"pygame", "mods":True, "language":None, "internet":None, "lowmemory":None} # defaults
     if os.path.exists(fname):
         with open(fname, "r") as f:
@@ -1140,11 +1140,14 @@ def get_smart_directory(game, obj):
 
 def get_safe_path(relative):
     """ return a path safe for mac bundles and other situations """
+    if os.path.isabs(relative): # return a relative path unchanged
+        return relative
+
     if frozen: #inside a mac bundle
         safe = os.path.join(working_dir, relative)
     else:
         safe = relative #TODO perhaps force entire engine to use working_dir
-    return relative
+    return safe
     
 
 def get_best_directory(game, d_raw_name):
@@ -1223,7 +1226,7 @@ def get_best_file(game, f_raw):
         else:
             directories = [d]
     for directory in directories:
-        test_f = os.path.join(directory, f_name)
+        test_f = get_safe_path(os.path.join(directory, f_name))
         if os.path.exists(test_f):
             return test_f
     return f_raw # use default
@@ -1800,6 +1803,7 @@ class Motion(object):
         fname = os.path.splitext(filename)[0]
         fname = fname + ".motion"
         self._filename = fname
+        fname = get_safe_path(fname)
         if not os.path.isfile(fname):
             pass
         else:
@@ -1937,7 +1941,7 @@ class Action(object):
  
     def _load_montage(self, filename):
         fname = os.path.splitext(filename)[0]
-        montage_fname = fname + ".montage"
+        montage_fname = get_safe_path(fname + ".montage")
         if not os.path.isfile(montage_fname):
             if not os.path.isfile(filename): 
                 w,h = 0,0
