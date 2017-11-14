@@ -96,6 +96,18 @@ else:
     working_dir = os.path.dirname(os.path.abspath(__file__))
     script_filename = os.path.abspath(__file__)
 
+def get_safe_path(relative):
+    """ return a path safe for mac bundles and other situations """
+    if os.path.isabs(relative): # return a relative path unchanged
+        return relative
+
+    if frozen: #inside a mac bundle
+        safe = os.path.join(working_dir, relative)
+    else:
+        safe = relative #TODO perhaps force entire engine to use working_dir
+    return safe
+
+
 def load_info(fname_raw):
     """ Used by developer to describe game """
     config = {"version":"None", "date":"Unknown", "slug":"pyvidagame"} # defaults
@@ -1137,18 +1149,7 @@ def get_smart_directory(game, obj):
     if frozen: #inside a mac bundle
         d = os.path.join(working_dir, d)
     return d
-
-def get_safe_path(relative):
-    """ return a path safe for mac bundles and other situations """
-    if os.path.isabs(relative): # return a relative path unchanged
-        return relative
-
-    if frozen: #inside a mac bundle
-        safe = os.path.join(working_dir, relative)
-    else:
-        safe = relative #TODO perhaps force entire engine to use working_dir
-    return safe
-    
+  
 
 def get_best_directory(game, d_raw_name):
     """ First using the selected language, test for mod high contrast, game high 
