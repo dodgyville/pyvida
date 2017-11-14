@@ -1138,6 +1138,14 @@ def get_smart_directory(game, obj):
         d = os.path.join(working_dir, d)
     return d
 
+def get_safe_path(relative):
+    """ return a path safe for mac bundles and other situations """
+    if frozen: #inside a mac bundle
+        safe = os.path.join(working_dir, relative)
+    else:
+        safe = relative #TODO perhaps force entire engine to use working_dir
+    return relative
+    
 
 def get_best_directory(game, d_raw_name):
     """ First using the selected language, test for mod high contrast, game high 
@@ -1170,8 +1178,12 @@ def get_best_directory(game, d_raw_name):
             else:
                 directories = [d]
         for directory in directories:
-            if os.path.isdir(directory):
-                return directory
+            if frozen: #inside a mac bundle
+                safe_dir = os.path.join(working_dir, directory)
+            else:
+                safe_dir = directory
+            if os.path.isdir(safe_dir):
+                return safe_dir
     return None
 
 def get_best_file(game, f_raw):
@@ -3509,7 +3521,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                 log.info(
                     "actor.smart - using %s for smart load instead of real name %s" % (using, self.name))
             name = os.path.basename(using)
-            d = os.path.dirname(using)
+            d = get_safe_path(os.path.dirname(using))
 
         else:
             name = self.name
