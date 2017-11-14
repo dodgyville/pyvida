@@ -86,7 +86,6 @@ elif 'darwin' in sys.platform: # check for OS X support
 
 # detect pyinstaller on mac
 frozen = False
-frozen = True
 if getattr(sys, 'frozen', False): # we are running in a bundle            
     frozen = True    
 if frozen:
