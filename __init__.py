@@ -84,6 +84,18 @@ elif 'darwin' in sys.platform: # check for OS X support
 #    import pygame._view
     APP_DIR = os.path.join(expanduser("~"), "Library", "Application Support")
 
+# detect pyinstaller on mac
+frozen = False
+if getattr(sys, 'frozen', False):
+        # we are running in a bundle
+    frozen = True
+    working_dir = sys._MEIPASS
+    script_filename = os.path.join(sys._MEIPASS, os.path.basename(__file__))
+else:
+    # we are running in a normal Python environment
+    working_dir = os.path.dirname(os.path.abspath(__file__))
+    script_filename = os.path.abspath(__file__)
+
 def load_info(fname_raw):
     """ Used by developer to describe game """
     config = {"version":"None", "date":"Unknown", "slug":"pyvidagame"} # defaults
@@ -1122,6 +1134,8 @@ def get_smart_directory(game, obj):
         d = game.directory_actors
     elif isinstance(obj, Scene):
         d = game.directory_scenes
+    if frozen: #inside a mac bundle
+        d = os.path.join(working_dir, d)
     return d
 
 
@@ -3504,7 +3518,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         myd = os.path.join(d, name)
         absd = os.path.join(os.getcwd(), myd)
         if not os.path.isdir(absd):  # fallback to pyvida defaults
-            this_dir, this_filename = os.path.split(__file__)
+            this_dir, this_filename = os.path.split(script_filename)
             log.debug("Unable to find %s, falling back to %s" %
                       (myd, this_dir))
             myd = os.path.join(this_dir, d, name)
@@ -10953,7 +10967,7 @@ class Game(metaclass=use_on_events):
                 if logging:
                     log.warning(
                         "Can't find local %s cursor at %s, so defaulting to pyvida one" % (value, cursor_pwd))
-                this_dir, this_filename = os.path.split(__file__)
+                this_dir, this_filename = os.path.split(script_filename)
                 myf = os.path.join(this_dir, self.directory_interface, value)
                 if os.path.isfile(myf):
                     image = load_image(myf, convert_alpha=True)
