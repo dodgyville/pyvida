@@ -90,8 +90,8 @@ frozen = True
 if getattr(sys, 'frozen', False): # we are running in a bundle            
     frozen = True    
 if frozen:
-    #working_dir = sys._MEIPASS
-    working_dir = "/home/luke/Projects/spaceout-pleasure"
+    working_dir = sys._MEIPASS
+    #working_dir = "/home/luke/Projects/spaceout-pleasure"
     #script_filename = os.path.join(working_dir, os.path.basename(__file__))
     print("Frozen bundle, pyvida directories are at",__file__, working_dir)
     script_filename = __file__
