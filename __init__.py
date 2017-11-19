@@ -4890,7 +4890,6 @@ class Actor(MotionManager, metaclass=use_on_events):
 #            game.player.on_motion("right", destructive=True)
 
         raw_angle = math.atan2(y, x)
-
         # 0 degrees is towards the top of the screen
         angle = math.degrees(raw_angle) + 90
         path_planning_actions = set([action.name for action in self._actions.values() if action.available_for_pathplanning == True])
@@ -4916,7 +4915,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         if goto_motion is None: #create a set of evenly spaced deltas to get us there:
             # how far we can travel along the distance in one update
             # use the action that will be doing the goto and use its speed for our deltas
-            acton = goto_action if goto_action else self.action
+            action = goto_action if goto_action else self.action
             d = action.speed / distance
             self._goto_deltas = [(x * d, y * d)]*int(distance/action.speed)
             self._goto_deltas_average_speed = action.speed
