@@ -8620,6 +8620,7 @@ class Game(metaclass=use_on_events):
         self._object_index = 0 # used by joystick and blind mode to select scene objects
         self._mouse_object = None  # if using an Item or Actor as mouse image
         self.hide_cursor = HIDE_MOUSE
+        self.mouse_cursor_lock = False # lock mouse to this shape until released
         self.mouse_down = (0, 0)  # last press
         self.mouse_position_raw = (-50, -50)  # last known position of mouse (init offscreen to hide joystick)
         self.mouse_position = (0, 0)  # last known position of mouse, scaled
@@ -8887,6 +8888,8 @@ class Game(metaclass=use_on_events):
             if self._events[0][0].__name__ == "on_goto" and self._events[0][1][0] == self.player:
                 interruptable_event = True
                 player_goto_event = False # True if we don't want strict hourglass when player is walking
+            if self._events[0][0].__name__ == "on_set_mouse_cursor": # don't allow hourglass to override our request
+                interruptable_event = True
             if len(self._modals)>0: 
                 interruptable_event = True
 
@@ -8896,6 +8899,8 @@ class Game(metaclass=use_on_events):
         # don't show hourglass on modal events
         if (self._waiting and len(self._modals) == 0 and not player_goto_event) or not interruptable_event:
             cursor = MOUSE_HOURGLASS
+        if self.mouse_cursor_lock is True:
+             return
         self._mouse_cursor = cursor
         self._set_mouse_cursor(self._mouse_cursor)
 
@@ -11528,6 +11533,9 @@ class Game(metaclass=use_on_events):
 
     def on_set_mouse_cursor(self, v):
         self.mouse_cursor = v
+        
+    def on_set_mouse_cursor_lock(self, v):
+        self.mouse_cursor_lock = v
 
     def on_set_player_goto_behaviour(self, v):
         self._player_goto_behaviour = v
