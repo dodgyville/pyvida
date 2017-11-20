@@ -4295,6 +4295,8 @@ class Actor(MotionManager, metaclass=use_on_events):
         item = self._gets(item, remove, collection)
         if item == None:
             return
+        #with open('inventory.txt', 'a') as f:
+        #    f.write('    "%s": _(""),\n'%item.name)
 
   #      name = self.display_text if self.display_text else self.name
  #       item_name = item.display_text if item.display_text else item.name
