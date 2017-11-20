@@ -4940,8 +4940,9 @@ class Actor(MotionManager, metaclass=use_on_events):
             distance_travelled_y = 0
             steps = 0
             while (distance_travelled < distance):
-                delta = motion.deltas[steps%len(motion.deltas)]
-                dx, dy = delta[0]*self.scale, delta[1]*self.scale
+                delta = motion.deltas[steps%len(motion.deltas)]                
+                dx = delta[0]*self.scale if delta[0] != None else 0
+                dy = delta[1]*self.scale if delta[1] != None else 0
                 dd = math.hypot(dx,dy)
                 ratio = 1.0
                 if distance_travelled + dd > distance: #overshoot, aim closer
