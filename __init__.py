@@ -2737,7 +2737,7 @@ class Actor(MotionManager, metaclass=use_on_events):
     def pyglet_set_anchor(self, x, y):
         """ Very raw helper function for setting anchor point of image
             Useful for rotating Actors around an anchor point
-            But message
+            TODO: WIP
         """
         if isinstance(self.resource._animation, pyglet.image.Animation):
             for f in self.resource._animation.frames:
@@ -3930,7 +3930,7 @@ class Actor(MotionManager, metaclass=use_on_events):
     def on_random_frame(self):
         """ Advance the current action to a random frame """
         i = random.randint(0, len(self.resource._animation.frames))
-        self._frame(i)
+        self._frame(i)       
 
     def on_asks(self, statement, *args, **kwargs):
         """ A queuing function. Display a speech bubble with text and several replies, and wait for player to pick one.
@@ -4421,6 +4421,16 @@ class Actor(MotionManager, metaclass=use_on_events):
         return name
 
 #    def create_sprite(self, action, **kwargs):
+
+    def on_bling(self, block=False):
+        """ Perform a little 'bling' animation by distorting the x and y scales of the image """
+        # or add a motion_once based on a sine distortion?
+        # scale_x, scale_y: 1, 1, 0.9, 1.1, etc
+        #self.on_do_once("bling", block=block)
+        if logging:
+            log.info("Warning: bling not done yet")
+        
+
 
     def on_do_random(self, mode=LOOP):
         """ Randomly do an action """
@@ -8979,6 +8989,19 @@ class Game(metaclass=use_on_events):
                 self.reload_modules()  # reload now to refresh existing references
                 self._allow_editing = False
 
+            if symbol == pyglet.window.key.F5:
+                print("Output interaction matrix for this scene")
+                for i in self.player.inventory.values():
+                    scene_objects = self.scene.objects_sorted
+                    for obj_name in scene_objects:
+                        obj = get_object(self, obj_name)
+                        allow_use = (obj.allow_draw and (obj.allow_interact or obj.allow_use or obj.allow_look))
+                        slug1 = slugify(i.name).lower()
+                        slug2 = slugify(obj.name).lower()
+                        fn_name = "%s_use_%s"%(slug2, slug1)
+                        fn = get_function(game, fn_name)
+                        if allow_use and not fn and not isinstance(obj, Portal):
+                            print("def %s(game, %s, %s):"%(fn_name, slug2, slug1))
 
             if symbol == pyglet.window.key.F7:  # start recording     
                 # ffmpeg -r 16 -pattern_type glob -i '*.png' -c:v libx264 out.mp4
