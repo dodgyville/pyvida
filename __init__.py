@@ -6438,6 +6438,8 @@ class Text(Item, metaclass=use_on_events):
         font: the filepath to the font
         delay : How fast to display chunks of the text
         step : How many characters to advance during delayed display
+        
+        TODO: rework Text so it creates resources in Actions (eg idle and over)
         """
         self.format_text = None  # function for formatting text for display
         super().__init__(name, interact=interact, look=look)
@@ -6457,6 +6459,7 @@ class Text(Item, metaclass=use_on_events):
         if len(colour) == 3:
             # add an alpha value if needed
             colour = (colour[0], colour[1], colour[2], 255)
+
         font_name = "Times New Roman"  # "Arial"
         if font:
             if font not in _pyglet_fonts:
@@ -6480,6 +6483,12 @@ class Text(Item, metaclass=use_on_events):
         h = self._height = tmp.content_height
         w = self._width = tmp.content_width
 
+
+        self._idle_colour = colour # mimick menu "over" behaviour using this colour
+        self._over_colour = None # mimick menu "over" behaviour using this colour
+        self._action_name = "idle" # mimmick menu over and idle behaviour if over_colour is set
+
+
         self._clickable_area = Rect(
             0, 0, w, h)
 
@@ -6496,6 +6505,27 @@ class Text(Item, metaclass=use_on_events):
     def load_assets(self, game):
         self.game = game
         return self.create_label()
+    
+    
+    def set_over_colour(self, colour):
+        if colour and len(colour) == 3:
+            # add an alpha value if needed
+            colour = (colour[0], colour[1], colour[2], 255)
+        self._over_colour = colour
+    
+    def _do(self, action, callback=None, mode=LOOP):       
+        """ Only mimmicks behaviour using "idle" and "over" """
+        if not self._over_colour:
+            return
+        if action == self._action_name:
+            return
+        if action == "idle":
+            self.colour = self._idle_colour
+        elif action == "over":
+            self.colour = self._over_colour
+        self._action_name = action
+        self.create_label()
+        
 
     def create_label(self):
         c = self.colour
@@ -9449,7 +9479,9 @@ class Game(metaclass=use_on_events):
                 if obj.collide(window_x, window_y) and allow_collide:  # absolute screen values
                     self.mouse_cursor = MOUSE_CROSSHAIR if self.mouse_cursor == MOUSE_POINTER else self.mouse_cursor
 
-                    if obj._actions and obj._over in obj._actions and (obj.allow_interact or obj.allow_use or obj.allow_look):
+                    allow_over = obj._actions or hasattr(obj, "_over_colour") # an Actor or a Text with menu behaviour                    
+                    over_in_actions = obj._over in obj._actions or hasattr(obj, "_over_colour") # an Actor or a Text with menu behaviour                    
+                    if allow_over and over_in_actions and (obj.allow_interact or obj.allow_use or obj.allow_look):
                         if obj._action != obj._over:
                             self.menu.on_play_enter_sfx() #play sound if available
                         obj._do(obj._over)
@@ -9459,10 +9491,12 @@ class Game(metaclass=use_on_events):
                         fn(self.game, obj, self.game.player, scene_x, scene_y, dx, dy, window_x, window_y)
                     menu_collide = True
                 else:  # unhover over menu item
-                    if obj.action and obj.action.name == obj._over and (obj.allow_interact or obj.allow_use or obj.allow_look):
+                    allow_over = obj._actions or hasattr(obj, "_over_colour") # an Actor or a Text with menu behaviour                    
+                    action_name = obj.action.name if obj.action else getattr(obj, "_action_name", "")
+                    if allow_over and action_name == obj._over and (obj.allow_interact or obj.allow_use or obj.allow_look):
                         idle = obj._idle  # don't use obj.default_idle as it is scene dependent
                         self.menu.on_play_exit_sfx() #play sound if available
-                        if idle in obj._actions:
+                        if idle in obj._actions or hasattr(obj, "_over_colour"):
                             obj._do(idle)
                 if menu_collide:
                     return
@@ -11612,16 +11646,20 @@ class ModalItem(Item):
         super().__init__(*args, **kwargs)
 
 MENU_COLOUR = (42, 127, 255)
+MENU_COLOUR_OVER = (255, 226, 78)
 DEFAULT_FONT = os.path.join("data/fonts/", "vera.ttf")
 
 class MenuText(Text):
 #    def __init__(self, *args, **kwargs):
      def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=MENU_COLOUR, size=26, wrap=2000, interact=None, spos=(None, None), hpos=(None, None), key=None, font=DEFAULT_FONT, offset=2):
-        print("*** ERROR: MENUTEXT DEPRECATED IN PYVIDA, REPLACE IMMEDIATELY.")
-        print("Try instead:")
+        sfont = "MENU_FONT" if "badaboom" in font else font
+        ssize = "MENU_SIZE" if size in [34,35,36,38] else size
+        #print("*** ERROR: MENUTEXT DEPRECATED IN PYVIDA, REPLACE IMMEDIATELY.")
+        #print("Try instead:")
         print("""
-item = game.add(Text("{name}", {pos}, "{text}", size={size}, wrap={wrap}, interact={interact}, font="{font}", colour={colour}, offset=2)
-item.on_key({key})
+item = game.add(Text("{name}", {pos}, "{text}", size={ssize}, wrap={wrap}, interact={interact}, font="{sfont}", colour={colour}, offset=2), replace=True)
+item.on_key("{key}")
+item.set_over_colour(MENU_COLOUR_OVER)
 """.format(**locals()))
         super().__init__(name, pos, text, colour, font, size, wrap, offset=2, interact=interact)
         
