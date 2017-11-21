@@ -403,12 +403,26 @@ K_C = pyglet.window.key.C
 K_D = pyglet.window.key.D
 K_E = pyglet.window.key.E
 K_F = pyglet.window.key.F
+K_G = pyglet.window.key.G
+K_H = pyglet.window.key.H
 K_I = pyglet.window.key.I
+K_J = pyglet.window.key.J
+K_K = pyglet.window.key.K
 K_L = pyglet.window.key.L
+K_M = pyglet.window.key.M
+K_N = pyglet.window.key.N
+K_O = pyglet.window.key.O
+K_P = pyglet.window.key.P
+K_Q = pyglet.window.key.Q
+K_R = pyglet.window.key.R
 K_S = pyglet.window.key.S
 K_T = pyglet.window.key.T
 K_U = pyglet.window.key.U
 K_V = pyglet.window.key.V
+K_W = pyglet.window.key.W
+K_X = pyglet.window.key.X
+K_Y = pyglet.window.key.Y
+K_Z = pyglet.window.key.Z
 K_LESS = pyglet.window.key.LESS
 K_GREATER = pyglet.window.key.GREATER
 K_ENTER = pyglet.window.key.ENTER
@@ -946,17 +960,31 @@ def get_point(game, destination, actor=None):
         destination = (x,y)
     return destination
 
-def get_object(game, obj):
-    """ get an object from a name or object """
+def get_object(game, obj, case_insensitive=False):
+    """ get an object from a name or object 
+        Case insensitive
+    """
     if type(obj) != str:
         return obj
     robj = None  # return object
-    if obj in game._scenes:  # a scene
-        robj = game._scenes[obj]
-    elif obj in game._items.keys():
-        robj = game._items[obj]
-    elif obj in game._actors.keys():
-        robj = game._actors[obj]
+    
+    # do a case insensitve search
+    if case_insensitive:
+        obj = obj.lower()
+        scenes_lower = {k.lower():v for k,v in game._scenes.items()}
+        items_lower = {k.lower():v for k,v in game._items.items()}
+        actors_lower = {k.lower():v for k,v in game._actors.items()}    
+    else:
+        scenes_lower = game._scenes
+        items_lower = game._items
+        actors_lower = game._actors
+        
+    if obj in scenes_lower:  # a scene
+        robj = scenes_lower[obj]
+    elif obj in items_lower:
+        robj = items_lower[obj]
+    elif obj in actors_lower:
+        robj = actors_lower[obj]
     else:
         # look for the display names in _items in case obj is the name of an
         # on_ask option
@@ -10436,7 +10464,9 @@ class Game(metaclass=use_on_events):
             modifiers = 0
             # check modals and menu first for text options
             obj = None
-            if len(self._modals)>0 and actor_name not in self._modals:
+            actor = get_object(self, actor_name)
+            probably_an_ask_option = actor_name in self._modals or actor.name in self._modals if actor else False
+            if len(self._modals)>0 and not probably_an_ask_option:
                 log.warning("interact with {} but modals haven't been cleared"
                             .format(actor_name))
             for name in self._modals:
@@ -10507,9 +10537,7 @@ class Game(metaclass=use_on_events):
             # expand the goto request into a sequence of portal requests
             global scene_path
             scene_path = []
-            obj = get_object(self, actor_name)
-
-
+            obj = get_object(self, actor_name, case_insensitive=True)
             if self.scene:
                 scene = scene_search(self, self.scene, obj.name.upper())
                 if scene != False: #found a new scene
