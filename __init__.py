@@ -2103,7 +2103,7 @@ class Rect(object):
         self.scale = 1.0
 
     def serialise(self):
-        return "[{}, {}, {}, {}, {}]".format(self.x, self.y, self.w, self.h, self.scale)
+        return "[{}, {}, {}, {}, {}]".format(self.x, self.y, self._w, self._h, self.scale)
 
     @property
     def flat(self):
@@ -2605,6 +2605,9 @@ class Actor(MotionManager, metaclass=use_on_events):
         self._fx_sway = 0 #sway speed
         self._fx_sway_angle = 0 #in degrees
         self._fx_sway_index = 0 #TODO: there is no limit to how high this might go
+
+        # engine backwards compatibility
+        self._engine_v1_scale = None
 
         self.set_editable()
 
@@ -3377,7 +3380,9 @@ class Actor(MotionManager, metaclass=use_on_events):
 
         if logging:
             log.info("Player looks at %s" % self.name)
+
         self.game.mouse_mode = MOUSE_INTERACT  # reset mouse mode
+
         if self._look:  # if user has supplied a look override
             script = get_function(self.game, self._look)
             if script:
@@ -4581,6 +4586,8 @@ class Actor(MotionManager, metaclass=use_on_events):
         self._set(["rotate"], [v])
 
     def on_rescale(self, v):
+        if self.game and self.game.engine == 1: # remember rescale for backward compat with load_state
+            self._engine_v1_scale = v
         self._set(["scale"], [v])
 
     def on_reparent(self, parent):
@@ -4611,13 +4618,21 @@ class Actor(MotionManager, metaclass=use_on_events):
         log.warning("respeech has been renamed retext")
         self.on_retext(point)
 
-    def on_flip(self, horizontal=None, vertical=None):
+    def on_flip(self, horizontal=None, vertical=None, anchor=True):
         """ Flip actor image """
         if vertical != None: self._flip_vertical = vertical
         if horizontal != None: 
-            if horizontal != self._flip_horizontal: # flip anchor point too
+            if horizontal != self._flip_horizontal and anchor: # flip anchor point too
                 self.ax = -self.ax
             self._flip_horizontal = horizontal
+
+    def turn(self):
+        """ Helper function for animating characters (similar to sway) """
+        self.flip(horizontal=True, anchor=False)
+        self.game.pause(0.5)
+        self.flip(horizontal=False, anchor=False)
+        self.game.pause(0.5)
+
 
     def _hide(self):
         self._usage(draw=False, update=False)
@@ -4702,6 +4717,9 @@ class Actor(MotionManager, metaclass=use_on_events):
 
     # actor.relocate
     def on_relocate(self, scene=None, destination=None, scale=None):
+        if not scale and self.game and self.game.engine == 1 and hasattr(self, "_engine_v1_scale") and self._engine_v1_scale: # remember rescale for backward compat with load_state
+            scale = self._engine_v1_scale
+            self._engine_v1_scale = None
         self._relocate(scene, destination, scale)
 
     # actor.relocate
@@ -8257,11 +8275,17 @@ def save_game_pickle(game, fname):
 def load_menu_assets(game):
     for menu_item in game._menu:
         obj = get_object(game, menu_item)
-        obj.load_assets(game)
+        if obj:
+            obj.load_assets(game)
+        else:
+            print("Menu item",menu_item,"not found.")
     for menu in game._menus:
         for menu_item in menu:
             obj = get_object(game, menu_item)
-            obj.load_assets(game)
+            if obj:
+                obj.load_assets(game)
+            else:
+                print("Menu item",menu_item,"not found.")
 
 
 def load_game_meta_pickle(game, fname):
@@ -10402,7 +10426,7 @@ class Game(metaclass=use_on_events):
             pdb.set_trace()
         if self._output_walkthrough is False and DEBUG_STDOUT is True:
             print("[step]",function_name, walkthrough[1:], t.seconds, "   [hint]", self.storage.hint if self.storage else "(no storage)")
-
+            
         self._walkthrough_index += 1
 
         if self._walkthrough_index > self._walkthrough_target or self._walkthrough_index > len(self._walkthrough):
@@ -10516,6 +10540,7 @@ class Game(metaclass=use_on_events):
             if not obj:
                 log.error("Unable to find %s in game" % actor_name)
                 self._walkthrough_target = 0
+                self._walkthrough_auto = False
                 self.headless = False
                 return
             # if not in same scene as camera, and not in modals or menu, log
@@ -10703,7 +10728,8 @@ class Game(metaclass=use_on_events):
             reset_mouse_cursor(self)
 
         if done_events == 0 and del_events == 0 and self._walkthrough_target >= self._walkthrough_index:
-            self._process_walkthrough()
+            if not self._generator: # don't process walkthrough if a generator is running (eg loading a save game)           
+                self._process_walkthrough()
         return safe_to_call_again
 #        print("Done %s, deleted %s"%(done_events, del_events))
 
@@ -10812,7 +10838,8 @@ class Game(metaclass=use_on_events):
         # if waiting for user input, assume the event to trigger the modal is
         # in the walkthrough
         if self._walkthrough_auto and self._walkthrough_target >= self._walkthrough_index and len(self._modals) > 0:
-            self._process_walkthrough()
+            if not self._generator: # don't process walkthrough if a generator is running (eg loading a save game)
+                self._process_walkthrough()
 
     def pyglet_draw(self):  # game.draw
         """ Draw the scene """
