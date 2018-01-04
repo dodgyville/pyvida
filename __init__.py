@@ -8336,6 +8336,7 @@ class Game(metaclass=use_on_events):
         self.mouse_mode = MOUSE_INTERACT
         # which image to use
         self._joystick = None # pyglet joystick
+        self._map_joystick = 0 # if 1 then map buttons instead of triggering them in on_joystick_button
         self._object_index = 0 # used by joystick and blind mode to select scene objects
         self._mouse_object = None  # if using an Item or Actor as mouse image
         self.hide_cursor = HIDE_MOUSE
@@ -8674,7 +8675,10 @@ class Game(metaclass=use_on_events):
         if symbol == pyglet.window.key.F6:
             self.settings.font_size_adjust += 2
 
-        if ENABLE_FKEYS:
+        if not ENABLE_FKEYS:
+            if symbol == pyglet.window.key.F7 and self._joystick:
+                self._map_joystick = 1
+        else:
             if symbol == pyglet.window.key.F1:
                 #            edit_object(self, list(self.scene._objects.values()), 0)
                 #            self.menu_from_factory("editor", MENU_EDITOR)
@@ -8699,236 +8703,13 @@ class Game(metaclass=use_on_events):
                 self._allow_editing = False
 
 
-            if symbol == pyglet.window.key.F7:  # start recording     
-                # ffmpeg -r 16 -pattern_type glob -i '*.png' -c:v libx264 out.mp4
-                d = "screencast %s" % datetime.now()
-                d = os.path.join(self.save_directory, d)
-                if not os.path.isdir(d):
-                    os.mkdir(d)
-                print("saving to", d)
-                self.directory_screencast = d
-            if symbol == pyglet.window.key.F8:  # stop recording
-                game.storage.brutus_wedding_stage = 17
-                game.load_state("wedding", "brutus")
-                game.camera.scene("wedding")
-                game.tycho.on_remember("valentine's day ending")
-                fn = get_function(game, "interact_wedding1")
-                fn(game, None, game.tycho)
-                return
-                self.directory_screencast = None
-                print("finished casting")
+            if symbol == pyglet.window.key.F7 and self._joystick:
+                self._map_joystick = 1 # start remap sequence
+                print("remap joystick buttons")
 
             if symbol == pyglet.window.key.F9:
-                game.blink.relocate(game.scene)
-                game.blink.ay = 0
-                game.blink.y = 0
-                game.blink.do("out")
-                game.blink.scale = 1
                 return
-                d = "<sound effect: Hello World>"
-                self.message(d)
-                return
-                game.camera.scene("linside")
-                game.tycho.says(_("You can't wish your problems away, Brutus."))
-                game.brutus.says(_("Watch me, Tycho."))
-                return
-                game.camera.scene("afoyer")
-                game.mistriss.says(_("Welcome to Pleasure Planet!"))
-                game.mistriss.says(_("Tell me your fantasy and I will make it come true."))
-                game.camera.scene("fleft")
-                game.jo.says(_("Can you make me straight?"))
-                game.tycho.says(_("Err..."), "sheesh")
-                game.brutus.says(_("Of course!"))
-                game.camera.scene("ebar")
-                game.adam.says(_("Can you get me a better boyfriend?"))
-                game.tycho.says(_("Um..."), "perplexed")
-                game.brutus.says(_("Hairy or smooth?"))
-                game.camera.scene("bvictory")
-                game.astronaut2.says(_("Can you help me conquer the galaxy?"))
-                game.tycho.says(_("No!"), "angry")
-                game.brutus.says(_("I'll see what I can do."))
 
-#                self.settings.high_contrast = not self.settings.high_contrast
-                return
-                from scripts.general import add_coords_to_helm
-                from scripts.constants import P_ARCADIA
-                add_coords_to_helm(game, P_ARCADIA)    
-                return
-                for key in game.storage.backer_planets_details.keys():
-                    self.test_arrive_at_generated_scene(key)
-                    self.wait_for_user()
-                return
-                from scripts.classes import Kaleidoscope
-                game.camera.scene("blank")
-                mm = Kaleidoscope("hello")
-                game.add(mm)
-                game.tycho.relocate("blank", (0,0))
-                game.tycho.scale = 0.9
-                mm.relocate("blank", (800,450))
-                game._scenes["blank"].walkarea.freeroam()
-                return
-                fn = get_function(self, "interact_romy_victory")
-                fn(game, None, None)
-                return
-                game.camera.scene("bvictory")
-                return
-                game.brutus_snake.interact = "hello"
-                game.brutus_snake.restand((0,0))
-                return
-                game.camera.scene("palert")
-                game.menu.hide()
-                game.mixer.music_stop()
-                game.alert.pulse = 0.65
-                return
-                game._walkthrough_auto = False
-                game.menu.hide()
-                game.load_state("etreehouse", "tmp")
-                game.camera.scene("etreehouse")                    
-                game.player.relocate("etreehouse",(749, 495))
-                game.player.do("idle_leftdown")
-#                game.brutus_snake.relocate("etreehouse", (1200,-50))
-#                game.brutus_snake.do("hangleft")
-                game.wait_for_user()                
-                game.steve.says(_("And you're my little gingerbread man."))
-                game.wait_for_user()
-                game.player.says(_("That's so adorable."))
-                game.brutus_snake.says(_("I think I'm going to be sick."), using="msgbox_snake", position=BOTTOM)
-                game.wait_for_user()
-                return
-                game._walkthrough_auto = False
-                game.sky_sebastian_health1.remove()
-                game.sky_sebastian_health2.remove()
-                game.sky_sebastian_health3.remove()
-                game.sky_cloud.remove()
-                game.sky_shroom.remove()
-                game.sky_turing.remove()
-                game.sky_rupee.remove()
-                game.menu.hide()
-#                game.sky_tycho.relocate(game.scene, (100,100))
-                game.camera.scene("sky")
-#                game.wait_for_user()
-#                game.player = game.sky_tycho
-#                game.sky_heart.trigger_interact() #[interact, "*sky heart"],
-                game.wait_for_user()
-                game.sebastian.says(_("Perfect weather for it."))
-
-                return
-                game.load_state("spacebattle", "initial")
-                game.menu.hide()
-                game.camera.scene("spacebattle")
-                game.wait_for_user()
-                game.laserbolts.do_once("fire", "idle")
-                game.mixer.sfx_play("data/sfx/laser1.ogg", "laser shot")
-                game.pause(0.4)
-                game.explosion_space.do_once("explosion", "idle")
-                game.brutus_ship.escaped = True
-                game.brutus_ship.motion("shake", mode=ONCE)
-                game.wait_for_user()
-                game.camera.scene("alab")
-                return
-                game.menu.hide()
-                game.camera.scene("bvictory")
-                game.wait_for_user()
-                game.brutus.says(_("Bwahahahaha!"), "portrait_victory", position=TOP)
-                game.wait_for_user()
-                game.brutus.says(_("I don't normally laugh like that ..."), "portrait_victory", position=BOTTOM)
-                game.brutus.says(_("... but this place really does your head in."), "portrait_victory", position=BOTTOM)
-                game.wait_for_user()
-                game.camera.scene("alab")
-                return
-                game.menu.hide()
-                game.pod2.hide()
-                game.camera.scene("alab")
-                game.player.relocate("alab", "mistriss lab")
-                game.player.do("idle_leftup")
-                game.load_state("aenter", "initial")
-                game.mistriss_lab.do("idle")
-                game.camera.scene("aenter")
-                start_scene = "aenter"
-                game.wait_for_user()
-                game.mistriss.says(_("Look into my eye, Captain ..."), None, position=BOTTOM, using="msgbox_75")
-                game.camera.scene("alab", allow_scene_music=False)
-                game.wait_for_user()
-                game.mistriss_lab.do("arcadian")
-                game.wait_for_user()
-                game.camera.scene("aenter")
-                game.mistriss.says(_("... and relax."), None, position=BOTTOM, using="msgbox_75")
-                game.wait_for_user()
-                game.camera.scene("alab")
-                return
-                game.del_events = True
-                return
-                game.menu.hide()
-                s = game.scene
-                game.camera.scene("jstadium", camera_point=(0,0))
-                game.load_state("jgame", "trial")
-                game.camera.move((0,840), speed=20)
-                game.pause(5)
-                game.camera.scene(s)
-                game.menu.show()
-                return
-                game.player.goto(game.galaxy_sister, block=True)
-                game.bazzarella.says(_("I don't believe in all this new fangled technology."), position=BOTTOM)
-                return
-                game.planet_name2.remove()
-    #            game.tycho.move((-400,0))
-    #            game.tycho_monitor.on_says("I've got to find him.")
-                game.tycho.move((400,0))
-                game.pause(1)
-                game.tycho_monitor.on_says("Time's running out.")
-                game.pause(1)
-                game.menu.show()
-                return
-                self.scene.walkarea._fill_colour = (50,244,176, 255)
-                self.scene.walkarea._editing = True
-                self.fountain.show_debug = True
-                return
-                pygame.mixer.quit()
-                pygame.mixer.init()
-                game.mixer._music_player.load(game.mixer._music_filename)
-                game.mixer._music_player.play()
-                return
-                from scripts.general import chip_first_attempt, cutscene_founders
-                cutscene_founders(game)
-                chip_first_attempt(game)
-                return
-                game.xian_child.do("left")
-                game.xian_gypsy.do_once("glitch", "vanished")
-                game.pause(1)
-                game.xian_child.do_once("glitchleft", "vanished")
-                game.pause(1)
-                game.xian_gypsy.do("idle")
-                game.xian_child.do("left")
-                return
-                self.scene._spin += .1
-                print("rotate")
-                return
-                self.settings.achievements.present(game, "puzzle")
-                return
-                for i in range(1,1000):
-                    game.player.generate_world(i)
-                    game.menu.clear()
-                    game.camera.scene("orbit")
-                    d = os.path.join("dev/explore", "planet_%09d.png" %i)
-                    game.pause(0.01)
-                    game.camera.screenshot(d)
-
-                return
-                game.player.move((0,0))
-                game.player.standing_still = datetime.now()
-                return
-                game.camera.scene("elagoon")
-                game.load_state("elagoon", "kiss")
-                #game.elagoon_
-                game.menu.hide()
-                game.flower.remove()
-                game.eden_kiss.display_text = " "
-                game.firework2.do("idle")
-                game.pause(0.3)
-                game.firework2.do("firework")
-                game.player.says("start recording")
-                game.pause(3)
-                game.elagoon_background.fade_out()
             if symbol == pyglet.window.key.F10:
                 if self._motion_output is None:
                     self.player.says("Recording motion")
@@ -9226,12 +9007,21 @@ class Game(metaclass=use_on_events):
             return
         modifiers = 0
         x,y = self.mouse_position_raw
+        if self._map_joystick == 1: # map interact button
+            self.settings.joystick_interact = button
+            self._map_joystick += 1
+            return
+        elif self._map_joystick == 2: # map look button
+            self.settings.joystick_look = button
+            self._map_joystick = 0 # finished remap
+            return
 
         if button == self.settings.joystick_interact:
             self.on_mouse_release(x,y, pyglet.window.mouse.LEFT, modifiers)
         elif button == self.settings.joystick_look:
             self.on_mouse_release(x,y, pyglet.window.mouse.RIGHT, modifiers)
-#        print(self._joystick.__dict__)
+        #print(self._joystick.__dict__)
+        #print(button, self.settings.joystick_interact, self.settings.joystick_look)
 #        self._joystick.button[
 
     def on_mouse_release(self, raw_x, raw_y, button, modifiers):
@@ -10324,7 +10114,7 @@ class Game(metaclass=use_on_events):
                 self._generator_progress(self)
 
         if self._joystick:
-#            print(self._joystick.__dict__)
+            #print(self._joystick.__dict__)
             x = self.mouse_position_raw[0] + self._joystick.x * 40
             y = self.mouse_position_raw[1] - self._joystick.y * 40
             #print(x,y, self._joystick.x,  self.mouse_position_raw)
