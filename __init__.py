@@ -7,44 +7,15 @@ import gc
 import glob
 import imghdr
 import imp
+import itertools
 import json
 import math
+from operator import sub
 import os
 import pickle
 import pyglet.clock
-
-"""
-len(pyglet.clock._default._schedule_interval_items)
-[print(i, x.func) for i,x in enumerate(pyglet.clock._default._schedule_interval_items)]
-
-"""
-
-# override clock unschedule to fix a bug in pyglet 1.3.0b1
-class PyvidaClock(pyglet.clock.Clock): 
-    def unschedule(self, func):
-        '''Remove a function from the schedule.
-
-        If the function appears in the schedule more than once, all occurrences
-        are removed.  If the function was not scheduled, no error is raised.
-
-        :Parameters:
-            `func` : function
-                The function to remove from the schedule.
-
-        '''
-        # clever remove item without disturbing the heap:
-        # 1. set function to an empty lambda -- original function is not called
-        # 2. set interval to 0               -- item will be removed from heap eventually
-#        if len(self._schedule_interval_items) == 10:
-#            import pdb; pdb.set_trace()        
-        for item in set(item for item in self._schedule_interval_items if item.func == func):
-            item.interval = 0
-            item.func = lambda x, *args, **kwargs: x
-
-        self._schedule_items = [i for i in self._schedule_items if i.func != func]    
-
-# use a custom clock method to avoid bug in pyglet 1.3.0b1
-#pyglet.clock.Clock.unschedule = PyvidaClock.unschedule
+import queue
+import webbrowser
 
 import pyglet
 
@@ -68,6 +39,8 @@ from random import choice, randint, uniform
 from time import sleep
 from math import sin, cos, radians
 from fontTools.ttLib import TTFont
+
+PORT = 8000 + randint(0,100)
 
 
 try:
@@ -98,6 +71,7 @@ from pyglet.gl.gl import c_float
 from pyglet.image.codecs.png import PNGImageDecoder
 import pyglet.window.mouse
 
+editor_queue = queue.Queue() # used to share info between editor and game
 
 # TODO better handling of loading/unloading assets
 
@@ -110,10 +84,51 @@ elif 'darwin' in sys.platform: # check for OS X support
 #    import pygame._view
     APP_DIR = os.path.join(expanduser("~"), "Library", "Application Support")
 
+# detect pyinstaller on mac
+frozen = False
+if getattr(sys, 'frozen', False): # we are running in a bundle            
+    frozen = True    
+if frozen:
+    working_dir = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(sys.argv[0]))) # get pyinstaller variable or use a default (perhaps cx_freeze)
+    #working_dir = "/home/luke/Projects/spaceout-pleasure"
+    #script_filename = os.path.join(working_dir, os.path.basename(__file__))
+    print("Frozen bundle, pyvida directories are at",__file__, working_dir)
+    script_filename = __file__
+else:
+    # we are running in a normal Python environment
+    working_dir = os.path.dirname(os.path.abspath(sys.argv[0])) #os.path.dirname(os.path.abspath(__file__))
+    script_filename = os.path.abspath(__file__) #pyvida script
+    print("Normal environment, pyvida directories at", working_dir)
+
+
+def get_safe_path(relative):
+    """ return a path safe for mac bundles and other situations """
+    if os.path.isabs(relative): # return a relative path unchanged
+        return relative
+
+    safe = os.path.join(working_dir, relative)
+    """
+    if frozen: #inside a mac bundle
+        safe = os.path.join(working_dir, relative)
+#        print("return safe",relative, safe)
+    else:
+        safe = relative #TODO perhaps force entire engine to use working_dir
+    """
+    return safe
+
+def get_relative_path(path):
+    """ Get a safe relative path based on the game working directory, not necessarily the executing working directory """
+    if os.path.isabs(path):
+        safe = os.path.relpath(path, working_dir)
+    else: # already relative
+        safe = path
+    return safe
+
+
 def load_info(fname_raw):
     """ Used by developer to describe game """
     config = {"version":"None", "date":"Unknown", "slug":"pyvidagame"} # defaults
-    fname = os.path.join("data", fname_raw) 
+    fname = get_safe_path(os.path.join("data", fname_raw))
     if os.path.exists(fname):
         with open(fname, "r") as f:
             data = f.readlines()
@@ -126,9 +141,9 @@ def load_info(fname_raw):
 def load_config(fname_raw):
     """ Used by player to override game settings """
     # check wrirable appdata directory, 
-    fname = os.path.join(APP_DIR, fname_raw) 
+    fname = get_safe_path(os.path.join(APP_DIR, fname_raw))
     if not os.path.exists(fname): # fallback on static directory
-        fname = os.path.join("data", fname_raw) 
+        fname = get_safe_path(os.path.join("data", fname_raw))
     config = {"editor": False, "mixer":"pygame", "mods":True, "language":None, "internet":None, "lowmemory":None} # defaults
     if os.path.exists(fname):
         with open(fname, "r") as f:
@@ -203,7 +218,7 @@ if DEBUG_NAMES:
     tmp_objects_first = {}
     tmp_objects_second = {}
 
-ENABLE_FKEYS = CONFIG["editor"] # debug shortcut keys
+#ENABLE_FKEYS = CONFIG["editor"] # debug shortcut keys
 ENABLE_EDITOR = False and EDITOR_AVAILABLE # default for editor. Caution: This starts module reloads which ruins pickles 
 ENABLE_PROFILING = False
 ENABLE_LOGGING = True
@@ -374,9 +389,10 @@ EDIT_CLICKABLE = "clickable_area"
 EDIT_SOLID = "solid_area"
 
 
-# CAMERA FX
+# CAMERA AND MUSIC FX 
 FX_FADE_OUT = 0
 FX_FADE_IN = 1
+FX_CUT_QUICK = 3
 FX_DISCO = 2 # randomly tint the scene all colours
 
 # KEYS (currently bound to pyglet)
@@ -387,12 +403,26 @@ K_C = pyglet.window.key.C
 K_D = pyglet.window.key.D
 K_E = pyglet.window.key.E
 K_F = pyglet.window.key.F
+K_G = pyglet.window.key.G
+K_H = pyglet.window.key.H
 K_I = pyglet.window.key.I
+K_J = pyglet.window.key.J
+K_K = pyglet.window.key.K
 K_L = pyglet.window.key.L
+K_M = pyglet.window.key.M
+K_N = pyglet.window.key.N
+K_O = pyglet.window.key.O
+K_P = pyglet.window.key.P
+K_Q = pyglet.window.key.Q
+K_R = pyglet.window.key.R
 K_S = pyglet.window.key.S
 K_T = pyglet.window.key.T
 K_U = pyglet.window.key.U
 K_V = pyglet.window.key.V
+K_W = pyglet.window.key.W
+K_X = pyglet.window.key.X
+K_Y = pyglet.window.key.Y
+K_Z = pyglet.window.key.Z
 K_LESS = pyglet.window.key.LESS
 K_GREATER = pyglet.window.key.GREATER
 K_ENTER = pyglet.window.key.ENTER
@@ -407,6 +437,15 @@ K_6 = pyglet.window.key._6
 K_7 = pyglet.window.key._7
 K_8 = pyglet.window.key._8
 K_9 = pyglet.window.key._9
+
+K_LEFT = pyglet.window.key.LEFT
+K_RIGHT = pyglet.window.key.RIGHT
+K_UP = pyglet.window.key.UP
+K_DOWN = pyglet.window.key.DOWN
+K_HOME = pyglet.window.key.HOME
+K_END = pyglet.window.key.END
+K_PAGEUP = pyglet.window.key.PAGEUP
+K_PAGEDOWN = pyglet.window.key.PAGEDOWN
 
 # COLOURS
 COLOURS = {
@@ -602,6 +641,9 @@ if logging:
     log = create_log("pyvida", log_level)
     log.warning("MONTAGE IMPORT ONLY DOES A SINGLE STRIP")
     log.warning("Actor.__getstate__ discards essential USES information")
+    log.info("Global variable working_dir set to %s"%working_dir)
+    log.info("Global variable script_filename set to %s"%script_filename)
+    log.info("Frozen is %s"%frozen)
 
 
 """
@@ -690,12 +732,28 @@ def scene_search(game, scene, target):  # are scenes connected via portals?
 Utilities
 """
 
+def easeInOutQuad(t, b, c, d):
+    """
+    Easing method to animate between two points
+
+    t = current position of tween
+    b = initial value
+    c = total change in value
+    d = total time
+    """
+    t /= d/2
+    if (t < 1):
+        return c/2*t*t + b
+    t -= 1
+    return -c/2 * (t*(t-2) - 1) + b
+
 #get PNG image size info without loading into video memory
 #courtesy Fred the Fantastic - http://stackoverflow.com/questions/8032642/how-to-obtain-image-size-using-standard-python-class-without-using-external-lib
 def get_image_size(fname):
     '''Determine the image type of fhandle and return its size.
     from draco'''
-    fhandle = open(fname, 'rb')
+    fname = get_safe_path(fname)
+    fhandle = open(fname, 'rb')    
     head = fhandle.read(24)
     if len(head) != 24:
         return
@@ -827,7 +885,7 @@ def load_image(fname, convert_alpha=False, eight_bit=False):
 def get_font(game, filename, fontname):
     # XXX should fallback to pyvida subdirectories if not in game subdirectory
     try:
-        pyglet.font.add_file(filename)
+        pyglet.font.add_file(get_safe_path(filename))
         font = pyglet.font.load(fontname)
 #        fonts = [x[0].lower() for x in font._memory_fonts.keys()]
 #        if font.name.lower() not in fonts:
@@ -869,7 +927,7 @@ def fonts_smart(game):
     font_files = []
     for d_raw in font_dirs:
         for t in ['data/fonts/*.otf', 'data/fonts/*.ttf']:
-            for f in glob.glob(os.path.join(d_raw, t)):
+            for f in glob.glob(get_safe_path(os.path.join(d_raw, t))):
                 font_files.append(f)
                 font = TTFont(f)
                 name, family = shortName(font)
@@ -902,17 +960,31 @@ def get_point(game, destination, actor=None):
         destination = (x,y)
     return destination
 
-def get_object(game, obj):
-    """ get an object from a name or object """
+def get_object(game, obj, case_insensitive=False):
+    """ get an object from a name or object 
+        Case insensitive
+    """
     if type(obj) != str:
         return obj
     robj = None  # return object
-    if obj in game._scenes:  # a scene
-        robj = game._scenes[obj]
-    elif obj in game._items.keys():
-        robj = game._items[obj]
-    elif obj in game._actors.keys():
-        robj = game._actors[obj]
+    
+    # do a case insensitve search
+    if case_insensitive:
+        obj = obj.lower()
+        scenes_lower = {k.lower():v for k,v in game._scenes.items()}
+        items_lower = {k.lower():v for k,v in game._items.items()}
+        actors_lower = {k.lower():v for k,v in game._actors.items()}    
+    else:
+        scenes_lower = game._scenes
+        items_lower = game._items
+        actors_lower = game._actors
+        
+    if obj in scenes_lower:  # a scene
+        robj = scenes_lower[obj]
+    elif obj in items_lower:
+        robj = items_lower[obj]
+    elif obj in actors_lower:
+        robj = actors_lower[obj]
     else:
         # look for the display names in _items in case obj is the name of an
         # on_ask option
@@ -1123,8 +1195,11 @@ def get_smart_directory(game, obj):
         d = game.directory_actors
     elif isinstance(obj, Scene):
         d = game.directory_scenes
+    #if frozen: #inside a mac bundle
+    #    d = os.path.join(working_dir, d)
+    d = get_safe_path(d)
     return d
-
+  
 
 def get_best_directory(game, d_raw_name):
     """ First using the selected language, test for mod high contrast, game high 
@@ -1157,8 +1232,9 @@ def get_best_directory(game, d_raw_name):
             else:
                 directories = [d]
         for directory in directories:
-            if os.path.isdir(directory):
-                return directory
+            safe_dir = get_safe_path(directory)
+            if os.path.isdir(safe_dir):
+                return safe_dir
     return None
 
 def get_best_file(game, f_raw):
@@ -1198,7 +1274,7 @@ def get_best_file(game, f_raw):
         else:
             directories = [d]
     for directory in directories:
-        test_f = os.path.join(directory, f_name)
+        test_f = get_safe_path(os.path.join(directory, f_name))
         if os.path.exists(test_f):
             return test_f
     return f_raw # use default
@@ -1532,6 +1608,7 @@ class Settings(object):
         self.allow_internet_debug = ENABLE_LOGGING
 
         self.fullscreen = DEFAULT_FULLSCREEN
+        self.preferred_screen = None # for multi-monitors
         self.show_portals = False
         self.show_portal_text = DEFAULT_PORTAL_TEXT
         self.portal_exploration = DEFAULT_EXPLORATION
@@ -1574,8 +1651,8 @@ class Settings(object):
         if fname:
             self.filename = fname
         if logging:
-            log.info("Saving settings to %s" % self.filename)
-        with open(os.path.abspath(self.filename), "wb") as f:
+            log.info("Saving settings to %s" % get_safe_path(self.filename))
+        with open(get_safe_path(self.filename), "wb") as f:
 #            pickle.dump(self.achievements, f) # specially store achievements so they can be retrieved if settings change
             pickle.dump(self, f)
 
@@ -1584,14 +1661,16 @@ class Settings(object):
         if fname:
             self.filename = fname
         if logging:
-            log.info("Loading settings from %s" % self.filename)
+            log.info("Loading settings from %s" % get_safe_path(self.filename))
         try:
-            with open(os.path.abspath(self.filename), "rb") as f:
+            with open(get_safe_path(self.filename), "rb") as f:
                 data = pickle.load(f)
                 if not hasattr(data, "lock_engine_fps"): # compatible with older games
                     data.lock_engine_fps = DEFAULT_ENGINE_FPS
                 if not hasattr(data, "low_memory"): # compatible with older games
                     data.low_memory = False
+                if not hasattr(data, "preferred_screen"): # compatible with older games
+                    data.preferred_screen = None
             return data # use loaded settings
         except:  # if any problems, use default settings
             log.warning(
@@ -1772,6 +1851,7 @@ class Motion(object):
         fname = os.path.splitext(filename)[0]
         fname = fname + ".motion"
         self._filename = fname
+        fname = get_safe_path(fname)
         if not os.path.isfile(fname):
             pass
         else:
@@ -1850,7 +1930,7 @@ def load_defaults(game, obj, name, filename):
                     val = COLOURS[val]
             if key == "font_speech":
                 try:
-                    font = TTFont(val) # load the font to get the name to add to the dict.
+                    font = TTFont(get_safe_path(val)) # load the font to get the name to add to the dict.
                     font_name, family = shortName(font)
                     game.add_font(val, font_name) # make sure font is available if new
                     obj.font_speech = val
@@ -1909,9 +1989,10 @@ class Action(object):
  
     def _load_montage(self, filename):
         fname = os.path.splitext(filename)[0]
-        montage_fname = fname + ".montage"
+        montage_fname = get_safe_path(fname + ".montage")
+        
         if not os.path.isfile(montage_fname):
-            if not os.path.isfile(filename): 
+            if not os.path.isfile(get_safe_path(filename)):
                 w,h = 0,0
             else:
                 w,h = get_image_size(filename)
@@ -1933,12 +2014,12 @@ class Action(object):
         self.actor = actor if actor else self.actor
         self.game = game
         try:
-            self._image = os.path.relpath(filename).replace("\\", "/")
+            self._image = get_relative_path(filename).replace("\\", "/")
         except ValueError: # if relpath fails due to cx_Freeze expecting different mounts
             self._image = filename
         w,h,num=self._load_montage(filename)
         fname = os.path.splitext(filename)[0]
-        dfname = fname + ".defaults"
+        dfname = get_safe_path(fname + ".defaults")
         load_defaults(game, self, "%s - %s"%(actor.name, self.name), dfname)
         set_resource(self.resource_name, w=w, h=h)
 #        self.load_assets(game)
@@ -1967,7 +2048,6 @@ class Action(object):
         w,h, num = self._load_montage(mname) # always reload incase mod is added or removed
 
         quickload = os.path.abspath(get_best_file(game, fname + ".quickload"))
-
         full_load = True
         resource = False #don't update resource
         if game._headless is True: #only load defaults 
@@ -2023,7 +2103,7 @@ class Rect(object):
         self.scale = 1.0
 
     def serialise(self):
-        return "[{}, {}, {}, {}, {}]".format(self.x, self.y, self.w, self.h, self.scale)
+        return "[{}, {}, {}, {}, {}]".format(self.x, self.y, self._w, self._h, self.scale)
 
     @property
     def flat(self):
@@ -2468,6 +2548,9 @@ class Actor(MotionManager, metaclass=use_on_events):
         self.font_speech = None  # use default font if None (from game), else filename key for _pyglet_fonts
         self.font_speech_size = None  # use default font size (from game)
         self.font_colour = None  # use default
+        self.portrait_offset_x = 0
+        self.portrait_offset_y = 0
+
 
         self._solid_area = Rect(0, 0, 60, 100)
         # always used for x,y and also w,h if clickable_mask if one is
@@ -2522,6 +2605,9 @@ class Actor(MotionManager, metaclass=use_on_events):
         self._fx_sway = 0 #sway speed
         self._fx_sway_angle = 0 #in degrees
         self._fx_sway_index = 0 #TODO: there is no limit to how high this might go
+
+        # engine backwards compatibility
+        self._engine_v1_scale = None
 
         self.set_editable()
 
@@ -2682,7 +2768,7 @@ class Actor(MotionManager, metaclass=use_on_events):
     def pyglet_set_anchor(self, x, y):
         """ Very raw helper function for setting anchor point of image
             Useful for rotating Actors around an anchor point
-            But message
+            TODO: WIP
         """
         if isinstance(self.resource._animation, pyglet.image.Animation):
             for f in self.resource._animation.frames:
@@ -2942,10 +3028,13 @@ class Actor(MotionManager, metaclass=use_on_events):
         elif self.resource:
             self.resource.opacity = self._opacity
 
-
     def get_alpha(self):
         return self._opacity
     alpha = property(get_alpha, set_alpha)
+
+    def on_opacity(self, v): 
+        """ 0 - 255 """
+        self.alpha = v
 
     @property
     def resource(self):
@@ -3291,7 +3380,9 @@ class Actor(MotionManager, metaclass=use_on_events):
 
         if logging:
             log.info("Player looks at %s" % self.name)
+
         self.game.mouse_mode = MOUSE_INTERACT  # reset mouse mode
+
         if self._look:  # if user has supplied a look override
             script = get_function(self.game, self._look)
             if script:
@@ -3357,45 +3448,71 @@ class Actor(MotionManager, metaclass=use_on_events):
 
     def _smart_actions(self, game, exclude=[]):
         """ smart load the actions """
-
-        # smart actions for pathplanning and which arcs they cover (in degrees)
-        PATHPLANNING = {"left": (225, 315),
-                        "right": (45, 135),
-                        "up": (-45, 45),
-                        "down": (135, 225)
-                        }
+        action_names = []
+        # default only uses two path planning actions to be compatible with spaceout2
         PATHPLANNING = {"left": (180, 360),
-                        "right": (0, 180),
-                        }
-
+                    "right": (0, 180),
+                    }
+        
         self._actions = {}
+
         for action_file in self._images:
             action_name = os.path.splitext(os.path.basename(action_file))[0]
             if action_name in exclude:
                 continue
             try:
-                relname = os.path.relpath(action_file)
+                relname =  get_relative_path(action_file)
             except ValueError: # if relpath fails due to cx_Freeze expecting different mounts                
                 relname = action_file
+
             action = Action(action_name).smart(
                 game, actor=self, filename=relname)
+
             self._actions[action_name] = action
             if action_name in PATHPLANNING:
-                action.available_for_pathplanning = True
-                p = PATHPLANNING[action_name]
-                action.angle_start = p[0]
-                action.angle_end = p[1]
+                action_names.append(action_name)
+                
+        if len(action_names)>0:
+            self.on_set_pathplanning_actions(action_names)
+
+    def on_set_pathplanning_actions(self, action_names, speeds=[]):
+        # smart actions for pathplanning and which arcs they cover (in degrees)
+        if len(action_names) == 1:
+            #print("WARNING: %s ONLY ONE ACTION %s USED FOR PATHPLANNING"%(self.name, action_names[0]))
+            PATHPLANNING = {action_names[0]: (0, 360)}
+        elif len(action_names) == 2:
+            PATHPLANNING = {"left": (180, 360),
+                        "right": (0, 180),
+                        }
+        elif len(action_names) == 4:
+            PATHPLANNING = {"left": (225, 315),
+                        "right": (45, 135),
+                        "up": (-45, 45),
+                        "down": (135, 225)
+                        }
+        else:
+            # TODO: ["left", "right", "up", "down", "upleft", "upright", "downleft", "downright"]
+            print("Number of pathplanning actions does not match the templates built into pyvida.")
+            import pdb; pdb.set_trace()           
+        for i, action_name in enumerate(action_names):
+            action = self._actions[action_name]
+            action.available_for_pathplanning = True
+            p = PATHPLANNING[action_name]
+            action.angle_start = p[0]
+            action.angle_end = p[1]
+            if len(action_names) == len(speeds):
+                action.speed = speeds[i]
 
     def _load_scripts(self):
         # potentially load some interact/use/look scripts for this actor but
         # only if editor is enabled (it interferes with game pickling)
         if self.game:  # and self.game._allow_editing:
-            filepath = os.path.join(
-                self._directory, "%s.py" % slugify(self.name).lower())
+            filepath = get_safe_path(os.path.join(
+                self._directory, "%s.py" % slugify(self.name).lower()))
             if os.path.isfile(filepath):
                 # add file directory to path so that import can find it
                 if os.path.dirname(filepath) not in self.game._sys_paths:
-                    self.game._sys_paths.append(os.path.dirname(filepath))
+                    self.game._sys_paths.append(get_relative_path(os.path.dirname(filepath)))
                 if os.path.dirname(filepath) not in sys.path:
                     sys.path.append(os.path.dirname(filepath))
                 # add to the list of modules we are tracking
@@ -3406,20 +3523,31 @@ class Actor(MotionManager, metaclass=use_on_events):
                 self.game.reload_modules(modules=[module_name])
 
 
-    def on_swap_actions(self, actions, prefix=None, postfix=None):
+    def on_swap_actions(self, actions, prefix=None, postfix=None, speeds=[], pathplanning=[]):
         """ Take a list of actions and replace them with prefix_action eg set_actions(["idle", "over"], postfix="off") 
             will make Actor._actions["idle"] = Actor._actions["idle_off"]
+            Will also force pathplanning to the ones listed in pathplanning.
         """
         if logging: log.info("player.set_actions using prefix %s on %s"%(prefix, actions))
         self.editor_clean = False #actor no longer has permissions as set by editor
-        for i in actions: 
-            key = i
+        for i, action in enumerate(actions):
+            key = action
             if prefix:
                 key = "%s_%s"%(prefix, key)
             if postfix:
                 key = "%s_%s"%(key, postfix)
             if key in self._actions:
-                self._actions[i] = self._actions[key]
+                self._actions[action] = self._actions[key]
+                if len(actions) == len(speeds):
+                    self._actions[action].speed = speeds[i]
+        if len(pathplanning) > 0:
+            for key, action in self._actions.items():
+                if key in pathplanning:
+                    action.available_for_pathplanning = True
+                else:
+                    action.available_for_pathplanning = False
+
+
 
     def _python_path(self):
         """ Replace // with \ in all filepaths for this object (used to repair old window save files """
@@ -3446,27 +3574,37 @@ class Actor(MotionManager, metaclass=use_on_events):
         If <action_prefix>, prefix value to defaults (eg astar, idle), useful for swapping clothes on actor, etc 
         """
         DEFAULT_CLICKABLE = Rect(0, 0, 70, 110)
-        self.game = game
+        self.game = game       
 
         if using:
             if logging:
                 log.info(
                     "actor.smart - using %s for smart load instead of real name %s" % (using, self.name))
             name = os.path.basename(using)
-            d = os.path.dirname(using)
+            d = get_safe_path(os.path.dirname(using))
 
         else:
             name = self.name
             d = get_smart_directory(game, self)
 
-        myd = os.path.join(d, name)
-        absd = os.path.join(os.getcwd(), myd)
+        # first test inside the game
+        myd = os.path.join(d, name) # potentially an absolute path
+        if os.path.isabs(myd):
+            absd = myd
+        else:
+            absd = os.path.join(working_dir, myd)
         if not os.path.isdir(absd):  # fallback to pyvida defaults
-            this_dir, this_filename = os.path.split(__file__)
+            this_dir, this_filename = os.path.split(script_filename) #script_filename is absolute location of pyvida
             log.debug("Unable to find %s, falling back to %s" %
                       (myd, this_dir))
-            myd = os.path.join(this_dir, d, name)
-            absd = os.path.join(os.getcwd(), myd)
+            myd = os.path.join(this_dir, get_relative_path(d), name)
+            absd = get_safe_path(myd)
+        if not os.path.isdir(absd):  # fallback to deprecated menu default if item 
+            log.warning("***WARNING %s %s might need to be moved to items/ or emitters/, trying menu/ for now."%(d,name))
+            if "data/items" in d:
+                d = "data/menu"
+                myd = os.path.join(d, name)
+                absd = get_safe_path(myd)
 
         self._directory = myd
 
@@ -3482,7 +3620,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                 f.close()
 
         try:
-            self._images = [os.path.relpath(x).replace("\\", "/") for x in images] # make storage relative
+            self._images = [get_relative_path(x).replace("\\", "/") for x in images] # make storage relative
         except ValueError: # cx_Freeze on windows on different mounts may confuse relpath.
             self._images = images
 
@@ -3500,6 +3638,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             self._nx, self._ny = self._ax * 0.5, self._ay  # name point
             # text when using POSITION_TEXT
             self._tx, self._ty = int(self.w + 10), int(self.h)
+
 
         # guessestimate the clickable mask for this actor (at this point this might always be 0,0,0,0?)
         self._clickable_area = Rect(0, 0, self.w, self.h)
@@ -3577,6 +3716,9 @@ class Actor(MotionManager, metaclass=use_on_events):
     def pyglet_draw(self, absolute=False, force=False, window=None):  # actor.draw
         if self.game and self.game._headless and not force:
             return
+        if not self.game:
+            print(self.name,"has no game attribute")
+            return
 
         sprite = get_resource(self.resource_name)[-1]
         if sprite and self.allow_draw:
@@ -3587,8 +3729,8 @@ class Actor(MotionManager, metaclass=use_on_events):
             if self.action and self.action.mode == MANUAL:
                 sprite._frame_index = self.action._manual_index
 
-
             ww,hh = self.game.resolution
+
 #            if self.name == "lbrain": import pdb; pdb.set_trace()
             if self._rotate:
                 glTranslatef((sprite.width/2)+self.x, hh-self.y-sprite.height/2, 0) #move to middle of sprite
@@ -3609,7 +3751,7 @@ class Actor(MotionManager, metaclass=use_on_events):
 
             pyglet.gl.glTranslatef(self._scroll_dx, 0.0, 0.0)
 #            sprite.position = (int(x), int(y))
-
+            original_scale = self.scale
             if self._flip_horizontal:
                 glScalef(-1.0, 1.0, 1.0);
                 x = -x
@@ -3620,6 +3762,109 @@ class Actor(MotionManager, metaclass=use_on_events):
                 y = -y
                 y -= sprite.height
 
+            if self._use_astar and self.game.scene: # scale based on waypoints
+                distances = []
+                total_distances = 0
+                # get waypoints with z values
+#So for a triangle p1, p2, p3, if the vector U = p2 - p1 and the vector V = p3 - p1 then the normal N = U x V and can be calculated by:
+
+#Nx = UyVz - UzVy
+#Ny = UzVx - UxVz
+#Nz = UxVy - UyVx
+                def normal2(p1, p2, p3):
+                    U = tuple(map(sub, p2, p1))
+                    V = tuple(map(sub, p3, p1))
+#                    normal = itertools.product([a,b])
+                    Nx = U[1]*V[2] - U[2]*V[1]
+                    Ny = U[2]*V[0] - U[0]*V[2]
+                    Nz = U[0]*V[1] - U[1]*V[0]
+                    return Nx, Ny, Nz
+
+                def solvez(vs, x,y):
+                    a,b,c = normal2(*vs)
+                    x0, y0, z0 = v0 = vs[0]
+                    
+                    #a*(x-x0) + b*(y-y0) + c*(z-z0) = 0
+#                    c = (c*z0 - a*(x-x0) - b*(y-y0))/z
+                    if c==0:
+                        print("c is zero",vs)
+                        return 0
+                    z = (-a*(x-x0) - b*(y-y0) + c*z0)/c
+                    return z
+                    
+
+                def solvez2(vs, x,y):
+                    x1,y1,z1 = vs[0]
+                    x2,y2,z2 = vs[1]
+                    x3,y3,z3 = vs[2]
+                    A = y1*(z2-z3) + y2*(z3-z1) + y3*(z1-z2)
+                    B = z1*(x2-x3) + z2*(x3-x1) + z3*(x1-x2)
+                    C = x1*(y2-y3) + x2*(y3-y1) + x3*(y1-y2)
+                    D = -x1*(y2*z3 - y3*z2) - x2*(y3*z1 - y1*z3) - x3*(y1*z2 - y2*z1)
+                    if C == 0:
+                        print("c is zero",vs)
+                        return 0
+                    z = (D-A*x-B*y)/C
+                    return z
+                def normal(v1, v2, v3):
+                   a = tuple(map(sub, v1, v2)) 
+                   b = tuple(map(sub, v1, v3))
+                   return itertools.product([a,b])   
+
+                px, py = self.x, self.y
+                wps = [w for w in self.game.scene.walkarea._waypoints if len(w)==3]
+                #1. Find nearest wp
+                #2. check other wps to find if we form two angles less than 90 degrees, if so, use those wps.
+                #3. use the (one or) two points to work out scale factor
+                # XXX current implementation only uses 1 or 2 z-scaling waypoints.
+                for wp in wps:
+#                    pt = wp[0], height-wp[1] # invert waypoint y for pyglet
+                    d = distance(wp, (px, py)) #XXX ignores parents, scrolling.                
+                    distances.append((d, wp))
+                    total_distances += d
+                if total_distances>=2: #only use first two z-values, scenes should only have two.
+                    distances.sort() #for many waypoints, we would sort and use nearest as basic for finding best triangle.
+                    nearest = distances.pop(0)[1]
+                    second = distances.pop(0)[1]
+                    a = distance((px, py), nearest)
+                    b = distance((px, py), second)
+                    c = distance(nearest, second)
+                    angle_c = math.acos( (a**2 + b**2 - c**2) / (2*a*b) )
+                    angle_a = math.acos( (b**2 + c**2 - a**2) / (2*b*c) )
+                    angle_b = math.acos( (c**2 + a**2 - b**2) / (2*c*a) ) 
+                    #self.game.scene.walkarea._editing = True
+                    if angle_a < math.pi/2 and angle_b < math.pi/2: # player is "between" the two weigh points, so scale
+                        total_distance = a + b
+                        a_scale = nearest[-1]
+                        b_scale = second[-1]
+                        # we need to project onto C, create new right triangle using player and nearest and perp to full triangle
+
+                        #project = a * cos(angle_a) = 20.59 #should be 20 exactly?
+                        angle_a2 = (math.pi/2) - angle_b
+                        c2 = a
+                        angle_c2 = math.pi/2 #90 degrees
+                        project = a2 = sin(angle_a2) * (c2/sin(angle_c2))
+                        z = (1-(project/c))*a_scale + ((project/c))*b_scale
+                        #print((px, py), nearest, second, total_distance, "project",project, "distance from a to player",a, "distance from a to b", c, a_scale, b, b_scale, z)
+                        """
+                        Easing method to animate between two points
+
+                        t = current position of tween
+                        b = initial value
+                        c = total change in value
+                        d = total time
+                        """
+                        #import pdb; pdb.set_trace()
+                        def easeInQuad(t, b, c, d):
+	                        t /= d
+	                        return c*t*t + b
+                       # z = easeInQuad(project, a_scale, b_scale-a_scale, c)
+                    else: # use nearest
+                        z = a_scale = nearest[-1]
+                    self.scale = self.scale * z
+               # elif total_distances==1: 
+
+
             sprite.position = (x,y)
             if self._scroll_dx != 0 and self._scroll_dx + self.w < self.game.resolution[0]:
                 sprite.position = (int(x + self.w), int(y))
@@ -3627,6 +3872,8 @@ class Actor(MotionManager, metaclass=use_on_events):
                 sprite.position = (int(x - self.w), int(y))
             if not self._batch:
                 sprite.draw()
+            self.scale = original_scale
+
             # draw extra tiles if needed
             if self._scroll_dx != 0 and self._scroll_mode == SCROLL_TILE_HORIZONTAL:
                 if sprite.x > 0:
@@ -3716,7 +3963,7 @@ class Actor(MotionManager, metaclass=use_on_events):
     def on_random_frame(self):
         """ Advance the current action to a random frame """
         i = random.randint(0, len(self.resource._animation.frames))
-        self._frame(i)
+        self._frame(i)       
 
     def on_asks(self, statement, *args, **kwargs):
         """ A queuing function. Display a speech bubble with text and several replies, and wait for player to pick one.
@@ -3935,9 +4182,15 @@ class Actor(MotionManager, metaclass=use_on_events):
             portrait = self.game.add(portrait)
 #            portrait_x, portrait_y = 5, 5 #top corner for portrait offset
  #           portrait_w, portrait_h = portrait.w, portrait.h
-            portrait.x, portrait.y = 6, 6
+ 
+            if INFO["slug"] == "spaceout":
+                self.portrait_offset_x, self.portrait_offset_y = 12, 11
+            elif INFO["slug"] == "spaceout2":
+                self.portrait_offset_x, self.portrait_offset_y = 6, 6
+
+            portrait.x, portrait.y = self.portrait_offset_x, self.portrait_offset_y
             portrait._parent = msgbox
-            dx += portrait.w
+            dx += portrait.w + self.portrait_offset_x
 
         if "wrap" not in kwargs:
             mw = msgbox.w
@@ -4075,6 +4328,8 @@ class Actor(MotionManager, metaclass=use_on_events):
         item = self._gets(item, remove, collection)
         if item == None:
             return
+        #with open('inventory.txt', 'a') as f:
+        #    f.write('    "%s": _(""),\n'%item.name)
 
   #      name = self.display_text if self.display_text else self.name
  #       item_name = item.display_text if item.display_text else item.name
@@ -4202,6 +4457,16 @@ class Actor(MotionManager, metaclass=use_on_events):
 
 #    def create_sprite(self, action, **kwargs):
 
+    def on_bling(self, block=False):
+        """ Perform a little 'bling' animation by distorting the x and y scales of the image """
+        # or add a motion_once based on a sine distortion?
+        # scale_x, scale_y: 1, 1, 0.9, 1.1, etc
+        #self.on_do_once("bling", block=block)
+        if logging:
+            log.info("Warning: bling not done yet")
+        
+
+
     def on_do_random(self, mode=LOOP):
         """ Randomly do an action """
         action = choice(list(self._actions.keys()))
@@ -4305,7 +4570,10 @@ class Actor(MotionManager, metaclass=use_on_events):
             setattr(self, a, v)
 
     def on_reanchor(self, point):
-        self._set(("_ax", "_ay"), point)
+        ax, ay = point
+        ax = -ax if self.game and self.game.flip_anchor else ax
+        ay = -ay if self.game and self.game.flip_anchor else ay
+        self._set(("_ax", "_ay"), (ax, ay))
 
     def on_reclickable(self, rect):
         self._clickable_mask = None  # clear the mask
@@ -4318,6 +4586,8 @@ class Actor(MotionManager, metaclass=use_on_events):
         self._set(["rotate"], [v])
 
     def on_rescale(self, v):
+        if self.game and self.game.engine == 1: # remember rescale for backward compat with load_state
+            self._engine_v1_scale = v
         self._set(["scale"], [v])
 
     def on_reparent(self, parent):
@@ -4348,18 +4618,21 @@ class Actor(MotionManager, metaclass=use_on_events):
         log.warning("respeech has been renamed retext")
         self.on_retext(point)
 
-    def on_flip(self, horizontal=None, vertical=None):
+    def on_flip(self, horizontal=None, vertical=None, anchor=True):
         """ Flip actor image """
         if vertical != None: self._flip_vertical = vertical
         if horizontal != None: 
-            if horizontal != self._flip_horizontal: # flip anchor point too
+            if horizontal != self._flip_horizontal and anchor: # flip anchor point too
                 self.ax = -self.ax
             self._flip_horizontal = horizontal
 
+    def turn(self):
+        """ Helper function for animating characters (similar to sway) """
+        self.flip(horizontal=True, anchor=False)
+        self.game.pause(0.5)
+        self.flip(horizontal=False, anchor=False)
+        self.game.pause(0.5)
 
-    def on_opacity(self, v):
-        """ 0 - 255 """
-        self.alpha = v
 
     def _hide(self):
         self._usage(draw=False, update=False)
@@ -4444,6 +4717,9 @@ class Actor(MotionManager, metaclass=use_on_events):
 
     # actor.relocate
     def on_relocate(self, scene=None, destination=None, scale=None):
+        if not scale and self.game and self.game.engine == 1 and hasattr(self, "_engine_v1_scale") and self._engine_v1_scale: # remember rescale for backward compat with load_state
+            scale = self._engine_v1_scale
+            self._engine_v1_scale = None
         self._relocate(scene, destination, scale)
 
     # actor.relocate
@@ -4555,7 +4831,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         path = []
 #        @total_ordering
         class Node():
-            def __init__(self, x,y):
+            def __init__(self, x,y,z=None):
                 self.x = x
                 self.y = y
                 self.H = 100000
@@ -4672,12 +4948,10 @@ class Actor(MotionManager, metaclass=use_on_events):
 #            game.player.on_motion("right", destructive=True)
 
         raw_angle = math.atan2(y, x)
-
         # 0 degrees is towards the top of the screen
         angle = math.degrees(raw_angle) + 90
-        path_planning_actions = [action.name for action in self._actions.values() if action.available_for_pathplanning == True]        
-        if "up" in path_planning_actions and "down" in path_planning_actions and \
-            "left" in path_planning_actions and "right" in path_planning_actions: # assume four quadrants
+        path_planning_actions = set([action.name for action in self._actions.values() if action.available_for_pathplanning == True])
+        if len(path_planning_actions)>=4: # assume four quadrants XXX may need to handle 8 segments (eg upleft, upright)
             if angle < -45:
                 angle += 360
         else: # assume only two hemispheres
@@ -4698,9 +4972,11 @@ class Actor(MotionManager, metaclass=use_on_events):
         log.info("%s preferred goto action is %s"%(self.name, goto_action))
         if goto_motion is None: #create a set of evenly spaced deltas to get us there:
             # how far we can travel along the distance in one update
-            d = self.action.speed / distance
-            self._goto_deltas = [(x * d, y * d)]*int(distance/self.action.speed)
-            self._goto_deltas_average_speed = self.action.speed
+            # use the action that will be doing the goto and use its speed for our deltas
+            action = goto_action if goto_action else self.action
+            d = action.speed / distance
+            self._goto_deltas = [(x * d, y * d)]*int(distance/action.speed)
+            self._goto_deltas_average_speed = action.speed
         else: #use the goto_motion to create a list of deltas
             motion = self._motions[goto_motion]
             speed = math.hypot(motion._average_dx, motion._average_dy)
@@ -4710,8 +4986,9 @@ class Actor(MotionManager, metaclass=use_on_events):
             distance_travelled_y = 0
             steps = 0
             while (distance_travelled < distance):
-                delta = motion.deltas[steps%len(motion.deltas)]
-                dx, dy = delta[0]*self.scale, delta[1]*self.scale
+                delta = motion.deltas[steps%len(motion.deltas)]                
+                dx = delta[0]*self.scale if delta[0] != None else 0
+                dy = delta[1]*self.scale if delta[1] != None else 0
                 dd = math.hypot(dx,dy)
                 ratio = 1.0
                 if distance_travelled + dd > distance: #overshoot, aim closer
@@ -4804,7 +5081,6 @@ class Actor(MotionManager, metaclass=use_on_events):
 class Item(Actor):
     pass
 
-
 class Portal(Actor, metaclass=use_on_events):
 
     def __init__(self, *args, **kwargs):
@@ -4822,8 +5098,8 @@ class Portal(Actor, metaclass=use_on_events):
     def generate_icons(self):
         # create portal icon for settings.show_portals 
         #TODO currently uses DIRECTORY_INTERFACE instead of game.directories
-        image1 = os.path.join(os.getcwd(), os.path.join(DIRECTORY_INTERFACE, "portal_active.png"))
-        image2 = os.path.join(os.getcwd(), os.path.join(DIRECTORY_INTERFACE, "portal_inactive.png"))
+        image1 = get_safe_path(os.path.join(DIRECTORY_INTERFACE, "portal_active.png"))
+        image2 = get_safe_path(os.path.join(DIRECTORY_INTERFACE, "portal_inactive.png"))
         if os.path.isfile(image1) and os.path.isfile(image2):
             self._icon = Item("%s_active"%self.name).smart(self.game, image=[image1, image2])
             self.game.add(self._icon)
@@ -4844,9 +5120,17 @@ class Portal(Actor, metaclass=use_on_events):
 #        if self.link.scene
 #        return self.__dict__
 
-    @property
-    def link(self):
+#    @property
+#    def link(self):
+
+    def get_link(self):
         return get_object(self.game, self._link)
+
+    def set_link(self, v):
+        obj = get_object(self.game, v)
+        self._link = obj.name if obj else getattr(v, "name", v)
+
+    link = property(get_link, set_link)
 
     def set_editable(self):
         """ Set which attributes are editable in the editor """
@@ -4877,14 +5161,16 @@ class Portal(Actor, metaclass=use_on_events):
 
 
     def guess_link(self):
-        links = self.name.split("_to_")
         guess_link = None
-        if len(links) > 1:  # name format matches guess
-            guess_link = "%s_to_%s" % (links[1].lower(), links[0].lower())
-        if guess_link and guess_link in self.game._items:
-            self._link = self.game._items[
-                guess_link].name if self.game._items[guess_link] else None
-        else:
+        for i in ["_to_", "_To_", "_TO_"]:
+            links = self.name.split(i)
+            if len(links) > 1:  # name format matches guess
+#                guess_link = "%s_to_%s" % (links[1].lower(), links[0].lower())
+                guess_link = "%s%s%s" % (links[1], i, links[0])
+            if guess_link and guess_link in self.game._items:
+                self._link = self.game._items[
+                    guess_link].name if self.game._items[guess_link] else None
+        if not guess_link:
             if logging:
                 log.warning(
                     "game.smart unable to guess link for %s" % self.name)
@@ -5218,6 +5504,9 @@ class Emitter(Item, metaclass=use_on_events):
             if self.game and self.game._headless:
                 self.particles.remove(p)
 
+    def on_fastforward(self, frames, something):
+        print("**** ERROR: emitter.fastforward not ported yet")
+
     def on_start(self):
         """ switch emitter on and start with fresh particles """
         self.behaviour = BEHAVIOUR_FRESH
@@ -5235,7 +5524,10 @@ class Emitter(Item, metaclass=use_on_events):
 
     def on_reanchor(self, pt):
         """ queue event for changing the anchor points """
-        self._ax, self._ay = pt[0], pt[1]
+        ax = -pt[0] if self.game and self.game.flip_anchor else pt[0]
+        ay = -pt[1] if self.game and self.game.flip_anchor else pt[1]
+           
+        self._ax, self._ay = ax, ay
         for p in self.particles:
             p.ax, p.ay = self._ax, self._ay
 
@@ -5244,7 +5536,7 @@ class Emitter(Item, metaclass=use_on_events):
         self.particles = []
 
     def get_a_direction(self):
-        return randint(self.direction - float(self.fov / 2), self.direction + float(self.fov / 2))
+        return randint(int(self.direction - float(self.fov / 2)), int(self.direction + float(self.fov / 2)))
 
     def get_a_scale(self):
         return uniform(self.size_spawn_min, self.size_spawn_max)
@@ -5387,7 +5679,7 @@ class WalkAreaManager(metaclass=use_on_events):
     def __init__(self,  scene):
         self._scene = scene.name
         self.game = None
-        self._waypoints = []
+        self._waypoints = [] # (x,y,z=[scale for astar]) (z is optional)
         self._polygon = []
         self._polygon_waypoints = [] #autogenerated waypoints from polygon
         self._state = UNLOCKED
@@ -5404,7 +5696,7 @@ class WalkAreaManager(metaclass=use_on_events):
 
         self.busy = 0
 
-    def _set_point(self, x=None, y=None):
+    def _set_point(self, x=None, y=None, z=None):
         i = -1
         if self._edit_polygon_index >= 0:
             i = self._edit_polygon_index
@@ -5415,14 +5707,22 @@ class WalkAreaManager(metaclass=use_on_events):
             pts = self._waypoints
             a = "_waypoints"
         if i >= 0:
-            ox, oy = pts[i]
+            oz = None
+            if len(pts[i]) == 2: 
+                ox, oy = pts[i]
+            else: 
+                ox, oy, oz = pts[i]
             x = x if x else ox
             y = y if y else oy
-            updated = pts[:i] + [(x,y)] + pts[i+1:]
+            z = z if z else oz
+            new_pt = (x, y)
+            if z:
+                new_pt = (x, y, z)
+            updated = pts[:i] + [new_pt] + pts[i+1:]
             setattr(self, a, updated)
             self._update_walkarea()
 
-    def _get_point(self, x=False, y=False):
+    def _get_point(self, x=False, y=False, z=False):
         i = -1
         pts = []
         if self._edit_polygon_index >= 0:
@@ -5432,12 +5732,16 @@ class WalkAreaManager(metaclass=use_on_events):
             i = self._edit_waypoint_index
             pts = self._waypoints
         if i >= 0:
-            ox, oy = pts[i]
+            if len(pts[i]) == 2: 
+                ox, oy = pts[i]
+            else:
+                ox, oy, oz = pts[i]
         if x is True:
             return ox
-        else:
+        elif y is True:
             return oy
-
+        else:
+            return oz
 
     def set_pt_x(self, v):
         self._set_point(x=v)
@@ -5445,11 +5749,18 @@ class WalkAreaManager(metaclass=use_on_events):
     def set_pt_y(self, v):
         self._set_point(y=v)
 
+    def set_pt_z(self, v):
+        self._set_point(z=v)
+
     def get_pt_x(self):
         return self._get_point(x=True)
 
     def get_pt_y(self):
         return self._get_point(y=True)
+
+    def get_pt_z(self):
+        return self._get_point(z=True)
+
 
     @property
     def scene(self):
@@ -5470,7 +5781,8 @@ class WalkAreaManager(metaclass=use_on_events):
         closest_waypoint = 0
         closest_distance_waypoint = 10000
         for i, pt in enumerate(self._waypoints):
-            d = distance((x,y), pt)
+            px, py = pt[0], pt[1] #ignore possible z value
+            d = distance((x,y), (px, py))
             if d < closest_distance_waypoint:
                 closest_waypoint = i
                 closest_distance_waypoint = d
@@ -5481,6 +5793,7 @@ class WalkAreaManager(metaclass=use_on_events):
             self._edit_polygon_index = closest_polygon
   
     def generate_waypoints(self):
+        """ Autogenerated waypoints do not have z values and so do not affect astar scaling. """
         #polygon offset courtesy http://pyright.blogspot.com/2011/07/pyeuclid-vector-math-and-polygon-offset.html
         polyinset = []
         OFFSET = -15
@@ -5602,7 +5915,7 @@ class WalkAreaManager(metaclass=use_on_events):
             i += 1
         return c
 
-    def valid(self, x, y):
+    def valid(self, x, y, z=None):
         """ Returns True if the point is safe to walk to
          1. Check inside polygon
          2. Check not inside scene's objects' solid area
@@ -5781,8 +6094,7 @@ class Scene(MotionManager, metaclass=use_on_events):
         self.game = game
         self._load_layers(game)
 
-        sdir = os.path.join(
-            os.getcwd(), os.path.join(game.directory_scenes, self.name))
+        sdir = get_safe_path(os.path.join(game.directory_scenes, self.name))
 
         # if there is an initial state, load that automatically
         state_name = os.path.join(sdir, "initial.py")
@@ -5839,8 +6151,7 @@ class Scene(MotionManager, metaclass=use_on_events):
 #            l.unload()
 
     def _save_layers(self):
-        sdir = os.path.join(
-            os.getcwd(), os.path.join(self.game.directory_scenes, self.name))
+        sdir = get_safe_path(os.path.join(self.game.directory_scenes, self.name))
         #wildcard = wildcard if wildcard else os.path.join(sdir, "*.png")
 #        import pdb; pdb.set_trace()
         self._layer = [] #free up old layers
@@ -5856,13 +6167,13 @@ class Scene(MotionManager, metaclass=use_on_events):
         layer = self.game._add(
             cls("%s_%s" % (self.name, fname)).smart(self.game, image=element),
             replace=True)
+
         self._layer.append(layer.name)  # add layer items as items
         return layer
 
     def _load_layers(self, game, wildcard=None, cls=Item):
         sdir = os.path.join(game.directory_scenes, self.name)
-        absdir = os.path.join(
-            os.getcwd(), sdir)
+        absdir = get_safe_path(sdir)
         wildcard = wildcard if wildcard else os.path.join(absdir, "*.png")
         self._layer = [] #clear old layers
         layers = []
@@ -5955,8 +6266,9 @@ class Scene(MotionManager, metaclass=use_on_events):
     def on_clean(self, objs=[]):
         check_objects = copy.copy(self._objects)
         for i in check_objects:
-            if i not in objs and not isinstance(i, Portal) \
-                    and i != self.game.player:
+            obj = get_object(self.game, i)
+            if i not in objs and not isinstance(obj, Portal) \
+                    and obj != self.game.player:
                 self._remove(i)
 
     def on_set_background(self, fname=None):
@@ -6055,6 +6367,8 @@ class Scene(MotionManager, metaclass=use_on_events):
             mixer.music_rules[mixer._music_filename].position = mixer._music_player.position()
             if mixer.music_rules[mixer._music_filename].mode == KEEP_CURRENT: return # don't play scene song
         if self._music_filename:
+            if type(self._music_filename) == int: # backwards compat with older version
+                return
             rule = mixer.music_rules[self._music_filename] if self._music_filename in mixer.music_rules else None
             start = rule.position if rule else 0
 #            mixer.music_fade_out(0.5)
@@ -6142,6 +6456,8 @@ class Text(Item, metaclass=use_on_events):
         font: the filepath to the font
         delay : How fast to display chunks of the text
         step : How many characters to advance during delayed display
+        
+        TODO: rework Text so it creates resources in Actions (eg idle and over)
         """
         self.format_text = None  # function for formatting text for display
         super().__init__(name, interact=interact, look=look)
@@ -6161,6 +6477,7 @@ class Text(Item, metaclass=use_on_events):
         if len(colour) == 3:
             # add an alpha value if needed
             colour = (colour[0], colour[1], colour[2], 255)
+
         font_name = "Times New Roman"  # "Arial"
         if font:
             if font not in _pyglet_fonts:
@@ -6184,6 +6501,12 @@ class Text(Item, metaclass=use_on_events):
         h = self._height = tmp.content_height
         w = self._width = tmp.content_width
 
+
+        self._idle_colour = colour # mimick menu "over" behaviour using this colour
+        self._over_colour = None # mimick menu "over" behaviour using this colour
+        self._action_name = "idle" # mimmick menu over and idle behaviour if over_colour is set
+
+
         self._clickable_area = Rect(
             0, 0, w, h)
 
@@ -6200,6 +6523,27 @@ class Text(Item, metaclass=use_on_events):
     def load_assets(self, game):
         self.game = game
         return self.create_label()
+    
+    
+    def set_over_colour(self, colour):
+        if colour and len(colour) == 3:
+            # add an alpha value if needed
+            colour = (colour[0], colour[1], colour[2], 255)
+        self._over_colour = colour
+    
+    def _do(self, action, callback=None, mode=LOOP):       
+        """ Only mimmicks behaviour using "idle" and "over" """
+        if not self._over_colour:
+            return
+        if action == self._action_name:
+            return
+        if action == "idle":
+            self.colour = self._idle_colour
+        elif action == "over":
+            self.colour = self._over_colour
+        self._action_name = action
+        self.create_label()
+        
 
     def create_label(self):
         c = self.colour
@@ -6569,7 +6913,7 @@ class MenuManager(metaclass=use_on_events):
             obj._usage(draw=True, interact=True)
             self.game._menu.append(obj.name)
 
-    def on_show(self):
+    def on_show(self): #menu.show
         self._show()
 
     def _show(self):
@@ -6610,7 +6954,7 @@ class MenuManager(metaclass=use_on_events):
             log.debug("hide menu using place %s" %
                       [x for x in self.game._menu])
 
-    def on_hide(self, menu_items=None):
+    def on_hide(self, menu_items=None): #menu.hide
         self._hide(menu_items=menu_items)
 
     def on_fade_out(self):
@@ -6642,6 +6986,10 @@ class MenuManager(metaclass=use_on_events):
         if logging:
             log.debug("pop menu %s" % [x for x in self.game._menu])
 
+    def on_clear_all(self):
+        self.game._menu = []
+        self.game._menus = []
+
     def on_clear(self, menu_items=None):
         """ clear current menu """
         if not menu_items:
@@ -6664,7 +7012,7 @@ class MenuManager(metaclass=use_on_events):
         else:
             SFX_Class = PlayerPygameSFX if mixer == "pygame" else PlayerPygletSFX
             sfx = _sound_resources[key] = SFX_Class(self.game)
-            sfx.load(key, self.game.settings.sfx_volume)
+            sfx.load(get_safe_path(key), self.game.settings.sfx_volume)
         if self.game:
             if self.game._headless or (self.game.settings and self.game.settings.mute): 
                 return
@@ -6960,7 +7308,7 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._goto_dx = dx
         self._goto_dy = dy
 
-    def on_opacity(self, opacity=255, colour="black"):
+    def on_opacity(self, opacity=255, colour="black"): # camera opacity
         d = pyglet.resource.get_script_home()
         if colour == "black":
             mask = pyglet.image.load(os.path.join(d, 'data/special/black.png')) #TODO create dynamically based on resolution
@@ -7086,7 +7434,6 @@ class Camera(metaclass=use_on_events):  # the view manager
         y = self.game.resolution[1] - self.game.scene.h if bottom else y
 
         y = self.game.resolution[1] - self.game.scene.h*percent_vertical if percent_vertical else y
-
         self._goto((x, y), speed)
 
     def on_move(self, displacement, speed=None):
@@ -7459,7 +7806,8 @@ class Mixer(metaclass=use_on_events):
                 return
             if rule.mode == FRESH:
                 default_start = 0
-            absfilename = os.path.abspath(fname)
+            absfilename = get_safe_path(fname)
+
             if os.path.exists(absfilename): #new music
                 log.info("Loading music file %s" % absfilename)        
                 self._music_player.load(absfilename)
@@ -7618,8 +7966,8 @@ class Mixer(metaclass=use_on_events):
         description = <string> -> human readable description of sfx
         """
         self._sfx_player.stop()
-        if fname:
-            absfilename = os.path.abspath(fname)                         
+        if fname:                
+            absfilename = get_safe_path(fname)                         
             if os.path.exists(absfilename):
                 log.info("Loading sfx file %s" % absfilename)
                 self._sfx_player.load(absfilename, self.game.settings.sfx_volume)
@@ -7682,7 +8030,7 @@ class Mixer(metaclass=use_on_events):
 #        print("play ambient",fname,"(on scene %s)"%self.game.scene.name)
         self._ambient_filename = fname
         if fname:
-            absfilename = os.path.abspath(fname)                         
+            absfilename = get_safe_path(fname)
             if os.path.exists(absfilename):
                 log.info("Loading ambient file %s" % absfilename)
                 self._ambient_player.load(absfilename, self.game.settings.ambient_volume)
@@ -7927,11 +8275,17 @@ def save_game_pickle(game, fname):
 def load_menu_assets(game):
     for menu_item in game._menu:
         obj = get_object(game, menu_item)
-        obj.load_assets(game)
+        if obj:
+            obj.load_assets(game)
+        else:
+            print("Menu item",menu_item,"not found.")
     for menu in game._menus:
         for menu_item in menu:
             obj = get_object(game, menu_item)
-            obj.load_assets(game)
+            if obj:
+                obj.load_assets(game)
+            else:
+                print("Menu item",menu_item,"not found.")
 
 
 def load_game_meta_pickle(game, fname):
@@ -7977,8 +8331,12 @@ def load_game_pickle(game, fname, meta_only=False, keep=[], responsive=False):
             game.visited = pickle.load(f)
             game._selected_options = pickle.load(f)
             game._modules = pickle.load(f)
-            game._sys_paths = pickle.load(f)
-            sys.path.extend(game._sys_paths)
+            paths = pickle.load(f)
+            paths = [get_relative_path(x) for x in paths]
+            game._sys_paths = paths
+            for path in paths:
+                if path not in sys.path:
+                    sys.path.append(get_safe_path(path))
             game._resident = pickle.load(f)
             game._actors = pickle.load(f)
             new_items = pickle.load(f)
@@ -8061,6 +8419,9 @@ class PyvidaEncoder(json.JSONEncoder):
 
 
 def save_game(game, fname):
+    """ save the game
+        NOTE: This is a raw function and does not make the fname safe
+    """
     save_game_pickle(game, fname)
 
 
@@ -8094,11 +8455,11 @@ def load_or_create_settings(game, fname, settings_cls=Settings):
     """ load the game settings (eg volume, accessibilty options) """
     existing = True
     options = game.parser.parse_args()
-    if options.nuke and os.path.isfile(fname): # nuke
+    if options.nuke and os.path.isfile(get_safe_path(fname)): # nuke
         os.remove(fname)
     game.settings = settings_cls() # setup default settings
-    game.settings.filename = fname        
-    if not os.path.isfile(fname): #settings file not available, create new object
+    game.settings.filename = fname
+    if not os.path.isfile(get_safe_path(fname)): #settings file not available, create new object
         existing = False
     else:
         game.settings = game.settings.load(fname)
@@ -8215,6 +8576,7 @@ class Game(metaclass=use_on_events):
         self.font_info = FONT_VERA
         self.font_info_size = 16
         self.font_info_colour = (255, 220, 0)  # off yellow
+        self.font_info_offset = 1
         self._default_ok = "ok" #used by on_says
 
         self._info_object = None
@@ -8317,6 +8679,7 @@ class Game(metaclass=use_on_events):
         self._screen_size_override = None # game.resolution for the game, this is the window size.
 
         self.low_memory = False # low memory mode for this session (from CONFIG or Settings)
+        self.flip_anchor = False # toggle behaviour of relocate for backwards compat
 
         # how many event steps in this progress block
         self._progress_bar_count = 0
@@ -8340,6 +8703,7 @@ class Game(metaclass=use_on_events):
         self._object_index = 0 # used by joystick and blind mode to select scene objects
         self._mouse_object = None  # if using an Item or Actor as mouse image
         self.hide_cursor = HIDE_MOUSE
+        self.mouse_cursor_lock = False # lock mouse to this shape until released
         self.mouse_down = (0, 0)  # last press
         self.mouse_position_raw = (-50, -50)  # last known position of mouse (init offscreen to hide joystick)
         self.mouse_position = (0, 0)  # last known position of mouse, scaled
@@ -8488,6 +8852,10 @@ class Game(metaclass=use_on_events):
         if a == "items":
             log.warning("game.items deprecated, update")
             return self._items
+        if a == "scenes":
+            log.warning("game.scene deprecated, update")
+            return self._scenes
+
         q = getattr(self, "on_%s" % a, None) if a[:3] != "on_" else None
         if q:
             f = create_event(q)
@@ -8500,7 +8868,7 @@ class Game(metaclass=use_on_events):
                     return self._actors[s]
                 elif s in self._items:
                     return self._items[s]
-
+#        print("Unable to find",a)
         raise AttributeError
 #        return self.__getattribute__(self, a)
 
@@ -8518,21 +8886,21 @@ class Game(metaclass=use_on_events):
             SAVE_DIR = os.path.join(expanduser("~"), "Library", "Application Support", GAME_SAVE_NAME)
 
         self.save_directory = SAVE_DIR
+        safe = get_safe_path(SAVE_DIR)
         READONLY = False
-        if not os.path.exists(SAVE_DIR):
+        if not os.path.exists(safe):
             try:
-                os.makedirs(SAVE_DIR)
+                os.makedirs(safe)
             except:
                 READONLY = True
 
         if logging: # redirect log to file
-            LOG_FILENAME = os.path.join(self.save_directory, 'pyvida5.log')
+            LOG_FILENAME = get_safe_path(os.path.join(self.save_directory, 'pyvida5.log'))
             redirect_log(log, LOG_FILENAME)
 
 
     def log(self, txt):
         print("*",txt)
-
 
     def on_clock_schedule_interval(self, *args, **kwargs):
         """ schedule a repeating callback """
@@ -8552,8 +8920,7 @@ class Game(metaclass=use_on_events):
     def set_headless_value(self, v):
         self._headless = v
         if self._headless is True: #speed up
-            print("FASTER FPS")
-            self.on_publish_fps(200)
+            self.on_publish_fps(300)
         else:
             self.on_publish_fps(self.fps)
 
@@ -8604,6 +8971,8 @@ class Game(metaclass=use_on_events):
             if self._events[0][0].__name__ == "on_goto" and self._events[0][1][0] == self.player:
                 interruptable_event = True
                 player_goto_event = False # True if we don't want strict hourglass when player is walking
+            if self._events[0][0].__name__ == "on_set_mouse_cursor": # don't allow hourglass to override our request
+                interruptable_event = True
             if len(self._modals)>0: 
                 interruptable_event = True
 
@@ -8613,12 +8982,21 @@ class Game(metaclass=use_on_events):
         # don't show hourglass on modal events
         if (self._waiting and len(self._modals) == 0 and not player_goto_event) or not interruptable_event:
             cursor = MOUSE_HOURGLASS
+        if self.mouse_cursor_lock is True:
+             return
         self._mouse_cursor = cursor
         self._set_mouse_cursor(self._mouse_cursor)
 
     def get_mouse_cursor(self):
         return self._mouse_cursor
     mouse_cursor = property(get_mouse_cursor, set_mouse_cursor)
+
+    def cursor_hide(self):
+        print("cursor_hide deprecated")
+
+    def cursor_show(self):
+        print("cursor_show deprecated")
+
 
     @property
     def get_game_info(self):
@@ -8655,17 +9033,16 @@ class Game(metaclass=use_on_events):
         global use_effect
         game = self
         player = self.player
-        if game.editor and game.editor.obj:
+        if game.editor and game._editing:
             """ editor, editing a point, allow arrow keys """
             if symbol == pyglet.window.key.UP:
-                game.editor.obj.y -= 1
+                game._editing.y -= 1
             if symbol == pyglet.window.key.DOWN:
-                game.editor.obj.y += 1
+                game._editing.y += 1
             if symbol == pyglet.window.key.LEFT:
-                game.editor.obj.x -= 1
+                game._editing.x -= 1
             if symbol == pyglet.window.key.RIGHT:
-                game.editor.obj.x += 1
-            
+                game._editing.x += 1         
 
         # process engine keys before game keys
 
@@ -8675,26 +9052,31 @@ class Game(metaclass=use_on_events):
         if symbol == pyglet.window.key.F6:
             self.settings.font_size_adjust += 2
 
-        if not ENABLE_FKEYS:
+
+        if not CONFIG["editor"]:
             if symbol == pyglet.window.key.F7 and self._joystick:
                 self._map_joystick = 1
         else:
             if symbol == pyglet.window.key.F1:
+                self.editor = editor(self)
+                return
                 #            edit_object(self, list(self.scene._objects.values()), 0)
                 #            self.menu_from_factory("editor", MENU_EDITOR)
     #            editor_pgui(self)
-                self.editor = editor(self)
      #           editor_thread = Thread(target=editor, args=(,))
     #            editor_thread.start()
             if symbol == pyglet.window.key.F2:
                 print("edit_object_script(game, obj) will open the editor for an object")
-                if not self.fullscreen:
+                if self.fullscreen and len(self.screens)<=1:
+                    print("Unable to enter debug when fullscreen mode on a single screen.")
+                else:
                     import pdb
                     pdb.set_trace()
 
             if symbol == pyglet.window.key.F3: 
-                #game.menu.show()
-                pyglet_editor(self)
+                html_editor(game)
+                self.editor = True
+                webbrowser.open("http://127.0.0.1:%i"%PORT)
 
             if symbol == pyglet.window.key.F4:
                 print("RELOADED MODULES")
@@ -8702,6 +9084,19 @@ class Game(metaclass=use_on_events):
                 self.reload_modules()  # reload now to refresh existing references
                 self._allow_editing = False
 
+            if symbol == pyglet.window.key.F5:
+                print("Output interaction matrix for this scene")
+                for i in self.player.inventory.values():
+                    scene_objects = self.scene.objects_sorted
+                    for obj_name in scene_objects:
+                        obj = get_object(self, obj_name)
+                        allow_use = (obj.allow_draw and (obj.allow_interact or obj.allow_use or obj.allow_look))
+                        slug1 = slugify(i.name).lower()
+                        slug2 = slugify(obj.name).lower()
+                        fn_name = "%s_use_%s"%(slug2, slug1)
+                        fn = get_function(game, fn_name)
+                        if allow_use and not fn and not isinstance(obj, Portal):
+                            print("def %s(game, %s, %s):"%(fn_name, slug2, slug1))
 
             if symbol == pyglet.window.key.F7 and self._joystick:
                 self._map_joystick = 1 # start remap sequence
@@ -8779,18 +9174,36 @@ class Game(metaclass=use_on_events):
         return (x + obj.nx, y + obj.ny)
 
     def get_points_from_raw(self, raw_x, raw_y):
-        """ Take raw pyglet points and return window and scene equivalents """
+        """ Take raw pyglet points and return window and scene equivalents 
+            raw_x, raw_y is the OS reported position on the screen (ignores gl scaling)
+            0,0 is the bottom left corner.
+        """
+
+        """
         x = raw_x / self._scale 
+#        x = raw_x
         x = x - self._window_dx
 
         y = raw_y / self._scale 
+        #y = raw_y
         y = y - self._window_dy
-    
-        window_x, window_y = x, self.resolution[1] - y
+        
+        # flip based on window height
+        window_x, window_y = x, self._window.height - y
+        """
+        y = raw_y - self._window_dy
+        
+        window_x = (raw_x- self._window_dx)/self._scale
+#        window_y = (self._window.height - y)/self._scale
+#        window_y = (self.resolution[1] - y)/self._scale
+        window_y = (self._window.height - raw_y)/self._scale
+        
+#        window_x, window_y = x, self.resolution[1] - y
         if self.scene:
             scene_x, scene_y = window_x - self.scene.x, window_y - self.scene.y 
         else:
             scene_x, scene_y = window_x, window_y
+        
         return (window_x, window_y), (scene_x, scene_y)
 
 
@@ -8802,7 +9215,7 @@ class Game(metaclass=use_on_events):
 
         # if window is being scaled
         ox, oy = ox * self._scale, oy * self._scale
-        oy = self.game.resolution[1] - oy
+        oy = self.game.resolution[1] - oy #XXX should potentially by window.height
         return ox, oy
 
     def on_mouse_scroll(self, raw_x, raw_y, scroll_x, scroll_y):
@@ -8867,12 +9280,14 @@ class Game(metaclass=use_on_events):
                 if not obj:
                     log.warning("Menu object %s not found in Game items or actors"%obj_name)
                     return
-                allow_collide = True if (obj.allow_look or obj.allow_use) \
+                allow_collide = True if (obj.allow_interact) \
                     else False
                 if obj.collide(window_x, window_y) and allow_collide:  # absolute screen values
                     self.mouse_cursor = MOUSE_CROSSHAIR if self.mouse_cursor == MOUSE_POINTER else self.mouse_cursor
 
-                    if obj._actions and obj._over in obj._actions and (obj.allow_interact or obj.allow_use or obj.allow_look):
+                    allow_over = obj._actions or hasattr(obj, "_over_colour") # an Actor or a Text with menu behaviour                    
+                    over_in_actions = obj._over in obj._actions or hasattr(obj, "_over_colour") # an Actor or a Text with menu behaviour                    
+                    if allow_over and over_in_actions and (obj.allow_interact or obj.allow_use or obj.allow_look):
                         if obj._action != obj._over:
                             self.menu.on_play_enter_sfx() #play sound if available
                         obj._do(obj._over)
@@ -8882,10 +9297,12 @@ class Game(metaclass=use_on_events):
                         fn(self.game, obj, self.game.player, scene_x, scene_y, dx, dy, window_x, window_y)
                     menu_collide = True
                 else:  # unhover over menu item
-                    if obj.action and obj.action.name == obj._over and (obj.allow_interact or obj.allow_use or obj.allow_look):
+                    allow_over = obj._actions or hasattr(obj, "_over_colour") # an Actor or a Text with menu behaviour                    
+                    action_name = obj.action.name if obj.action else getattr(obj, "_action_name", "")
+                    if allow_over and action_name == obj._over and (obj.allow_interact or obj.allow_use or obj.allow_look):
                         idle = obj._idle  # don't use obj.default_idle as it is scene dependent
                         self.menu.on_play_exit_sfx() #play sound if available
-                        if idle in obj._actions:
+                        if idle in obj._actions or hasattr(obj, "_over_colour"):
                             obj._do(idle)
                 if menu_collide:
                     return
@@ -8973,6 +9390,9 @@ class Game(metaclass=use_on_events):
         if self.scene:
             for obj_name in self.scene._objects:
                 obj = get_object(self, obj_name)
+                if not obj:
+                    print("Unable to find",obj_name)
+                    import pdb; pdb.set_trace()
                 if obj.collide(x, y) and obj._drag:
                     self._drag = obj
 
@@ -9104,8 +9524,8 @@ class Game(metaclass=use_on_events):
         # try menu events
         for obj_name in self._menu:
             obj = get_object(self, obj_name)
-            allow_collide = True if (obj.allow_look or obj.allow_use) \
-                else False
+            #(obj.allow_look or obj.allow_use) 
+            allow_collide = True if obj.allow_interact else False
             if allow_collide and obj.collide(window_x, window_y):
                 user_trigger_interact(self, obj)
                 return
@@ -9336,9 +9756,10 @@ class Game(metaclass=use_on_events):
         """ Create a Text object for the info object """
         colour = self.font_info_colour
         font = self.font_info
-        size = self.font_info_size
+        size = self.font_info_size        
+        offset = self.font_info_offset
         obj = Text(
-            name, display_text=text, font=font, colour=colour, size=size, offset=1)
+            name, display_text=text, font=font, colour=colour, size=size, offset=offset)
         obj.load_assets(self) #XXX loads even in headless mode?
         return obj
 
@@ -9404,8 +9825,10 @@ class Game(metaclass=use_on_events):
             obj.load_assets(self)
             obj.guess_clickable_area()
             for k, v in kwargs.items():
-                setattr(obj, k, v)
- #               if k == "key": obj.key = get_keycode(v)
+                if k == "key": 
+                    obj.on_key(v) #set _interact_key
+                else:
+                    setattr(obj, k, v)                    
 # if "text" in kwargs.keys(): obj.update_text() #force update on MenuText
             self._add(obj)
             new_menu.append(obj)
@@ -9498,20 +9921,23 @@ class Game(metaclass=use_on_events):
 
         portals = []
         # estimate size of all loads
+        
         for obj_cls in [Actor, Item, Emitter, Portal, Scene]:
             dname = "directory_%ss" % obj_cls.__name__.lower()
-            if not os.path.exists(getattr(self, dname)):
+            safe_dir = get_safe_path(getattr(self, dname))
+            if not os.path.exists(safe_dir):
                 continue  # skip directory if non-existent
-            for name in os.listdir(getattr(self, dname)):
+            for name in os.listdir(safe_dir):
                 if draw_progress_bar:  # estimate the size of the loading
                     self._progress_bar_count += 1
 
         for obj_cls in [Actor, Item, Emitter, Portal, Scene]:
             dname = "directory_%ss" % obj_cls.__name__.lower()
 #            dname = get_smart_directory(self, obj)
-            if not os.path.exists(getattr(self, dname)):
+            safe_dir = get_safe_path(getattr(self, dname))
+            if not os.path.exists(safe_dir):
                 continue  # skip directory if non-existent
-            for name in os.listdir(getattr(self, dname)):
+            for name in os.listdir(safe_dir):
                 if only and name not in only:
                     continue  # only load specific objects
 #                if draw_progress_bar:
@@ -9537,7 +9963,7 @@ class Game(metaclass=use_on_events):
                             a = player_class(name)
                         else:
                             a = obj_cls(name)
-                        self._add(a)
+                        self._add(a, replace=True)
                     else:  # if just refreshing, then use the existing object
                         a = self._actors.get(
                             name, self._items.get(name, self._scenes.get(name, None)))
@@ -9559,9 +9985,9 @@ class Game(metaclass=use_on_events):
             self.player = player
 
         # menu sounds
-        if os.path.isfile("data/sfx/menu_enter.ogg"):
+        if os.path.isfile(get_safe_path("data/sfx/menu_enter.ogg")):
             self._menu_enter_filename = "data/sfx/menu_enter.ogg" 
-        if os.path.isfile("data/sfx/menu_enter.ogg"):
+        if os.path.isfile(get_safe_path("data/sfx/menu_enter.ogg")):
             self._menu_exit_filename = "data/sfx/menu_exit.ogg" 
 
         if use_quick_load:  # save quick load file
@@ -9790,8 +10216,8 @@ class Game(metaclass=use_on_events):
             import pdb
             pdb.set_trace()
         if self._output_walkthrough is False and DEBUG_STDOUT is True:
-            print("[step]",function_name, walkthrough[1:], t.seconds, "\n [hint]", self.storage.hint if self.storage else "(no storage)")
-
+            print("[step]",function_name, walkthrough[1:], t.seconds, "   [hint]", self.storage.hint if self.storage else "(no storage)")
+            
         self._walkthrough_index += 1
 
         if self._walkthrough_index > self._walkthrough_target or self._walkthrough_index > len(self._walkthrough):
@@ -9842,7 +10268,7 @@ class Game(metaclass=use_on_events):
 
             log.info("FINISHED WALKTHROUGH")
             if self._walkthrough_target_name:
-                walkthrough_target = os.path.abspath(os.path.join(self.save_directory,"%s.save"%self._walkthrough_target_name))
+                walkthrough_target = get_safe_path(os.path.join(self.save_directory,"%s.save"%self._walkthrough_target_name))
                 save_game(
                     self, walkthrough_target)
 #            self.player.says(gettext("Let's play."))
@@ -9887,7 +10313,9 @@ class Game(metaclass=use_on_events):
             modifiers = 0
             # check modals and menu first for text options
             obj = None
-            if len(self._modals)>0 and actor_name not in self._modals:
+            actor = get_object(self, actor_name)
+            probably_an_ask_option = actor_name in self._modals or actor.name in self._modals if actor else False
+            if len(self._modals)>0 and not probably_an_ask_option:
                 log.warning("interact with {} but modals haven't been cleared"
                             .format(actor_name))
             for name in self._modals:
@@ -9903,6 +10331,7 @@ class Game(metaclass=use_on_events):
             if not obj:
                 log.error("Unable to find %s in game" % actor_name)
                 self._walkthrough_target = 0
+                self._walkthrough_auto = False
                 self.headless = False
                 return
             # if not in same scene as camera, and not in modals or menu, log
@@ -9958,9 +10387,7 @@ class Game(metaclass=use_on_events):
             # expand the goto request into a sequence of portal requests
             global scene_path
             scene_path = []
-            obj = get_object(self, actor_name)
-
-
+            obj = get_object(self, actor_name, case_insensitive=True)
             if self.scene:
                 scene = scene_search(self, self.scene, obj.name.upper())
                 if scene != False: #found a new scene
@@ -10005,7 +10432,7 @@ class Game(metaclass=use_on_events):
         else:
             print("UNABLE TO PROCESS %s"%function_name)
         if human_readable_name:
-            fname = os.path.join(self.save_directory, "{}.save".format(human_readable_name))
+            fname = get_safe_path(os.path.join(self.save_directory, "{}.save".format(human_readable_name)))
             save_game(self, fname)
 
     def _handle_events(self):
@@ -10014,7 +10441,7 @@ class Game(metaclass=use_on_events):
         waiting_for_user = True
 #        log.info("There are %s events, game._waiting is %s, index is %s and current event is %s",len(self._events), self._waiting, self._event_index, self._event)
         if self._waiting_for_user: # don't do anything until user clicks
-            return
+            return safe_to_call_again
 
         if self._waiting:
             """ check all the Objects with existing events, if any of them are busy, don't process the next event """
@@ -10063,6 +10490,7 @@ class Game(metaclass=use_on_events):
 #                print("Start",e[0], e[1][0].name, datetime.now(), e[1][0].busy)
                 done_events += 1
 #                print("DOING",e)
+#                print("doing event",e)
                 # call the function with the args and kwargs
                 e[0](*e[1], **e[2])
 #                if self._event_index < len(self._events) - 1:
@@ -10071,11 +10499,15 @@ class Game(metaclass=use_on_events):
                 # if, after running the event, the obj is not busy, then it's
                 # OK to do the next event immediately.
                 if obj.busy == 0:
+#                    print("safe to call again immediately")
                     safe_to_call_again = True
                     if len(self._events)<5 or len(self._events)%10 == 0:
                         log.debug("Game not busy, events not busy, and the current object is not busy, so do another event (%s)" % (
                             len(self._events)))
                     return safe_to_call_again
+
+#                else:
+#                    print("not safe to call again immediately")
                 if obj.busy < 0:
                     log.error("obj.busy below zero, this should never happen.")
                     import pdb
@@ -10087,13 +10519,28 @@ class Game(metaclass=use_on_events):
             reset_mouse_cursor(self)
 
         if done_events == 0 and del_events == 0 and self._walkthrough_target >= self._walkthrough_index:
-            self._process_walkthrough()
+            if not self._generator: # don't process walkthrough if a generator is running (eg loading a save game)           
+                self._process_walkthrough()
         return safe_to_call_again
 #        print("Done %s, deleted %s"%(done_events, del_events))
 
     def update(self, dt, single_event=False):  # game.update
         """ Run update on scene objects """
 #        print("GAME UPDATE")
+
+        if self.editor: # let editor have a go for a moment.
+            try:
+                request_game_object = editor_queue.get(block=False)
+            except queue.Empty:
+                request_game_object = None
+            if type(request_game_object) is RequestGameObject:
+                editor_queue.task_done() # finished task with request_game_object
+                print("hand over to editor")
+                editor_queue.put(self)
+                print("put game object on queue, waiting until editor finishes with it")
+                editor_queue.join()
+                print("editor finished with game object")
+
         scene_objects = []
         fn = get_function(self, "game_update") #special update function game can use
         if fn:
@@ -10164,8 +10611,10 @@ class Game(metaclass=use_on_events):
             self._handle_events()  # run the event handler only once
         else:
             # loop while there are events safe to process
+#            print("\n\n\n\nSTARTING HANDLE EVENTS\n\n\n\n")
             while self._handle_events():
                 pass
+#            print("\n\n\n\nENDING HANDLE EVENTS\n\n\n\n")
 
 #        print("game update", self._headless, self._walkthrough_target>self._walkthrough_index, len(self._modals)>0, len(self._events))
 
@@ -10180,7 +10629,8 @@ class Game(metaclass=use_on_events):
         # if waiting for user input, assume the event to trigger the modal is
         # in the walkthrough
         if self._walkthrough_auto and self._walkthrough_target >= self._walkthrough_index and len(self._modals) > 0:
-            self._process_walkthrough()
+            if not self._generator: # don't process walkthrough if a generator is running (eg loading a save game)
+                self._process_walkthrough()
 
     def pyglet_draw(self):  # game.draw
         """ Draw the scene """
@@ -10376,8 +10826,7 @@ class Game(metaclass=use_on_events):
             x,y = self.mouse_position
             if (x,y) != (0,0): 
                 value = MOUSE_CURSORS_DICT[self.mouse_cursor]
-                cursor_pwd = os.path.join(
-                    os.getcwd(), os.path.join(self.directory_interface, value))
+                cursor_pwd = get_safe_path(os.path.join(self.directory_interface, value))
                 # TODO: move this outside the draw loop
                 cursor = Item("_joystick_cursor").smart(self.game, image=cursor_pwd)
                 cursor.load_assets(self.game)
@@ -10473,14 +10922,13 @@ class Game(metaclass=use_on_events):
         """ called by Game after display initialised to load mouse cursor images """
         for key, value in MOUSE_CURSORS:
             # use specific mouse cursors or use pyvida defaults
-            cursor_pwd = os.path.join(
-                os.getcwd(), os.path.join(self.directory_interface, value))
+            cursor_pwd = get_safe_path(os.path.join(self.directory_interface, value))
             image = load_image(cursor_pwd, convert_alpha=True)
             if not image:
                 if logging:
                     log.warning(
                         "Can't find local %s cursor at %s, so defaulting to pyvida one" % (value, cursor_pwd))
-                this_dir, this_filename = os.path.split(__file__)
+                this_dir, this_filename = os.path.split(script_filename)
                 myf = os.path.join(this_dir, self.directory_interface, value)
                 if os.path.isfile(myf):
                     image = load_image(myf, convert_alpha=True)
@@ -10608,8 +11056,11 @@ class Game(metaclass=use_on_events):
                     f.write('    %s.usage(%s, %s, %s, %s, %s)\n' % (
                         slug, obj.allow_draw, obj.allow_update, obj.allow_look, obj.allow_interact, obj.allow_use))
                     f.write('    %s.rescale(%0.2f)\n' % (slug, obj.scale))
+                    ax, ay = obj._ax, obj._ay
+                    if game.flip_anchor:
+                        ax, ay = -ax,-ay
                     f.write('    %s.reanchor((%i, %i))\n' %
-                            (slug, obj._ax, obj._ay))
+                            (slug, ax, ay))
                     f.write('    %s.restand((%i, %i))\n' %
                             (slug, obj._sx, obj._sy))
                     f.write('    %s.rename((%i, %i))\n' %
@@ -10679,7 +11130,7 @@ class Game(metaclass=use_on_events):
                 return
         sfname = os.path.join(
             self.directory_scenes, os.path.join(scene.name, state))
-        sfname = "%s.py" % sfname
+        sfname = get_safe_path("%s.py" % sfname)
         variables = {}
         if not os.path.exists(sfname):
             if logging:
@@ -10689,13 +11140,17 @@ class Game(metaclass=use_on_events):
             if logging:
                 log.debug("load state: load %s for scene %s" %
                           (sfname, scene.name))
-            scene._last_state = sfname
+            scene._last_state = get_relative_path(sfname)
 #            execfile("somefile.py", global_vars, local_vars)
+            current_headless = self._headless
+            if not current_headless:
+                self.set_headless_value(True)
             with open(sfname) as f:
                 data = f.read()
                 code = compile(data, sfname, 'exec')
                 exec(code, variables)
-
+            if not current_headless: # restore non-headless
+                self.set_headless_value(False)
             variables['load_state'](self, scene)
         self._last_load_state = state
         return scene
@@ -10754,22 +11209,22 @@ class Game(metaclass=use_on_events):
             self.on_set_headless(False)
             self._walkthrough_auto = False #stop auto advance
 
-    def on_autosave(self, actor, tilesize, exclude_from_screenshot=[], fname = None, fast=True):
+    def on_autosave(self, actor, tilesize, exclude_from_screenshot=[], fname = None, fast=True, action="portrait"):
         game = self
         fname = fname if fname else datetime.now().strftime("%Y%m%d_%H%M%S")
-        save_game(game, os.path.join(self.save_directory, "%s.save"%fname))
+        save_game(game, get_safe_path(os.path.join(self.save_directory, "%s.save"%fname)))
         for i in exclude_from_screenshot:
             obj = get_object(game, i)
             obj.hide()
         if not fast: # take some time to do a nicer screen grab
             game.menu.on_hide()
             game.pause(0.4)
-        game.camera.screenshot(os.path.join(self.save_directory, "%s.png"%fname), tilesize)
+        game.camera.screenshot(get_safe_path(os.path.join(self.save_directory, "%s.png"%fname)), tilesize)
         for i in exclude_from_screenshot:
             obj = get_object(game, i)
             obj.show()
         actor = get_object(game, actor)
-        actor.says(gettext("Game saved."))
+        actor.says(gettext("Game saved."), action=action)
         if not fast:
             game.menu.show()
 
@@ -10819,21 +11274,44 @@ class Game(metaclass=use_on_events):
     @property
     def screen_size(self):
         """ Return the physical screen size or the override """
-        display = pyglet.window.get_platform().get_default_display()
-        w = display.get_default_screen().width
-        h = display.get_default_screen().height
+        w = self.screen.width
+        h = self.screen.height
         if self._screen_size_override:
             w, h = self._screen_size_override
         return w,h
+    
+    @property
+    def screen(self):
+        """ Return the screen being used to display the game. """
+        display = pyglet.window.get_platform().get_default_display()
+        if self.settings and self.settings.preferred_screen is not None:
+            try:
+                screen = display.get_screens()[self.settings.preferred_screen]
+            except IndexError:
+                screen = display.get_default_screen()
+        else:
+            screen = display.get_default_screen()
+        return screen
+    
+    @property
+    def screens(self):
+        """ return available screens """
+        return pyglet.window.get_platform().get_default_display().get_screens()
 
     def reset_window(self, fullscreen, create=False):
         """ Make the game screen fit the window, create if requested """
+        #if fullscreen: # if fullscreen, use the window we are currently on.
+        #    w, h = self._window.get_size()
+        #else:
         w, h = self.screen_size
 
         width, height = self.resolution
         scale = 1.0
 
+        #if fullscreen:
         resolution, new_scale = fit_to_screen((w, h), self.resolution)
+        #else: # not fullscreen and game does not want to scale in window mode
+        #    resolution, new_scale = 
 #        print("FULLSCREEN", fullscreen,"resolution of screen if scaling",resolution,"game resolution",self.resolution)
 #        print("game resolution", width, height, "screen size",w,h)
         # only scale non-fullscreen window if it's larger than screen.
@@ -10846,7 +11324,7 @@ class Game(metaclass=use_on_events):
         if create: 
 #            print("creating window")
             sw, sh = self._screen_size_override if self._screen_size_override else (width, height)
-            self._window = Window(width=sw, height=sh, fullscreen=fullscreen) 
+            self._window = Window(width=sw, height=sh, fullscreen=fullscreen, screen=self.screen) 
         self._scale = scale
         self.fullscreen = fullscreen #status of this session
         self.create_bars_and_scale(width, height, scale)
@@ -10935,6 +11413,9 @@ class Game(metaclass=use_on_events):
 
     def on_set_mouse_cursor(self, v):
         self.mouse_cursor = v
+        
+    def on_set_mouse_cursor_lock(self, v):
+        self.mouse_cursor_lock = v
 
     def on_set_player_goto_behaviour(self, v):
         self._player_goto_behaviour = v
@@ -10960,6 +11441,59 @@ class Game(metaclass=use_on_events):
                     log.error("Menu item %s not found in Item collection" % i)
         if logging:
             log.debug("set menu to %s" % [x for x in self._menu])
+
+"""
+Porting older game to pyglet pyvdida.
+"""
+
+EMITTER_SMOKE = {"name":"smoke", "number":10, "frames":20, "direction":0, "fov":30, "speed":3, "acceleration":(0, 0), "size_start":0.5, "size_end":1.0, "alpha_start":1.0, "alpha_end":0.0, "random_index":True}
+
+EMITTER_SPARK = {"name":"spark", "number":10, "frames":12, "direction":190, "fov":20, "speed":4, "acceleration":(0, 0), "size_start":1.0, "size_end":1.0, "alpha_start":1.0, "alpha_end":0.0, "random_index":True}
+
+EMITTER_BUBBLE = {"name":"bubble", "number":10, "frames":120, "direction":0, "fov":20, "speed":7, "acceleration":(0, 0), "size_start":1.0, "size_end":1.0, "alpha_start":1.0, "alpha_end":0.0, "random_index":True}
+
+
+class MenuItem(Item):
+    def __init__(self, *args, **kwargs):
+        print("*** ERROR: MENUITEM DEPRECATED IN PYVIDA, REPLACE IMMEDIATELY.")
+        super().__init__(*args, **kwargs)
+
+class ModalItem(Item):
+    def __init__(self, *args, **kwargs):
+        print("*** ERROR: MODALITEM DEPRECATED IN PYVIDA, REPLACE IMMEDIATELY.")
+        super().__init__(*args, **kwargs)
+
+MENU_COLOUR = (42, 127, 255)
+MENU_COLOUR_OVER = (255, 226, 78)
+DEFAULT_FONT = os.path.join("data/fonts/", "vera.ttf")
+
+class MenuText(Text):
+#    def __init__(self, *args, **kwargs):
+     def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None,None), text="no text", colour=MENU_COLOUR, size=26, wrap=2000, interact=None, spos=(None, None), hpos=(None, None), key=None, font=DEFAULT_FONT, offset=2):
+        sfont = "MENU_FONT" if "badaboom" in font else font
+        ssize = "MENU_SIZE" if size in [34,35,36,38] else size
+        #print("*** ERROR: MENUTEXT DEPRECATED IN PYVIDA, REPLACE IMMEDIATELY.")
+        #print("Try instead:")
+        print("""
+item = game.add(Text("{name}", {pos}, "{text}", size={ssize}, wrap={wrap}, interact={interact}, font="{sfont}", colour={colour}, offset=2), replace=True)
+item.on_key("{key}")
+item.set_over_colour(MENU_COLOUR_OVER)
+""".format(**locals()))
+        super().__init__(name, pos, text, colour, font, size, wrap, offset=2, interact=interact)
+        
+        # old example game.add(MenuText(i[0], (280,80), (840,170), i[1], wrap=800, interact=i[2], spos=(x, y+dy*i[4]), hpos=(x, y+dy*i[4]+ody),key=i[3], font=MENU_FONT, size=38), False, MenuItem)
+        # spos, hpos were for animation and no longer supported.
+        # the second tuple is dimensions and is no longer supported
+        # new example
+    #    def __init__(self, name, pos=(0, 0), display_text=None,
+     #            colour=(255, 255, 255, 255), font=None, size=DEFAULT_TEXT_SIZE, wrap=800,
+     #            offset=None, interact=None, look=None, delay=0, step=2,
+     #            game=None):
+      # item = Text(i[0], (280,80), i[1], interact=i[2], wrap=800, font=MENU_FONT, size=38, game)
+      # item.on_key(i[3])
+      # game.add(item)
+
+
 
 """
 Editor stuff
@@ -11669,4 +12203,260 @@ def pyglet_editor(game):
 #        o.load_assets(game)
 #        o.x, o.y = i[1]
 #    game._window_editor_objects = [i[0] for i in EDITOR_ITEMS]
+
+
+#html editor
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import socketserver
+
+class RequestGameObject:
+    pass
+
+class HTTPEditorServer(BaseHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.game = None
+
+    def _navigate(self, delta):
+        objects = self.game.scene._objects + self.game.scene._layer
+        num_objects = len(objects)
+        if num_objects == 0:
+            print("No objects in scene")
+            return
+        obj = objects[self.index]
+        obj = get_object(self.game, obj)
+        obj.show_debug = False
+        self.index += delta
+        if self.index < 0:
+            self.index = num_objects - 1
+        if self.index >= num_objects:
+            self.index = 0
+        obj = objects[self.index]
+        self.set_edit_object(obj)
+
+    def prev(self):
+        _navigate(-1)  # decrement navigation
+
+    def next(self):
+        _navigate(1)  # increment navigation
+
+
+    def _set_headers(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html')
+        self.end_headers()
+
+    def grab_game_object(self):
+        editor_queue.put(RequestGameObject())
+        print("put game object request")
+        editor_queue.join()
+        print("waiting to get game object in editor")
+        game = editor_queue.get()
+        if game is None:
+            print("no game object handed to editor")
+            return
+        print("Have game object for",game.name)
+        self.game = game
+
+    def release_game_object(self):
+        editor_queue.task_done()
+        print("now release")
+
+    def do_GET(self):
+        self.grab_game_object()
+        self._set_headers()
+        game = self.game
+        this_dir, this_filename = os.path.split(__file__)
+        with open(os.path.join(this_dir, 'editor.html')) as f:
+            editor_html = f.read()
+        with open(os.path.join(this_dir,'project.html')) as f:
+            project = f.read()
+        scene_options = "\n".join(["<option value='{s.name}'>{s.name}</option>".format(**locals) for s in game._scenes.values()])
+#        with open('editor.html') as f:
+#            editor_html = f.read()
+#        with open('editor.html') as f:
+#            editor_html = f.read()
+        html = editor_html%{"scene_options":scene_options, "project":project}
+        objs = copy.copy(self.game.scene._objects)
+        objs.sort()
+        set_edit_object(self.game, objs[0], None)
+        for o in objs:
+            obj = get_object(self.game, o)
+            slug = slugify(obj.name)
+            print("form for",obj.name)
+            OBJECT_FORM = """
+<form name="{slug}" class="form-horizontal" method="post">
+<fieldset>
+<!-- Form Name -->
+<legend>Form Name {obj.name}</legend>
+<!-- Multiple Radios -->
+<div id="form-group-{slug}">
+  <label class="col-md-4 control-label" for="radios">Drag</label>
+  <div class="col-md-4">
+  <div class="radio">
+    <label for="radios-0">
+      <input name="radios" id="radios-0" value="1" checked="checked" type="radio">
+      scale
+    </label>
+	</div>
+  <div class="radio">
+    <label for="radios-1">
+      <input name="radios" id="radios-1" value="2" type="radio">
+      position
+    </label>
+	</div>
+  <div class="radio">
+    <label for="radios-2">
+      <input name="radios" id="radios-2" value="3" type="radio">
+      anchor
+    </label>
+	</div>
+  <div class="radio">
+    <label for="radios-3">
+      <input name="radios" id="radios-3" value="4" type="radio">
+      stand point
+    </label>
+	</div>
+  <div class="radio">
+    <label for="radios-4">
+      <input name="radios" id="radios-4" value="5" type="radio">
+      info text
+    </label>
+	</div>
+  </div>
+</div>
+
+  <label class="col-md-4 control-label" for="checkboxes">Allow</label>
+  <div class="col-md-4">
+  <div class="checkbox">
+    <label for="checkboxes-0">
+      <input name="checkboxes" id="checkboxes-0" value="draw" type="checkbox">
+      draw
+    </label>
+	</div>
+  <div class="checkbox">
+    <label for="checkboxes-1">
+      <input name="checkboxes" id="checkboxes-1" value="interact" type="checkbox">
+      interact
+    </label>
+	</div>
+  <div class="checkbox">
+    <label for="checkboxes-2">
+      <input name="checkboxes" id="checkboxes-2" value="look" type="checkbox">
+      look
+    </label>
+	</div>
+  <div class="checkbox">
+    <label for="checkboxes-3">
+      <input name="checkboxes" id="checkboxes-3" value="use" type="checkbox">
+      update
+    </label>
+	</div>
+  <div class="checkbox">
+    <label for="checkboxes-4">
+      <input name="checkboxes" id="checkboxes-4" value="update" type="checkbox">
+      editor save
+    </label>
+	</div>
+  <div class="checkbox">
+    <label for="checkboxes-5">
+      <input name="checkboxes" id="checkboxes-5" value="editor save" type="checkbox">
+      use
+    </label>
+	</div>
+  </div>
+</div>
+
+<!-- Button Drop Down -->
+<div class="form-group">
+  <label class="col-md-4 control-label" for="buttondropdown">Action</label>
+  <div class="col-md-4">
+    <div class="input-group">
+      <input id="buttondropdown" name="buttondropdown" class="form-control" placeholder="placeholder" type="text">
+      <div class="input-group-btn">
+        <button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">
+          Edit
+          <span class="caret"></span>
+        </button>
+        <ul class="dropdown-menu pull-right">
+          <li><a href="#">idle</a></li>
+          <li><a href="#">left</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Button Drop Down -->
+<div class="form-group">
+  <label class="col-md-4 control-label" for="buttondropdown">Default Idle</label>
+  <div class="col-md-4">
+    <div class="input-group">
+      <input id="buttondropdown" name="buttondropdown" class="form-control" placeholder="placeholder" type="text">
+      <div class="input-group-btn">
+        <button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">
+          Set
+          <span class="caret"></span>
+        </button>
+        <ul class="dropdown-menu pull-right">
+          <li><a href="#">idle</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Button -->
+<div class="form-group">
+  <label class="col-md-4 control-label" for="singlebutton">Single Button</label>
+  <div class="col-md-4">
+    <button id="{slug}" name="singlebutton" class="btn btn-primary">Button</button>
+  </div>
+</div>
+</fieldset>
+</form>
+""".format(**locals)
+
+#            self.wfile.write(bytes(OBJECT_FORM, "utf8"))
+            html += OBJECT_FORM
+        self.wfile.write(bytes("{html}".format(**locals), "utf8"))
+        self.release_game_object()
+
+    def do_HEAD(self):
+        self._set_headers()
+        
+    def do_POST(self):
+        # Doesn't do anything with posted data
+        self._set_headers()
+        message = "<html><body><h1>POST!</h1></body></html>"
+        self.wfile.write(bytes(message, "utf8"))
+
+
+def my_tcp_server():
+    import http.server
+    import socketserver
+
+    Handler = HTTPEditorServer #http.server.SimpleHTTPRequestHandler
+    keep_running = True
+    with socketserver.TCPServer(("", PORT), Handler) as httpd:
+        print("serving at port", PORT)
+#        import pdb; pdb.set_trace()
+#        httpd.serve_forever()
+        while keep_running:
+            """
+            if game == None:
+                print("No game")
+            else:
+                if game._window == None:
+                    keep_running = False
+                print("game")
+            editor_queue.task_done()
+            print("done, handing back")
+            """
+            print("hello")
+            httpd.handle_request()
+
+def html_editor(game):
+    import threading
+    threading.Thread(target=my_tcp_server).start()
 

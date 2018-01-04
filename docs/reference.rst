@@ -9,7 +9,7 @@ Game
 .. automodule:: pyvida
 
 .. autoclass:: Game
-   :members: save, load, set_reset, add, info, on_smart, handle_pygame_events, run, handle_events, queue_event, stuff_event, remove, set_interact, set_look, load_state, on_save_state, on_click, on_wait, on_set_headless, on_set_fps, on_splash, user_input, on_set_menu, on_menu_clear, on_menu_hide, on_menu_show, on_menu_push, on_menu_pop
+   :members: save, load, set_reset, add, info, on_smart, handle_pygame_events, run, handle_events, queue_event, stuff_event, remove, set_interact, set_look, load_state, on_save_state, on_click, on_wait, on_set_headless, on_set_fps, on_splash, user_input, on_set_menu, on_menu.clear, on_menu.hide, on_menu.show, on_menu.push, on_menu.pop
 
 Actor
 -----
