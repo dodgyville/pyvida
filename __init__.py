@@ -43,6 +43,13 @@ from fontTools.ttLib import TTFont
 PORT = 8000 + randint(0,100)
 
 
+# Steam support for achievement manager
+try:
+    from steampak import SteamApi  # Main API entry point.
+except:
+    SteamApi = None
+
+
 try:
     import tkinter as tk
     import tkinter.filedialog
@@ -83,6 +90,7 @@ elif "APPDATA" in os.environ: #win XP
 elif 'darwin' in sys.platform: # check for OS X support
 #    import pygame._view
     APP_DIR = os.path.join(expanduser("~"), "Library", "Application Support")
+
 
 # detect pyinstaller on mac
 frozen = False
@@ -125,9 +133,17 @@ def get_relative_path(path):
     return safe
 
 
+if SteamApi:
+    if "darwin" in sys.platform:
+        STEAM_LIBRARY_PATH = get_safe_path("libsteam_api.dylib")
+    elif "linux" in sys.platform:
+        STEAM_LIBRARY_PATH = get_safe_path("libsteam_api.so")
+    else:
+        STEAM_LIBRARY_PATH = get_safe_path("steam_api.dll")
+
 def load_info(fname_raw):
     """ Used by developer to describe game """
-    config = {"version":"None", "date":"Unknown", "slug":"pyvidagame"} # defaults
+    config = {"version":"None", "date":"Unknown", "slug":"pyvidagame", "steamID":None} # defaults
     fname = get_safe_path(os.path.join("data", fname_raw))
     if os.path.exists(fname):
         with open(fname, "r") as f:
@@ -8717,6 +8733,16 @@ class Game(metaclass=use_on_events):
         #force pyglet to draw every frame. Requires restart
         #this is on by default to allow Motions to sync with Sprites.
         self._lock_updates_to_draws = LOCK_UPDATES_TO_DRAWS 
+        
+        self.steam_api = None
+        if SteamApi:
+            print("Connecting to STEAM API")
+            self.steam_api = SteamApi(STEAM_LIBRARY_PATH, app_id=INFO["steamID"])
+            # Achievements progress:
+            for app_id, app in self.steam_api.apps.installed():
+                print('%s: %s' % (app_id, app.name))            
+            for ach_name, ach in self.steam_api.apps.current.achievements():
+                print('%s (%s): %s' % (ach.title, ach_name, ach.get_unlock_info()))        
 
     
     def init(self):
@@ -10189,6 +10215,9 @@ class Game(metaclass=use_on_events):
             self.settings._last_session_end = datetime.now()
             save_settings(self, self.settings.filename)
         print("EXIT APP")
+        if self.steam_api:
+            print("SHUTDOWN STEAM API")
+            self.steam_api.shutdown()
         pyglet.app.exit()
         if mixer=="pygame":
             print("SHUTDOWN PYGAME MIXER")
