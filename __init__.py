@@ -8718,6 +8718,7 @@ class Game(metaclass=use_on_events):
         self._map_joystick = 0 # if 1 then map buttons instead of triggering them in on_joystick_button
         self._object_index = 0 # used by joystick and blind mode to select scene objects
         self._mouse_object = None  # if using an Item or Actor as mouse image
+        self._mouse_rect = None # restrict mouse to area on screen
         self.hide_cursor = HIDE_MOUSE
         self.mouse_cursor_lock = False # lock mouse to this shape until released
         self.mouse_down = (0, 0)  # last press
@@ -9227,12 +9228,24 @@ class Game(metaclass=use_on_events):
 #        window_y = (self.resolution[1] - y)/self._scale
         window_y = (self._window.height - raw_y)/self._scale
         
+        if self._mouse_rect: # restrict mouse
+            if window_x < self._mouse_rect.x:
+                window_x = self._mouse_rect.x
+            elif window_x > self._mouse_rect.x + self._mouse_rect.w:
+                window_x = self._mouse_rect.x + self._mouse_rect.w
+
+            if window_y < self._mouse_rect.y:
+                window_y = self._mouse_rect.y
+            elif window_y > self._mouse_rect.y + self._mouse_rect.h:
+                window_y = self._mouse_rect.y + self._mouse_rect.h
+       
+        
 #        window_x, window_y = x, self.resolution[1] - y
         if self.scene:
             scene_x, scene_y = window_x - self.scene.x, window_y - self.scene.y 
         else:
             scene_x, scene_y = window_x, window_y
-        
+                    
         return (window_x, window_y), (scene_x, scene_y)
 
 
@@ -11001,6 +11014,11 @@ class Game(metaclass=use_on_events):
     def on_menu_modal(self, modal=True):
         """ Set if the menu is currently in modal mode (ie non-menu events are blocked """
         self._menu_modal = modal
+        
+    def on_restrict_mouse(self, obj=None):
+        """ Restrict mouse to a rect on the window """
+        rect = obj
+        self._mouse_rect = rect
 
     def on_set_interact(self, actor, fn):  # game.set_interact
         """ helper function for setting interact on an actor """
