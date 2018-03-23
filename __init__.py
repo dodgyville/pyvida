@@ -8739,10 +8739,13 @@ class Game(metaclass=use_on_events):
             print("Connecting to STEAM API")
             self.steam_api = SteamApi(STEAM_LIBRARY_PATH, app_id=INFO["steamID"])
             # Achievements progress:
-            for app_id, app in self.steam_api.apps.installed():
-                print('%s: %s' % (app_id, app.name))            
-            for ach_name, ach in self.steam_api.apps.current.achievements():
-                print('%s (%s): %s' % (ach.title, ach_name, ach.get_unlock_info()))        
+            try:
+                for app_id, app in self.steam_api.apps.installed():
+                    print('%s: %s' % (app_id, app.name))            
+                for ach_name, ach in self.steam_api.apps.current.achievements():
+                    print('%s (%s): %s' % (ach.title, ach_name, ach.get_unlock_info()))        
+            except:
+                print("No steam api connection")
 
     
     def init(self):
