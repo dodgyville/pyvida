@@ -5414,7 +5414,7 @@ class Emitter(Item, metaclass=use_on_events):
         self._smart_actions(game, exclude=["mask"])
         self._clickable_mask = load_image(
             os.path.join(self._directory, "mask.png"))
-        self._reset()
+        self._reset()        
         return self
 
 #    def create_persistent(self, p):
@@ -8747,15 +8747,20 @@ class Game(metaclass=use_on_events):
         self.steam_api = None
         if SteamApi:
             print("Connecting to STEAM API")
-            self.steam_api = SteamApi(STEAM_LIBRARY_PATH, app_id=INFO["steamID"])
-            # Achievements progress:
             try:
-                for app_id, app in self.steam_api.apps.installed():
-                    print('%s: %s' % (app_id, app.name))            
-                for ach_name, ach in self.steam_api.apps.current.achievements():
-                    print('%s (%s): %s' % (ach.title, ach_name, ach.get_unlock_info()))        
+                self.steam_api = SteamApi(STEAM_LIBRARY_PATH, app_id=INFO["steamID"])
             except:
-                print("No steam api connection")
+                print("Problem with libsteam_api.so")
+                self.stream_api = None
+            # Achievements progress:
+            if self.steam_api:
+                try:
+                    for app_id, app in self.steam_api.apps.installed():
+                        print('%s: %s' % (app_id, app.name))            
+                    for ach_name, ach in self.steam_api.apps.current.achievements():
+                        print('%s (%s): %s' % (ach.title, ach_name, ach.get_unlock_info()))        
+                except:
+                    print("No steam api connection")
 
     
     def init(self):
