@@ -2709,7 +2709,14 @@ class Actor(MotionManager, metaclass=use_on_events):
 
         self._tk_edit = {} #undo any editor
         # PROBLEM values:
-        self.uses = {}
+        #self.uses = {}
+        # convert functions to strings in .uses
+        for k, v in self.uses.items():
+            if callable(v):  # textify function/method calls
+                self.uses[k] = v.__name__
+                #if not get_function(game, v.__name__, self):
+        
+        # convert functions to strings
         for k, v in self.__dict__.items():
             if callable(v):  # textify function/method calls
                 self.__dict__[k] = v.__name__
