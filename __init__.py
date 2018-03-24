@@ -4138,6 +4138,8 @@ class Actor(MotionManager, metaclass=use_on_events):
         # do high contrast if requested and available
         log.info("%s on says %s" % (self.name, text))
         background = using if using else None
+        if self.game._info_object: # clear info object
+            self.game._info_object.display_text = " " 
         high_contrast = "%s_highcontrast" % ("msgbox" if not using else using)
         myd = os.path.join(self.game.directory_items, high_contrast)
         using = high_contrast if self.game.settings.high_contrast and os.path.isdir(
