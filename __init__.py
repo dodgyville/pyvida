@@ -7528,6 +7528,8 @@ class PlayerPygletSFX():
             if loops>0:
                 print("PYGLET SFX LOOPS NOT DONE YET")
             #self._player.queue(self._sound)
+            if self._player:
+                self._player.pause()
             self._player = pyglet.media.Player()
             self._player.volume = self._volume
             self._player.queue(self._sound)
@@ -7572,6 +7574,8 @@ class PlayerPygletMusic():
     def play(self, loops=-1, start=0):
 #        pygame.mixer.music.stop() #reset counter
         print("PLAY MUSIC, always loops",start)
+        if self._player:
+            self._player.pause()
         self._player = pyglet.media.Player()
         self._player.volume = self._volume
         self._player.queue(self._music)
