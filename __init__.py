@@ -7508,7 +7508,8 @@ class PlayerPygletSFX():
         self._sound = None
         self.game = game
         self.loops = 0
-        print("WARNING: PYGLET PLAYER SFX NOT IMPLEMENTED")
+        self._volume = 1
+        self._player = pyglet.media.Player()
 
 
     def load(self, fname, volume):
@@ -7516,61 +7517,83 @@ class PlayerPygletSFX():
             log.debug("loading sfx")
             log.debug(os.getcwd())
             log.debug(fname)
-        if self._sound: self._sound.stop()
+        if self._sound: self._player.pause()
 #        self._sound = pygame.mixer.Sound(fname)
+        self._sound = pyglet.media.load(fname, streaming=False)
         new_volume = volume
         self.volume(new_volume)
 
     def play(self, loops=0):
         if self._sound:
-            self._sound.play(loops=loops)
+            if loops>0:
+                print("PYGLET SFX LOOPS NOT DONE YET")
+            #self._player.queue(self._sound)
+            self._player = pyglet.media.Player()
+            self._player.volume = self._volume
+            self._player.queue(self._sound)
+            if loops == -1:
+                self._player.eos_action = pyglet.media.SourceGroup.loop
+            elif loops>0:
+                for i in range(0, loops):
+                    self._player.queue(self._music)
+            self._player.play()
             self.loops = loops
 
     def fadeout(self, seconds):
-        if self._sound:
-            self._sound.fadeout(seconds*100)
+        #if self._sound:
+        #    self._sound.fadeout(seconds*100)
+        print("pyglet sound fadeout not done yet")
 
     def stop(self):
         if self._sound:
-            self._sound.stop()
+            self._player.pause()
 
     def volume(self, v):
         if self._sound is None: return
-        pass
+        self._volume = self._player.volume = v
 
 class PlayerPygletMusic():
     def __init__(self, game):
         self.game = game
-        self._player = pyglet.media.Player
-        print("WARNING: PYGLET PLAYER NOT IMPLEMENTED")
+        self._music = None
+        self._player = pyglet.media.Player()
+        self._volume = 1
 
     def pause(self):
-        pass
-#        pygame.mixer.music.pause()
+        self._player.pause()
 
     def stop(self):
-#        pygame.mixer.music.stop()
-        pass
+        self._player.pause()
 
     def load(self, fname, v=1):
         print("LOAD MUSIC",fname)
-#        pygame.mixer.music.load(fname)
+        self._music = pyglet.media.load(fname)
 
     def play(self, loops=-1, start=0):
 #        pygame.mixer.music.stop() #reset counter
-        print("PLAY MUSIC STUB",start)
+        print("PLAY MUSIC, always loops",start)
+        self._player = pyglet.media.Player()
+        self._player.volume = self._volume
+        self._player.queue(self._music)
+        if start > 0:
+            self._player.seek(start)
+        if loops == -1:
+            self._player.eos_action = pyglet.media.SourceGroup.loop
+        elif loops>0:
+            for i in range(0, loops):
+                self._player.queue(self._music)
+        self._player.play()
 #        pygame.mixer.music.play(loops=loops, start=start)
 
     def position(self):
         """ Note, this returns the number of seconds, for use with OGG. """
- #       return pygame.mixer.music.get_pos()/100 
-        return 0
+        return self._player.time
 
     def queue(self, fname):
-            pass
+        print("pyglet mixer music does not queue yet")
 
     def volume(self, v):
-        pass
+        self._volume = self._player.volume = v
 
     def busy(self):
         return False
