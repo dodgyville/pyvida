@@ -7524,7 +7524,7 @@ class PlayerPygletSFX():
         self.game = game
         self.loops = 0
         self._volume = 1
-        self._player = pyglet.media.Player()
+        self._player = None
 
 
     def load(self, fname, volume):
@@ -7534,17 +7534,22 @@ class PlayerPygletSFX():
             log.debug(fname)
         if self._sound: self._player.pause()
 #        self._sound = pygame.mixer.Sound(fname)
-        self._sound = pyglet.media.load(fname, streaming=False)
+        try:
+            self._sound = pyglet.media.load(fname, streaming=False)
+        except pyglet.media.sources.riff.WAVEFormatException:
+            print("AVbin is required to decode compressed media. Unable to load ",fname)
         new_volume = volume
         self.volume(new_volume)
 
     def play(self, loops=0):
         if self._sound:
-            if loops>0:
-                print("PYGLET SFX LOOPS NOT DONE YET")
+            if loops == -1:
+                # XXX: Pyglet SFX doesn't actually loop indefinitely
+                # it queues the sound 12 times as a hack
+                loops = 12
             #self._player.queue(self._sound)
             if self._player:
-                self._player.pause()
+                self._player.delete()
             self._player = pyglet.media.Player()
             self._player.volume = self._volume
             self._player.queue(self._sound)
@@ -7562,35 +7567,42 @@ class PlayerPygletSFX():
         print("pyglet sound fadeout not done yet")
 
     def stop(self):
-        if self._sound:
+        if self._player:
             self._player.pause()
 
     def volume(self, v):
         if self._sound is None: return
-        self._volume = self._player.volume = v
+        self._volume = v
+        if self._player:
+            self._player.volume = v
 
 class PlayerPygletMusic():
     def __init__(self, game):
         self.game = game
         self._music = None
-        self._player = pyglet.media.Player()
+        self._player = None
         self._volume = 1
 
     def pause(self):
-        self._player.pause()
+        if self._player:
+            self._player.pause()
 
     def stop(self):
-        self._player.pause()
+        if self._player:
+            self._player.pause()
 
     def load(self, fname, v=1):
-        print("LOAD MUSIC",fname)
-        self._music = pyglet.media.load(fname)
+        try:
+            self._music = pyglet.media.load(fname)
+        except pyglet.media.sources.riff.WAVEFormatException:
+            print("AVbin is required to decode compressed media. Unable to load ",fname)
 
     def play(self, loops=-1, start=0):
 #        pygame.mixer.music.stop() #reset counter
-        print("PLAY MUSIC, always loops",start)
+        if not self._music:
+            return
         if self._player:
-            self._player.pause()
+            self._player.delete()
         self._player = pyglet.media.Player()
         self._player.volume = self._volume
         self._player.queue(self._music)
@@ -7606,13 +7618,17 @@ class PlayerPygletMusic():
 
     def position(self):
         """ Note, this returns the number of seconds, for use with OGG. """
-        return self._player.time
+        v = self._player.time if self._player else 0
+        return v
 
     def queue(self, fname):
         print("pyglet mixer music does not queue yet")
 
     def volume(self, v):
-        self._volume = self._player.volume = v
+        self._volume = v
+        if self._player:
+            self._player.volume = v
+
 
     def busy(self):
         return False
