@@ -2039,6 +2039,16 @@ class Action(object):
         load_defaults(game, self, "%s - %s"%(actor.name, self.name), dfname)
         set_resource(self.resource_name, w=w, h=h)
 #        self.load_assets(game)
+
+        # backwards compat to v1 offset files
+        if os.path.isfile(fname+".offset"):  #load per-action displacement (on top of actor displacement)
+            with open(fname+".offset", "r") as f:
+                try:
+                    self._x, self._y  = [int(i) for i in f.readlines()]
+                    self._x = -self._x # inverted for backwards compat
+                except ValueError:
+                    if logging: log.error("Can't read values in %s.%s.offset"%(self.name, fname))
+                    self._x, self._y = 0,0        
         return self
 
     def unload_assets(self):  # action.unload
@@ -2818,8 +2828,8 @@ class Actor(MotionManager, metaclass=use_on_events):
             self.resource._animation.anchor_x = self._ax
             self.resource._animation.anchor_y = self._ay
 
-    def get_x(self):
-        return self._x
+    def get_x(self): #actor.x
+        return self._x 
 
     def set_x(self, v):
         self._x = v
@@ -3717,8 +3727,8 @@ class Actor(MotionManager, metaclass=use_on_events):
 
         #displace if the action requires it
         if self.action:
-            x += self.action._x
-            y += self.action._y
+            x += self.action._x * self.scale
+            y += self.action._y * self.scale
 
         # displace for camera
         if not absolute and self.game.scene:
@@ -6049,7 +6059,7 @@ class Scene(MotionManager, metaclass=use_on_events):
         self.game = None
         return self.__dict__
 
-    def get_x(self):
+    def get_x(self): #scene.x
         return self._x
 
     def set_x(self, v):
