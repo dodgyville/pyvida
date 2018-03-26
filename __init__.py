@@ -3605,13 +3605,13 @@ class Actor(MotionManager, metaclass=use_on_events):
                     "actor.smart - using %s for smart load instead of real name %s" % (using, self.name))
             name = os.path.basename(using)
             d = get_safe_path(os.path.dirname(using))
-
         else:
             name = self.name
             d = get_smart_directory(game, self)
 
         # first test inside the game
         myd = os.path.join(d, name) # potentially an absolute path
+        #if "sewage" in self.name: import pdb; pdb.set_trace()
         if os.path.isabs(myd):
             absd = myd
         else:
@@ -5366,7 +5366,7 @@ class Emitter(Item, metaclass=use_on_events):
         """ This object's solid_mask|solid_area is used for spawning 
             direction: what is the angle of the emitter
             fov: what is the arc of the emitter's 'nozzle'?
-        """
+        """        
         super().__init__(name)
         self.name = name
         self.number = number
@@ -5409,12 +5409,20 @@ class Emitter(Item, metaclass=use_on_events):
         return d
 
     def smart(self, game, *args, **kwargs):  # emitter.smart
+
+        if game and game.engine == 1: # backwards compat: give v1 emitters a unique name
+            game._v1_emitter_index += 1
+            kwargs["using"] = "data/emitters/%s"%self.name
+            self.name = "%s_v1_%i"%(self.name, game._v1_emitter_index)
+
         super().smart(game, *args, **kwargs)
         # reload the actions but without the mask
         self._smart_actions(game, exclude=["mask"])
         self._clickable_mask = load_image(
             os.path.join(self._directory, "mask.png"))
         self._reset()        
+        
+        
         return self
 
 #    def create_persistent(self, p):
@@ -6292,6 +6300,13 @@ class Scene(MotionManager, metaclass=use_on_events):
         check_objects = copy.copy(self._objects)
         for i in check_objects:
             obj = get_object(self.game, i)
+            
+            # backwards compat change for v1 emitters, don't erase them if base name is in objs
+            if self.game and isinstance(obj, Emitter):
+                emitter_name = os.path.split(obj._directory)[-1]
+                if emitter_name in objs:
+                    continue
+                
             if i not in objs and not isinstance(obj, Portal) \
                     and obj != self.game.player:
                 self._remove(i)
@@ -8742,6 +8757,9 @@ class Game(metaclass=use_on_events):
         # non-interactive system messages to display to user (eg sfx subtitles
         # (message, time))
         self.messages = []
+
+        #backwards compat
+        self._v1_emitter_index = 0 # to stop emitter collisions from older code
 
 
         # mouse
