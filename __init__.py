@@ -3248,7 +3248,12 @@ class Actor(MotionManager, metaclass=use_on_events):
     @property
     def clickable_area(self):
         """ Clickable area is the area on the set that is clickable, unscaled. """
-        return self._clickable_area.move(self.x + self.ax, self.y + self.ay)
+        if self.action: # displace the clickablearea if the action is displaced
+            dx = self.action._x * self._scale
+            dy = self.action._y * self._scale
+        else:
+            dx, dy = 0, 0
+        return self._clickable_area.move(self.x + self.ax + dx, self.y + self.ay + dy)
 
     @property
     def solid_area(self):
@@ -5253,6 +5258,10 @@ class Portal(Actor, metaclass=use_on_events):
         #        if player and player.scene and player.scene != self.scene: #only travel if on same scene as portal
         #            return
         return self.travel()
+    
+    
+    def exit(self, *args, **kwargs):
+        print("Portal.exit (%s) deprecated, replace with: portal.travel()")
 
     def exit_here(self, actor=None, block=True):
         """ exit the scene via the portal """
