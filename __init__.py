@@ -1296,7 +1296,7 @@ def get_best_file(game, f_raw):
     return f_raw # use default
 
 
-def get_function(game, basic, obj=None):
+def get_function(game, basic, obj=None, warn_on_empty=True):
     """ 
         Search memory for a function that matches this name 
         Also search any modules in game._modules (eg used when cProfile has
@@ -1304,7 +1304,8 @@ def get_function(game, basic, obj=None):
         If obj provided then also search that object
     """
     if not basic:
-        log.error("get_function called without a function name to search for")
+        if warn_on_empty:
+            log.error("get_function called without a function name to search for")
         return basic  # empty call to script
     if hasattr(basic, "__call__"):
         basic_name = basic.__name__
@@ -1975,6 +1976,7 @@ class Action(object):
         self.mode = self.default
         self._manual_index = 0 #used by MANUAL mode to lock animation at a single frame
         self._x, self._y = 0, 0 #is this action offset from the regular actor's x,y
+        self._displace_clickable = False # if action is displaced, also displace clickable_area
 
     def __getstate__(self):
         self.game = None
@@ -2461,10 +2463,14 @@ class MotionManager(metaclass=use_on_events):
                 game, owner=self, filename=motion_file)
             self._motions[motion_name] = motion
 
-    def _do_motion(self, motion, mode=LOOP, block=False, destructive=None, index=0):
+    def _do_motion(self, motion, mode=None, block=None, destructive=None, index=0):
         motion = self._motions.get(
-            motion, None) if motion in self._motions.keys() else None
+            motion, None) if motion in self._motions.keys() else None        
         if motion:
+            if mode is None:
+                mode = motion.mode
+            if block is None:
+                block = motion.blocking
             motion.mode = mode
             motion.blocking = block
             if index == -1:
@@ -2486,22 +2492,31 @@ class MotionManager(metaclass=use_on_events):
             log.warning("Unable to find motion for actor %s"%(self.name))
         return motion
 
-    def _motion(self, motion=None, mode=LOOP, block=False, destructive=None, index=0):
+    def _motion(self, motion=None, mode=None, block=None, destructive=None, index=0):
         motion = self._do_motion(motion, mode, block, destructive, index)
         motion = [motion] if motion else []
         self._applied_motions = motion
 
-    def on_motion(self, motion=None, mode=LOOP, block=False, destructive=None, index=0):
+    def on_motion(self, motion=None, mode=None, block=None, destructive=None, index=0):
         """ Clear all existing motions and do just one motion. 
             index is where in the motion to start, -1 for random.
+            If variable is None then use the Motion's defaults
         """
         self._motion(motion, mode, block, destructive, index)
 
-    def on_add_motion(self, motion, mode=LOOP, block=False, destructive=None):
+    def on_add_motion(self, motion, mode=None, block=None, destructive=None):
         motion = self._do_motion(motion, mode, block, destructive)
         if motion is not None:
             self._applied_motions.append(motion)
+        return motion
 
+    def on_create_motion_from_deltas(self, name, deltas=[], mode=LOOP, blocking=False, destructive=None):
+        motion = Motion(name)
+        motion.mode = mode
+        motion.blocking = blocking
+        motion.destructive = destructive
+        motion.add_deltas(deltas)
+        self._motions[name] = motion
 
 class Actor(MotionManager, metaclass=use_on_events):
 
@@ -3248,7 +3263,7 @@ class Actor(MotionManager, metaclass=use_on_events):
     @property
     def clickable_area(self):
         """ Clickable area is the area on the set that is clickable, unscaled. """
-        if self.action: # displace the clickablearea if the action is displaced
+        if self.action and self.action._displace_clickable: # displace the clickablearea if the action is displaced
             dx = self.action._x * self._scale
             dy = self.action._y * self._scale
         else:
@@ -3637,7 +3652,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                       (myd, this_dir))
             myd = os.path.join(this_dir, get_relative_path(d), name)
             absd = get_safe_path(myd)
-        if not os.path.isdir(absd):  # fallback to deprecated menu default if item 
+        if not os.path.isdir(absd) and not image:  # fallback to deprecated menu default if item 
             log.warning("***WARNING %s %s might need to be moved to items/ or emitters/, trying menu/ for now."%(d,name))
             if "data/items" in d:
                 d = "data/menu"
@@ -5261,7 +5276,7 @@ class Portal(Actor, metaclass=use_on_events):
     
     
     def exit(self, *args, **kwargs):
-        print("Portal.exit (%s) deprecated, replace with: portal.travel()")
+        print("Portal.exit (%s) deprecated, replace with: portal.travel()"%self.name)
 
     def exit_here(self, actor=None, block=True):
         """ exit the scene via the portal """
@@ -6223,6 +6238,14 @@ class Scene(MotionManager, metaclass=use_on_events):
         self._layer.append(layer.name)  # add layer items as items
         return layer
 
+    def _sort_layers(self):
+        layers = [get_object(self.game, x) for x in self._layer] 
+        layers.sort(key=lambda x: x.z)  # sort by z-value
+        if len(layers) > 0:  # use the lowest layer as the scene size
+            self._w, self._h = layers[0].w, layers[0].h
+        self._layer = [x.name for x in layers] #convert to ordered str list
+
+
     def _load_layers(self, game, wildcard=None, cls=Item):
         sdir = os.path.join(game.directory_scenes, self.name)
         absdir = get_safe_path(sdir)
@@ -6263,10 +6286,7 @@ class Scene(MotionManager, metaclass=use_on_events):
                 layers.append(layer)
                 log.warning("Falling back to background.png with no details for scene %s"%self.name)
 
-        layers.sort(key=lambda x: x.z)  # sort by z-value
-        if len(layers) > 0:  # use the lowest layer as the scene size
-            self._w, self._h = layers[0].w, layers[0].h
-        self._layer = [x.name for x in layers] #convert to ordered str list
+        self._sort_layers()
 
     def on_camera(self, point):
         self.x, self.y = point
@@ -6337,7 +6357,7 @@ class Scene(MotionManager, metaclass=use_on_events):
         #        self._background = [Layer(fname)]
         for i in self._layer:
             obj = get_object(self.game, i)
-            if obj.z < 1.0:
+            if obj.z <= 1.0: # remove existing backgrounds
                 self._layer.remove(i)
         self._load_layer(fname)
         if fname:
@@ -6345,7 +6365,9 @@ class Scene(MotionManager, metaclass=use_on_events):
                 obj = get_object(self.game, i)
                # if self.game and not self.game._headless:
                 obj.load_assets(self.game)
+                #self._add(obj)
             log.debug("Set background for scene %s to %s" % (self.name, fname))
+        self._sort_layers()            
 #        if fname == None and self._background == None and self._background_fname: #load image
 #            fname = self._background_fname
 #        if fname:
@@ -8309,6 +8331,8 @@ def restore_object(game, obj):
     if hasattr(obj, "_actions"): # refresh asset tracking
         for a in obj._actions.values(): 
             if a._loaded: a._loaded = False
+            if not hasattr(a, "_displace_clickable"): # backwards compat
+                a._displace_clickable = false
     if hasattr(obj, "create_label"):
         obj.create_label()
     if hasattr(obj, "set_editable"):
@@ -8958,6 +8982,8 @@ class Game(metaclass=use_on_events):
                 yield key, item
 
     def set_player(self, player):
+        if type(player) is str:
+            player = get_object(self, player)
         self._player = player
         if player:
             player.load_assets(self)
