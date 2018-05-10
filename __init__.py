@@ -7598,7 +7598,7 @@ class PlayerPygletSFX():
                 self._player.eos_action = pyglet.media.SourceGroup.loop
             elif loops>0:
                 for i in range(0, loops):
-                    self._player.queue(self._music)
+                    self._player.queue(self._sound)
             self._player.play()
             self.loops = loops
 
