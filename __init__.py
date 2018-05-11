@@ -8332,7 +8332,7 @@ def restore_object(game, obj):
         for a in obj._actions.values(): 
             if a._loaded: a._loaded = False
             if not hasattr(a, "_displace_clickable"): # backwards compat
-                a._displace_clickable = false
+                a._displace_clickable = False
     if hasattr(obj, "create_label"):
         obj.create_label()
     if hasattr(obj, "set_editable"):
