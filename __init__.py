@@ -221,6 +221,8 @@ DIRECTORY_FONTS = "data/fonts"
 DIRECTORY_EMITTERS = "data/emitters"
 #DIRECTORY_SAVES = SAVE_DIR
 DIRECTORY_INTERFACE = "data/interface"
+DIRECTORY_MUSIC = "data/music"
+DIRECTORY_SFX = "data/sfx"
 
 FONT_VERA = DEFAULT_MENU_FONT = os.path.join(DIRECTORY_FONTS, "vera.ttf")
 DEFAULT_MENU_SIZE = 26
@@ -8402,6 +8404,8 @@ class Game(metaclass=use_on_events):
         self.directory_actors = DIRECTORY_ACTORS
         self.directory_emitters = DIRECTORY_EMITTERS
         self.directory_interface = DIRECTORY_INTERFACE
+        self.directory_music = DIRECTORY_MUSIC
+        self.directory_sfx = DIRECTORY_SFX
         self.directory_screencast = None  # if not none, save screenshots
 
         # defaults
@@ -11437,7 +11441,7 @@ class MenuText(Text):
 item = game.add(Text("{name}", {pos}, "{text}", size={size}, wrap={wrap}, interact={interact}, font="{font}", colour={colour}, offset=2)
 item.on_key({key})
 """)
-        super().__init__(name, pos, text, colour, font, size, wrap, offset=2, interact=interact)
+        super().__init__(name, pos, text, colour, font, size, wrap, offset=4, interact=interact)
         
         # old example game.add(MenuText(i[0], (280,80), (840,170), i[1], wrap=800, interact=i[2], spos=(x, y+dy*i[4]), hpos=(x, y+dy*i[4]+ody),key=i[3], font=MENU_FONT, size=38), False, MenuItem)
         # spos, hpos were for animation and no longer supported.
