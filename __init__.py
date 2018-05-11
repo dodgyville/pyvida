@@ -6350,6 +6350,29 @@ class Scene(MotionManager, metaclass=use_on_events):
                     and obj != self.game.player:
                 self._remove(i)
 
+    def on_do(self, background, ambient=None): #scene.do
+        if self.game.engine != 1:
+            print("Deprecated, only used for backwards compatability, do not use.")
+        """ replace the background with the image in the scene's directory """        
+        #sdir = os.path.join(os.getcwd(),os.path.join(self.game.scene_dir, self.name))
+        #bname = os.path.join(sdir, "%s.png"%background)
+
+        sdir = os.path.join(self.game.directory_scenes, self.name)
+        absdir = get_safe_path(sdir)
+        
+        layer = self._load_layer(os.path.join(sdir, "%s.png"%background))
+        layer.load_assets(self.game)
+
+        """
+        if os.path.isfile(bname):
+            self._set_background(bname)
+        else:
+            if logging: log.error("scene %s has no image %s available"%(self.name, background))
+        """
+        if ambient: #set ambient sound
+            self.on_ambient(filename=ambient)
+        #self._event_finish()
+
     def on_set_background(self, fname=None):
         self._set_background(fname)
 
