@@ -1313,6 +1313,7 @@ def get_function(game, basic, obj=None, warn_on_empty=True):
         basic_name = basic.__name__
     else:
         basic_name = basic
+
     if obj:
         fn = getattr(obj, basic_name, None)
         if fn and hasattr(fn, "__name__"):
@@ -1339,6 +1340,14 @@ def get_function(game, basic, obj=None, warn_on_empty=True):
         # basic function is already a function so fall back to that
         script = basic
     return script
+
+def get_memorable_function(game, *args, **kwargs):
+    fn = get_function(game, *args, **kwargs)
+    if fn:
+        game._last_script = fn.__name__
+    else:
+        game._last_script = None
+    return fn
 
 
 def create_event(q):
@@ -3330,7 +3339,7 @@ class Actor(MotionManager, metaclass=use_on_events):
     def trigger_interact(self):
         if self.interact:  # if user has supplied an interact override
             if type(self.interact) in [str]:
-                interact = get_function(self.game, self.interact)
+                interact = get_memorable_function(self.game, self.interact)
                 if interact:
                     self.interact = interact
                 else:
@@ -3354,7 +3363,7 @@ class Actor(MotionManager, metaclass=use_on_events):
 
         else:  # else, search several namespaces or use a default
             basic = "interact_%s" % slugify(self.name)
-            script = get_function(self.game, basic)
+            script = get_memorable_function(self.game, basic)
             if script:
                 #                if self.game.edit_scripts:
                 #                    edit_script(self.game, self, basic, script, mode="interact")
@@ -3403,13 +3412,13 @@ class Actor(MotionManager, metaclass=use_on_events):
             if logging:
                 log.info("Using custom use script %s for actor %s" %
                          (basic, override_name))
-        script = get_function(self.game, basic)
+        script = get_memorable_function(self.game, basic)
         #if no script, try to find a default catch all scripts
         #for the actee or the actor
         default = "use_%s_on_default" % (slug_actor)
-        script = script if script else get_function(self.game, default)
+        script = script if script else get_memorable_function(self.game, default)
         default = "use_on_%s_default" % (slug_actee)
-        script = script if script else get_function(self.game, default)
+        script = script if script else get_memorable_function(self.game, default)
         if script:
             if logging:
                 log.info("Call use script (%s)" % basic)
@@ -3439,14 +3448,14 @@ class Actor(MotionManager, metaclass=use_on_events):
         self.game.mouse_mode = MOUSE_INTERACT  # reset mouse mode
 
         if self._look:  # if user has supplied a look override
-            script = get_function(self.game, self._look)
+            script = get_memorable_function(self.game, self._look)
             if script:
                 script(self.game, self, self.game.player)
             else:
                 log.error("no look script for %s found called %s" % (self.name, self._look))
         else:  # else, search several namespaces or use a default
             basic = "look_%s" % slugify(self.name)
-            script = get_function(self.game, basic)
+            script = get_memorable_function(self.game, basic)
             function_name = "def %s(game, %s, player):" % (
                 basic, slugify(self.name).lower())
             if script:
@@ -5092,7 +5101,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         self._goto(
             (self.x + displacement[0], self.y + displacement[1]), ignore, block, next_action)
 
-    def on_goto(self, destination, ignore=False, block=False, next_action=None):
+    def on_goto(self, destination, ignore=False, block=False, next_action=None): # actor.goto
         self._goto(destination, ignore=ignore, block=block, next_action=next_action)
 
     def _goto(self, destination, ignore=False, block=False, next_action=None):
@@ -7021,6 +7030,10 @@ class MenuManager(metaclass=use_on_events):
             obj.load_assets(self.game)
             obj._usage(draw=True, interact=True)
             self.game._menu.append(obj.name)
+
+    def on_set(self, objects):
+        self.on_clear()
+        self.on_add(objects)
             
     def contains(self, item):
         """ Is this item in the current menu? """
@@ -8787,6 +8800,8 @@ class Game(metaclass=use_on_events):
         # function to call after each event (useful for some game logic)
         self.event_callback = None
         self.postload_callback = None #hook to call after game load
+        self._last_script = None # used to handle errors in scripts
+        
 
         self._selected_options = []  # keep track of convo trees
         self.visited = []  # list of scene names visited
@@ -10696,7 +10711,12 @@ class Game(metaclass=use_on_events):
 #                print("DOING",e)
 #                print("doing event",e)
                 # call the function with the args and kwargs
-                e[0](*e[1], **e[2])
+                try:
+                    e[0](*e[1], **e[2])
+                except:
+                    print("Last script before error:", self._last_script)
+                    raise
+                
 #                if self._event_index < len(self._events) - 1:
                 self._event_index += 1  # potentially start next event
 #                print("SETTING EVENT_INDEX", self._event_index, len(self._events))
