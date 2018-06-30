@@ -5277,6 +5277,9 @@ class Portal(Actor, metaclass=use_on_events):
         return self.travel()
     
     
+    def arrive(self, *args, **kwargs):
+        print("Portal.arrive (%s) deprecated, replace with: portal.enter_here()"%self.name)
+    
     def exit(self, *args, **kwargs):
         print("Portal.exit (%s) deprecated, replace with: portal.travel()"%self.name)
 
@@ -7018,6 +7021,15 @@ class MenuManager(metaclass=use_on_events):
             obj.load_assets(self.game)
             obj._usage(draw=True, interact=True)
             self.game._menu.append(obj.name)
+            
+    def contains(self, item):
+        """ Is this item in the current menu? """
+        obj = get_object(self.game, item)        
+        if obj and obj.name in self.game._menu:
+            return True
+        else:
+            return False
+        
 
     def on_show(self): #menu.show
         self._show()
