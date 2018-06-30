@@ -278,6 +278,8 @@ DIRECTORY_FONTS = "data/fonts"
 DIRECTORY_EMITTERS = "data/emitters"
 #DIRECTORY_SAVES = SAVE_DIR
 DIRECTORY_INTERFACE = "data/interface"
+DIRECTORY_MUSIC = "data/music"
+DIRECTORY_SFX = "data/sfx"
 
 FONT_VERA = DEFAULT_MENU_FONT = os.path.join(DIRECTORY_FONTS, "vera.ttf")
 DEFAULT_MENU_SIZE = 26
@@ -6350,6 +6352,29 @@ class Scene(MotionManager, metaclass=use_on_events):
                     and obj != self.game.player:
                 self._remove(i)
 
+    def on_do(self, background, ambient=None): #scene.do
+        if self.game.engine != 1:
+            print("Deprecated, only used for backwards compatability, do not use.")
+        """ replace the background with the image in the scene's directory """        
+        #sdir = os.path.join(os.getcwd(),os.path.join(self.game.scene_dir, self.name))
+        #bname = os.path.join(sdir, "%s.png"%background)
+
+        sdir = os.path.join(self.game.directory_scenes, self.name)
+        absdir = get_safe_path(sdir)
+        
+        layer = self._load_layer(os.path.join(sdir, "%s.png"%background))
+        layer.load_assets(self.game)
+
+        """
+        if os.path.isfile(bname):
+            self._set_background(bname)
+        else:
+            if logging: log.error("scene %s has no image %s available"%(self.name, background))
+        """
+        if ambient: #set ambient sound
+            self.on_ambient(filename=ambient)
+        #self._event_finish()
+
     def on_set_background(self, fname=None):
         self._set_background(fname)
 
@@ -8694,6 +8719,8 @@ class Game(metaclass=use_on_events):
         self.directory_actors = DIRECTORY_ACTORS
         self.directory_emitters = DIRECTORY_EMITTERS
         self.directory_interface = DIRECTORY_INTERFACE
+        self.directory_music = DIRECTORY_MUSIC
+        self.directory_sfx = DIRECTORY_SFX
         self.directory_screencast = None  # if not none, save screenshots
 
         # defaults
@@ -11649,7 +11676,7 @@ item = game.add(Text("{name}", {pos}, "{text}", size={ssize}, wrap={wrap}, inter
 item.on_key("{key}")
 item.set_over_colour(MENU_COLOUR_OVER)
 """.format(**locals()))
-        super().__init__(name, pos, text, colour, font, size, wrap, offset=2, interact=interact)
+        super().__init__(name, pos, text, colour, font, size, wrap, offset=4, interact=interact)
         
         # old example game.add(MenuText(i[0], (280,80), (840,170), i[1], wrap=800, interact=i[2], spos=(x, y+dy*i[4]), hpos=(x, y+dy*i[4]+ody),key=i[3], font=MENU_FONT, size=38), False, MenuItem)
         # spos, hpos were for animation and no longer supported.
