@@ -58,7 +58,7 @@ try:
     EDITOR_AVAILABLE = True
 except ImportError:
     EDITOR_AVAILABLE = False
-
+    
 """
 from pyglet_gui.theme import Theme
 from pyglet_gui.gui import Label
@@ -12003,6 +12003,17 @@ if EDITOR_AVAILABLE:
             row += 1
 
             def save_state(*args, **kwargs):
+                for i in glob.glob("%s/*"%self.game.scene.directory):
+                    print("f",i)
+                s = input('state name (eg tmp.py)>') 
+                if s == "":
+                    return
+                else:
+                    state_name = os.path.splitext(os.path.basename(s))[0]
+                    print("save",state_name)
+                    self.game._save_state(state_name)                
+                return
+                # non-threadsafe
                 d = tk.filedialog.SaveFileDialog(self.app)
                 pattern, default, key = "*.py", "", None
                 fname = d.go(self.game.scene.directory, pattern, default, key)
