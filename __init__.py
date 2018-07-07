@@ -1146,7 +1146,6 @@ def close_on_says(game, obj, player):
                 mobj = get_object(game, item)
                 if getattr(mobj, "_pyglet_animate_scheduled", False): 
                     mobj._unschedule_animated_text() 
-
     except TypeError:
         log.warning("%s has no tmp_items in close_on_says. Might not be a problem in walkthrough_auto mode.", actor.name)
         return
@@ -3355,6 +3354,8 @@ class Actor(MotionManager, metaclass=use_on_events):
             try:
                 script(self.game, self, self.game.player)
             except:
+                if self.game:
+                    print("Last script: %s, this script: %s, last autosave: %s"%self.game._last_script, script.__name__, self.game._last_autosave)
                 log.error("Exception in %s" % script.__name__)
                 print("\nError running %s\n" % script.__name__)
                 if traceback:
@@ -5287,10 +5288,15 @@ class Portal(Actor, metaclass=use_on_events):
     
     
     def arrive(self, *args, **kwargs):
-        print("Portal.arrive (%s) deprecated, replace with: portal.enter_here()"%self.name)
+        print("ERROR: Portal.arrive (%s) deprecated, replace with: portal.enter_here()"%self.name)
     
     def exit(self, *args, **kwargs):
-        print("Portal.exit (%s) deprecated, replace with: portal.travel()"%self.name)
+        print("ERROR: Portal.exit (%s) deprecated, replace with: portal.travel()"%self.name)
+
+
+    def leave(self, *args, **kwargs):
+        print("ERROR: Portal.leave (%s) deprecated, replace with: portal.exit_here()"%self.name)
+
 
     def exit_here(self, actor=None, block=True):
         """ exit the scene via the portal """
@@ -7044,11 +7050,16 @@ class MenuManager(metaclass=use_on_events):
             return False
         
 
-    def on_show(self): #menu.show
-        self._show()
+    def on_show(self, menu_items=None): #menu.show
+        self._show(menu_items)
 
-    def _show(self):
-        for obj_name in self.game._menu:
+    def _show(self, menu_items=None):
+        if not menu_items:
+            menu_items = self.game._menu
+        if type(menu_items) not in [tuple, list]:
+            menu_items = [menu_items]            
+        
+        for obj_name in menu_items:
             obj = get_object(self.game, obj_name)
             if not obj: #XXX temp disable missing menu items
                 continue
@@ -7088,13 +7099,13 @@ class MenuManager(metaclass=use_on_events):
     def on_hide(self, menu_items=None): #menu.hide
         self._hide(menu_items=menu_items)
 
-    def on_fade_out(self):
+    def on_fade_out(self, menu_items=None):
         log.warning("menumanager.fade_out does not fade")
-        self._hide()
+        self._hide(menu_items)
 
-    def on_fade_in(self):
+    def on_fade_in(self, menu_items=None):
         log.warning("menumanager.fade_in does not fade")
-        self._show()
+        self._show(menu_items)
 
     def on_push(self):
         """ push this menu to the list of menus and clear the current menu """
@@ -8598,6 +8609,7 @@ def save_game(game, fname):
     """ save the game
         NOTE: This is a raw function and does not make the fname safe
     """
+    game._last_autosave = fname
     save_game_pickle(game, fname)
 
 
@@ -8804,6 +8816,7 @@ class Game(metaclass=use_on_events):
         self.event_callback = None
         self.postload_callback = None #hook to call after game load
         self._last_script = None # used to handle errors in scripts
+        self._last_autosave = None # use to handle errors in walkthroughs
         
 
         self._selected_options = []  # keep track of convo trees
