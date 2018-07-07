@@ -6143,6 +6143,9 @@ class Scene(MotionManager, metaclass=use_on_events):
         obj = get_object(self.game, obj)
         return True if obj.name in self._objects else False
 
+    def get_object(self, obj):
+        return get_object(self.game, obj)
+
     @property
     def directory(self): #scene.directory
         return os.path.join(self.game.directory_scenes, self.name)
