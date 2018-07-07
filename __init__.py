@@ -3355,7 +3355,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                 script(self.game, self, self.game.player)
             except:
                 if self.game:
-                    print("Last script: %s, this script: %s, last autosave: %s"%self.game._last_script, script.__name__, self.game._last_autosave)
+                    print("Last script: %s, this script: %s, last autosave: %s"%(self.game._last_script, script.__name__, self.game._last_autosave))
                 log.error("Exception in %s" % script.__name__)
                 print("\nError running %s\n" % script.__name__)
                 if traceback:
