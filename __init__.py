@@ -2628,6 +2628,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         self._interact_key = None #keyboard key assigned to this interact
         self._interact = interact  # special queuing function for interacts
         self._look = look  # override queuing function for look
+        self._preupdate = None # call before _update
         self._finished_goto = None #override function when goto has finished
         # allow drag if not None, function will be called when item is released
         # after being dragged
@@ -3423,7 +3424,12 @@ class Actor(MotionManager, metaclass=use_on_events):
         if script:
             if logging:
                 log.info("Call use script (%s)" % basic)
-            script(self.game, self, actor)
+            try:
+                script(self.game, self, actor)
+            except:
+                if self.game:
+                    print("Last script: %s, this script: %s, last autosave: %s"%(self.game._last_script, script.__name__, self.game._last_autosave))
+                raise
         else:
             # warn if using default vida look
             if self.allow_use:
@@ -4987,12 +4993,15 @@ class Actor(MotionManager, metaclass=use_on_events):
 #        available_points.extend([start, end]) #add the current start, end points (assume valid)
         solids = []
         for o in scene._objects:
-            o = get_object(self.game, o)
-            if o._allow_draw == True and o != self.game.player and not isinstance(o, Emitter):
+            obj = get_object(self.game, o)
+            if not obj:
+                print("ERROR: Unable to find %s in scene even though it is recorded in scene."%o)
+                continue
+            if obj._allow_draw == True and obj != self.game.player and not isinstance(obj, Emitter):
 #                print("using solid",o.name,o.solid_area.flat2)
-                solids.append(o.solid_area)
+                solids.append(obj.solid_area)
                 # add more waypoints based on the edges of the solid areas of objects in scene
-                for pt in o.solid_area.waypoints:
+                for pt in obj.solid_area.waypoints:
                     if pt not in available_points:
                         available_points.append(pt)
         available_points = [pt for pt in available_points if walkarea.valid(*pt)] #scrub out non-valid points.
@@ -6014,6 +6023,9 @@ class WalkAreaManager(metaclass=use_on_events):
             scene = get_object(self.game, self._scene)
             for obj_name in scene._objects:
                 obj = get_object(scene.game, obj_name)
+                if not obj:
+                    print("ERROR: %s not found in scene even though recorded in scene"%obj_name)
+                    continue
                 if obj.allow_update and obj.solid_area.collidepoint(x, y) and not isinstance(obj, Emitter):
                     outside_solids = False
                     break
@@ -10865,8 +10877,24 @@ class Game(metaclass=use_on_events):
                 log.error("Some item(s) in scene %s are None, which is odd."%self.name)
                 continue
             item.game = self
-            if hasattr(item, "_update"):
+            """
+            if item._update:
+                fn = get_function(self, item._update)
+                fn(item, dt)
+            else:
+                item._default_update(dt, obj=item)
+            """
+                
+            if hasattr(item, "_preupdate") and item._preupdate:
+                fn = get_function(self, item._preupdate)
+                if fn:
+                    fn(item, dt)
+                else:
+                    print("ERROR: Can't find %s."%item._preupdate)
+                
+            if hasattr(item, "_update") and item._update:
                 item._update(dt, obj=item)
+                
         if single_event:
             self._handle_events()  # run the event handler only once
         else:
