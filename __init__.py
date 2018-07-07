@@ -8772,6 +8772,9 @@ class Game(metaclass=use_on_events):
         self._gui = []
         self.storage = Storage()
         self.resolution = resolution
+        self._old_scale = None    
+        self._old_pos_x, self._old_pos_y = 0, 0 
+        self.resizable = False
         self.nuke = False #nuke platform dependent files such as game.settings
 
 #        self._window.on_joybutton_release = self.on_joybutton_release
@@ -8950,6 +8953,9 @@ class Game(metaclass=use_on_events):
 
         if options.fullscreen: 
             fullscreen = not fullscreen
+            
+        if options.resizable:
+            self.resizable = True            
 
         override_resolution = None
         # two ways to override a resolution, from the game.conf file or from the commandline
@@ -9896,6 +9902,13 @@ class Game(metaclass=use_on_events):
 
             else: #editing a point
                 self._editing_point_set(x)
+                
+    def on_resize(self, width, height):
+        print("Resize window to ",width, " ", height)
+        #self._window.set_size(width, height)
+        self._screen_size_override = (width, height)        
+        self.reset_window(self.fullscreen)     
+        pyglet.window.Window.on_resize(self._window, width, height)
 
     def add_arguments(self):
         """ Add allowable commandline arguments """
@@ -9935,6 +9948,9 @@ class Game(metaclass=use_on_events):
                                  help="Randomly deviate [x] steps from walkthrough to stress test robustness of scripting")
         self.parser.add_argument("-r", "--resolution", dest="resolution",
                                  help="Force engine to use resolution WxH or (w,h) (recommended (1600,900)). If 0, disabled scaling.")
+        self.parser.add_argument("-rz", "--resizable", dest="resizable",action="store_true",
+                                 help="Allow window to be resized.")
+        
         self.parser.add_argument(
             "-s", "--step", dest="target_step", nargs='+', help="Jump to step in walkthrough")
         self.parser.add_argument("-t", "--text", action="store_true", dest="text",
@@ -10659,6 +10675,10 @@ class Game(metaclass=use_on_events):
         safe_to_call_again = False  # is it safe to call _handle_events immediately after this?
         waiting_for_user = True
 #        log.info("There are %s events, game._waiting is %s, index is %s and current event is %s",len(self._events), self._waiting, self._event_index, self._event)
+        if self.resizable and self._window.on_resize != self.on_resize: # now allow our override
+            print("enable resizeable")
+            self._window.on_resize = self.on_resize # now allow our override
+            
         if self._waiting_for_user: # don't do anything until user clicks
             return safe_to_call_again
 
@@ -11486,9 +11506,17 @@ class Game(metaclass=use_on_events):
         gh *= scale
         self._window_dx = dx = (w-gw)
         self._window_dy = dy = (h-gh)
+        # reset scale
+        if self._old_scale:
+            s = self._old_scale #math.sqrt(self._old_scale)
+            glTranslatef(-self._old_pos_x, -self._old_pos_y, 0) # shift back
+            pyglet.gl.glScalef(1.0/s, 1.0/s, 1.0/s)            
+        # set new scale
         if scale != 1.0:
             pyglet.gl.glScalef(scale, scale, scale)
-        glTranslatef(dx/scale, dy/scale, 0) #move to middle of screen
+            self._old_scale = scale
+        self._old_pos_x, self._old_pos_y = dx/scale, dy/scale
+        glTranslatef(self._old_pos_x, self._old_pos_y, 0) #move to middle of screen
         self._bars = []
         pattern =  pyglet.image.SolidColorImagePattern((0, 0, 0, 255))
         if int(dx) > 0: # vertical bars
@@ -11533,6 +11561,7 @@ class Game(metaclass=use_on_events):
         #    w, h = self._window.get_size()
         #else:
         w, h = self.screen_size
+        #print("w,h,",self.screen_size)
 
         width, height = self.resolution
         scale = 1.0
@@ -11551,9 +11580,10 @@ class Game(metaclass=use_on_events):
             scale = new_scale
 #            print("SCALING",resolution, scale)
         if create: 
-#            print("creating window")
+            #print("creating window")
             sw, sh = self._screen_size_override if self._screen_size_override else (width, height)
-            self._window = Window(width=sw, height=sh, fullscreen=fullscreen, screen=self.screen) 
+            self._window = Window(width=sw, height=sh, fullscreen=fullscreen, screen=self.screen, resizable=self.resizable) 
+        #import pdb; pdb.set_trace()
         self._scale = scale
         self.fullscreen = fullscreen #status of this session
         self.create_bars_and_scale(width, height, scale)
