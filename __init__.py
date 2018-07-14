@@ -10769,7 +10769,7 @@ class Game(metaclass=use_on_events):
                 try:
                     e[0](*e[1], **e[2])
                 except:
-                    print("Last script before error:", self._last_script)
+                    print("Last script: %s, this script: %s, last autosave: %s"%(self._last_script, e[0].__name__, self._last_autosave))
                     raise
                 
 #                if self._event_index < len(self._events) - 1:
