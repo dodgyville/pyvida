@@ -1164,7 +1164,7 @@ def close_on_says(game, obj, player):
             actor.name, obj.tmp_text, actor.busy))
 
 
-def option_answer_callback(game, btn, player):
+def option_answer_callback(game, btn, player, *args):
     """ Called when the option is selected in on_asks """
     creator = get_object(game, btn.tmp_creator)
     creator.busy -= 1  # no longer busy, so game can stop waiting
@@ -1185,13 +1185,18 @@ def option_answer_callback(game, btn, player):
     creator.tmp_modals = None
 
     if btn.response_callback:
+        extra_args = btn.response_callback_args
         fn = btn.response_callback if callable(
             btn.response_callback) else get_function(game,
                                                      btn.response_callback, btn)
         if not fn:
             import pdb
             pdb.set_trace()
-        fn(game, btn, player)
+        if len(extra_args)>0:
+            fn(game, btn, player, *extra_args)
+        else:
+            fn(game, btn, player)
+            
 
 
 def get_smart_directory(game, obj):
@@ -4080,7 +4085,8 @@ class Actor(MotionManager, metaclass=use_on_events):
         # add the options
         msgbox = items[0]
         for i, option in enumerate(args):
-            text, callback = option
+            text, callback, *extra_args = option
+            
             if self.game.player:
                 # use the player's text options
                 kwargs = self.game.player._get_text_details()
@@ -4124,6 +4130,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             opt._mouse_none = option_mouse_none
             opt._mouse_motion = option_mouse_motion
             opt.response_callback = callback
+            opt.response_callback_args = extra_args
             self.tmp_items.append(opt.name) #created by _says
             self.tmp_modals.append(opt.name)
             self.game._add(opt)
