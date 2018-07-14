@@ -1280,7 +1280,7 @@ def get_best_file(game, f_raw):
             directories = [d_mod_lm, d_lm, d_mod_hc, d_hc, d_mod, d]
         else:
             directories = [d_lm, d_hc, d]
-    elif game.settings.high_contrast:
+    elif game.settings and game.settings.high_contrast:
         if CONFIG["mods"]:
             directories = [d_mod_hc, d_hc, d_mod, d]
         else:
@@ -4190,7 +4190,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             self.game._info_object.display_text = " " 
         high_contrast = "%s_highcontrast" % ("msgbox" if not using else using)
         myd = os.path.join(self.game.directory_items, high_contrast)
-        using = high_contrast if self.game.settings.high_contrast and os.path.isdir(
+        using = high_contrast if self.game.settings and self.game.settings.high_contrast and os.path.isdir(
             myd) else background
         msgbox = get_object(self.game, using)
         if not msgbox or len(msgbox._actions) == 0:  # assume using is a file
@@ -8952,7 +8952,7 @@ class Game(metaclass=use_on_events):
                     print("No steam api connection")
 
     
-    def init(self):
+    def init(self, override_resolution=None):
         """ Complete all the pyglet and pygame initialisation """
         fonts_smart(self) #load fonts
 
@@ -8985,7 +8985,7 @@ class Game(metaclass=use_on_events):
         if options.resizable:
             self.resizable = True            
 
-        override_resolution = None
+        override_resolution = override_resolution
         # two ways to override a resolution, from the game.conf file or from the commandline
         if "resolution" in CONFIG and CONFIG["resolution"]: # use override from game.conf
             override_resolution = CONFIG["resolution"]
@@ -9043,7 +9043,7 @@ class Game(metaclass=use_on_events):
 
     def start_engine_lock(self):
         # Force game to draw at least at a certain fps (default is 30 fps)
-        if self.settings.lock_engine_fps != None:
+        if self.settings and self.settings.lock_engine_fps != None:
             print("Start engine lock")
             pyglet.clock.schedule_interval(self.lock_update, 1.0/self.settings.lock_engine_fps)
 
