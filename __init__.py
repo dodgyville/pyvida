@@ -32,7 +32,7 @@ from collections import Iterable
 from datetime import datetime, timedelta
 from functools import total_ordering
 import gettext as igettext
-from gettext import gettext
+#from gettext import gettext
 #from gettext import gettext as _
 from os.path import expanduser
 from random import choice, randint, uniform
@@ -191,13 +191,16 @@ INFO = load_info("game.info")
 CONFIG = load_config("game.conf")
 
 language = CONFIG["language"]
+language = "de" #XXX forcing german
 
 if language:
-    t = igettext.translation(INFO["slug"], localedir=os.path.join('data', 'locale'), languages=[language])
+    t = igettext.translation(INFO["slug"], localedir=get_safe_path(os.path.join('data', 'locale')), languages=[language])
 else:
-    t = igettext.translation(INFO["slug"], localedir=os.path.join('data', 'locale'), fallback=True)
+    t = igettext.translation(INFO["slug"], localedir=get_safe_path(os.path.join('data', 'locale')), fallback=True)
 
 t.install()
+_ = gettext = t.gettext
+
 
 try:
     import android
@@ -1229,6 +1232,8 @@ def get_best_directory(game, d_raw_name):
         return the best option     
         XXX: Possibly not used, see get_best_file_below            
     """
+    if "logo" in d_raw_name:
+        import pdb; pdb.set_trace()
     if language:
         l = os.path.join(os.path.join('data', 'locale'), language)
         d_raws = [os.path.join(l, d_raw_name), d_raw_name]
@@ -1264,9 +1269,16 @@ def get_best_file(game, f_raw):
         the game directory or the pyvida directory and return the best option                 
         TODO: Low memory ignores high contrast.
     """
+    if language: # check for a locale override
+        l = os.path.join(os.path.join('data', 'locale'), language)
+        test_locale = os.path.join(l, f_raw)
+        if os.path.exists(test_locale):
+            f_raw = test_locale
+
     d_raw, f_name = os.path.split(f_raw)
     key = os.path.basename(os.path.normpath(d_raw))
     base = os.path.dirname(os.path.normpath(d_raw))
+
 
     LM = "_lowmemory"
     key_lm = "%s%s"%(key, LM) # eg inventory_lowmemory
@@ -3651,7 +3663,6 @@ class Actor(MotionManager, metaclass=use_on_events):
         """
         DEFAULT_CLICKABLE = Rect(0, 0, 70, 110)
         self.game = game       
-
         if using:
             if logging:
                 log.info(
@@ -11235,7 +11246,11 @@ class Game(metaclass=use_on_events):
         self.mouse_cursors[key] = image
 
     def add_font(self, filename, fontname):
-        font = get_font(self, filename, fontname)
+        if language:
+            d = os.path.join("data/locale/%s"%language, filename)
+        else:
+            d = filename        
+        font = get_font(self, d, fontname)
         _pyglet_fonts[filename] = fontname
 
     def add_modal(self, modal):
@@ -11524,7 +11539,7 @@ class Game(metaclass=use_on_events):
             obj = get_object(game, i)
             obj.show()
         actor = get_object(game, actor)
-        actor.says(gettext("Game saved."), action=action)
+        actor.says(_("Game saved."), action=action)
         if not fast:
             game.menu.show()
 
