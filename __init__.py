@@ -32,8 +32,6 @@ from collections import Iterable
 from datetime import datetime, timedelta
 from functools import total_ordering
 import gettext as igettext
-#from gettext import gettext
-#from gettext import gettext as _
 from os.path import expanduser
 from random import choice, randint, uniform
 from time import sleep
