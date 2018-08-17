@@ -1577,7 +1577,7 @@ class AchievementManager(object, metaclass=use_on_events):
             game.achievement.relocate(game.scene, (120, game.resolution[1]))
             game.achievement.z = 3
 
-            text = Text("achievement_text", pos=(130,240), display_text=a.name, colour=FONT_ACHIEVEMENT_COLOUR, font=FONT_ACHIEVEMENT, size=FONT_ACHIEVEMENT_SIZE)
+            text = Text("achievement_text", pos=(130,240), display_text=_(a.name), colour=FONT_ACHIEVEMENT_COLOUR, font=FONT_ACHIEVEMENT, size=FONT_ACHIEVEMENT_SIZE)
             game.add(text, replace=True)
             text._ay = -200
             text.z = 3
@@ -1593,7 +1593,7 @@ class AchievementManager(object, metaclass=use_on_events):
 
             game.achievement.relocate(game.scene)
             game.mixer.sfx_play("data/sfx/achievement.ogg", "achievement")
-            game.achievement.display_text = a.description
+            game.achievement.display_text = _(a.description)
             game.achievement.retext((0, -FONT_ACHIEVEMENT_SIZE*3))
             game.achievement.motion("popup", mode=ONCE, block=True)
             #TODO: replace with bounce Motion
@@ -1965,6 +1965,18 @@ def load_defaults(game, obj, name, filename):
                 if "sway" in val:
                     obj.on_sway()
                 continue
+            if key == "display_text": # i18n display text
+                """
+                import polib
+                po = polib.pofile('data/locale/de/LC_MESSAGES/spaceout2.po')
+                found = False
+                for entry in po:
+                    if entry.msgid  == val:
+                        found = True
+                if not found:
+                    print("    _(\"%s\"),"%val)
+                """
+                val = _(val)
             if key == "font_colour":
                 if type(val) == list:
                     val = tuple(val)
@@ -4430,9 +4442,9 @@ class Actor(MotionManager, metaclass=use_on_events):
         if self.game and self.game._output_walkthrough: print("%s adds %s to inventory."%(self_name, name))
 
         if self.game and self == self.game.player:
-            text = "%s added to your inventory!" % name
+            text = _("%s added to your inventory!") % name
         else:
-            text = "%s gets %s!" % (self.name, name)
+            text = _("%s gets %s!") % (self.name, name)
 
         # Actor can only spawn events belonging to it.
         items = self._says(text, action=action, ok=ok)        
@@ -7080,7 +7092,18 @@ class MenuManager(metaclass=use_on_events):
         else:
             return False
         
+    def load_assets(self): #scene.load
+#        print("loading assets for scene",self.name)
+        for i in self.load_assets_responsive():
+            pass
 
+    def load_assets_responsive(self):
+        for obj_name in self.game._menu:
+            obj = get_object(self.game, obj_name)
+            if obj:
+                obj.load_assets(self.game)
+                yield
+        
     def on_show(self, menu_items=None): #menu.show
         self._show(menu_items)
 
