@@ -10261,6 +10261,7 @@ class Game(metaclass=use_on_events):
                         if type(player) == str and player == name:
                             a = player_class(name)
                         else:
+#                            print("    _(\"%s\"),"%name)
                             a = obj_cls(name)
                         self._add(a, replace=True)
                     else:  # if just refreshing, then use the existing object
@@ -10614,6 +10615,8 @@ class Game(metaclass=use_on_events):
             button = pyglet.window.mouse.LEFT
             modifiers = 0
             # check modals and menu first for text options
+            actor_name = _(actor_name)
+            
             obj = None
             actor = get_object(self, actor_name)
             probably_an_ask_option = actor_name in self._modals or actor.name in self._modals if actor else False
