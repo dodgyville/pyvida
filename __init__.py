@@ -3752,7 +3752,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         # potentially load some defaults for this actor
         filepath = os.path.join(
             absd, "%s.defaults" % slugify(self.name).lower())
-        load_defaults(game, self, self.name, filepath)
+        load_defaults(game, self, self.name, filepath)        
 
         """ XXX per actor quickload disabled in favour single game quickload, which I'm testing at the moment
         #save fast load info for this actor (rebuild using --B option)
@@ -10177,7 +10177,7 @@ class Game(metaclass=use_on_events):
         """ On screen at one time can be an info text (eg an object name or menu hover) 
             Set that here.
         """
-        self._info_object.display_text = text
+        self._info_object.display_text = _(text)
         if text and len(text) == 0:
             return
         w = self._info_object.w
