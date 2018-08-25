@@ -11272,6 +11272,10 @@ class Game(metaclass=use_on_events):
     def add_font(self, filename, fontname):
         if language:
             d = os.path.join("data/locale/%s"%language, filename)
+            if os.path.exists(d):
+                log.info("Using language override %s"%d)
+            else:
+                d = filename
         else:
             d = filename        
         font = get_font(self, d, fontname)
