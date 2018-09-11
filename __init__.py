@@ -1,42 +1,41 @@
+"""pyvida - cross platform point-and-click adventure game engine
 """
-Python3 
-"""
+
+from argparse import ArgumentParser
+from collections import Iterable
+from datetime import datetime, timedelta
 import copy
 import euclid3 as eu
+from functools import total_ordering
 import gc
+import gettext as igettext
 import glob
 import imghdr
 import imp
 import itertools
 import json
 import math
+from math import sin, cos, radians
 from operator import sub
 import os
+from os.path import expanduser
 import pickle
-import pyglet.clock
 import queue
-import webbrowser
-
-import pyglet
-
+from random import choice, randint, uniform
 import struct
 import subprocess
 import sys
 import threading
-import time
-import traceback
 from threading import Thread
-
-from argparse import ArgumentParser
-from collections import Iterable
-from datetime import datetime, timedelta
-from functools import total_ordering
-import gettext as igettext
-from os.path import expanduser
-from random import choice, randint, uniform
+import time
 from time import sleep
-from math import sin, cos, radians
+import traceback
+import webbrowser
+
+# 3rd party modules
 from fontTools.ttLib import TTFont
+import pyglet
+import pyglet.clock
 
 PORT = 8000 + randint(0,100)
 
@@ -44,7 +43,7 @@ PORT = 8000 + randint(0,100)
 # Steam support for achievement manager
 try:
     from steampak import SteamApi  # Main API entry point.
-except:
+except ImportError:
     SteamApi = None
 
 
@@ -57,76 +56,58 @@ try:
 except ImportError:
     EDITOR_AVAILABLE = False
     
-"""
-from pyglet_gui.theme import Theme
-from pyglet_gui.gui import Label
-from pyglet_gui.manager import Manager
-from pyglet_gui.buttons import Button, OneTimeButton, Checkbox
-from pyglet_gui.containers import VerticalContainer, HorizontalContainer
-from pyglet_gui.option_selectors import Dropdown
-"""
 
 try:
     from pyglet.gl import *
+    from pyglet.gl.gl import c_float
+    from pyglet.image.codecs.png import PNGImageDecoder
+    import pyglet.window.mouse
 except pyglet.window.NoSuchConfigException:
     pass
 
-from pyglet.gl.gl import c_float
 
-from pyglet.image.codecs.png import PNGImageDecoder
-import pyglet.window.mouse
-
-editor_queue = queue.Queue() # used to share info between editor and game
+editor_queue = queue.Queue()  # used to share info between editor and game
 
 # TODO better handling of loading/unloading assets
 
 APP_DIR = "."
-if "LOCALAPPDATA" in os.environ: #win 7
+if "LOCALAPPDATA" in os.environ:  # win 7
     APP_DIR = os.environ["LOCALAPPDATA"]
-elif "APPDATA" in os.environ: #win XP
+elif "APPDATA" in os.environ: # win XP
     APP_DIR = os.environ["APPDATA"]
-elif 'darwin' in sys.platform: # check for OS X support
-#    import pygame._view
+elif 'darwin' in sys.platform:  # check for OS X support
     APP_DIR = os.path.join(expanduser("~"), "Library", "Application Support")
 
 
 # detect pyinstaller on mac
 frozen = False
-if getattr(sys, 'frozen', False): # we are running in a bundle            
+if getattr(sys, 'frozen', False):  # we are running in a bundle
     frozen = True    
 if frozen:
-    working_dir = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(sys.argv[0]))) # get pyinstaller variable or use a default (perhaps cx_freeze)
-    #working_dir = "/home/luke/Projects/spaceout-pleasure"
-    #script_filename = os.path.join(working_dir, os.path.basename(__file__))
-    print("Frozen bundle, pyvida directories are at",__file__, working_dir)
+    # get pyinstaller variable or use a default (perhaps cx_freeze)
+    working_dir = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(sys.argv[0])))
+    print("Frozen bundle, pyvida directories are at", __file__, working_dir)
     script_filename = __file__
 else:
     # we are running in a normal Python environment
-    working_dir = os.path.dirname(os.path.abspath(sys.argv[0])) #os.path.dirname(os.path.abspath(__file__))
-    script_filename = os.path.abspath(__file__) #pyvida script
+    working_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+    script_filename = os.path.abspath(__file__)  # pyvida script
     print("Normal environment, pyvida directories at", working_dir)
 
 
 def get_safe_path(relative):
     """ return a path safe for mac bundles and other situations """
-    if os.path.isabs(relative): # return a relative path unchanged
+    if os.path.isabs(relative):  # return a relative path unchanged
         return relative
 
     safe = os.path.join(working_dir, relative)
-    """
-    if frozen: #inside a mac bundle
-        safe = os.path.join(working_dir, relative)
-#        print("return safe",relative, safe)
-    else:
-        safe = relative #TODO perhaps force entire engine to use working_dir
-    """
     return safe
 
 def get_relative_path(path):
-    """ Get a safe relative path based on the game working directory, not necessarily the executing working directory """
+    """ return safe relative path based on game working directory, not necessarily the executing working directory """
     if os.path.isabs(path):
         safe = os.path.relpath(path, working_dir)
-    else: # already relative
+    else:  # already relative
         safe = path
     return safe
 
@@ -138,6 +119,7 @@ if SteamApi:
         STEAM_LIBRARY_PATH = get_safe_path("libsteam_api.so")
     else:
         STEAM_LIBRARY_PATH = get_safe_path("steam_api.dll")
+
 
 def load_info(fname_raw):
     """ Used by developer to describe game """
@@ -151,6 +133,7 @@ def load_info(fname_raw):
                     key, v = d.strip().split("=")
                     config[key] = v
     return config
+
 
 def load_config(fname_raw):
     """ Used by player to override game settings """
