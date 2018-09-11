@@ -3504,22 +3504,22 @@ class Actor(MotionManager, metaclass=use_on_events):
     def _interact_default(self, game, actor, player):
         """ default queuing interact smethod """
         if isinstance(self, Item):  # very generic
-            c = ["It's not very interesting.",
-                 "I'm not sure what you want me to do with that.",
-                 "I've already tried using that, it just won't fit."]
+            c = [_("It's not very interesting."),
+                 _("I'm not sure what you want me to do with that."),
+                 _("I've already tried using that, it just won't fit.")]
         else:  # probably an Actor object
-            c = ["They're not responding to my hails.",
-                 "Perhaps they need a good poking.",
-                 "They don't want to talk to me."]
+            c = [_("They're not responding to my hails."),
+                 _("Perhaps they need a good poking."),
+                 _("They don't want to talk to me.")]
         if self.game and self.game.player:
             self.game.player.says(choice(c))
 
     def _use_default(self, game, actor, actee):
         """ default queuing use method """
         c = [
-            "I don't think that will work.",
-            "It's not designed to do that.",
-            "It won't fit, trust me, I know.",
+            _("I don't think that will work."),
+            _("It's not designed to do that."),
+            _("It won't fit, trust me, I know."),
         ]
         if self.game.player:
             self.game.player.says(choice(c))
@@ -3527,12 +3527,12 @@ class Actor(MotionManager, metaclass=use_on_events):
     def _look_default(self, game, actor, player):
         """ default queuing look method """
         if isinstance(self, Item):  # very generic
-            c = ["It's not very interesting.",
-                 "There's nothing cool about that.",
-                 "It looks unremarkable to me."]
+            c = [_("It's not very interesting."),
+                 _("There's nothing cool about that."),
+                 _("It looks unremarkable to me.")]
         else:  # probably an Actor object
-            c = ["They're not very interesting.",
-                 "I probably shouldn't stare.",
+            c = [_("They're not very interesting."),
+                 _("I probably shouldn't stare."),
                  ]
         if self.game.player:
             self.game.player.says(choice(c))
