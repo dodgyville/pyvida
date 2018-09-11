@@ -37,8 +37,7 @@ from fontTools.ttLib import TTFont
 import pyglet
 import pyglet.clock
 
-PORT = 8000 + randint(0,100)
-
+PORT = 8000 + randint(0, 100)
 
 # Steam support for achievement manager
 try:
@@ -1948,6 +1947,18 @@ def load_defaults(game, obj, name, filename):
                 if "sway" in val:
                     obj.on_sway()
                 continue
+            if key == "_fog_display_text": # i18n display text
+                """
+                import polib
+                po = polib.pofile('data/locale/de/LC_MESSAGES/spaceout2.po')
+                found = False
+                for entry in po:
+                    if entry.msgid  == val:
+                        found = True
+                if not found:
+                    print("    _(\"%s\"),"%val)
+                """
+                val = _(val)
             if key == "display_text": # i18n display text
                 """
                 import polib
@@ -6222,11 +6233,7 @@ class Scene(MotionManager, metaclass=use_on_events):
         # potentially load some defaults for this scene
         filepath = os.path.join(
             sdir, "%s.defaults" % slugify(self.name).lower())
-        if os.path.isfile(filepath):
-            with open(filepath, 'r') as f:
-                object_defaults = json.loads(f.read())
-            for key, val in object_defaults.items():
-                self.__dict__[key] = val
+        load_defaults(game, self, self.name, filepath)
         return self
 
 
