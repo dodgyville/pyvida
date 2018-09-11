@@ -173,14 +173,19 @@ CONFIG = load_config("game.conf")
 language = CONFIG["language"]
 language = "de" #XXX forcing german
 
-if language:
-    t = igettext.translation(INFO["slug"], localedir=get_safe_path(os.path.join('data', 'locale')), languages=[language])
-else:
-    t = igettext.translation(INFO["slug"], localedir=get_safe_path(os.path.join('data', 'locale')), fallback=True)
+def set_language(new_language=None):
+    if new_language:
+        t = igettext.translation(INFO["slug"], localedir=get_safe_path(os.path.join('data', 'locale')), languages=[new_language])
+    else:
+        t = igettext.translation(INFO["slug"], localedir=get_safe_path(os.path.join('data', 'locale')), fallback=True)
+    t.install()
+    global language
+    global _
+    global gettext
+    language = new_language
+    _ = gettext = t.gettext
 
-t.install()
-_ = gettext = t.gettext
-
+set_language(language)
 
 try:
     import android
@@ -9992,6 +9997,7 @@ class Game(metaclass=use_on_events):
                                  help="Estimate cost of artwork in game (background is cost per background, etc)")
         self.parser.add_argument(
             "-l", "--lowmemory", action="store_true", dest="memory_save", help="Run game in low memory mode")
+        self.parser.add_argument("-i18n", "--i18n <code>", dest="language_code", help="Set language code")
         self.parser.add_argument("-m", "--matrixinventory", action="store_true", dest="test_inventory",
                                  help="Test each item in inventory against each item in scene", default=False)
         self.parser.add_argument("-n", "--nuke", action="store_true", dest="nuke",
@@ -10400,6 +10406,8 @@ class Game(metaclass=use_on_events):
             t = datetime.now().strftime("%d-%m-%y")
             print("Created %s, updated %s"%(t,t))
         # switch on test runner to step through walkthrough
+        if options.language_code:
+            set_language(options.language_code)
         if options.target_step:
             print("AUTO WALKTHROUGH")
             self._walkthrough_auto = True #auto advance
