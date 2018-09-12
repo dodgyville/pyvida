@@ -993,9 +993,17 @@ def get_object(game, obj, case_insensitive=False):
         robj = actors_lower[obj]
     else:
         # look for the display names in _items in case obj is the name of an
-        # on_ask option
+        # on_ask option or translated
         for i in game._items.values():
-            if obj in [i.name, i.display_text]:
+            if obj in [i.name, i.display_text, _(i.name), _(i.display_text)]:
+                robj = i
+                return i
+        for i in game._actors.values():
+            if obj in [i.name, i.display_text, _(i.name), _(i.display_text)]:
+                robj = i
+                return i
+        for i in game._scenes.values():
+            if obj in [i.name, i.display_text, _(i.name), _(i.display_text)]:
                 robj = i
                 return i
     return robj
