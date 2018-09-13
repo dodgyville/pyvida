@@ -1502,7 +1502,6 @@ class PyvidaSprite(pyglet.sprite.Sprite):
         if frame.duration is not None:
             duration = frame.duration - (self._next_dt - dt)
             duration = min(max(0, duration), frame.duration)
-            #            clock.schedule_once(self._animate, duration)
             self._next_dt = duration
         else:
             self.dispatch_event('on_animation_end')
@@ -1514,7 +1513,7 @@ class PyvidaSprite(pyglet.sprite.Sprite):
 
     def _set_image(self, img):
         if self._animation is not None:
-            clock.unschedule(self._animate)
+            pyglet.clock.unschedule(self._animate)
             self._animation = None
 
         if isinstance(img, image.Animation):
@@ -1522,8 +1521,6 @@ class PyvidaSprite(pyglet.sprite.Sprite):
             self._frame_index = 0
             self._set_texture(img.frames[0].image.get_texture())
             self._next_dt = img.frames[0].duration
-        #            if self._next_dt:
-        #                clock.schedule_once(self._animate, self._next_dt)
         else:
             self._set_texture(img.get_texture())
         self._update_position()
@@ -5881,6 +5878,7 @@ class WalkAreaManager(metaclass=use_on_events):
 
     def _set_point(self, x=None, y=None, z=None):
         i = -1
+        pts = None
         if self._edit_polygon_index >= 0:
             i = self._edit_polygon_index
             pts = self._polygon
