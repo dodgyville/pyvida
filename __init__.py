@@ -1,4 +1,18 @@
 """pyvida - cross platform point-and-click adventure game engine
+                                                         _______
+_________   _...._                  .----.     .----..--.\  ___ `'.
+\        |.'      '-. .-.          .-\    \   /    / |__| ' |--.\  \
+ \        .'```'.    '.\ \        / / '   '. /'   /  .--. | |    \  '
+  \      |       \     \\ \      / /  |    |'    /   |  | | |     |  '    __
+   |     |        |    | \ \    / /   |    ||    |   |  | | |     |  | .:--.'.
+   |      \      /    .   \ \  / /    '.   `'   .'   |  | | |     ' .'/ |   \ |
+   |     |\`'-.-'   .'     \ `  /      \        /    |  | | |___.' /' `" __ | |
+   |     | '-....-'`        \  /        \      /     |__|/_______.'/   .'.''| |
+  .'     '.                 / /          '----'          \_______|/   / /   | |_
+'-----------'           |`-' /                                        \ \._,\ '/
+                         '..'                                          `--'  `"
+
+GPL3
 """
 
 from argparse import ArgumentParser
@@ -158,7 +172,8 @@ def load_config(fname_raw):
 
 
 def save_config(config, fname_raw):
-    fname = os.path.join(APP_DIR, fname_raw)
+#    fname = os.path.join(APP_DIR, fname_raw)
+    fname = get_safe_path(os.path.join(APP_DIR, fname_raw))
     with open(fname, "w") as f:
         for key, value in config.items():
             if type(value) == str:
@@ -167,13 +182,13 @@ def save_config(config, fname_raw):
             f.write("%s=%s\n" % (key, str(value).lower()))
 
 
+
 # Engine configuration variables that can override settings
 INFO = load_info("game.info")
 CONFIG = load_config("game.conf")
 
 language = CONFIG["language"]
-language = "de"  # XXX forcing german
-
+#language = "de"  # XXX forcing german
 
 def set_language(new_language=None):
     if new_language:
@@ -5310,14 +5325,14 @@ class Portal(Actor, metaclass=use_on_events):
         t = self.fog_display_text(self.game.player)
         if self.game.settings.portal_exploration and link and link.scene:
             if link.scene.name not in self.game.visited:
-                t = "To the unknown."
+                t = _("To the unknown.")
             else:
                 # use the link's display text if available, or the scene display text if available, else the scene name
                 if link.display_text not in [None, ""]:  # override scene display text
                     t = link.display_text
                 else:
-                    t = "To %s" % (link.scene.name) if link.scene.display_text in [
-                        None, ""] else "To %s" % (link.scene.display_text)
+                    t = _("To %s") % (link.scene.name) if link.scene.display_text in [
+                        None, ""] else _("To %s") % (link.scene.display_text)
         if not self.game.settings.show_portal_text:
             t = ""
         return t
