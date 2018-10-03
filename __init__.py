@@ -10398,7 +10398,7 @@ class Game(metaclass=use_on_events):
         for i in modules:
             self._modules[i] = 0
         # if editor is available, watch code for changes
-        if CONFIG["editor"] or self.allow_editor: 
+        if CONFIG["editor"] or self._allow_editing: 
             self.check_modules()  # set initial timestamp record
 
     def reload_modules(self, modules=None):
