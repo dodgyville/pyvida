@@ -33,6 +33,7 @@ from math import sin, cos, radians
 from operator import sub
 import os
 from os.path import expanduser
+from pathlib import Path
 import pickle
 import queue
 from random import choice, randint, uniform
@@ -964,7 +965,7 @@ def fonts_smart(game):
                 font_files.append(f)
                 font = TTFont(f)
                 name, family = shortName(font)
-                filename = os.path.join("data/fonts", os.path.basename(f))
+                filename = Path(os.path.join("data/fonts", os.path.basename(f))).to_posix()
                 if filename in _pyglet_fonts:
                     log.warning("OVERRIDING font %s with %s (%s)" % (filename, f, name))
                 _pyglet_fonts[filename] = name
@@ -6721,7 +6722,7 @@ class Text(Item, metaclass=use_on_events):
         if font:
             if font not in _pyglet_fonts:
                 log.error(
-                    "Unable to find %s in fonts, use game.add_font" % font)
+                    "Unable to find %s in _pyglet_fonts, use game.add_font" % font)
             else:
                 font_name = _pyglet_fonts[font]
         self.colour = colour
