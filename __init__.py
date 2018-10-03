@@ -965,7 +965,7 @@ def fonts_smart(game):
                 font_files.append(f)
                 font = TTFont(f)
                 name, family = shortName(font)
-                filename = Path(os.path.join("data/fonts", os.path.basename(f))).to_posix()
+                filename = Path(os.path.join("data/fonts", os.path.basename(f))).as_posix()
                 if filename in _pyglet_fonts:
                     log.warning("OVERRIDING font %s with %s (%s)" % (filename, f, name))
                 _pyglet_fonts[filename] = name
