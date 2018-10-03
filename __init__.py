@@ -9330,7 +9330,8 @@ class Game(metaclass=use_on_events):
             self.settings.font_size_adjust += 2
 
 
-        if not CONFIG["editor"]:
+        allow_editor = CONFIG["editor"] or self._allow_editing
+        if not allow_editor:
             if symbol == pyglet.window.key.F7 and self._joystick:
                 self._map_joystick = 1
         else:
@@ -10321,7 +10322,7 @@ class Game(metaclass=use_on_events):
         for i in modules:
             self._modules[i] = 0
         # if editor is available, watch code for changes
-        if self._allow_editing:
+        if CONFIG["editor"]: 
             self.check_modules()  # set initial timestamp record
 
     def reload_modules(self, modules=None):
