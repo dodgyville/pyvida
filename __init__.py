@@ -192,6 +192,7 @@ language = CONFIG["language"]
 
 def set_language(new_language=None):
     if new_language:
+        print("setting language to ",new_language)
         t = igettext.translation(INFO["slug"], localedir=get_safe_path(os.path.join('data', 'locale')),
                                  languages=[new_language])
     else:
@@ -9144,8 +9145,6 @@ class Game(metaclass=use_on_events):
         self.mouse_cursor = self._mouse_cursor = MOUSE_POINTER
 
         self.reset_info_object()
-        #        pyglet.clock.schedule_interval(
-        #            self._monitor_scripts, 2)  # keep reloading scripts
 
         # Force game to draw at least at a certain fps (default is 30 fps)
         self.start_engine_lock()
@@ -9171,11 +9170,6 @@ class Game(metaclass=use_on_events):
     def close(self):
         """ Close this window """
         self._window.close()  # will free up pyglet memory
-
-    def _monitor_scripts(self, dt):
-        modified_modules = self.check_modules()
-        if modified_modules:
-            self.reload_modules()
 
     def _loaded_resources(self):
         """ List of keys that have loaded resources """
@@ -10404,7 +10398,7 @@ class Game(metaclass=use_on_events):
         for i in modules:
             self._modules[i] = 0
         # if editor is available, watch code for changes
-        if CONFIG["editor"]: 
+        if CONFIG["editor"] or self.allow_editor: 
             self.check_modules()  # set initial timestamp record
 
     def reload_modules(self, modules=None):
@@ -10440,9 +10434,12 @@ class Game(metaclass=use_on_events):
             for fn in dir(sys.modules[i]):
                 new_fn = getattr(sys.modules[i], fn)
                 if hasattr(new_fn, "__call__"):
+                    if "pyglet.gl" in new_fn.__class__.__module__:
+                        continue
                     try:
                         setattr(sys.modules[module], new_fn.__name__, new_fn)
                     except AttributeError:
+    
                         print("ERROR: unable to reload", module, new_fn)
 
         # XXX update .uses{} values too.
