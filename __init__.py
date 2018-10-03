@@ -193,7 +193,7 @@ language = CONFIG["language"]
 
 def set_language(new_language=None):
     if new_language:
-        print("setting language to ",new_language)
+        print("Setting language to",new_language)
         t = igettext.translation(INFO["slug"], localedir=get_safe_path(os.path.join('data', 'locale')),
                                  languages=[new_language])
     else:
@@ -8706,6 +8706,8 @@ def load_game_pickle(game, fname, meta_only=False, keep=[], responsive=False):
                     log.error("Unable to import {}".format(module_name))
             game.reload_modules()  # reload now to refresh existing references
     #            log.warning("POST UNPICKLE inventory %s"%(game.inventory.name))
+            set_language(language) # set language
+
 
     if responsive:
         game._generator = None
