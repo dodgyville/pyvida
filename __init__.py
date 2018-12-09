@@ -208,6 +208,19 @@ def set_language(new_language=None):
 
 set_language(language)
 
+
+def set_language_for_session(game):
+    # set the language using the settings or the cmdline override
+    locale = game.settings.language if game.settings.language != "en" else None
+    options = game.parser.parse_args()
+    if options.language_code:
+        locale = options.language_code if options.language_code != "default" else None
+    set_language(locale)
+
+
+def get_language():
+    return language
+
 try:
     import android
 except ImportError:
