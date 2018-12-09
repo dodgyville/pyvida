@@ -10078,7 +10078,7 @@ class Game(metaclass=use_on_events):
                                  help="Estimate cost of artwork in game (background is cost per background, etc)")
         self.parser.add_argument(
             "-l", "--lowmemory", action="store_true", dest="memory_save", help="Run game in low memory mode")
-        self.parser.add_argument("-i18n", "--i18n <code>", dest="language_code", help="Set language code")
+        self.parser.add_argument("-i18n", "--i18n <code>", dest="language_code", help="Set language code. Use 'default' to reset.")
         self.parser.add_argument("-m", "--matrixinventory", action="store_true", dest="test_inventory",
                                  help="Test each item in inventory against each item in scene", default=False)
         self.parser.add_argument("-n", "--nuke", action="store_true", dest="nuke",
@@ -10494,7 +10494,7 @@ class Game(metaclass=use_on_events):
             print("Created %s, updated %s" % (t, t))
         # switch on test runner to step through walkthrough
         if options.language_code:
-            set_language(options.language_code)
+            set_language(options.language_code if options.language_code != "default" else None)
         if options.target_step:
             print("AUTO WALKTHROUGH")
             self._walkthrough_auto = True  # auto advance
