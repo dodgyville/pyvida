@@ -218,7 +218,7 @@ def set_language_for_session(game):
     set_language(locale)
 
 
-def get_language():
+def get_language(game=None):
     return language
 
 try:
@@ -3539,6 +3539,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             try:
                 script(self.game, self, actor)
             except:
+                log.exception("error in script")
                 if self.game:
                     print("Last script: %s, this script: %s, last autosave: %s" % (
                     self.game._last_script, script.__name__, self.game._last_autosave))
