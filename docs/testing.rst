@@ -38,3 +38,7 @@ Inventory Testing
 python game.py -i
 
 tail -f pyvida4.log | grep "default function missing"
+
+python game.py -s <walkthought_step> -x -H -B -m
+Will play the game and remember all inventory items and all interacted items and then run the inventory items against all the interacted items. Good for picking up errors.
+

@@ -20,7 +20,6 @@ from collections import Iterable
 from datetime import datetime, timedelta
 import copy
 import euclid3 as eu
-from functools import total_ordering
 import gc
 import gettext as igettext
 import glob
@@ -41,9 +40,7 @@ import struct
 import subprocess
 import sys
 import threading
-from threading import Thread
 import time
-from time import sleep
 import traceback
 import webbrowser
 
@@ -240,7 +237,7 @@ if mixer == "pygame":
         mixer = "pygame"
     except ImportError:
         mixer = "pyglet"
-
+print("default mixer is",mixer)
 benchmark_events = datetime.now()
 
 """
@@ -4147,7 +4144,7 @@ class Actor(MotionManager, metaclass=use_on_events):
 
     def on_random_frame(self):
         """ Advance the current action to a random frame """
-        i = random.randint(0, len(self.resource._animation.frames))
+        i = randint(0, len(self.resource._animation.frames))
         self._frame(i)
 
     def on_asks(self, statement, *args, **kwargs):
@@ -4529,7 +4526,11 @@ class Actor(MotionManager, metaclass=use_on_events):
         name = item.fog_display_text(None)
         self_name = self.fog_display_text(None)
 
-        if self.game and self.game._output_walkthrough: print("%s adds %s to inventory." % (self_name, name))
+        if self.game:
+            if self.game._output_walkthrough:
+                print("%s adds %s to inventory." % (self_name, name))
+            if self.game._walkthrough_auto and item.name not in self.game._walkthrough_inventorables:
+                self.game._walkthrough_inventorables.append(item.name)
 
         if self.game and self == self.game.player:
             text = _("%s added to your inventory!") % name
@@ -5015,7 +5016,6 @@ class Actor(MotionManager, metaclass=use_on_events):
         closedList = []
         path = []
 
-        #        @total_ordering
         class Node():
             def __init__(self, x, y, z=None):
                 self.x = x
@@ -5026,9 +5026,6 @@ class Actor(MotionManager, metaclass=use_on_events):
             @property
             def point(self):
                 return self.x, self.y
-
-        #            def __eq__(self, other):
-        #                return (self.x, self.y) == (other.x, other.y)
 
         current = Node(*start)
         end = Node(*destination)
@@ -7935,7 +7932,11 @@ class PlayerPygameMusic():
 
     def position(self):
         """ Note, this returns the number of seconds, for use with OGG. """
-        return pygame.mixer.music.get_pos() / 100
+        try:
+            p = pygame.mixer.music.get_pos() / 100
+        except:
+            p = 0
+        return p
 
     def queue(self, fname):
         try:
@@ -8774,7 +8775,7 @@ def load_game_responsive(game, fname, meta_only=False, keep=[], callback=None, p
         progress called every yield
     """
     if meta_only:
-        raise InputError("responsive doesn't handle meta_only)")
+        raise Exception("responsive doesn't handle meta_only)")
     game._generator = load_game_pickle(game, fname, meta_only=meta_only, keep=keep, responsive=True)
     game._generator_progress = progress
     game._generator_callback = callback
@@ -8884,7 +8885,6 @@ class Game(metaclass=use_on_events):
 
         self.camera = Camera(self)  # the camera object
         self.settings = None  # game-wide settings
-
         # initialise sound
         if mixer == "pygame":
             log.info("INITIALISE MIXER START")
@@ -8991,6 +8991,9 @@ class Game(metaclass=use_on_events):
         # if auto-creating a savefile for this walkthrough
         self._walkthrough_target_name = None
         self._walkthrough_start_name = None  # fast load from a save file
+        self._walkthrough_interactables = [] # all items and actors interacted on by the end of this walkthrough
+        self._walkthrough_inventorables = [] # all items that were in the inventory at some point during the game
+        self._test_inventory = False
         self._record_walkthrough = False  # output the current interactions as a walkthrough (toggle with F11)
         self._motion_output = None  # output the motion from this point if not None
         self._motion_output_raw = []  # will do some processing
@@ -10094,7 +10097,7 @@ class Game(metaclass=use_on_events):
             "-l", "--lowmemory", action="store_true", dest="memory_save", help="Run game in low memory mode")
         self.parser.add_argument("-i18n", "--i18n <code>", dest="language_code", help="Set language code. Use 'default' to reset.")
         self.parser.add_argument("-m", "--matrixinventory", action="store_true", dest="test_inventory",
-                                 help="Test each item in inventory against each item in scene", default=False)
+                                 help="Test each item in inventory against each item in scene (runs at end of headless walkthrough)", default=False)
         self.parser.add_argument("-n", "--nuke", action="store_true", dest="nuke",
                                  help="Nuke platform-dependent files, such as game.settings.", default=False)
         self.parser.add_argument("-o", "--objects", action="store_true", dest="analyse_characters",
@@ -10124,7 +10127,7 @@ class Game(metaclass=use_on_events):
                                  help="Create a smart directory structure based on the walkthrough.")
 
         self.parser.add_argument("-x", "--exit", action="store_true", dest="exit_step",
-                                 help="Used with --step, exit program after reaching step (good for profiling)")
+                                 help="Used with --step, exit program after reaching step (good for profiling, runs with headless)")
         self.parser.add_argument(
             "-z", "--zerosound", action="store_true", dest="mute", help="Mute sounds", default=False)
 
@@ -10544,6 +10547,8 @@ class Game(metaclass=use_on_events):
         if options.headless:
             self.on_set_headless(True)
             self._walkthrough_auto = True  # auto advance
+        if options.test_inventory:
+            self._test_inventory = True
         if options.imagereactor == True:
             """ save a screenshot as requested by walkthrough """
             if self._headless is True:
@@ -10599,6 +10604,11 @@ class Game(metaclass=use_on_events):
     def queue_event(self, event, *args, **kwargs):
         self._events.append((event, args, kwargs))
 
+    def _remember_interactable(self, name):
+        """ Use by walkthrough runner to track interactive items in a walkthrough for further testing """
+        if name not in self._walkthrough_interactables:
+            self._walkthrough_interactables.append(name)
+
     def _process_walkthrough(self):
         """ Do a step in the walkthrough """
         if len(self._walkthrough) == 0 or self._walkthrough_index >= len(
@@ -10626,6 +10636,25 @@ class Game(metaclass=use_on_events):
 
         if self._walkthrough_index > self._walkthrough_target or self._walkthrough_index > len(self._walkthrough):
             if self._headless:
+                if self._test_inventory:
+                    print("Test inventory. Walkthrough report:")
+                    print("Inventoried items: %s"%self._walkthrough_inventorables)
+                    print("Interactable items: %s"%self._walkthrough_interactables)
+                    if self._test_inventory:
+                        for obj_name in self._walkthrough_inventorables:
+                            for subject_name in self._walkthrough_interactables:
+                                obj = get_object(self, obj_name)
+                                subject = get_object(self, subject_name)
+                                print("test: %s on %s"%(obj_name, subject_name))
+                                if subject and obj:
+                                    try:
+                                        subject.trigger_use(obj)
+                                    except:
+                                        print("*** PROBLEM")
+                                        continue
+                                else:
+                                    print("Can't find all objects %s (%s) and/or %s (%s)"%(obj_name, obj, subject_name, subject))
+
                 self.headless = False
                 self._walkthrough_auto = False
                 self._resident = []  # force refresh on scenes assets that may not have loaded during headless mode
@@ -10642,7 +10671,7 @@ class Game(metaclass=use_on_events):
                 #        if game.mixer._ambient_filename:
                 #            game.mixer.ambient_play(game.mixer._music_filename, start=game.mixer._music_position)
 
-                print("FINISHED WALKTHROUGH")
+                print("FINISHED HEADLESS WALKTHROUGH")
                 if DEBUG_NAMES:
                     global tmp_objects_first, tmp_objects_second
                     met = []
@@ -10779,6 +10808,8 @@ class Game(metaclass=use_on_events):
 
             # trigger the interact
             user_trigger_interact(self, obj)
+            if not isinstance(obj, Portal):
+                self._remember_interactable(obj.name)
         elif function_name == "use":
             obj = get_object(self, walkthrough[2])
             obj_name = obj.display_text if obj.display_text else obj.name
@@ -10789,6 +10820,8 @@ class Game(metaclass=use_on_events):
             user_trigger_use(self, subject, obj)
             self._mouse_object = None
             self.mouse_mode = MOUSE_INTERACT
+            self._remember_interactable(subject_name)
+
         elif function_name == "goto":
             # expand the goto request into a sequence of portal requests
             global scene_path
@@ -10824,7 +10857,11 @@ class Game(metaclass=use_on_events):
             if self._trunk_step and self._output_walkthrough: print("Look at %s." % (actor_name))
             obj = get_object(self, actor_name)
             # trigger the look
-            if obj: user_trigger_look(self, obj)
+            if obj:
+                user_trigger_look(self, obj)
+                if not isinstance(obj, Portal):
+                    self._remember_interactable(obj.name)
+
         elif function_name == "location":
             scene = get_object(self, actor_name)
             if not scene:

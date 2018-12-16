@@ -60,7 +60,6 @@ def on_<event>(self) method.
 
 
 
-
 ### Tests ###
 
 Run the tests:
