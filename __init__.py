@@ -1057,7 +1057,7 @@ COLINEAR = -1
 
 
 def have_same_signs(a, b):
-    return ((int(a) ^ int(b)) >= 0)
+    return (int(a) ^ int(b)) >= 0
 
 
 def line_seg_intersect(line1point1, line1point2, line2point1, line2point2):
@@ -1078,8 +1078,8 @@ def line_seg_intersect(line1point1, line1point2, line2point1, line2point2):
     r3 = (a1 * x3) + (b1 * y3) + c1
     r4 = (a1 * x4) + (b1 * y4) + c1
 
-    if ((r3 != 0) and (r4 != 0) and have_same_signs(r3, r4)):
-        return (DONT_INTERSECT)
+    if (r3 != 0) and (r4 != 0) and have_same_signs(r3, r4):
+        return DONT_INTERSECT
 
     a2 = y4 - y3
     b2 = x3 - x4
@@ -1088,8 +1088,8 @@ def line_seg_intersect(line1point1, line1point2, line2point1, line2point2):
     r1 = a2 * x1 + b2 * y1 + c2
     r2 = a2 * x2 + b2 * y2 + c2
 
-    if ((r1 != 0) and (r2 != 0) and have_same_signs(r1, r2)):
-        return (DONT_INTERSECT)
+    if (r1 != 0) and (r2 != 0) and have_same_signs(r1, r2):
+        return DONT_INTERSECT
 
     denom = (a1 * b2) - (a2 * b1)
     if denom == 0:
@@ -1111,7 +1111,7 @@ def line_seg_intersect(line1point1, line1point2, line2point1, line2point2):
     else:
         y = (num - offset) / denom
 
-    return (x, y)
+    return x, y
 
 
 def collide(rect, x, y):
@@ -1778,13 +1778,13 @@ class MotionDelta(object):
     def __add__(self, b):
         n = MotionDelta()
         a = self
-        n.x = a.x + b.x if a.x != None and b.x != None else None
-        n.y = a.y + b.y if a.y != None and b.y != None else None
-        n.z = a.z + b.z if a.z != None and b.z != None else None
-        n.r = a.r + b.r if a.r != None and b.r != None else None
-        n.scale = a.scale + b.scale if a.scale != None and b.scale != None else None
-        n.f = a.f + b.f if a.f != None and b.f != None else None
-        n.alpha = a.alpha + b.alpha if a.alpha != None and b.alpha != None else None
+        n.x = a.x + b.x if a.x is not None and b.x is not None else None
+        n.y = a.y + b.y if a.y is not None and b.y is not None else None
+        n.z = a.z + b.z if a.z is not None and b.z is not None else None
+        n.r = a.r + b.r if a.r is not None and b.r is not None else None
+        n.scale = a.scale + b.scale if a.scale is not None and b.scale is not None else None
+        n.f = a.f + b.f if a.f != None and b.f is not None else None
+        n.alpha = a.alpha + b.alpha if a.alpha is not None and b.alpha is not None else None
         return n
 
 
@@ -5580,7 +5580,11 @@ class Emitter(Item, metaclass=use_on_events):
         for i in fields:
             d[i] = getattr(self, i, None)
             if callable(d[i]):
-                d[i] = d.__name__  # textify
+                try:
+                    d[i] = d.__name__  # textify
+                except AttributeError:
+                    print("__name__ not on object")
+                    import pdb; pdb.set_trace()
         return d
 
     def smart(self, game, *args, **kwargs):  # emitter.smart
@@ -5907,6 +5911,7 @@ class WalkAreaManager(metaclass=use_on_events):
     def _set_point(self, x=None, y=None, z=None):
         i = -1
         pts = None
+        a = "_polygon"
         if self._edit_polygon_index >= 0:
             i = self._edit_polygon_index
             pts = self._polygon
