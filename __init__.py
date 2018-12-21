@@ -166,6 +166,8 @@ def load_config(fname_raw):
                         v = None
                     if d[0] != "#":
                         config[key] = v
+                        if key == "language":
+                            print("request language %s from %s"%(v, fname))
     return config
 
 
@@ -191,9 +193,16 @@ language = CONFIG["language"]
 def set_language(new_language=None):
     if new_language:
         print("Setting language to",new_language)
-        t = igettext.translation(INFO["slug"], localedir=get_safe_path(os.path.join('data', 'locale')),
+        try:
+            t = igettext.translation(INFO["slug"], localedir=get_safe_path(os.path.join('data', 'locale')),
                                  languages=[new_language])
-    else:
+        except FileNotFoundError:
+            print("Unable to find translation file %s for %s"%(INFO["slug"], new_language))
+            new_language = None
+        except:
+            print("Unexpected error in set_language:", sys.exc_info()[0])
+            new_language = None
+    if not new_language:
         t = igettext.translation(INFO["slug"], localedir=get_safe_path(os.path.join('data', 'locale')), fallback=True)
     t.install()
     global language
@@ -258,7 +267,7 @@ ENABLE_LOGGING = True
 DEFAULT_TEXT_EDITOR = "gedit"
 
 VERSION_MAJOR = 5  # major incompatibilities
-VERSION_MINOR = 0  # minor/bug fixes, can run same scripts
+VERSION_MINOR = 1  # minor/bug fixes, can run same scripts
 VERSION_SAVE = 5  # save/load version, only change on incompatible changes
 
 # AVAILABLE BACKENDS
@@ -3510,7 +3519,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             if isinstance(self, sender):
                 receiver(self.game, self, self.game.player)
 
-    def trigger_use(self, actor):
+    def trigger_use(self, actor, execute=True):
         # user actor on this actee
         actor = get_object(self.game, actor)
 
@@ -3534,7 +3543,10 @@ class Actor(MotionManager, metaclass=use_on_events):
             if logging:
                 log.info("Call use script (%s)" % basic)
             try:
-                script(self.game, self, actor)
+                if execute:
+                    script(self.game, self, actor)
+                else:
+                    return script.__name__
             except:
                 log.exception("error in script")
                 if self.game:
@@ -3544,15 +3556,22 @@ class Actor(MotionManager, metaclass=use_on_events):
         else:
             # warn if using default vida look
             if self.allow_use:
-                log.error("no use script for using %s with %s (write a def %s(game, %s, %s): function)" % (
-                    actor.name, self.name, basic, slug_actee.lower(), slug_actor.lower()))
+                message = "no use script for using %s with %s (write a def %s(game, %s, %s): function)" % (
+                    actor.name, self.name, basic, slug_actee.lower(), slug_actor.lower())
+                log.error(message)
+                if not execute:
+                    print(message)
             #            if self.game.editor_infill_methods: edit_script(self.game, self, basic, script, mode="use")
-            self._use_default(self.game, self, actor)
+            if execute:
+                self._use_default(self.game, self, actor)
 
         # do the signals for post_use
-        for receiver, sender in post_use.receivers:
-            if isinstance(self, sender):
-                receiver(self.game, self, self.game.player)
+        if execute:
+            for receiver, sender in post_use.receivers:
+                if isinstance(self, sender):
+                    receiver(self.game, self, self.game.player)
+        return None
+
 
     def trigger_look(self):
         # do the signals for pre_look
@@ -7490,6 +7509,9 @@ class Camera(metaclass=use_on_events):  # the view manager
                 gc.collect()  # force garbage collection
         if logging:
             log.debug("changing scene to %s" % scene.name)
+        if self.game._test_inventory_per_scene and self.game.player:
+            print("\nChanging scene, running inventory tests")
+            self.game._test_inventory_against_objects(list(self.game.player.inventory.keys()), scene._objects, execute=False)
 
         #        if scene.name == "aspaceship":
         #            import pdb; pdb.set_trace()
@@ -7503,7 +7525,7 @@ class Camera(metaclass=use_on_events):  # the view manager
             # start music for this scene
             scene.on_music_play()
 
-    def on_scene(self, scene, camera_point=None, allow_scene_music=True, from_save_game=False):
+    def on_scene(self, scene, camera_point=None, allow_scene_music=True, from_save_game=False): # camera.scene
         """ change the scene """
         if self._overlay_fx == FX_DISCO:  # remove disco effect
             self.on_disco_off()
@@ -8868,6 +8890,7 @@ class Game(metaclass=use_on_events):
     def __init__(self, name="Untitled Game", version="v1.0", engine=VERSION_MAJOR, save_directory="untitledgame",
                  fullscreen=DEFAULT_FULLSCREEN, resolution=DEFAULT_RESOLUTION, fps=DEFAULT_FPS, afps=DEFAULT_ACTOR_FPS,
                  projectsettings=None, scale=1.0):
+        log.info("pyvida version %s %s %s"%(VERSION_MAJOR, VERSION_MINOR, VERSION_SAVE))
         self.debug_collection = False
         self.writeable_directory = save_directory
         self.save_directory = "saves"
@@ -8999,6 +9022,7 @@ class Game(metaclass=use_on_events):
         self._walkthrough_interactables = [] # all items and actors interacted on by the end of this walkthrough
         self._walkthrough_inventorables = [] # all items that were in the inventory at some point during the game
         self._test_inventory = False
+        self._test_inventory_per_scene = False
         self._record_walkthrough = False  # output the current interactions as a walkthrough (toggle with F11)
         self._motion_output = None  # output the motion from this point if not None
         self._motion_output_raw = []  # will do some processing
@@ -10102,7 +10126,11 @@ class Game(metaclass=use_on_events):
             "-l", "--lowmemory", action="store_true", dest="memory_save", help="Run game in low memory mode")
         self.parser.add_argument("-i18n", "--i18n <code>", dest="language_code", help="Set language code. Use 'default' to reset.")
         self.parser.add_argument("-m", "--matrixinventory", action="store_true", dest="test_inventory",
-                                 help="Test each item in inventory against each item in scene (runs at end of headless walkthrough)", default=False)
+                                 help="Test each item in inventory against each interactive item in game (runs at end of headless walkthrough)", default=False)
+        self.parser.add_argument("-M", "--matrixinventory2", action="store_true", dest="test_inventory_per_scene",
+                                 help="Test each item in inventory against each item in scene (runs during headless walkthrough)",
+                                 default=False)
+
         self.parser.add_argument("-n", "--nuke", action="store_true", dest="nuke",
                                  help="Nuke platform-dependent files, such as game.settings.", default=False)
         self.parser.add_argument("-o", "--objects", action="store_true", dest="analyse_characters",
@@ -10554,6 +10582,8 @@ class Game(metaclass=use_on_events):
             self._walkthrough_auto = True  # auto advance
         if options.test_inventory:
             self._test_inventory = True
+        if options.test_inventory_per_scene:
+            self._test_inventory_per_scene = True
         if options.imagereactor == True:
             """ save a screenshot as requested by walkthrough """
             if self._headless is True:
@@ -10614,6 +10644,22 @@ class Game(metaclass=use_on_events):
         if name not in self._walkthrough_interactables:
             self._walkthrough_interactables.append(name)
 
+    def _test_inventory_against_objects(self, inventory_items, interactive_items, execute=False):
+        # execute: if true, then actually call the script.
+        for obj_name in inventory_items:
+            for subject_name in interactive_items:
+                obj = get_object(self, obj_name)
+                subject = get_object(self, subject_name)
+                print("test: %s on %s" % (obj_name, subject_name))
+                if subject and obj:
+                    try:
+                        subject.trigger_use(obj, execute=execute)
+                    except:
+                        print("*** PROBLEM")
+                        continue
+                else:
+                    print("Can't find all objects %s (%s) and/or %s (%s)" % (obj_name, obj, subject_name, subject))
+
     def _process_walkthrough(self):
         """ Do a step in the walkthrough """
         if len(self._walkthrough) == 0 or self._walkthrough_index >= len(
@@ -10646,19 +10692,8 @@ class Game(metaclass=use_on_events):
                     print("Inventoried items: %s"%self._walkthrough_inventorables)
                     print("Interactable items: %s"%self._walkthrough_interactables)
                     if self._test_inventory:
-                        for obj_name in self._walkthrough_inventorables:
-                            for subject_name in self._walkthrough_interactables:
-                                obj = get_object(self, obj_name)
-                                subject = get_object(self, subject_name)
-                                print("test: %s on %s"%(obj_name, subject_name))
-                                if subject and obj:
-                                    try:
-                                        subject.trigger_use(obj)
-                                    except:
-                                        print("*** PROBLEM")
-                                        continue
-                                else:
-                                    print("Can't find all objects %s (%s) and/or %s (%s)"%(obj_name, obj, subject_name, subject))
+                        self._test_inventory_against_objects(self._walkthrough_inventorables,
+                                                             self._walkthrough_interactables, execute=True)
 
                 self.headless = False
                 self._walkthrough_auto = False
