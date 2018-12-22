@@ -5590,9 +5590,13 @@ class Emitter(Item, metaclass=use_on_events):
     def smart(self, game, *args, **kwargs):  # emitter.smart
 
         if game and game.engine == 1:  # backwards compat: give v1 emitters a unique name
+            if "unique" not in kwargs:
+                print("Emitters now need a unique name. Add a postfix in the kwarg 'unique'.")
+                import pdb; pdb.set_trace()
+
             game._v1_emitter_index += 1
             kwargs["using"] = "data/emitters/%s" % self.name
-            self.name = "%s_v1_%i" % (self.name, game._v1_emitter_index)
+            self.name = "%s_v1_%i" % (self.name, kwargs["unique"])
 
         super().smart(game, *args, **kwargs)
         # reload the actions but without the mask
