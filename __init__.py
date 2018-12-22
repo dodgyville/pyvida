@@ -166,6 +166,8 @@ def load_config(fname_raw):
                         v = None
                     if d[0] != "#":
                         config[key] = v
+                        if key == "language":
+                            print("request language %s from %s"%(v, fname))
     return config
 
 
@@ -191,9 +193,16 @@ language = CONFIG["language"]
 def set_language(new_language=None):
     if new_language:
         print("Setting language to",new_language)
-        t = igettext.translation(INFO["slug"], localedir=get_safe_path(os.path.join('data', 'locale')),
+        try:
+            t = igettext.translation(INFO["slug"], localedir=get_safe_path(os.path.join('data', 'locale')),
                                  languages=[new_language])
-    else:
+        except FileNotFoundError:
+            print("Unable to find translation file %s for %s"%(INFO["slug"], new_language))
+            new_language = None
+        except:
+            print("Unexpected error in set_language:", sys.exc_info()[0])
+            new_language = None
+    if not new_language:
         t = igettext.translation(INFO["slug"], localedir=get_safe_path(os.path.join('data', 'locale')), fallback=True)
     t.install()
     global language
@@ -258,7 +267,7 @@ ENABLE_LOGGING = True
 DEFAULT_TEXT_EDITOR = "gedit"
 
 VERSION_MAJOR = 5  # major incompatibilities
-VERSION_MINOR = 0  # minor/bug fixes, can run same scripts
+VERSION_MINOR = 1  # minor/bug fixes, can run same scripts
 VERSION_SAVE = 5  # save/load version, only change on incompatible changes
 
 # AVAILABLE BACKENDS
@@ -3510,7 +3519,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             if isinstance(self, sender):
                 receiver(self.game, self, self.game.player)
 
-    def trigger_use(self, actor):
+    def trigger_use(self, actor, execute=True):
         # user actor on this actee
         actor = get_object(self.game, actor)
 
@@ -3534,7 +3543,10 @@ class Actor(MotionManager, metaclass=use_on_events):
             if logging:
                 log.info("Call use script (%s)" % basic)
             try:
-                script(self.game, self, actor)
+                if execute:
+                    script(self.game, self, actor)
+                else:
+                    return script.__name__
             except:
                 log.exception("error in script")
                 if self.game:
@@ -3544,15 +3556,22 @@ class Actor(MotionManager, metaclass=use_on_events):
         else:
             # warn if using default vida look
             if self.allow_use:
-                log.error("no use script for using %s with %s (write a def %s(game, %s, %s): function)" % (
-                    actor.name, self.name, basic, slug_actee.lower(), slug_actor.lower()))
+                message = "no use script for using %s with %s (write a def %s(game, %s, %s): function)" % (
+                    actor.name, self.name, basic, slug_actee.lower(), slug_actor.lower())
+                log.error(message)
+                if not execute:
+                    print(message)
             #            if self.game.editor_infill_methods: edit_script(self.game, self, basic, script, mode="use")
-            self._use_default(self.game, self, actor)
+            if execute:
+                self._use_default(self.game, self, actor)
 
         # do the signals for post_use
-        for receiver, sender in post_use.receivers:
-            if isinstance(self, sender):
-                receiver(self.game, self, self.game.player)
+        if execute:
+            for receiver, sender in post_use.receivers:
+                if isinstance(self, sender):
+                    receiver(self.game, self, self.game.player)
+        return None
+
 
     def trigger_look(self):
         # do the signals for pre_look
@@ -4498,7 +4517,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         item = get_object(self.game, item)
         return True if item in self.inventory.values() else False
 
-    def _gets(self, item, remove=True, collection="collection"):
+    def _gets(self, item, remove=True, collection="collection", scale=1.0):
         item = get_object(self.game, item)
         if item:
             log.info("Actor %s gets: %s" % (self.name, item.name))
@@ -4506,14 +4525,14 @@ class Actor(MotionManager, metaclass=use_on_events):
             item._do(collection)
             item.load_assets(self.game)
         self.inventory[item.name] = item
-        item.scale = 1.0  # scale to normal size for inventory
+        item.scale = scale  # scale to normal size for inventory
         if remove == True and item.scene:
             item.scene._remove(item)
         return item
 
-    def on_gets(self, item, remove=True, ok=-1, action="portrait", collection="collection"):
+    def on_gets(self, item, remove=True, ok=-1, action="portrait", collection="collection", scale=1.0):
         """ add item to inventory, remove from scene if remove == True """
-        item = self._gets(item, remove, collection)
+        item = self._gets(item, remove, collection, scale)
         if item == None:
             return
         # with open('inventory.txt', 'a') as f:
@@ -5515,8 +5534,8 @@ def terminate_by_frame(game, emitter, particle):
 class Particle(object):
 
     def __init__(self, x, y, ax, ay, speed, direction, scale=1.0):
-        self.index = 0
-        self.action_index = 0
+        self.index = 0 # where in life cycle are you
+        self.action_index = 0  # where in the Emitter's action (eg frames) is the particle
         self.motion_index = 0  # where in the Emitter's applied motions is this particle
         self.x = x
         self.y = y
@@ -5556,10 +5575,10 @@ class Emitter(Item, metaclass=use_on_events):
         self.alpha_start, self.alpha_end = alpha_start, alpha_end
         self.alpha_delta = (alpha_end - alpha_start) / frames
 
-        # should each particle start mid-action?
-        self.random_index = random_index
+
+        self.random_index = random_index # should each particle start mid-action (eg a different frame)
         self.random_age = random_age  # should each particle start mid-life?
-        self.random_motion_index = random_motion_index
+        self.random_motion_index = random_motion_index # should each particle start mid-motion?
         self.size_spawn_min, self.size_spawn_max = size_spawn_min, size_spawn_max
         self.speed_spawn_min, self.speed_spawn_max = speed_spawn_min, speed_spawn_max
         self.particles = []
@@ -5599,6 +5618,8 @@ class Emitter(Item, metaclass=use_on_events):
             self.name = "%s_v1_%i" % (self.name, kwargs["unique"])
 
         super().smart(game, *args, **kwargs)
+        for a in self._actions.values():
+            a.mode = MANUAL
         # reload the actions but without the mask
         self._smart_actions(game, exclude=["mask"])
         self._clickable_mask = load_image(
@@ -5631,6 +5652,7 @@ class Emitter(Item, metaclass=use_on_events):
         p.motion_index += 1
         p.index += 1
         p.action_index += 1
+
         test_terminate = get_function(self.game, self.test_terminate, self)
         if test_terminate(self.game, self, p):  # reset if needed
             #            print("RESET PARTICLE", self.frames, p.index)
@@ -5644,6 +5666,10 @@ class Emitter(Item, metaclass=use_on_events):
             p.hidden = False
             if p.terminate == True:
                 self.particles.remove(p)
+
+        #if self.resource:
+        #    print(p.particle_id, self.resource._frame_index, p.action_index, self.action.num_of_frames,  p.action_index % self.action.num_of_frames)
+
 
     def _update(self, dt, obj=None):  # emitter.update
         Item._update(self, dt, obj=obj)
@@ -5755,7 +5781,11 @@ class Emitter(Item, metaclass=use_on_events):
     def get_a_scale(self):
         return uniform(self.size_spawn_min, self.size_spawn_max)
 
-    def _add_particles(self, num=1, terminate=False):
+    def _add_particles(self, num=1, terminate=False, speed_spawn_min=None, speed_spawn_max=None):
+        if speed_spawn_min: # update new spawn values
+            self.speed_spawn_min = speed_spawn_min
+        if speed_spawn_max:
+            self.speed_spawn_max = speed_spawn_max
         for x in range(0, num):
             d = self.get_a_direction()
             scale = self.get_a_scale()
@@ -5779,7 +5809,7 @@ class Emitter(Item, metaclass=use_on_events):
             p.hidden = True
             p.terminate = terminate
 
-    def on_add_particles(self, num):
+    def on_add_particles(self, num, speed_spawn_min=None, speed_spawn_max=None):
         self._add_particles(num=num)
 
     def on_limit_particles(self, num):
@@ -6275,8 +6305,12 @@ class Scene(MotionManager, metaclass=use_on_events):
         obj = get_object(self.game, obj)
         return True if obj.name in self._objects else False
 
-    def get_object(self, obj):
-        return get_object(self.game, obj)
+    def get_object(self, obj):  # scene.get_object
+        o = get_object(self.game, obj)
+        if not o or o.name not in self._objects:
+            print("ERROR: scene.get_object does not have object")
+            import pdb; pdb.set_trace()
+        return o
 
     @property
     def directory(self):  # scene.directory
@@ -7494,6 +7528,9 @@ class Camera(metaclass=use_on_events):  # the view manager
                 gc.collect()  # force garbage collection
         if logging:
             log.debug("changing scene to %s" % scene.name)
+        if self.game._test_inventory_per_scene and self.game.player:
+            print("\nChanging scene, running inventory tests")
+            self.game._test_inventory_against_objects(list(self.game.player.inventory.keys()), scene._objects, execute=False)
 
         #        if scene.name == "aspaceship":
         #            import pdb; pdb.set_trace()
@@ -7507,7 +7544,7 @@ class Camera(metaclass=use_on_events):  # the view manager
             # start music for this scene
             scene.on_music_play()
 
-    def on_scene(self, scene, camera_point=None, allow_scene_music=True, from_save_game=False):
+    def on_scene(self, scene, camera_point=None, allow_scene_music=True, from_save_game=False): # camera.scene
         """ change the scene """
         if self._overlay_fx == FX_DISCO:  # remove disco effect
             self.on_disco_off()
@@ -8872,6 +8909,7 @@ class Game(metaclass=use_on_events):
     def __init__(self, name="Untitled Game", version="v1.0", engine=VERSION_MAJOR, save_directory="untitledgame",
                  fullscreen=DEFAULT_FULLSCREEN, resolution=DEFAULT_RESOLUTION, fps=DEFAULT_FPS, afps=DEFAULT_ACTOR_FPS,
                  projectsettings=None, scale=1.0):
+        log.info("pyvida version %s %s %s"%(VERSION_MAJOR, VERSION_MINOR, VERSION_SAVE))
         self.debug_collection = False
         self.writeable_directory = save_directory
         self.save_directory = "saves"
@@ -9003,6 +9041,7 @@ class Game(metaclass=use_on_events):
         self._walkthrough_interactables = [] # all items and actors interacted on by the end of this walkthrough
         self._walkthrough_inventorables = [] # all items that were in the inventory at some point during the game
         self._test_inventory = False
+        self._test_inventory_per_scene = False
         self._record_walkthrough = False  # output the current interactions as a walkthrough (toggle with F11)
         self._motion_output = None  # output the motion from this point if not None
         self._motion_output_raw = []  # will do some processing
@@ -10106,7 +10145,11 @@ class Game(metaclass=use_on_events):
             "-l", "--lowmemory", action="store_true", dest="memory_save", help="Run game in low memory mode")
         self.parser.add_argument("-i18n", "--i18n <code>", dest="language_code", help="Set language code. Use 'default' to reset.")
         self.parser.add_argument("-m", "--matrixinventory", action="store_true", dest="test_inventory",
-                                 help="Test each item in inventory against each item in scene (runs at end of headless walkthrough)", default=False)
+                                 help="Test each item in inventory against each interactive item in game (runs at end of headless walkthrough)", default=False)
+        self.parser.add_argument("-M", "--matrixinventory2", action="store_true", dest="test_inventory_per_scene",
+                                 help="Test each item in inventory against each item in scene (runs during headless walkthrough)",
+                                 default=False)
+
         self.parser.add_argument("-n", "--nuke", action="store_true", dest="nuke",
                                  help="Nuke platform-dependent files, such as game.settings.", default=False)
         self.parser.add_argument("-o", "--objects", action="store_true", dest="analyse_characters",
@@ -10558,6 +10601,8 @@ class Game(metaclass=use_on_events):
             self._walkthrough_auto = True  # auto advance
         if options.test_inventory:
             self._test_inventory = True
+        if options.test_inventory_per_scene:
+            self._test_inventory_per_scene = True
         if options.imagereactor == True:
             """ save a screenshot as requested by walkthrough """
             if self._headless is True:
@@ -10618,6 +10663,23 @@ class Game(metaclass=use_on_events):
         if name not in self._walkthrough_interactables:
             self._walkthrough_interactables.append(name)
 
+    def _test_inventory_against_objects(self, inventory_items, interactive_items, execute=False):
+        # execute: if true, then actually call the script.
+        for obj_name in inventory_items:
+            for subject_name in interactive_items:
+                obj = get_object(self, obj_name)
+                subject = get_object(self, subject_name)
+                if execute:
+                    print("test: %s on %s" % (obj_name, subject_name))
+                if subject and obj:
+                    try:
+                        subject.trigger_use(obj, execute=execute)
+                    except:
+                        print("*** PROBLEM")
+                        continue
+                else:
+                    print("Can't find all objects %s (%s) and/or %s (%s)" % (obj_name, obj, subject_name, subject))
+
     def _process_walkthrough(self):
         """ Do a step in the walkthrough """
         if len(self._walkthrough) == 0 or self._walkthrough_index >= len(
@@ -10650,19 +10712,8 @@ class Game(metaclass=use_on_events):
                     print("Inventoried items: %s"%self._walkthrough_inventorables)
                     print("Interactable items: %s"%self._walkthrough_interactables)
                     if self._test_inventory:
-                        for obj_name in self._walkthrough_inventorables:
-                            for subject_name in self._walkthrough_interactables:
-                                obj = get_object(self, obj_name)
-                                subject = get_object(self, subject_name)
-                                print("test: %s on %s"%(obj_name, subject_name))
-                                if subject and obj:
-                                    try:
-                                        subject.trigger_use(obj)
-                                    except:
-                                        print("*** PROBLEM")
-                                        continue
-                                else:
-                                    print("Can't find all objects %s (%s) and/or %s (%s)"%(obj_name, obj, subject_name, subject))
+                        self._test_inventory_against_objects(self._walkthrough_inventorables,
+                                                             self._walkthrough_interactables, execute=True)
 
                 self.headless = False
                 self._walkthrough_auto = False
@@ -12356,7 +12407,7 @@ if EDITOR_AVAILABLE:
                     return
                 else:
                     state_name = os.path.splitext(os.path.basename(s))[0]
-                    print("save", state_name)
+                    print("save %s to %s"%(state_name, self.game.scene.directory))
                     self.game._save_state(state_name)
                 return
                 # non-threadsafe
