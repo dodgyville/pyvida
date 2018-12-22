@@ -4517,7 +4517,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         item = get_object(self.game, item)
         return True if item in self.inventory.values() else False
 
-    def _gets(self, item, remove=True, collection="collection"):
+    def _gets(self, item, remove=True, collection="collection", scale=1.0):
         item = get_object(self.game, item)
         if item:
             log.info("Actor %s gets: %s" % (self.name, item.name))
@@ -4525,14 +4525,14 @@ class Actor(MotionManager, metaclass=use_on_events):
             item._do(collection)
             item.load_assets(self.game)
         self.inventory[item.name] = item
-        item.scale = 1.0  # scale to normal size for inventory
+        item.scale = scale  # scale to normal size for inventory
         if remove == True and item.scene:
             item.scene._remove(item)
         return item
 
-    def on_gets(self, item, remove=True, ok=-1, action="portrait", collection="collection"):
+    def on_gets(self, item, remove=True, ok=-1, action="portrait", collection="collection", scale=1.0):
         """ add item to inventory, remove from scene if remove == True """
-        item = self._gets(item, remove, collection)
+        item = self._gets(item, remove, collection, scale)
         if item == None:
             return
         # with open('inventory.txt', 'a') as f:
@@ -10650,7 +10650,8 @@ class Game(metaclass=use_on_events):
             for subject_name in interactive_items:
                 obj = get_object(self, obj_name)
                 subject = get_object(self, subject_name)
-                print("test: %s on %s" % (obj_name, subject_name))
+                if execute:
+                    print("test: %s on %s" % (obj_name, subject_name))
                 if subject and obj:
                     try:
                         subject.trigger_use(obj, execute=execute)
@@ -12387,7 +12388,7 @@ if EDITOR_AVAILABLE:
                     return
                 else:
                     state_name = os.path.splitext(os.path.basename(s))[0]
-                    print("save", state_name)
+                    print("save %s to %s"%(state_name, self.game.scene.directory))
                     self.game._save_state(state_name)
                 return
                 # non-threadsafe
