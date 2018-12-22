@@ -5607,16 +5607,18 @@ class Emitter(Item, metaclass=use_on_events):
         return d
 
     def smart(self, game, *args, **kwargs):  # emitter.smart
-
+        """
         if game and game.engine == 1:  # backwards compat: give v1 emitters a unique name
+
+            unique = "tmp" if "unique" not in kwargs else kwargs["unique"]
             if "unique" not in kwargs:
-                print("Emitters now need a unique name. Add a postfix in the kwarg 'unique'.")
-                import pdb; pdb.set_trace()
+                print("***** Emitters now need a unique name. Add a postfix in the kwarg 'unique'. This one is %s"%self.name)
+                #import pdb; pdb.set_trace()
 
             game._v1_emitter_index += 1
             kwargs["using"] = "data/emitters/%s" % self.name
-            self.name = "%s_v1_%i" % (self.name, kwargs["unique"])
-
+            self.name = "%s_v1_%s" % (self.name, unique)
+        """
         super().smart(game, *args, **kwargs)
         for a in self._actions.values():
             a.mode = MANUAL
@@ -11996,15 +11998,16 @@ class Game(metaclass=use_on_events):
 Porting older game to pyglet pyvdida.
 """
 
-EMITTER_SMOKE = {"name": "smoke", "number": 10, "frames": 20, "direction": 0, "fov": 30, "speed": 3,
+# When using, add a unique "name" the dict and make sure the unique name exists in emitters/
+EMITTER_SMOKE = { "number": 10, "frames": 20, "direction": 0, "fov": 30, "speed": 3,
                  "acceleration": (0, 0), "size_start": 0.5, "size_end": 1.0, "alpha_start": 1.0, "alpha_end": 0.0,
                  "random_index": True}
 
-EMITTER_SPARK = {"name": "spark", "number": 10, "frames": 12, "direction": 190, "fov": 20, "speed": 4,
+EMITTER_SPARK = {"number": 10, "frames": 12, "direction": 190, "fov": 20, "speed": 4,
                  "acceleration": (0, 0), "size_start": 1.0, "size_end": 1.0, "alpha_start": 1.0, "alpha_end": 0.0,
                  "random_index": True}
 
-EMITTER_BUBBLE = {"name": "bubble", "number": 10, "frames": 120, "direction": 0, "fov": 20, "speed": 7,
+EMITTER_BUBBLE = {"number": 10, "frames": 120, "direction": 0, "fov": 20, "speed": 7,
                   "acceleration": (0, 0), "size_start": 1.0, "size_end": 1.0, "alpha_start": 1.0, "alpha_end": 0.0,
                   "random_index": True}
 
