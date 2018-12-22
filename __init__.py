@@ -5534,8 +5534,8 @@ def terminate_by_frame(game, emitter, particle):
 class Particle(object):
 
     def __init__(self, x, y, ax, ay, speed, direction, scale=1.0):
-        self.index = 0
-        self.action_index = 0
+        self.index = 0 # where in life cycle are you
+        self.action_index = 0  # where in the Emitter's action (eg frames) is the particle
         self.motion_index = 0  # where in the Emitter's applied motions is this particle
         self.x = x
         self.y = y
@@ -5575,10 +5575,10 @@ class Emitter(Item, metaclass=use_on_events):
         self.alpha_start, self.alpha_end = alpha_start, alpha_end
         self.alpha_delta = (alpha_end - alpha_start) / frames
 
-        # should each particle start mid-action?
-        self.random_index = random_index
+
+        self.random_index = random_index # should each particle start mid-action (eg a different frame)
         self.random_age = random_age  # should each particle start mid-life?
-        self.random_motion_index = random_motion_index
+        self.random_motion_index = random_motion_index # should each particle start mid-motion?
         self.size_spawn_min, self.size_spawn_max = size_spawn_min, size_spawn_max
         self.speed_spawn_min, self.speed_spawn_max = speed_spawn_min, speed_spawn_max
         self.particles = []
@@ -5614,6 +5614,8 @@ class Emitter(Item, metaclass=use_on_events):
             self.name = "%s_v1_%i" % (self.name, game._v1_emitter_index)
 
         super().smart(game, *args, **kwargs)
+        for a in self._actions.values():
+            a.mode = MANUAL
         # reload the actions but without the mask
         self._smart_actions(game, exclude=["mask"])
         self._clickable_mask = load_image(
@@ -5646,6 +5648,7 @@ class Emitter(Item, metaclass=use_on_events):
         p.motion_index += 1
         p.index += 1
         p.action_index += 1
+
         test_terminate = get_function(self.game, self.test_terminate, self)
         if test_terminate(self.game, self, p):  # reset if needed
             #            print("RESET PARTICLE", self.frames, p.index)
@@ -5659,6 +5662,10 @@ class Emitter(Item, metaclass=use_on_events):
             p.hidden = False
             if p.terminate == True:
                 self.particles.remove(p)
+
+        #if self.resource:
+        #    print(p.particle_id, self.resource._frame_index, p.action_index, self.action.num_of_frames,  p.action_index % self.action.num_of_frames)
+
 
     def _update(self, dt, obj=None):  # emitter.update
         Item._update(self, dt, obj=obj)
@@ -5770,7 +5777,11 @@ class Emitter(Item, metaclass=use_on_events):
     def get_a_scale(self):
         return uniform(self.size_spawn_min, self.size_spawn_max)
 
-    def _add_particles(self, num=1, terminate=False):
+    def _add_particles(self, num=1, terminate=False, speed_spawn_min=None, speed_spawn_max=None):
+        if speed_spawn_min: # update new spawn values
+            self.speed_spawn_min = speed_spawn_min
+        if speed_spawn_max:
+            self.speed_spawn_max = speed_spawn_max
         for x in range(0, num):
             d = self.get_a_direction()
             scale = self.get_a_scale()
@@ -5794,7 +5805,7 @@ class Emitter(Item, metaclass=use_on_events):
             p.hidden = True
             p.terminate = terminate
 
-    def on_add_particles(self, num):
+    def on_add_particles(self, num, speed_spawn_min=None, speed_spawn_max=None):
         self._add_particles(num=num)
 
     def on_limit_particles(self, num):
@@ -6290,8 +6301,12 @@ class Scene(MotionManager, metaclass=use_on_events):
         obj = get_object(self.game, obj)
         return True if obj.name in self._objects else False
 
-    def get_object(self, obj):
-        return get_object(self.game, obj)
+    def get_object(self, obj):  # scene.get_object
+        o = get_object(self.game, obj)
+        if not o or o.name not in self._objects:
+            print("ERROR: scene.get_object does not have object")
+            import pdb; pdb.set_trace()
+        return o
 
     @property
     def directory(self):  # scene.directory
