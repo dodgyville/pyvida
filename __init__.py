@@ -2600,7 +2600,8 @@ class MotionManager(metaclass=use_on_events):
         self._applied_motions = motion
 
     def on_motion(self, motion=None, mode=None, block=None, destructive=None, index=0):
-        """ Clear all existing motions and do just one motion. 
+        """ Clear all existing motions and do just one motion.
+            mode = ONCE, LOOP (default), PINGPONG
             index is where in the motion to start, -1 for random.
             If variable is None then use the Motion's defaults
         """
@@ -2670,6 +2671,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         self._vx, self._vy = 0, 0  # temporary visual displacement (used by motions)
         self._shakex, self._shakey = 0, 0
         self._parent = None
+        self._children = []  # used by reparent
         self.resource_name_override = None  # override actor name to use when accessing resource dict
 
         # when an actor stands at this actor's stand point, request an idle
@@ -4800,14 +4802,20 @@ class Actor(MotionManager, metaclass=use_on_events):
             self._engine_v1_scale = v
         self._set(["scale"], [v])
 
-    def on_reparent(self, parent):
-        self._set(["_parent"], [parent])
+    def on_reparent(self, p):
+        parent = get_object(self.game, p) if self.game else p
+        self._set(["_parent"], [parent.name if parent else p])
+        if parent and self.name not in parent._children:
+            parent._children.append(self.name)
 
     def on_sever_parent(self):
         """ Set parent to None but relocate actor to last parented location """
         if self._parent:
-            self.x += self._parent.x
-            self.y += self._parent.y
+            parent = get_object(self.game, self._parent)
+            self.x += parent.x
+            self.y += parent.y
+            if self.name in parent._children:
+                parent._children.remove(self.name)
         self.on_reparent(None)
 
     def on_restand(self, point):
@@ -4950,6 +4958,11 @@ class Actor(MotionManager, metaclass=use_on_events):
         if destination:
             pt = get_point(self.game, destination, self)
             self.x, self.y = pt
+        if self.game: # potentially move child objects too
+            for c in self._children:
+                child = get_object(self.game, c)
+                if child and child._parent == self.name:
+                    child._relocate(scene)
         return
 
     def set_idle(self, target=None):
