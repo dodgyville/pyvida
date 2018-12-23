@@ -4342,14 +4342,12 @@ class Actor(MotionManager, metaclass=use_on_events):
             ok.load_assets(self.game)
 
         kwargs = self._get_text_details(font=font, size=size)
-        if position == None:
-            # position 10% off the bottom
-            #            x, y = self.game.resolution[
-            #                0] // 2 - msgbox.w // 2, self.game.resolution[1] * 0.8 - msgbox.h
-            # msgbox weighted slight higher than centre to draw natural eyeline to speech in centre of screen.
-            x, y = self.game.resolution[
-                       0] // 2 - msgbox.w // 2, self.game.resolution[1] * 0.38
 
+        # default msgbox weighted slight higher than centre to draw natural eyeline to speech in centre of screen.
+        x, y = self.game.resolution[0] // 2 - msgbox.w // 2, self.game.resolution[1] * 0.38
+
+        if position == None: # default
+            pass
         elif position == TOP:
             x, y = self.game.resolution[
                        0] // 2 - msgbox.w // 2, self.game.resolution[1] * 0.1
@@ -4368,9 +4366,10 @@ class Actor(MotionManager, metaclass=use_on_events):
         elif position == BOTTOM_RIGHT:
             x, y = self.game.resolution[
                        0] * 0.98 - msgbox.w, self.game.resolution[1] * 0.95 - msgbox.h
-
         elif type(position) in [tuple, list]:  # assume coords
             x, y = position
+        else: # fall back to default
+            log.warning("NO SAYS POSITON FOUND FOR %s"%text)
 
         dx, dy = 10, 10  # padding
 
@@ -11824,6 +11823,11 @@ class Game(metaclass=use_on_events):
                 log.info("game has finished on_pause, so decrement game.busy to %i." % (self.busy))
 
         pyglet.clock.schedule_once(pause_finish, duration, self)
+
+    def on_popup(self, *args, **kwargs):
+        log.warning("POPUP NOT DONE YET")
+        pass
+
 
     def create_bars_and_scale(self, w, h, scale):
         """ Fit game to requested window size """
