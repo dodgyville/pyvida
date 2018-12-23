@@ -1552,7 +1552,7 @@ class PyvidaSprite(pyglet.sprite.Sprite):
             pyglet.clock.unschedule(self._animate)
             self._animation = None
 
-        if isinstance(img, image.Animation):
+        if isinstance(img, pyglet.image.Animation):
             self._animation = img
             self._frame_index = 0
             self._set_texture(img.frames[0].image.get_texture())
@@ -5646,6 +5646,9 @@ class Emitter(Item, metaclass=use_on_events):
     #    def create_persistent(self, p):
     #        """ Convert a particle in an object and """
 
+    def set_variable(self, key, val):
+        setattr(self, key, val)
+
     def get_particle_start_pos(self):
         x = self.x + randint(0, self._solid_area.w)
         y = self.y + randint(0, self._solid_area.h)
@@ -5701,13 +5704,13 @@ class Emitter(Item, metaclass=use_on_events):
         #if self.resource:
         #    print(p.particle_id, self.resource._frame_index, p.action_index, self.action.num_of_frames,  p.action_index % self.action.num_of_frames)
 
-
     def _update(self, dt, obj=None):  # emitter.update
         Item._update(self, dt, obj=obj)
         if self.game and self.game._headless:
             return
         for i, p in enumerate(self.particles):
             self._update_particle(dt, p)
+
 
     def pyglet_draw(self, absolute=False, force=False):  # emitter.draw
         #        if self.resource and self._allow_draw: return
@@ -5808,8 +5811,6 @@ class Emitter(Item, metaclass=use_on_events):
 
     def get_a_scale(self):
         return uniform(self.size_spawn_min, self.size_spawn_max)
-
-
 
     def _add_particles(self, num=1, terminate=False, speed_spawn_min=None, speed_spawn_max=None):
         if speed_spawn_min: # update new spawn values
@@ -6658,6 +6659,18 @@ class Scene(MotionManager, metaclass=use_on_events):
             obj = get_object(self.game, obj_name)
             obj._hide()
 
+    def on_show(self):
+        objects = self._objects
+        backgrounds = self._layer
+        #objects = objects if objects else []
+        #backgrounds = backgrounds if backgrounds else []
+        for obj_name in objects:
+            obj = get_object(self.game, obj_name)
+            obj._show()
+        for obj_name in backgrounds:
+            obj = get_object(self.game, obj_name)
+            obj._show()
+
     def on_rotate(self, d=0):
         """ Rotate the scene around the window midpoint"""
         self._rotate = d
@@ -6667,8 +6680,10 @@ class Scene(MotionManager, metaclass=use_on_events):
         self._spin = d
 
     def on_flip(self, horizontal=None, vertical=None):
-        if vertical != None: self._flip_vertical = vertical
-        if horizontal != None: self._flip_horizontal = horizontal
+        if vertical is not None:
+            self._flip_vertical = vertical
+        if horizontal is not None:
+            self._flip_horizontal = horizontal
 
     def on_music(self, filename):
         """ What music to play on entering the scene? """
@@ -9357,7 +9372,7 @@ class Game(metaclass=use_on_events):
     def set_headless_value(self, v):
         self._headless = v
         if self._headless is True:  # speed up
-            self.on_publish_fps(300)
+            self.on_publish_fps(600)
         else:
             self.on_publish_fps(self.fps)
 
