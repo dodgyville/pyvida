@@ -5526,7 +5526,7 @@ class Portal(Actor, metaclass=use_on_events):
             self.game, (self.x + self.ox, self.y + self.oy), (255, 10, 10, 255), absolute=absolute))
 
 
-def terminate_by_frame(game, emitter, particle):
+def terminate_by_frame(_game, emitter, particle):
     """ If particle has lived longer than the emitter's frames then terminate """
     return particle.index >= emitter.frames
 
@@ -5627,11 +5627,33 @@ class Emitter(Item, metaclass=use_on_events):
         self._clickable_mask = load_image(
             os.path.join(self._directory, "mask.png"))
         self._reset()
-
+        game.add(self, replace=True)
         return self
 
     #    def create_persistent(self, p):
     #        """ Convert a particle in an object and """
+
+    def get_particle_start_pos(self):
+        x = self.x + randint(0, self._solid_area.w)
+        y = self.y + randint(0, self._solid_area.h)
+        if self._parent:
+            parent = get_object(self.game, self._parent)
+            x += parent.x
+            y += parent.y
+        return x,y
+
+    def reset_particle(self, p):
+        p.x, p.y = self.get_particle_start_pos()
+        p.scale = self.get_a_scale()
+        p.speed = self.speed * uniform(self.speed_spawn_min, self.speed_spawn_max)
+        p.alpha = self.alpha_start
+
+        if self.random_age:
+            p.index = randint(0, self.frames)
+        if self.random_index and self.action:
+            p.action_index = randint(0, self.action.num_of_frames)
+        if self.random_motion_index:
+            p.motion_index = randint(0, 1000)  # XXX we don't have the length of any motions here.
 
     def _update_particle(self, dt, p):
         r = math.radians(p.direction)
@@ -5658,13 +5680,7 @@ class Emitter(Item, metaclass=use_on_events):
         test_terminate = get_function(self.game, self.test_terminate, self)
         if test_terminate(self.game, self, p):  # reset if needed
             #            print("RESET PARTICLE", self.frames, p.index)
-            p.x, p.y = self.x + \
-                       randint(0, self._solid_area.w), self.y + \
-                       randint(0, self._solid_area.h)
-            p.scale = self.get_a_scale()
-            p.speed = self.speed * uniform(self.speed_spawn_min, self.speed_spawn_max)
-            p.alpha = self.alpha_start
-            p.index = 0
+            self.reset_particle(p)
             p.hidden = False
             if p.terminate == True:
                 self.particles.remove(p)
@@ -5695,9 +5711,6 @@ class Emitter(Item, metaclass=use_on_events):
         self._rect = Rect(self.x, self.y, 0, 0)
         for i, p in enumerate(self.particles):
             x, y = p.x, p.y
-            if self._parent:
-                x += self._parent.x
-                y += self._parent.y
 
             x = x + self.ax
             h = 1 if self.resource is None else self.resource.height
@@ -5712,7 +5725,7 @@ class Emitter(Item, metaclass=use_on_events):
 
             if self.resource is not None:
                 self.resource._frame_index = p.action_index % self.action.num_of_frames
-                self.resource.scale = p.scale
+                self.resource.scale = self.scale*p.scale
                 #                if i == 10: print(i, p.index, p.scale)
                 #                if p == self.particles[0]:
                 #                    print(self.alpha_delta, p.alpha, max(0, min(round(p.alpha*255), 255)))
@@ -5783,6 +5796,8 @@ class Emitter(Item, metaclass=use_on_events):
     def get_a_scale(self):
         return uniform(self.size_spawn_min, self.size_spawn_max)
 
+
+
     def _add_particles(self, num=1, terminate=False, speed_spawn_min=None, speed_spawn_max=None):
         if speed_spawn_min: # update new spawn values
             self.speed_spawn_min = speed_spawn_min
@@ -5793,16 +5808,11 @@ class Emitter(Item, metaclass=use_on_events):
             scale = self.get_a_scale()
             speed = self.speed * uniform(self.speed_spawn_min, self.speed_spawn_max)
             #            print("DIRECTION",d, self.direction, self.fov/2, self.x, self.y, self._solid_area.__dict__)
-            self.particles.append(Particle(self.x + randint(0, self._solid_area.w),
-                                           self.y + randint(0, self._solid_area.h), self._ax, self._ay, speed, d,
+            sx, sy = self.get_particle_start_pos()
+            self.particles.append(Particle(sx, sy, self._ax, self._ay, speed, d,
                                            scale))
             p = self.particles[-1]
-            if self.random_age:
-                p.index = randint(0, self.frames)
-            if self.random_index and self.action:
-                p.action_index = randint(0, self.action.num_of_frames)
-            if self.random_motion_index:
-                p.motion_index = randint(0, 1000)  # XXX we don't have the length of any motions here.
+            self.reset_particle(p)
             if self.behaviour == BEHAVIOUR_CYCLE:
                 # fast forward particle through one full cycle so they are
                 # mid-stream when they start
