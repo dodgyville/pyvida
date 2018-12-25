@@ -145,7 +145,7 @@ def load_info(fname_raw):
 
 
 def get_config_file():
-    if "slug" in INFO:
+    if "slug" in INFO and INFO["slug"] != "pyvidagame":
         slug = INFO["slug"]
     else:
         slug = Path(working_dir).resolve().stem
@@ -160,7 +160,6 @@ def load_config():
     fname = get_safe_path(os.path.join(APP_DIR, fname_raw))
     if not os.path.exists(fname):  # fallback on static directory
         fname = get_safe_path(fname_raw)
-    import pdb; pdb.set_trace()
     config = {"editor": False, "mixer": "pygame", "mods": True, "language": None, "internet": None,
               "lowmemory": None}  # defaults
     if os.path.exists(fname):
@@ -200,6 +199,7 @@ CONFIG = load_config()
 
 language = CONFIG["language"]
 #language = "de"  # XXX forcing german
+
 
 def set_language(new_language=None):
     if new_language:
@@ -917,12 +917,12 @@ def set_looks(game, actors, slug=None, full=None):
 
 def get_available_languages():
     """ Return a list of available locale names """
-    language = "en-AU"
-    languages = glob.glob("data/locale/*")
+    default_language = "en-AU"
+    languages = glob.glob(get_safe_path("data/locale/*"))
     languages = [os.path.basename(x) for x in languages if os.path.isdir(x)]
     languages.sort()
-    if language not in languages:
-        languages.append(language)  # the default
+    if default_language not in languages:
+        languages.append(default_language)  # the default
     return languages
 
 
@@ -4488,7 +4488,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         else:
             if logging:
                 log.warning(
-                    "Can't forget fact '%s' ... was not in memory." % (fact))
+                    "Can't forget fact '%s' ... was not in memory." % fact)
 
     def on_update_interact(self, v):
         self.interact = v
@@ -9272,11 +9272,12 @@ class Game(metaclass=use_on_events):
         self._window.on_draw = self.pyglet_draw
         pyglet.clock.set_fps_limit(self.fps)
 
-    def start_engine_lock(self):
+    def start_engine_lock(self, fps=None):
         # Force game to draw at least at a certain fps (default is 30 fps)
-        if self.settings and self.settings.lock_engine_fps != None:
+        fps = fps if fps else self.settings.lock_engine_fps
+        if self.settings and fps:
             print("Start engine lock")
-            pyglet.clock.schedule_interval(self.lock_update, 1.0 / self.settings.lock_engine_fps)
+            pyglet.clock.schedule_interval(self.lock_update, 1.0 / fps)
 
     def stop_engine_lock(self):
         print("Stop engine lock")
@@ -9369,11 +9370,15 @@ class Game(metaclass=use_on_events):
         """ schedule a repeating callback """
         pyglet.clock.schedule_interval(*args, **kwargs)
 
-    def on_publish_fps(self, fps=None):
+    def on_publish_fps(self, fps=None, actor_fps=None, engine_fps=None):
         """ Make the engine run at the requested fps """
-        fps = self.fps if fps is None else fps
+        fps = fps if fps else self.fps
+        actor_fps = actor_fps if actor_fps else self.default_actor_fps
+
+        #self.stop_engine_lock(engine_fps)
+
         pyglet.clock.unschedule(self.update)
-        pyglet.clock.schedule_interval(self.update, 1 / self.default_actor_fps)
+        pyglet.clock.schedule_interval(self.update, 1 / actor_fps)
         pyglet.clock.set_fps_limit(fps)
 
     def on_set_fps(self, v):
@@ -9382,9 +9387,9 @@ class Game(metaclass=use_on_events):
     def set_headless_value(self, v):
         self._headless = v
         if self._headless is True:  # speed up
-            self.on_publish_fps(600)
+            self.on_publish_fps(600, 300)
         else:
-            self.on_publish_fps(self.fps)
+            self.on_publish_fps(self.fps, self.default_actor_fps)
 
     def get_headless_value(self):
         return self._headless
@@ -9564,6 +9569,7 @@ class Game(metaclass=use_on_events):
                 print("remap joystick buttons")
 
             if symbol == pyglet.window.key.F9:
+                self.on_publish_fps(300,150)
                 return
 
             if symbol == pyglet.window.key.F10:
@@ -12113,7 +12119,6 @@ item.set_over_colour(MENU_COLOUR_OVER)
 # game.add(item)
 
 
-
 class SubmenuSelect(object):
     """ A higher level menu class for providing a submenu where only one item can be selected (eg language) """
 
@@ -12133,7 +12138,7 @@ class SubmenuSelect(object):
             txt = self.selected.text[2:]  # remove asterix from item
             self.selected.update_text(txt)
         self.selected = item
-        item.update_text("* %s" % item.text)
+        item.display_text = "* %s" % item.display_text
 
     def smart(self, game, menu_items=[], exit_item=None, exit_item_cb=None, selected=None):
         """ Fast generate a menu """
@@ -12141,15 +12146,20 @@ class SubmenuSelect(object):
         hx, hy = self.hpos
         MENU_Y_DISPLACEMENT = 40
 
-        def select_item(game, item, player):
+        def select_item(_game, item, _player):
             self._select(item)
 
         for i in menu_items:
             if type(i) == str:
                 #                item = game.add(MenuItem(i, select_item, (sx, sy), (hx, hy)).smart(game))
-                item = game.add(
-                    MenuText("submenu_%s" % i, (280, 80), (840, 170), i, wrap=800, interact=select_item, spos=(sx, sy),
-                             hpos=(hx, hy), font=self.font), False, MenuItem)
+                #item = game.add(
+                #    MenuText("submenu_%s" % i, (280, 80), (840, 170), i, wrap=800, interact=select_item, spos=(sx, sy),
+                #             hpos=(hx, hy), font=self.font), False, MenuItem)
+                item = game.add(Text("submenu_%s" % i, (280, sy), i, size=26, wrap=800, interact=select_item,
+                                     font=DEFAULT_MENU_FONT, colour=(42, 127, 255), offset=2), replace=True)
+                item.on_key("None")
+                item.set_over_colour(MENU_COLOUR_OVER)
+
                 sy += MENU_Y_DISPLACEMENT
                 if selected == i: self._select(item)
                 self.menu_items.append(item)
@@ -12158,14 +12168,19 @@ class SubmenuSelect(object):
             def submenu_return(game, item, player):
                 """ exit menu item actually returns the select item rather than the return item """
                 if self.selected:  # remove asterix from selected
-                    txt = self.selected.text[2:]
-                    self.selected.update_text(txt)
+                    self.selected.display_text = self.selected.display_text[2:]
                 exit_item_cb(game, self.selected, player)
 
             #           item  = game.add(MenuItem(exit_item, submenu_return, (sx, sy), (hx, hy), "x").smart(game))
-            item = game.add(
-                MenuText("submenu_%s" % exit_item, (280, 80), (840, 170), exit_item, wrap=800, interact=submenu_return,
-                         spos=(sx, sy), hpos=(hx, hy), font=self.font), False, MenuItem)
+            #item = game.add(
+            #    MenuText("submenu_%s" % exit_item, (280, 80), (840, 170), exit_item, wrap=800, interact=submenu_return,
+            #             spos=(sx, sy), hpos=(hx, hy), font=self.font), False, MenuItem)
+
+            item = game.add(Text("submenu_%s" % exit_item, (280, sy), exit_item, size=26, wrap=800,
+                            interact=submenu_return, font=DEFAULT_MENU_FONT, colour=(42, 127, 255), offset=2),
+                            replace = True)
+            item.on_key("None")
+            item.set_over_colour(MENU_COLOUR_OVER)
 
             self.menu_items.append(item)
         return self
