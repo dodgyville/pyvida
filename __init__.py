@@ -144,12 +144,23 @@ def load_info(fname_raw):
     return config
 
 
-def load_config(fname_raw):
+def get_config_file():
+    if "slug" in INFO:
+        slug = INFO["slug"]
+    else:
+        slug = Path(working_dir).resolve().stem
+    fname_raw = "%s.config"%slug
+    return fname_raw
+
+
+def load_config():
     """ Used by player to override game settings """
-    # check wrirable appdata directory, 
+    # check wrirable appdata directory,
+    fname_raw = get_config_file()
     fname = get_safe_path(os.path.join(APP_DIR, fname_raw))
     if not os.path.exists(fname):  # fallback on static directory
-        fname = get_safe_path(os.path.join("data", fname_raw))
+        fname = get_safe_path(fname_raw)
+    import pdb; pdb.set_trace()
     config = {"editor": False, "mixer": "pygame", "mods": True, "language": None, "internet": None,
               "lowmemory": None}  # defaults
     if os.path.exists(fname):
@@ -171,8 +182,8 @@ def load_config(fname_raw):
     return config
 
 
-def save_config(config, fname_raw):
-#    fname = os.path.join(APP_DIR, fname_raw)
+def save_config(config):
+    fname_raw = get_config_file()
     fname = get_safe_path(os.path.join(APP_DIR, fname_raw))
     with open(fname, "w") as f:
         for key, value in config.items():
@@ -185,7 +196,7 @@ def save_config(config, fname_raw):
 
 # Engine configuration variables that can override settings
 INFO = load_info("game.info")
-CONFIG = load_config("game.conf")
+CONFIG = load_config()
 
 language = CONFIG["language"]
 #language = "de"  # XXX forcing german
@@ -12100,6 +12111,68 @@ item.set_over_colour(MENU_COLOUR_OVER)
 # item = Text(i[0], (280,80), i[1], interact=i[2], wrap=800, font=MENU_FONT, size=38, game)
 # item.on_key(i[3])
 # game.add(item)
+
+
+
+class SubmenuSelect(object):
+    """ A higher level menu class for providing a submenu where only one item can be selected (eg language) """
+
+    def __init__(self, spos, hpos, font=DEFAULT_FONT):
+        """ spos = display position
+            hpos = hidden position
+        """
+        self.spos = spos
+        self.hpos = hpos
+        self.menu_items = []
+        self.selected = None
+        self.exit_item = None
+        self.font = font
+
+    def _select(self, item):
+        if self.selected:
+            txt = self.selected.text[2:]  # remove asterix from item
+            self.selected.update_text(txt)
+        self.selected = item
+        item.update_text("* %s" % item.text)
+
+    def smart(self, game, menu_items=[], exit_item=None, exit_item_cb=None, selected=None):
+        """ Fast generate a menu """
+        sx, sy = self.spos
+        hx, hy = self.hpos
+        MENU_Y_DISPLACEMENT = 40
+
+        def select_item(game, item, player):
+            self._select(item)
+
+        for i in menu_items:
+            if type(i) == str:
+                #                item = game.add(MenuItem(i, select_item, (sx, sy), (hx, hy)).smart(game))
+                item = game.add(
+                    MenuText("submenu_%s" % i, (280, 80), (840, 170), i, wrap=800, interact=select_item, spos=(sx, sy),
+                             hpos=(hx, hy), font=self.font), False, MenuItem)
+                sy += MENU_Y_DISPLACEMENT
+                if selected == i: self._select(item)
+                self.menu_items.append(item)
+
+        if exit_item:
+            def submenu_return(game, item, player):
+                """ exit menu item actually returns the select item rather than the return item """
+                if self.selected:  # remove asterix from selected
+                    txt = self.selected.text[2:]
+                    self.selected.update_text(txt)
+                exit_item_cb(game, self.selected, player)
+
+            #           item  = game.add(MenuItem(exit_item, submenu_return, (sx, sy), (hx, hy), "x").smart(game))
+            item = game.add(
+                MenuText("submenu_%s" % exit_item, (280, 80), (840, 170), exit_item, wrap=800, interact=submenu_return,
+                         spos=(sx, sy), hpos=(hx, hy), font=self.font), False, MenuItem)
+
+            self.menu_items.append(item)
+        return self
+
+    def get_menu(self):
+        return self.menu_items
+
 
 
 """
