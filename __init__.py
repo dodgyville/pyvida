@@ -9398,7 +9398,7 @@ class Game(metaclass=use_on_events):
     def set_headless_value(self, v):
         self._headless = v
         if self._headless is True:  # speed up
-            self.on_publish_fps(600, 300)
+            self.on_publish_fps(400, 400)
         else:
             self.on_publish_fps(self.fps, self.default_actor_fps)
 
