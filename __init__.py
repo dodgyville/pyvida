@@ -5629,7 +5629,7 @@ class Emitter(Item, metaclass=use_on_events):
                 try:
                     d[i] = d.__name__  # textify
                 except AttributeError:
-                    print("__name__ not on object")
+                    print("__name__ not on object %s for field %s"%(d[i], i))
                     import pdb; pdb.set_trace()
         return d
 
@@ -7215,6 +7215,7 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
                 if hasattr(sprite, "scale"):
                     old_scale = sprite.scale
                     sprite.scale = scale
+
                 final_x, final_y = int(x) + (dx / 2) - (sw / 2), int(y) + (dy / 2) - (sh / 2)
                 sprite.x, sprite.y = final_x, self.game.resolution[1] - final_y
                 # pyglet seems to render Labels and Sprites at x,y differently, so compensate.
