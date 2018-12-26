@@ -293,6 +293,7 @@ COORDINATE_MODIFIER = -1
 # Engine behaviour
 HIDE_MOUSE = True  # start with mouse hidden, first splash will turn it back on
 DEFAULT_FULLSCREEN = False  # switch game to fullscreen or not
+DEFAULT_AUTOSCALE = True
 # show "unknown" on portal links before first visit there
 DEFAULT_EXPLORATION = True
 DEFAULT_PORTAL_TEXT = True  # show portal text
@@ -1712,6 +1713,7 @@ class Settings(object):
         self.allow_internet_debug = ENABLE_LOGGING
 
         self.fullscreen = DEFAULT_FULLSCREEN
+        self.autoscale = True # scale window to fit screen
         self.preferred_screen = None  # for multi-monitors
         self.show_portals = False
         self.show_portal_text = DEFAULT_PORTAL_TEXT
@@ -1774,6 +1776,8 @@ class Settings(object):
                     data.low_memory = False
                 if not hasattr(data, "preferred_screen"):  # compatible with older games
                     data.preferred_screen = None
+                if not hasattr(data, "autoscale"): # compatible with older games
+                    data.autoscale = True
             return data  # use loaded settings
         except:  # if any problems, use default settings
             log.warning(
@@ -8980,6 +8984,11 @@ class Game(metaclass=use_on_events):
         self._generator_callback = None
         self._generator_progress = None
 
+        # this session's graphical settings
+        self.fullscreen = fullscreen
+        self.autoscale = False
+        self._window = None
+
         self.camera = Camera(self)  # the camera object
         self.settings = None  # game-wide settings
         # initialise sound
@@ -9202,6 +9211,7 @@ class Game(metaclass=use_on_events):
             self.low_memory = CONFIG["lowmemory"]
 
         fullscreen = self.settings.fullscreen if self.settings and self.settings.fullscreen else DEFAULT_FULLSCREEN
+        self.autoscale = self.settings.autoscale if self.settings else DEFAULT_AUTOSCALE
 
         if "fullscreen" in CONFIG and CONFIG["fullscreen"]:  # use override from game.conf
             fullscreen = CONFIG["fullscreen"]
@@ -11923,7 +11933,7 @@ class Game(metaclass=use_on_events):
         #        print("game resolution", width, height, "screen size",w,h)
         # only scale non-fullscreen window if it's larger than screen.
         # or if it's fullscreen, always scale to fit screen
-        if fullscreen or (not fullscreen and (width != w or height != h)):
+        if fullscreen or (self.autoscale and not fullscreen and (width != w or height != h)):
             # resolution, scale = fit_to_screen((w, h), resolution)
             width, height = resolution
             scale = new_scale
