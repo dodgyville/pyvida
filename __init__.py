@@ -2190,7 +2190,7 @@ class Action(object):
         quickload = os.path.abspath(get_best_file(game, fname + ".quickload"))
         full_load = True
         resource = False  # don't update resource
-        if game._headless is True:  # only load defaults
+        if game._headless:  # only load defaults
             if os.path.isfile(quickload):  # read w,h without loading full image
                 try:
                     with open(quickload, "r") as f:
@@ -2206,7 +2206,7 @@ class Action(object):
                     except:
                         pass
 
-        if full_load is True:
+        if full_load:
             image = load_image(get_best_file(game, self._image))
             if not image:
                 log.error("Load action {} assets for actor {} has not loaded an image".format(
@@ -2214,7 +2214,7 @@ class Action(object):
                 return
             image_seq = pyglet.image.ImageGrid(image, 1, self.num_of_frames)
             frames = []
-            if game == None:
+            if game is None:
                 log.error("Load assets for {} has no game object".format(
                     getattr(actor, "name", actor)))
             # TODO: generate ping poing, reverse effects here
@@ -7574,7 +7574,7 @@ class Camera(metaclass=use_on_events):  # the view manager
         # unload assets from older scenes 
         KEEP_SCENES_RESIDENT = 10
         unload = self.game._resident[:-KEEP_SCENES_RESIDENT]  # unload older scenes
-        if len(unload) > 0:
+        if len(unload) > 0 and not self.game._headless:
             for unload_scene in unload:
                 s = get_object(self.game, unload_scene)
                 log.debug("Unload scene %s" % (unload_scene))
@@ -7604,8 +7604,8 @@ class Camera(metaclass=use_on_events):  # the view manager
         """ change the scene """
         if self._overlay_fx == FX_DISCO:  # remove disco effect
             self.on_disco_off()
-
-        pyglet.gl.glClearColor(0, 0, 0, 255)  # reset clear colour to black
+        if not self.game._headless:
+            pyglet.gl.glClearColor(0, 0, 0, 255)  # reset clear colour to black
         if type(scene) in [str]:
             if scene in self.game._scenes:
                 scene = self.game._scenes[scene]
@@ -8183,24 +8183,11 @@ class Mixer(metaclass=use_on_events):
             self._force_mute, self._session_mute, self.game.settings.music_volume, self.game.settings.music_on,
             self._music_volume))
 
-    def _music_play(self, fname=None, description=None, loops=-1):
-        # XXX deprecated
-        if self._force_mute or self._session_mute:
-            return
-        #        return
-
-        self.music_index = 0  # reset music counter
-        if not self.game._headless:
-            self._music_player.queue(fname)
-            self._music_player.eos_action = 'loop'
-            #            if self._music_player.playing == True: #go to next song
-            #                self._music_player.next_source()
-            self._music_player.play()
-
-    #            self._music_player.on_eos = self._
 
     def on_music_pop(self, volume=None):
         """ Stop the current track and if there is music stashed, pop it and start playing it """
+        if self.game and not self.game._headless:
+            return
         if self._music_filename:  # currently playing music
             if self._music_stash:  # there is a file on the stash
                 if self._music_stash == self._music_filename:  # is same as the one on stash, so keep playing
@@ -8242,7 +8229,8 @@ class Mixer(metaclass=use_on_events):
 
             if os.path.exists(absfilename):  # new music
                 log.info("Loading music file %s" % absfilename)
-                self._music_player.load(absfilename)
+                if self.game and not self.game._headless:
+                    self._music_player.load(absfilename)
                 self._music_filename = fname
                 #                print("SETTING CURRENT MUSIC FILENAME TO", fname)
                 self._music_position = 0
@@ -8291,17 +8279,20 @@ class Mixer(metaclass=use_on_events):
         self.on_music_fade(val=v, duration=duration)
 
     def on_music_stop(self):
-        self._music_player.pause()
+        if self.game and not self.game._headless:
+            self._music_player.pause()
 
     def on_music_restart(self):
-        self._music_player.play()
+        if self.game and not self.game._headless:
+            self._music_player.play()
 
     def on_music_volume(self, val):
         """ val 0.0 - 1.0 """
         new_volume = self._music_volume = val
         # scale by the master volume from settings
         new_volume *= self.game.settings.music_volume if self.game and self.game.settings else 1
-        self._music_player.volume(new_volume)
+        if self.game and not self.game._headless:
+            self._music_player.volume(new_volume)
         log.info("Setting music volume to %f" % new_volume)
 
     def on_sfx_volume(self, val=None):
@@ -8309,7 +8300,8 @@ class Mixer(metaclass=use_on_events):
         val = val if val else 1  # reset
         new_volume = self._sfx_volume = val
         new_volume *= self.game.settings.sfx_volume if self.game and self.game.settings else 1
-        self._sfx_player.volume(new_volume)
+        if self.game and not self.game._headless:
+            self._sfx_player.volume(new_volume)
 
     def on_sfx_fade(self, val, duration=5):
         fps = self.game.fps if self.game else DEFAULT_FPS
@@ -8322,7 +8314,8 @@ class Mixer(metaclass=use_on_events):
 
     def _sfx_stop_callback(self):
         """ callback used by fadeout to stop sfx """
-        self.on_sfx_stop()
+        if self.game and not self.game._headless:
+            self.on_sfx_stop()
 
     def on_sfx_fadeout(self, seconds=2):
         self.on_sfx_fade(0, seconds)
@@ -8398,7 +8391,8 @@ class Mixer(metaclass=use_on_events):
             absfilename = get_safe_path(fname)
             if os.path.exists(absfilename):
                 log.info("Loading sfx file %s" % absfilename)
-                self._sfx_player.load(absfilename, self.game.settings.sfx_volume)
+                if self.game and not self.game._headless:
+                    self._sfx_player.load(absfilename, self.game.settings.sfx_volume)
             else:
                 log.warning("SFX file %s missing." % absfilename)
                 return
@@ -8414,7 +8408,8 @@ class Mixer(metaclass=use_on_events):
         self._sfx_play(fname, description, loops, fade_music, store)
 
     def on_sfx_stop(self, sfx=None):
-        self._sfx_player.stop()
+        if self.game and not self.game._headless:
+            self._sfx_player.stop()
 
     #        self._sfx_player.next_source()
     # if sfx: sfx.stop()
@@ -8427,7 +8422,8 @@ class Mixer(metaclass=use_on_events):
         self._ambient_player.volume(new_volume)
 
     def on_ambient_stop(self):
-        self._ambient_player.stop()
+        if self.game and not self.game._headless:
+            self._ambient_player.stop()
 
     def on_ambient_fade(self, val, duration=5):
         # XXX does not stop sound or reset volume if val is 0, use on_ambient_fadeout instead
@@ -8459,7 +8455,8 @@ class Mixer(metaclass=use_on_events):
             absfilename = get_safe_path(fname)
             if os.path.exists(absfilename):
                 log.info("Loading ambient file %s" % absfilename)
-                self._ambient_player.load(absfilename, self.game.settings.ambient_volume)
+                if self.game and not self.game._headless:
+                    self._ambient_player.load(absfilename, self.game.settings.ambient_volume)
             else:
                 log.warning("Ambient file %s missing." % absfilename)
                 return
@@ -10845,11 +10842,9 @@ class Game(metaclass=use_on_events):
                         k, v = list(i.keys())[0], list(i.values())[0]
                         if k not in expensive:
                             expensive[k] = timedelta()
-                        else:
-                            expensive[k] += v
+                        expensive[k] += v
                     for i in sorted(expensive.items(), key=itemgetter(1), reverse=True)[:profile_number]:
                         print(i)
-                    #print(self._profiled_scripts)
                 if self.exit_step is True:
                     self.on_quit()
 
