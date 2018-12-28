@@ -29,6 +29,7 @@ import itertools
 import json
 import math
 from math import sin, cos, radians
+from operator import itemgetter
 from operator import sub
 import os
 from os.path import expanduser
@@ -273,7 +274,7 @@ if DEBUG_NAMES:
 
 # ENABLE_FKEYS = CONFIG["editor"] # debug shortcut keys
 ENABLE_EDITOR = False and EDITOR_AVAILABLE  # default for editor. Caution: This starts module reloads which ruins pickles
-ENABLE_PROFILING = False
+ENABLE_PROFILING = False # allow profiling
 ENABLE_LOGGING = True
 DEFAULT_TEXT_EDITOR = "gedit"
 
@@ -9081,6 +9082,8 @@ class Game(metaclass=use_on_events):
         # list of scenes recently visited, unload assets for scenes that
         # haven't been visited for a while
         self._resident = []  # scenes to keep in memory
+        self.profile_scripts = False  # measure how long we spend in a script
+        self._profiled_scripts = []  # list of {"<script_name>":<timespent>}
 
         # editor and walkthrough
         self.editor = None  # pyglet-based editor
@@ -10408,7 +10411,7 @@ class Game(metaclass=use_on_events):
 
     # game.smart
     def _smart(self, player=None, player_class=Actor, draw_progress_bar=None, refresh=False, only=None, exclude=[],
-               use_quick_load=None):
+               use_quick_load=None, keep=[]):
         """ cycle through the actors, items and scenes and load the available objects 
             it is very common to have custom methods on the player, so allow smart
             to use a custom class
@@ -10417,10 +10420,11 @@ class Game(metaclass=use_on_events):
             draw_progress_bar is the fn that handles the drawing of a progress bar on this screen
             refresh = reload the defaults for this actor (but not images)
             use_quick_load = use a save file if available and/or write one after loading.
+            keep= actors/items to keep through quickload
         """
         if use_quick_load:
             if os.path.exists(use_quick_load):
-                load_game(self, use_quick_load)
+                load_game(self, use_quick_load, keep=keep)
                 return
 
         if draw_progress_bar:
@@ -10629,6 +10633,9 @@ class Game(metaclass=use_on_events):
             t = datetime.now().strftime("%d-%m-%y")
             print("Created %s, updated %s" % (t, t))
         # switch on test runner to step through walkthrough
+        if options.profiling:
+            print("Profiling time spent in scripts")
+            self.profile_scripts = True
         if options.language_code:
             set_language(options.language_code if options.language_code != "default" else None)
         if options.target_step:
@@ -10800,6 +10807,7 @@ class Game(metaclass=use_on_events):
 
                 print("FINISHED HEADLESS WALKTHROUGH")
                 if DEBUG_NAMES:
+                    print("* DEBUG NAMES")
                     global tmp_objects_first, tmp_objects_second
                     met = []
                     for key, v in tmp_objects_first.items():
@@ -10820,7 +10828,28 @@ class Game(metaclass=use_on_events):
                     for key, v in tmp_objects_second.items():
                         if key not in met:
                             print(">>> second meeting but no first: %s %s" % (v, key))
-
+                if self.profile_scripts:
+                    profile_number = 30
+                    print("* PROFILED SCRIPTS")
+                    print("Total time in scripts:")
+                    total_time = timedelta()
+                    for i in self._profiled_scripts:
+                        total_time += list(i.values())[0]
+                    print(total_time,  total_time.microseconds)
+                    print("\nTop most expensive individual calls:")
+                    for i in sorted(self._profiled_scripts, key=lambda k: list(k.values())[0], reverse=True)[:profile_number]:
+                        print(i)
+                    expensive = {}
+                    print("\nTop most expensive aggregate calls:")
+                    for i in self._profiled_scripts:
+                        k, v = list(i.keys())[0], list(i.values())[0]
+                        if k not in expensive:
+                            expensive[k] = timedelta()
+                        else:
+                            expensive[k] += v
+                    for i in sorted(expensive.items(), key=itemgetter(1), reverse=True)[:profile_number]:
+                        print(i)
+                    #print(self._profiled_scripts)
                 if self.exit_step is True:
                     self.on_quit()
 
@@ -11066,12 +11095,16 @@ class Game(metaclass=use_on_events):
                 #                print("DOING",e)
                 #                print("doing event",e)
                 # call the function with the args and kwargs
+                profiling_start = datetime.now()
                 try:
                     e[0](*e[1], **e[2])
                 except:
                     print("Last script: %s, this script: %s, last autosave: %s" % (
                     self._last_script, e[0].__name__, self._last_autosave))
                     raise
+
+                if self.profile_scripts:
+                    self._profiled_scripts.append({e[0].__name__:datetime.now()-profiling_start})
 
                 #                if self._event_index < len(self._events) - 1:
                 self._event_index += 1  # potentially start next event
