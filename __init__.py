@@ -4531,8 +4531,10 @@ class Actor(MotionManager, metaclass=use_on_events):
 
     def has(self, item):
         """ Does this actor have this item in their inventory?"""
-        item = get_object(self.game, item)
-        return True if item in self.inventory.values() else False
+        obj = get_object(self.game, item)
+        if not obj:
+            log.error("inventory get_object can't find requested object in game", obj)
+        return obj.name in self.inventory.keys()
 
     def _gets(self, item, remove=True, collection="collection", scale=1.0):
         item = get_object(self.game, item)
@@ -7372,8 +7374,9 @@ class MenuManager(metaclass=use_on_events):
             if not hasattr(menu_items, '__iter__'):
                 menu_items = [menu_items]
             for i in menu_items:
-                if i in self.game._menu:
-                    self.game._menu.remove(i)
+                obj = get_object(self.game, i)
+                if obj and obj.name in self.game._menu:
+                    self.game._menu.remove(obj.name)
 
     def on_enter_exit_sounds(self, enter_filename=None, exit_filename=None):
         """ Sounds to play when mouse moves over a menu item """
