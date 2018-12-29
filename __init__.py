@@ -4701,6 +4701,10 @@ class Actor(MotionManager, metaclass=use_on_events):
         action = choice(list(self._actions.keys()))
         self._do(action, mode=mode)
 
+    def on_action_mode(self, mode=LOOP):
+        """ Set the mode on the current action """
+        self.action.mode = mode
+
     def on_do(self, action, mode=LOOP):
         self._do(action, mode=mode)
 
@@ -6663,15 +6667,19 @@ class Scene(MotionManager, metaclass=use_on_events):
             obj = get_object(self.game, obj_name)
             obj._show()
 
-    def on_hide(self, objects=None, backgrounds=None, block=False):
+    def on_hide(self, objects=None, backgrounds=None, keep=[], block=False): # scene.hide
+        if keep is False:
+            log.error("Check this function call as")
+            raise Exception('The call to on_hide has changed and block is now a later argument, check it.')
         if objects is None and backgrounds is None:  # hide everything
             objects = self._objects
             backgrounds = self._layer
         objects = objects if objects else []
         backgrounds = backgrounds if backgrounds else []
         for obj_name in objects:
-            obj = get_object(self.game, obj_name)
-            obj._hide()
+            if obj_name not in keep:
+                obj = get_object(self.game, obj_name)
+                obj._hide()
         for obj_name in backgrounds:
             obj = get_object(self.game, obj_name)
             obj._hide()
