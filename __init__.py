@@ -8667,14 +8667,13 @@ def save_game_pickle(game, fname):
         pickle.dump(game._sys_paths, f)
         pickle.dump(game._resident, f)
 
-        PYVIDA_CLASSES = [
+        pyvida_classes = [
             Actor, Item, Scene, Portal, Text, Emitter, Collection]
         # dump info about all the objects and scenes in the game
-        TEST_DUMP = False
         for objects in [game._actors, game._items, game._scenes]:
-            objects_to_pickle = []
+#            objects_to_pickle = []
             for o in objects.values():  # test objects
-                if o.__class__ not in PYVIDA_CLASSES:
+                if o.__class__ not in pyvida_classes:
                     log.warning("Pickling {}, a NON-PYVIDA CLASS {}".format(o.name, o.__class__))
                 #                    continue
                 try:
