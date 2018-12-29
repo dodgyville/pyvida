@@ -3278,13 +3278,13 @@ class Actor(MotionManager, metaclass=use_on_events):
             kwargs["size"] = self.game.font_speech_size
         return kwargs
 
-    def on_queue_deltas(self, deltas, block=True):
+    def on_queue_deltas(self, deltas, block=True, next_action=None):
         """ Fake an goto action using a custom list of deltas """
         xs, ys = zip(*deltas)
         destination = self.x + sum(xs), self.y + sum(ys)  # sum of deltas
 
         if self.game._headless == True:
-            self._goto(destination, block=block)
+            self._goto(destination, block=block, next_action=next_action)
             return
 
         self._goto_deltas_index = 0
