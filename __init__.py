@@ -11706,8 +11706,9 @@ class Game(metaclass=use_on_events):
                     if obj.z != 1.0:
                         f.write('    %s.z = %f\n' % (slug, obj.z))
                     if obj._parent:
+                        parent = get_object(game, obj._parent)
                         f.write('    %s.reparent(\"%s\")\n' %
-                                (slug, obj._parent.name))
+                                (slug, parent.name))
                     if obj.action:
                         f.write('    %s.do("%s")\n' % (slug, obj.action.name))
                     for i, motion in enumerate(obj._applied_motions):
