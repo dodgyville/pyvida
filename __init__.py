@@ -8135,6 +8135,8 @@ class Mixer(metaclass=use_on_events):
         self.initialise_players(game)
 
     def initialise_players(self, game):
+        self._sfx_players = getattr(self, "_sfx_players", [])  # backwards compat
+        self._sfx_player_index = getattr(self, "_sfx_player_index", 0)
         if mixer == "pygame":
             log.debug("INITIALISE PLAYERS")
             log.debug("PYGAME MIXER REPORTS", pygame.mixer.get_init())
