@@ -1741,6 +1741,7 @@ class Settings(object):
         self.language = "en"
         self.disable_joystick = False  # allow joystick if available
         # joystick button remapping
+        self.joystick_manually_mapped = False
         self.joystick_interact = 0  # index to joystick.buttons that corresponds to mouse left-click
         self.joystick_look = 1  # index to joystick.buttons that corresponds to mouse right-click
 
@@ -1779,6 +1780,8 @@ class Settings(object):
                     data.preferred_screen = None
                 if not hasattr(data, "autoscale"): # compatible with older games
                     data.autoscale = True
+                if not hasattr(data, "joystick_manually_mapped"):
+                    data.joystick_manually_mapped = False
             return data  # use loaded settings
         except:  # if any problems, use default settings
             log.warning(
@@ -9949,8 +9952,7 @@ class Game(metaclass=use_on_events):
         elif self._map_joystick == 2:  # map look button
             self.settings.joystick_look = button
             self._map_joystick = 0  # finished remap
-            return
-
+            #return
         if button == self.settings.joystick_interact:
             self.on_mouse_release(x, y, pyglet.window.mouse.LEFT, modifiers)
         elif button == self.settings.joystick_look:
@@ -12055,6 +12057,11 @@ class Game(metaclass=use_on_events):
                 splash_finish(0, self)
             else:
                 pyglet.clock.schedule_once(splash_finish, duration, self)
+
+    def on_remap_joystick(self):
+        self.settings.joystick_interact = -1
+        self.settings.joystick_look = -1
+        self._map_joystick = 1 # start remap, next two button presses will be stored.
 
     def on_relocate(self, obj, scene, destination=None, scale=None):  # game.relocate
         obj = get_object(self.game, obj)
