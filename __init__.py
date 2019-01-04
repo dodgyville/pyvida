@@ -3440,7 +3440,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         return self._clickable_mask
 
     # make the clickable_area cover the whole screen, useful for some modals
-    def on_fullscreen(self, v=True):
+    def fullscreen(self, v=True):
         self._clickable_fullscreen = v
 
     def collide(self, x, y, image=False):  # Actor.collide
