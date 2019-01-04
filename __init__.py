@@ -193,10 +193,11 @@ def save_config(config):
             f.write("%s=%s\n" % (key, str(value).lower()))
 
 
-
 # Engine configuration variables that can override settings
 INFO = load_info("game.info")
+
 CONFIG = load_config()
+
 
 language = CONFIG["language"]
 #language = "de"  # XXX forcing german
@@ -3439,7 +3440,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         return self._clickable_mask
 
     # make the clickable_area cover the whole screen, useful for some modals
-    def fullscreen(self, v=True):
+    def on_fullscreen(self, v=True):
         self._clickable_fullscreen = v
 
     def collide(self, x, y, image=False):  # Actor.collide
