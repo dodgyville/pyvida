@@ -46,6 +46,7 @@ import traceback
 import webbrowser
 
 # 3rd party modules
+from babel.numbers import format_decimal
 from fontTools.ttLib import TTFont
 import pyglet
 import pyglet.clock
@@ -237,8 +238,21 @@ def set_language_for_session(game):
     set_language(locale)
 
 
+
 def get_language(game=None):
     return language
+
+
+def get_formatted_number(game, n):
+    try:
+        l = get_language(game)
+        if language:
+            num = format_decimal(n, locale=l)
+        else:
+            num = format_decimal(n)
+    except:
+        num = n
+    return num
 
 try:
     import android
