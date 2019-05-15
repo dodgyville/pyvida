@@ -293,9 +293,10 @@ ENABLE_PROFILING = False # allow profiling
 ENABLE_LOGGING = True
 DEFAULT_TEXT_EDITOR = "gedit"
 
-VERSION_MAJOR = 5  # major incompatibilities
-VERSION_MINOR = 1  # minor/bug fixes, can run same scripts
+VERSION_MAJOR = 6  # major incompatibilities
+VERSION_MINOR = 0  # minor/bug fixes, can run same scripts
 VERSION_SAVE = 5  # save/load version, only change on incompatible changes
+__version__ = "%i.%i.0"%(VERSION_MAJOR, VERSION_MINOR)
 
 # AVAILABLE BACKENDS
 PYGAME19 = 0
