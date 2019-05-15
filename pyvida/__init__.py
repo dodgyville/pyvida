@@ -3303,7 +3303,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         xs, ys = zip(*deltas)
         destination = self.x + sum(xs), self.y + sum(ys)  # sum of deltas
 
-        if self.game._headless == True:
+        if self.game._headless:
             self._goto(destination, block=block, next_action=next_action)
             return
 
@@ -3406,7 +3406,10 @@ class Actor(MotionManager, metaclass=use_on_events):
         #      print("missed",target,self.x, self.y)
         # update the PyvidaSprite animate manually
         if self.resource and hasattr(self.resource, "_animate"):
-            self.resource._animate(dt)
+            try:
+                self.resource._animate(dt)
+            except AttributeError:
+                pass
 
         # apply motions
         remove_motions = []
@@ -3948,14 +3951,8 @@ class Actor(MotionManager, metaclass=use_on_events):
         y += self._vy
         return x, y
 
-    def pyglet_draw(self, absolute=False, force=False, window=None):  # actor.draw
-        if self.game and self.game._headless and not force:
-            return
-        if not self.game:
-            print(self.name, "has no game attribute")
-            return
-
-        sprite = get_resource(self.resource_name)[-1]
+    def pyglet_draw_sprite(self, sprite, absolute=None, window=None):
+        # called by pyglet_draw
         if sprite and self.allow_draw:
             glPushMatrix()
             x, y = self.pyglet_draw_coords(absolute, window, sprite.height)
@@ -4123,6 +4120,16 @@ class Actor(MotionManager, metaclass=use_on_events):
             #                glRotatef(self._rotate, 0.0, 0.0, 1.0)
             #                glTranslatef(-((sprite.width/2)+self.x), -(hh-self.y-sprite.height/2 ), 0)
             glPopMatrix();
+
+    def pyglet_draw(self, absolute=False, force=False, window=None):  # actor.draw
+        if self.game and self.game._headless and not force:
+            return
+        if not self.game:
+            print(self.name, "has no game attribute")
+            return
+
+        sprite = get_resource(self.resource_name)[-1]
+        self.pyglet_draw_sprite(sprite, absolute, window)
 
         if self.show_debug:
             self.debug_pyglet_draw(absolute=absolute)
@@ -4779,7 +4786,7 @@ class Actor(MotionManager, metaclass=use_on_events):
 
     def _set_tint(self, rgb=None):
         self._tint = rgb
-        if rgb == None:
+        if rgb is None:
             rgb = (255, 255, 255)  # (0, 0, 0)
         if self.resource:
             self.resource.color = rgb
@@ -9249,6 +9256,9 @@ class Game(metaclass=use_on_events):
 
         if "lowmemory" in CONFIG and CONFIG["lowmemory"]:  # use override from game.conf
             self.low_memory = CONFIG["lowmemory"]
+
+        if not self.settings:
+            self.settings = Settings()
 
         fullscreen = self.settings.fullscreen if self.settings and self.settings.fullscreen else DEFAULT_FULLSCREEN
         self.autoscale = self.settings.autoscale if self.settings else DEFAULT_AUTOSCALE

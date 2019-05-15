@@ -89,8 +89,9 @@ That's it! A fully scripted (but basic) game using pyvida!
 
 Run your game
 -------------
-Type::
 
-python game.py -f
+::
+
+    python game.py -f
 
 To run your game in fullscreen use -f 

@@ -48,6 +48,27 @@ pip install --upgrade https://bitbucket.org/pyglet/pyglet/get/tip.zip#egg=pyglet
 
 Please refer to the documentation in pyvida/docs
 
+#### Empty Project ####
+
+```
+    app = Game(name="basic project", fullscreen=False)
+    app.init()  # initialise sound and graphics
+    app.run()  # start the event loop
+```
+
+#### Game with one scene ####
+```
+    app = Game(name="basic project", fullscreen=False)
+
+    scene = Scene("main interface")
+    app.add(scene)
+    app.camera.scene(scene)  # set the camera to the scene
+
+    app.init()  # initialise sound and graphics
+    app.run()  # start the event loop
+```
+
+
 ### Developer ###
 
 You can contribute to pyvida by cloning the github repository.
