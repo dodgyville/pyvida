@@ -151,7 +151,7 @@ def get_config_file():
         slug = INFO["slug"]
     else:
         slug = Path(working_dir).resolve().stem
-    fname_raw = "%s.config"%slug
+    fname_raw = "%s.config" % slug
     return fname_raw
 
 
@@ -179,7 +179,7 @@ def load_config():
                     if d[0] != "#":
                         config[key] = v
                         if key == "language":
-                            print("request language %s from %s"%(v, fname))
+                            print("request language %s from %s" % (v, fname))
     return config
 
 
@@ -199,19 +199,20 @@ INFO = load_info("game.info")
 
 CONFIG = load_config()
 
-
 language = CONFIG["language"]
-#language = "de"  # XXX forcing german
+
+
+# language = "de"  # XXX forcing german
 
 
 def set_language(new_language=None):
     if new_language:
-        print("Setting language to",new_language)
+        print("Setting language to", new_language)
         try:
             t = igettext.translation(INFO["slug"], localedir=get_safe_path(os.path.join('data', 'locale')),
-                                 languages=[new_language])
+                                     languages=[new_language])
         except FileNotFoundError:
-            print("Unable to find translation file %s for %s"%(INFO["slug"], new_language))
+            print("Unable to find translation file %s for %s" % (INFO["slug"], new_language))
             new_language = None
         except:
             print("Unexpected error in set_language:", sys.exc_info()[0])
@@ -238,7 +239,6 @@ def set_language_for_session(game):
     set_language(locale)
 
 
-
 def get_language(game=None):
     return language
 
@@ -253,6 +253,7 @@ def get_formatted_number(game, n):
     except:
         num = n
     return num
+
 
 try:
     import android
@@ -273,7 +274,7 @@ if mixer == "pygame":
         mixer = "pygame"
     except ImportError:
         mixer = "pyglet"
-print("default mixer is",mixer)
+print("default mixer is", mixer)
 benchmark_events = datetime.now()
 
 """
@@ -289,13 +290,14 @@ if DEBUG_NAMES:
 
 # ENABLE_FKEYS = CONFIG["editor"] # debug shortcut keys
 ENABLE_EDITOR = False and EDITOR_AVAILABLE  # default for editor. Caution: This starts module reloads which ruins pickles
-ENABLE_PROFILING = False # allow profiling
+ENABLE_PROFILING = False  # allow profiling
 ENABLE_LOGGING = True
 DEFAULT_TEXT_EDITOR = "gedit"
 
-VERSION_MAJOR = 5  # major incompatibilities
-VERSION_MINOR = 1  # minor/bug fixes, can run same scripts
+VERSION_MAJOR = 6  # major incompatibilities
+VERSION_MINOR = 0  # minor/bug fixes, can run same scripts
 VERSION_SAVE = 5  # save/load version, only change on incompatible changes
+__version__ = "%i.%i.0" % (VERSION_MAJOR, VERSION_MINOR)
 
 # AVAILABLE BACKENDS
 PYGAME19 = 0
@@ -1729,7 +1731,7 @@ class Settings(object):
         self.allow_internet_debug = ENABLE_LOGGING
 
         self.fullscreen = DEFAULT_FULLSCREEN
-        self.autoscale = True # scale window to fit screen
+        self.autoscale = True  # scale window to fit screen
         self.preferred_screen = None  # for multi-monitors
         self.show_portals = False
         self.show_portal_text = DEFAULT_PORTAL_TEXT
@@ -1793,7 +1795,7 @@ class Settings(object):
                     data.low_memory = False
                 if not hasattr(data, "preferred_screen"):  # compatible with older games
                     data.preferred_screen = None
-                if not hasattr(data, "autoscale"): # compatible with older games
+                if not hasattr(data, "autoscale"):  # compatible with older games
                     data.autoscale = True
                 if not hasattr(data, "joystick_manually_mapped"):
                     data.joystick_manually_mapped = False
@@ -3301,7 +3303,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         xs, ys = zip(*deltas)
         destination = self.x + sum(xs), self.y + sum(ys)  # sum of deltas
 
-        if self.game._headless == True:
+        if self.game._headless:
             self._goto(destination, block=block, next_action=next_action)
             return
 
@@ -3404,7 +3406,10 @@ class Actor(MotionManager, metaclass=use_on_events):
         #      print("missed",target,self.x, self.y)
         # update the PyvidaSprite animate manually
         if self.resource and hasattr(self.resource, "_animate"):
-            self.resource._animate(dt)
+            try:
+                self.resource._animate(dt)
+            except AttributeError:
+                pass
 
         # apply motions
         remove_motions = []
@@ -3510,7 +3515,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             except:
                 if self.game:
                     print("Last script: %s, this script: %s, last autosave: %s" % (
-                    self.game._last_script, script.__name__, self.game._last_autosave))
+                        self.game._last_script, script.__name__, self.game._last_autosave))
                 log.error("Exception in %s" % script.__name__)
                 print("\nError running %s\n" % script.__name__)
                 if traceback:
@@ -3587,7 +3592,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                 log.exception("error in script")
                 if self.game:
                     print("Last script: %s, this script: %s, last autosave: %s" % (
-                    self.game._last_script, script.__name__, self.game._last_autosave))
+                        self.game._last_script, script.__name__, self.game._last_autosave))
                 raise
         else:
             # warn if using default vida look
@@ -3607,7 +3612,6 @@ class Actor(MotionManager, metaclass=use_on_events):
                 if isinstance(self, sender):
                     receiver(self.game, self, self.game.player)
         return None
-
 
     def trigger_look(self):
         # do the signals for pre_look
@@ -3947,14 +3951,8 @@ class Actor(MotionManager, metaclass=use_on_events):
         y += self._vy
         return x, y
 
-    def pyglet_draw(self, absolute=False, force=False, window=None):  # actor.draw
-        if self.game and self.game._headless and not force:
-            return
-        if not self.game:
-            print(self.name, "has no game attribute")
-            return
-
-        sprite = get_resource(self.resource_name)[-1]
+    def pyglet_draw_sprite(self, sprite, absolute=None, window=None):
+        # called by pyglet_draw
         if sprite and self.allow_draw:
             glPushMatrix()
             x, y = self.pyglet_draw_coords(absolute, window, sprite.height)
@@ -4122,6 +4120,16 @@ class Actor(MotionManager, metaclass=use_on_events):
             #                glRotatef(self._rotate, 0.0, 0.0, 1.0)
             #                glTranslatef(-((sprite.width/2)+self.x), -(hh-self.y-sprite.height/2 ), 0)
             glPopMatrix();
+
+    def pyglet_draw(self, absolute=False, force=False, window=None):  # actor.draw
+        if self.game and self.game._headless and not force:
+            return
+        if not self.game:
+            print(self.name, "has no game attribute")
+            return
+
+        sprite = get_resource(self.resource_name)[-1]
+        self.pyglet_draw_sprite(sprite, absolute, window)
 
         if self.show_debug:
             self.debug_pyglet_draw(absolute=absolute)
@@ -4380,7 +4388,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         # default msgbox weighted slight higher than centre to draw natural eyeline to speech in centre of screen.
         x, y = self.game.resolution[0] // 2 - msgbox.w // 2, self.game.resolution[1] * 0.38
 
-        if position == None: # default
+        if position == None:  # default
             pass
         elif position == TOP:
             x, y = self.game.resolution[
@@ -4402,8 +4410,8 @@ class Actor(MotionManager, metaclass=use_on_events):
                        0] * 0.98 - msgbox.w, self.game.resolution[1] * 0.95 - msgbox.h
         elif type(position) in [tuple, list]:  # assume coords
             x, y = position
-        else: # fall back to default
-            log.warning("NO SAYS POSITON FOUND FOR %s"%text)
+        else:  # fall back to default
+            log.warning("NO SAYS POSITON FOUND FOR %s" % text)
 
         dx, dy = 10, 10  # padding
 
@@ -4732,7 +4740,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         callback = self.on_animation_end_once  # if not block else self.on_animation_end_once_block
         self._next_action = next_action if next_action else self.default_idle
         do_event = self.scene or (self.game and self.name in self.game._modals) or (
-                    self.game and self.name in self.game._menu)
+                self.game and self.name in self.game._menu)
         if (self.game and self.game._headless is True) or not do_event:  # if headless or not on screen, jump to end
             self.busy += 1
             self.on_animation_end_once()
@@ -4778,7 +4786,7 @@ class Actor(MotionManager, metaclass=use_on_events):
 
     def _set_tint(self, rgb=None):
         self._tint = rgb
-        if rgb == None:
+        if rgb is None:
             rgb = (255, 255, 255)  # (0, 0, 0)
         if self.resource:
             self.resource.color = rgb
@@ -4997,7 +5005,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         if destination:
             pt = get_point(self.game, destination, self)
             self.x, self.y = pt
-        if self.game: # potentially move child objects too
+        if self.game:  # potentially move child objects too
             for c in self._children:
                 child = get_object(self.game, c)
                 if child and child._parent == self.name:
@@ -5586,7 +5594,7 @@ def terminate_by_frame(_game, emitter, particle):
 class Particle(object):
 
     def __init__(self, x, y, ax, ay, speed, direction, scale=1.0):
-        self.index = 0 # where in life cycle are you
+        self.index = 0  # where in life cycle are you
         self.action_index = 0  # where in the Emitter's action (eg frames) is the particle
         self.motion_index = 0  # where in the Emitter's applied motions is this particle
         self.x = x
@@ -5627,10 +5635,9 @@ class Emitter(Item, metaclass=use_on_events):
         self.alpha_start, self.alpha_end = alpha_start, alpha_end
         self.alpha_delta = (alpha_end - alpha_start) / frames
 
-
-        self.random_index = random_index # should each particle start mid-action (eg a different frame)
+        self.random_index = random_index  # should each particle start mid-action (eg a different frame)
         self.random_age = random_age  # should each particle start mid-life?
-        self.random_motion_index = random_motion_index # should each particle start mid-motion?
+        self.random_motion_index = random_motion_index  # should each particle start mid-motion?
         self.size_spawn_min, self.size_spawn_max = size_spawn_min, size_spawn_max
         self.speed_spawn_min, self.speed_spawn_max = speed_spawn_min, speed_spawn_max
         self.particles = []
@@ -5654,8 +5661,9 @@ class Emitter(Item, metaclass=use_on_events):
                 try:
                     d[i] = d.__name__  # textify
                 except AttributeError:
-                    print("__name__ not on object %s for field %s"%(d[i], i))
-                    import pdb; pdb.set_trace()
+                    print("__name__ not on object %s for field %s" % (d[i], i))
+                    import pdb;
+                    pdb.set_trace()
         return d
 
     def smart(self, game, *args, **kwargs):  # emitter.smart
@@ -5695,7 +5703,7 @@ class Emitter(Item, metaclass=use_on_events):
             parent = get_object(self.game, self._parent)
             x += parent.x
             y += parent.y
-        return x,y
+        return x, y
 
     def reset_particle(self, p):
         p.x, p.y = self.get_particle_start_pos()
@@ -5740,7 +5748,7 @@ class Emitter(Item, metaclass=use_on_events):
             if p.terminate == True:
                 self.particles.remove(p)
 
-        #if self.resource:
+        # if self.resource:
         #    print(p.particle_id, self.resource._frame_index, p.action_index, self.action.num_of_frames,  p.action_index % self.action.num_of_frames)
 
     def _update(self, dt, obj=None):  # emitter.update
@@ -5749,7 +5757,6 @@ class Emitter(Item, metaclass=use_on_events):
             return
         for i, p in enumerate(self.particles):
             self._update_particle(dt, p)
-
 
     def pyglet_draw(self, absolute=False, force=False):  # emitter.draw
         #        if self.resource and self._allow_draw: return
@@ -5780,7 +5787,7 @@ class Emitter(Item, metaclass=use_on_events):
 
             if self.resource is not None:
                 self.resource._frame_index = p.action_index % self.action.num_of_frames
-                self.resource.scale = self.scale*p.scale
+                self.resource.scale = self.scale * p.scale
                 #                if i == 10: print(i, p.index, p.scale)
                 #                if p == self.particles[0]:
                 #                    print(self.alpha_delta, p.alpha, max(0, min(round(p.alpha*255), 255)))
@@ -5852,7 +5859,7 @@ class Emitter(Item, metaclass=use_on_events):
         return uniform(self.size_spawn_min, self.size_spawn_max)
 
     def _add_particles(self, num=1, terminate=False, speed_spawn_min=None, speed_spawn_max=None):
-        if speed_spawn_min: # update new spawn values
+        if speed_spawn_min:  # update new spawn values
             self.speed_spawn_min = speed_spawn_min
         if speed_spawn_max:
             self.speed_spawn_max = speed_spawn_max
@@ -6374,7 +6381,8 @@ class Scene(MotionManager, metaclass=use_on_events):
         o = get_object(self.game, obj)
         if not o or o.name not in self._objects:
             print("ERROR: scene.get_object does not have object")
-            import pdb; pdb.set_trace()
+            import pdb;
+            pdb.set_trace()
         return o
 
     @property
@@ -6685,7 +6693,7 @@ class Scene(MotionManager, metaclass=use_on_events):
             obj = get_object(self.game, obj_name)
             obj._show()
 
-    def on_hide(self, objects=None, backgrounds=None, keep=[], block=False): # scene.hide
+    def on_hide(self, objects=None, backgrounds=None, keep=[], block=False):  # scene.hide
         if keep is False:
             log.error("Check this function call as")
             raise Exception('The call to on_hide has changed and block is now a later argument, check it.')
@@ -6705,8 +6713,8 @@ class Scene(MotionManager, metaclass=use_on_events):
     def on_show(self):
         objects = self._objects
         backgrounds = self._layer
-        #objects = objects if objects else []
-        #backgrounds = backgrounds if backgrounds else []
+        # objects = objects if objects else []
+        # backgrounds = backgrounds if backgrounds else []
         for obj_name in objects:
             obj = get_object(self.game, obj_name)
             obj._show()
@@ -7069,7 +7077,7 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         self._mouse_scroll = None
         self.mx, self.my = 0, 0  # in pyglet format
         self.header = (
-        0, 0)  # XXX not implemented. where to displace the collection items (for fancy collection backgrounds)
+            0, 0)  # XXX not implemented. where to displace the collection items (for fancy collection backgrounds)
 
         self.callback = callback
         self.padding = padding
@@ -7615,7 +7623,8 @@ class Camera(metaclass=use_on_events):  # the view manager
             log.debug("changing scene to %s" % scene.name)
         if self.game._test_inventory_per_scene and self.game.player:
             print("\nChanging scene, running inventory tests")
-            self.game._test_inventory_against_objects(list(self.game.player.inventory.keys()), scene._objects, execute=False)
+            self.game._test_inventory_against_objects(list(self.game.player.inventory.keys()), scene._objects,
+                                                      execute=False)
 
         #        if scene.name == "aspaceship":
         #            import pdb; pdb.set_trace()
@@ -7629,7 +7638,7 @@ class Camera(metaclass=use_on_events):  # the view manager
             # start music for this scene
             scene.on_music_play()
 
-    def on_scene(self, scene, camera_point=None, allow_scene_music=True, from_save_game=False): # camera.scene
+    def on_scene(self, scene, camera_point=None, allow_scene_music=True, from_save_game=False):  # camera.scene
         """ change the scene """
         if self._overlay_fx == FX_DISCO:  # remove disco effect
             self.on_disco_off()
@@ -8159,7 +8168,7 @@ class Mixer(metaclass=use_on_events):
             log.debug("INITIALISE PLAYERS")
             log.debug("PYGAME MIXER REPORTS", pygame.mixer.get_init())
             self._music_player = PlayerPygameMusic(game)
-            self._sfx_players.extend([PlayerPygameSFX(game), PlayerPygameSFX(game)]) # two SFX can play at once
+            self._sfx_players.extend([PlayerPygameSFX(game), PlayerPygameSFX(game)])  # two SFX can play at once
             self._ambient_player = PlayerPygameSFX(game)
         else:
             self._music_player = PlayerPygletMusic(game)
@@ -8213,9 +8222,9 @@ class Mixer(metaclass=use_on_events):
     def on_status(self):
         """ Print the various modifiers on the mixer """
         print(
-                    "Mixer force mute: %s Mixer session mute: %s\n Master music volume: %f, Master music on: %s\n mixer music volume: %f" % (
-            self._force_mute, self._session_mute, self.game.settings.music_volume, self.game.settings.music_on,
-            self._music_volume))
+            "Mixer force mute: %s Mixer session mute: %s\n Master music volume: %f, Master music on: %s\n mixer music volume: %f" % (
+                self._force_mute, self._session_mute, self.game.settings.music_volume, self.game.settings.music_on,
+                self._music_volume))
 
     def on_music_pop(self, volume=None):
         """ Stop the current track and if there is music stashed, pop it and start playing it """
@@ -8422,7 +8431,7 @@ class Mixer(metaclass=use_on_events):
         description = <string> -> human readable description of sfx
         """
         self._sfx_player_index += 1
-        using_player = self._sfx_player_index%len(self._sfx_players)
+        using_player = self._sfx_player_index % len(self._sfx_players)
         sfx_player = self._sfx_players[using_player]
         sfx_player.stop()
         if fname:
@@ -8710,7 +8719,7 @@ def save_game_pickle(game, fname):
             Actor, Item, Scene, Portal, Text, Emitter, Collection]
         # dump info about all the objects and scenes in the game
         for objects in [game._actors, game._items, game._scenes]:
-#            objects_to_pickle = []
+            #            objects_to_pickle = []
             for o in objects.values():  # test objects
                 if o.__class__ not in pyvida_classes:
                     log.warning("Pickling {}, a NON-PYVIDA CLASS {}".format(o.name, o.__class__))
@@ -8858,9 +8867,8 @@ def load_game_pickle(game, fname, meta_only=False, keep=[], responsive=False):
                 except ImportError:
                     log.error("Unable to import {}".format(module_name))
             game.reload_modules()  # reload now to refresh existing references
-    #            log.warning("POST UNPICKLE inventory %s"%(game.inventory.name))
-            set_language(language) # set language
-
+            #            log.warning("POST UNPICKLE inventory %s"%(game.inventory.name))
+            set_language(language)  # set language
 
     if responsive:
         game._generator = None
@@ -9001,7 +9009,7 @@ class Game(metaclass=use_on_events):
     def __init__(self, name="Untitled Game", version="v1.0", engine=VERSION_MAJOR, save_directory="untitledgame",
                  fullscreen=DEFAULT_FULLSCREEN, resolution=DEFAULT_RESOLUTION, fps=DEFAULT_FPS, afps=DEFAULT_ACTOR_FPS,
                  projectsettings=None, scale=1.0):
-        log.info("pyvida version %s %s %s"%(VERSION_MAJOR, VERSION_MINOR, VERSION_SAVE))
+        log.info("pyvida version %s %s %s" % (VERSION_MAJOR, VERSION_MINOR, VERSION_SAVE))
         self.debug_collection = False
         self.writeable_directory = save_directory
         self.save_directory = "saves"
@@ -9137,8 +9145,8 @@ class Game(metaclass=use_on_events):
         # if auto-creating a savefile for this walkthrough
         self._walkthrough_target_name = None
         self._walkthrough_start_name = None  # fast load from a save file
-        self._walkthrough_interactables = [] # all items and actors interacted on by the end of this walkthrough
-        self._walkthrough_inventorables = [] # all items that were in the inventory at some point during the game
+        self._walkthrough_interactables = []  # all items and actors interacted on by the end of this walkthrough
+        self._walkthrough_inventorables = []  # all items that were in the inventory at some point during the game
         self._test_inventory = False
         self._test_inventory_per_scene = False
         self._record_walkthrough = False  # output the current interactions as a walkthrough (toggle with F11)
@@ -9249,6 +9257,9 @@ class Game(metaclass=use_on_events):
 
         if "lowmemory" in CONFIG and CONFIG["lowmemory"]:  # use override from game.conf
             self.low_memory = CONFIG["lowmemory"]
+
+        if not self.settings:
+            self.settings = Settings()
 
         fullscreen = self.settings.fullscreen if self.settings and self.settings.fullscreen else DEFAULT_FULLSCREEN
         self.autoscale = self.settings.autoscale if self.settings else DEFAULT_AUTOSCALE
@@ -9425,7 +9436,7 @@ class Game(metaclass=use_on_events):
         fps = fps if fps else self.fps
         actor_fps = actor_fps if actor_fps else self.default_actor_fps
 
-        #self.stop_engine_lock(engine_fps)
+        # self.stop_engine_lock(engine_fps)
 
         pyglet.clock.unschedule(self.update)
         pyglet.clock.schedule_interval(self.update, 1 / actor_fps)
@@ -9619,7 +9630,7 @@ class Game(metaclass=use_on_events):
                 print("remap joystick buttons")
 
             if symbol == pyglet.window.key.F9:
-                self.on_publish_fps(300,150)
+                self.on_publish_fps(300, 150)
                 return
 
             if symbol == pyglet.window.key.F10:
@@ -9967,7 +9978,7 @@ class Game(metaclass=use_on_events):
         elif self._map_joystick == 2:  # map look button
             self.settings.joystick_look = button
             self._map_joystick = 0  # finished remap
-            #return
+            # return
         if button == self.settings.joystick_interact:
             self.on_mouse_release(x, y, pyglet.window.mouse.LEFT, modifiers)
         elif button == self.settings.joystick_look:
@@ -10099,9 +10110,9 @@ class Game(metaclass=use_on_events):
                 obj = get_object(self, obj_name)
                 if self.mouse_mode == MOUSE_USE and self._mouse_object == obj: continue  # can't use item on self
                 allow_player_use = (self.player and self.player == obj) and (
-                            ALLOW_USE_ON_PLAYER or self._allow_one_player_interaction)
+                        ALLOW_USE_ON_PLAYER or self._allow_one_player_interaction)
                 allow_use = (obj.allow_draw and (
-                            obj.allow_interact or obj.allow_use or obj.allow_look)) or allow_player_use
+                        obj.allow_interact or obj.allow_use or obj.allow_look)) or allow_player_use
                 if self._allow_one_player_interaction:  # switch off special player interact
                     self._allow_one_player_interaction = False
                 if obj.collide(scene_x, scene_y) and allow_use:
@@ -10248,9 +10259,11 @@ class Game(metaclass=use_on_events):
                                  help="Estimate cost of artwork in game (background is cost per background, etc)")
         self.parser.add_argument(
             "-l", "--lowmemory", action="store_true", dest="memory_save", help="Run game in low memory mode")
-        self.parser.add_argument("-i18n", "--i18n <code>", dest="language_code", help="Set language code. Use 'default' to reset.")
+        self.parser.add_argument("-i18n", "--i18n <code>", dest="language_code",
+                                 help="Set language code. Use 'default' to reset.")
         self.parser.add_argument("-m", "--matrixinventory", action="store_true", dest="test_inventory",
-                                 help="Test each item in inventory against each interactive item in game (runs at end of headless walkthrough)", default=False)
+                                 help="Test each item in inventory against each interactive item in game (runs at end of headless walkthrough)",
+                                 default=False)
         self.parser.add_argument("-M", "--matrixinventory2", action="store_true", dest="test_inventory_per_scene",
                                  help="Test each item in inventory against each item in scene (runs during headless walkthrough)",
                                  default=False)
@@ -10576,7 +10589,7 @@ class Game(metaclass=use_on_events):
         for i in modules:
             self._modules[i] = 0
         # if editor is available, watch code for changes
-        if CONFIG["editor"] or self._allow_editing: 
+        if CONFIG["editor"] or self._allow_editing:
             self.check_modules()  # set initial timestamp record
 
     def reload_modules(self, modules=None):
@@ -10617,7 +10630,7 @@ class Game(metaclass=use_on_events):
                     try:
                         setattr(sys.modules[module], new_fn.__name__, new_fn)
                     except AttributeError:
-    
+
                         print("ERROR: unable to reload", module, new_fn)
 
         # XXX update .uses{} values too.
@@ -10818,8 +10831,8 @@ class Game(metaclass=use_on_events):
             if self._headless:
                 if self._test_inventory:
                     print("Test inventory. Walkthrough report:")
-                    print("Inventoried items: %s"%self._walkthrough_inventorables)
-                    print("Interactable items: %s"%self._walkthrough_interactables)
+                    print("Inventoried items: %s" % self._walkthrough_inventorables)
+                    print("Interactable items: %s" % self._walkthrough_interactables)
                     if self._test_inventory:
                         self._test_inventory_against_objects(self._walkthrough_inventorables,
                                                              self._walkthrough_interactables, execute=True)
@@ -10870,9 +10883,10 @@ class Game(metaclass=use_on_events):
                     total_time = timedelta()
                     for i in self._profiled_scripts:
                         total_time += list(i.values())[0]
-                    print(total_time,  total_time.microseconds)
+                    print(total_time, total_time.microseconds)
                     print("\nTop most expensive individual calls:")
-                    for i in sorted(self._profiled_scripts, key=lambda k: list(k.values())[0], reverse=True)[:profile_number]:
+                    for i in sorted(self._profiled_scripts, key=lambda k: list(k.values())[0], reverse=True)[
+                             :profile_number]:
                         print(i)
                     expensive = {}
                     print("\nTop most expensive aggregate calls:")
@@ -11133,11 +11147,11 @@ class Game(metaclass=use_on_events):
                     e[0](*e[1], **e[2])
                 except:
                     print("Last script: %s, this script: %s, last autosave: %s" % (
-                    self._last_script, e[0].__name__, self._last_autosave))
+                        self._last_script, e[0].__name__, self._last_autosave))
                     raise
 
                 if self.profile_scripts:
-                    self._profiled_scripts.append({e[0].__name__:datetime.now()-profiling_start})
+                    self._profiled_scripts.append({e[0].__name__: datetime.now() - profiling_start})
 
                 #                if self._event_index < len(self._events) - 1:
                 self._event_index += 1  # potentially start next event
@@ -11821,7 +11835,7 @@ class Game(metaclass=use_on_events):
             with open(sfname) as f:
                 data = f.read()
                 code = compile(data, sfname, 'exec')
-                exec (code, variables)
+                exec(code, variables)
             if not current_headless:  # restore non-headless
                 self.set_headless_value(False)
             variables['load_state'](self, scene)
@@ -11922,7 +11936,6 @@ class Game(metaclass=use_on_events):
     def on_popup(self, *args, **kwargs):
         log.warning("POPUP NOT DONE YET")
         pass
-
 
     def create_bars_and_scale(self, w, h, scale):
         """ Fit game to requested window size """
@@ -12076,7 +12089,7 @@ class Game(metaclass=use_on_events):
     def on_remap_joystick(self):
         self.settings.joystick_interact = -1
         self.settings.joystick_look = -1
-        self._map_joystick = 1 # start remap, next two button presses will be stored.
+        self._map_joystick = 1  # start remap, next two button presses will be stored.
 
     def on_relocate(self, obj, scene, destination=None, scale=None):  # game.relocate
         obj = get_object(self.game, obj)
@@ -12141,7 +12154,7 @@ Porting older game to pyglet pyvdida.
 """
 
 # When using, add a unique "name" the dict and make sure the unique name exists in emitters/
-EMITTER_SMOKE = { "number": 10, "frames": 20, "direction": 0, "fov": 30, "speed": 3,
+EMITTER_SMOKE = {"number": 10, "frames": 20, "direction": 0, "fov": 30, "speed": 3,
                  "acceleration": (0, 0), "size_start": 0.5, "size_end": 1.0, "alpha_start": 1.0, "alpha_end": 0.0,
                  "random_index": True}
 
@@ -12235,7 +12248,7 @@ class SubmenuSelect(object):
         for i in menu_items:
             if type(i) == str:
                 #                item = game.add(MenuItem(i, select_item, (sx, sy), (hx, hy)).smart(game))
-                #item = game.add(
+                # item = game.add(
                 #    MenuText("submenu_%s" % i, (280, 80), (840, 170), i, wrap=800, interact=select_item, spos=(sx, sy),
                 #             hpos=(hx, hy), font=self.font), False, MenuItem)
                 item = game.add(Text("submenu_%s" % i, (280, sy), i, size=26, wrap=800, interact=select_item,
@@ -12255,13 +12268,13 @@ class SubmenuSelect(object):
                 exit_item_cb(game, self.selected, player)
 
             #           item  = game.add(MenuItem(exit_item, submenu_return, (sx, sy), (hx, hy), "x").smart(game))
-            #item = game.add(
+            # item = game.add(
             #    MenuText("submenu_%s" % exit_item, (280, 80), (840, 170), exit_item, wrap=800, interact=submenu_return,
             #             spos=(sx, sy), hpos=(hx, hy), font=self.font), False, MenuItem)
 
             item = game.add(Text("submenu_%s" % exit_item, (280, sy), exit_item, size=26, wrap=800,
-                            interact=submenu_return, font=DEFAULT_MENU_FONT, colour=(42, 127, 255), offset=2),
-                            replace = True)
+                                 interact=submenu_return, font=DEFAULT_MENU_FONT, colour=(42, 127, 255), offset=2),
+                            replace=True)
             item.on_key("None")
             item.set_over_colour(MENU_COLOUR_OVER)
 
@@ -12270,7 +12283,6 @@ class SubmenuSelect(object):
 
     def get_menu(self):
         return self.menu_items
-
 
 
 """
@@ -12623,7 +12635,7 @@ if EDITOR_AVAILABLE:
                     return
                 else:
                     state_name = os.path.splitext(os.path.basename(s))[0]
-                    print("save %s to %s"%(state_name, self.game.scene.directory))
+                    print("save %s to %s" % (state_name, self.game.scene.directory))
                     self.game._save_state(state_name)
                 return
                 # non-threadsafe
