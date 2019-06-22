@@ -8217,10 +8217,9 @@ class Mixer(metaclass=use_on_events):
             self._force_mute, self._session_mute, self.game.settings.music_volume, self.game.settings.music_on,
             self._music_volume))
 
-
     def on_music_pop(self, volume=None):
         """ Stop the current track and if there is music stashed, pop it and start playing it """
-        if self.game and not self.game._headless:
+        if self.game and self.game._headless:
             return
         if self._music_filename:  # currently playing music
             if self._music_stash:  # there is a file on the stash
@@ -8232,6 +8231,7 @@ class Mixer(metaclass=use_on_events):
                     self._music_stash = None
             else:  # no stash so just stop the current music
                 self.on_music_stop(volume=volume)
+
 
     def on_music_play(self, fname=None, description=None, loops=-1, start=None, volume=None, push=False,
                       rule_mode=FRESH_BUT_SHARE):
