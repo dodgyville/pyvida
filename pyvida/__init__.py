@@ -19,7 +19,6 @@ from argparse import ArgumentParser
 from collections import Iterable
 from datetime import datetime, timedelta
 import copy
-import euclid3 as eu
 import gc
 import gettext as igettext
 import glob
@@ -28,7 +27,7 @@ import imp
 import itertools
 import json
 import math
-from math import sin, cos, radians
+from math import sin
 from operator import itemgetter
 from operator import sub
 import os
@@ -46,18 +45,30 @@ import traceback
 import webbrowser
 
 # 3rd party modules
+import euclid3 as eu
 from babel.numbers import format_decimal
 from fontTools.ttLib import TTFont
 import pyglet
 import pyglet.clock
 
+
+VERSION_SAVE = 5  # save/load version, only change on incompatible changes
+__version__ = "6.1.0"
+
+# major incompatibilities, backwards compat (can run same scripts), patch number
+VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH = [int(x) for x in __version__.split(".")]
+
+
 PORT = 8000 + randint(0, 100)
 
 # Steam support for achievement manager
+SteamApi = None
+""" TODO: needs work
 try:
     from steampak import SteamApi  # Main API entry point.
 except ImportError:
     SteamApi = None
+"""
 
 try:
     import tkinter as tk
@@ -293,11 +304,6 @@ ENABLE_EDITOR = False and EDITOR_AVAILABLE  # default for editor. Caution: This 
 ENABLE_PROFILING = False  # allow profiling
 ENABLE_LOGGING = True
 DEFAULT_TEXT_EDITOR = "gedit"
-
-VERSION_MAJOR = 6  # major incompatibilities
-VERSION_MINOR = 0  # minor/bug fixes, can run same scripts
-VERSION_SAVE = 5  # save/load version, only change on incompatible changes
-__version__ = "%i.%i.0" % (VERSION_MAJOR, VERSION_MINOR)
 
 # AVAILABLE BACKENDS
 PYGAME19 = 0
@@ -3986,12 +3992,12 @@ class Actor(MotionManager, metaclass=use_on_events):
             #            sprite.position = (int(x), int(y))
             original_scale = self.scale
             if self._flip_horizontal:
-                glScalef(-1.0, 1.0, 1.0);
+                glScalef(-1.0, 1.0, 1.0)
                 x = -x
                 x -= sprite.width
 
             if self._flip_vertical:
-                glScalef(1.0, -1.0, 1.0);
+                glScalef(1.0, -1.0, 1.0)
                 y = -y
                 y -= sprite.height
 

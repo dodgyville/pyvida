@@ -6,7 +6,7 @@ import unittest, pickle, sys, tempfile
 import gc, glob
 import resource
 
-from __init__ import *
+from pyvida import *
 
 import logging
 
@@ -87,8 +87,6 @@ class ScaleTest(unittest.TestCase):
         r, s = fit_to_screen(screen, resolution)
         self.assertEqual(r, (733, 550))
         self.assertAlmostEqual(0.7161458, s) 
-
-
 
 
 class ActorTest(unittest.TestCase):
@@ -537,8 +535,6 @@ class EmitterTest(unittest.TestCase):
         self.assertAlmostEqual(p.y, -d*2)
 
 
-
-
 class WalkthroughTest(unittest.TestCase):
     def setUp(self):
         self.game = Game("Unit Tests", fps=60, afps=16, resolution=RESOLUTION)
@@ -901,7 +897,6 @@ class PygletTest(unittest.TestCase):
                 if unload:
                     a.unload_assets()
         print("End", get_memory())
-
 
     def test_actor_smart(self):
         self._test_load_heavy()

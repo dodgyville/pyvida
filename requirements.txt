@@ -2,4 +2,3 @@ euclid3
 pyglet
 babel
 fonttools
-steampak
