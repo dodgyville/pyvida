@@ -58,6 +58,7 @@ __version__ = "6.1.0"
 # major incompatibilities, backwards compat (can run same scripts), patch number
 VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH = [int(x) for x in __version__.split(".")]
 
+print(f"pyvida: {__version__}\npyglet: {pyglet.version}")
 
 PORT = 8000 + randint(0, 100)
 
@@ -7935,11 +7936,14 @@ class PlayerPygletSFX():
             self._player.volume = self._volume
             self._player.queue(self._sound)
             if loops == -1:
-                self._player.eos_action = pyglet.media.SourceGroup.loop
+                self._player.loop = True
             elif loops > 0:
                 for i in range(0, loops):
                     self._player.queue(self._sound)
-            self._player.play()
+            try:
+                self._player.play()
+            except pyglet.media.exceptions.MediaException:
+                pass
             self.loops = loops
 
     def fadeout(self, seconds):
@@ -7991,11 +7995,14 @@ class PlayerPygletMusic():
         if start > 0:
             self._player.seek(start)
         if loops == -1:
-            self._player.eos_action = pyglet.media.SourceGroup.loop
+            self._player.loop = True
         elif loops > 0:
             for i in range(0, loops):
                 self._player.queue(self._music)
-        self._player.play()
+        try:
+            self._player.play()
+        except pyglet.media.exceptions.MediaException:
+            pass
 
     #        pygame.mixer.music.play(loops=loops, start=start)
 
@@ -9337,7 +9344,6 @@ class Game(metaclass=use_on_events):
         # the pyvida game scripting event loop, XXX: limited to actor fps
         pyglet.clock.schedule_interval(self.update, 1 / self.default_actor_fps)
         self._window.on_draw = self.pyglet_draw
-        pyglet.clock.set_fps_limit(self.fps)
 
     def start_engine_lock(self, fps=None):
         # Force game to draw at least at a certain fps (default is 30 fps)
@@ -9446,7 +9452,7 @@ class Game(metaclass=use_on_events):
 
         pyglet.clock.unschedule(self.update)
         pyglet.clock.schedule_interval(self.update, 1 / actor_fps)
-        pyglet.clock.set_fps_limit(fps)
+        #pyglet.clock.set_fps_limit(fps)
 
     def on_set_fps(self, v):
         self.fps = v
@@ -11127,8 +11133,8 @@ class Game(metaclass=use_on_events):
                 # check the previous events' objects, delete if not busy
                 for event in self._events[:self._event_index]:
                     if event[1][0].busy == 0:
-                        if hasattr(self, "del_events"):
-                            print("DEL", event)
+                        #if hasattr(self, "del_events"):
+                        #    print("DEL", event)
 
                         del_events += 1
                         self._events.remove(event)
@@ -11977,8 +11983,10 @@ class Game(metaclass=use_on_events):
     @property
     def screen_size(self):
         """ Return the physical screen size or the override """
-        w = self.screen.width
-        h = self.screen.height
+        w, h = 0, 0
+        if self.screen:
+            w = self.screen.width
+            h = self.screen.height
         if self._screen_size_override:
             w, h = self._screen_size_override
         return w, h
@@ -11986,7 +11994,9 @@ class Game(metaclass=use_on_events):
     @property
     def screen(self):
         """ Return the screen being used to display the game. """
-        display = pyglet.window.get_platform().get_default_display()
+        #display = pyglet.window.get_platform().get_default_display()
+
+        display = pyglet.canvas.get_display()
         if self.settings and self.settings.preferred_screen is not None:
             try:
                 screen = display.get_screens()[self.settings.preferred_screen]
@@ -11999,7 +12009,8 @@ class Game(metaclass=use_on_events):
     @property
     def screens(self):
         """ return available screens """
-        return pyglet.window.get_platform().get_default_display().get_screens()
+        display = pyglet.canvas.get_display()
+        return display.get_screens()
 
     def reset_window(self, fullscreen, create=False):
         """ Make the game screen fit the window, create if requested """

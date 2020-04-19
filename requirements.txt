@@ -1,4 +1,4 @@
 euclid3
-pyglet
+pyglet>=1.5.3
 babel
 fonttools
