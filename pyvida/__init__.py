@@ -53,11 +53,12 @@ import pyglet.clock
 
 
 VERSION_SAVE = 5  # save/load version, only change on incompatible changes
-__version__ = "6.1.3"
+__version__ = "6.1.4"
 
 # major incompatibilities, backwards compat (can run same scripts), patch number
 VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH = [int(x) for x in __version__.split(".")]
 
+print(f"pyvida: {__version__}\npyglet: {pyglet.version}")
 
 PORT = 8000 + randint(0, 100)
 
@@ -10004,7 +10005,7 @@ class Game(metaclass=use_on_events):
         if self.last_mouse_release:  # code courtesy from a stackoverflow entry by Andrew
             if (raw_x, raw_y, button) == self.last_mouse_release[:-1]:
                 """Same place, same button, double click shortcut"""
-                if time.clock() - self.last_mouse_release[-1] < 0.2:
+                if time.perf_counter() - self.last_mouse_release[-1] < 0.3:
                     if self.player and self.player._goto_x != None:
                         fx, fy = self.player._goto_x, self.player._goto_y
                         if len(self.player._goto_points) > 0:
@@ -10017,7 +10018,7 @@ class Game(metaclass=use_on_events):
                         return
         self._info_object.display_text = " "  # clear hover text
 
-        self.last_mouse_release = (raw_x, raw_y, button, time.time())
+        self.last_mouse_release = (raw_x, raw_y, button, time.perf_counter())
 
         (window_x, window_y), (scene_x, scene_y) = self.get_points_from_raw(raw_x, raw_y)
 
