@@ -53,7 +53,7 @@ import pyglet.clock
 
 
 VERSION_SAVE = 5  # save/load version, only change on incompatible changes
-__version__ = "6.1.4"
+__version__ = "6.1.5"
 
 # major incompatibilities, backwards compat (can run same scripts), patch number
 VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH = [int(x) for x in __version__.split(".")]
@@ -103,18 +103,19 @@ elif 'darwin' in sys.platform:  # check for OS X support
 
 # detect pyinstaller on mac
 frozen = False
+frozen_msg = "Details about frozen vs normal are unknown."
 if getattr(sys, 'frozen', False):  # we are running in a bundle
     frozen = True
 if frozen:
     # get pyinstaller variable or use a default (perhaps cx_freeze)
     working_dir = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(sys.argv[0])))
-    print("Frozen bundle, pyvida directories are at", __file__, working_dir)
+    frozen_msg = f"Frozen bundle, pyvida directories are at { __file__} {working_dir}"
     script_filename = __file__
 else:
     # we are running in a normal Python environment
     working_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
     script_filename = os.path.abspath(__file__)  # pyvida script
-    print("Normal environment, pyvida directories at", working_dir)
+    frozen_msg = f"Normal environment, pyvida directories at {working_dir}"
 
 
 def get_safe_path(relative):
@@ -286,7 +287,7 @@ if mixer == "pygame":
         mixer = "pygame"
     except ImportError:
         mixer = "pyglet"
-print("default mixer is", mixer)
+print("default mixer:", mixer)
 benchmark_events = datetime.now()
 
 """
@@ -724,6 +725,8 @@ if logging:
     log.info("Global variable working_dir set to %s" % working_dir)
     log.info("Global variable script_filename set to %s" % script_filename)
     log.info("Frozen is %s" % frozen)
+    log.info(frozen_msg)
+    log.info("Default mixer:", mixer)
 
 """
 Testing utilities
@@ -4243,7 +4246,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         if logging:
             log.info("%s has started on_asks." % (self.name))
         name = self.display_text if self.display_text else self.name
-        if self.game._output_walkthrough:
+        if self.game._output_walkthrough and self.game._trunk_step:
             print("%s says \"%s\"" % (name, statement))
         log.info("on_ask before _says: %s.busy = %i" % (self.name, self.busy))
         kwargs["key"] = None  # deactivate on_says keyboard shortcut close
@@ -4598,7 +4601,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         self_name = self.fog_display_text(None)
 
         if self.game:
-            if self.game._output_walkthrough:
+            if self.game._output_walkthrough and self.game._trunk_step:
                 print("%s adds %s to inventory." % (self_name, name))
             if self.game._walkthrough_auto and item.name not in self.game._walkthrough_inventorables:
                 self.game._walkthrough_inventorables.append(item.name)
@@ -9344,7 +9347,7 @@ class Game(metaclass=use_on_events):
         # Force game to draw at least at a certain fps (default is 30 fps)
         fps = fps if fps else self.settings.lock_engine_fps
         if self.settings and fps:
-            print("Start engine lock")
+            log.info("Start engine lock")
             pyglet.clock.schedule_interval(self.lock_update, 1.0 / fps)
 
     def stop_engine_lock(self):
@@ -10694,7 +10697,7 @@ class Game(metaclass=use_on_events):
         if options.language_code:
             set_language(options.language_code if options.language_code != "default" else None)
         if options.target_step:
-            print("AUTO WALKTHROUGH")
+            log.info("AUTO WALKTHROUGH")
             self._walkthrough_auto = True  # auto advance
             first_step = options.target_step[0]
             last_step = options.target_step[1] if len(options.target_step) == 2 else None
@@ -10704,7 +10707,7 @@ class Game(metaclass=use_on_events):
                         self._walkthrough_index += 1
                         load_game(self, os.path.join("saves", "%s.save" % first_step))
                         first_step = last_step
-                        print("Continuing to", first_step)
+                        log.info("Continuing to", first_step)
 
             if first_step.isdigit():
                 # automatically run to <step> in walkthrough
@@ -10718,7 +10721,7 @@ class Game(metaclass=use_on_events):
             if not last_step:
                 self._walkthrough_target_name = self._walkthrough_start_name
         if options.build:
-            print("fresh build")
+            log.info("fresh build")
             self._build = True
         if options.allow_editor:
             print("enabled editor")
@@ -10769,19 +10772,19 @@ class Game(metaclass=use_on_events):
 
     def on_quit(self):
         if self.settings and self.settings.filename:
-            print("SAVE SETTINGS")
+            log.info("SAVE SETTINGS")
             td = datetime.now() - self.settings._current_session_start
             s = milliseconds(td)
             self.settings.total_time_played += s
             self.settings._last_session_end = datetime.now()
             save_settings(self, self.settings.filename)
-        print("EXIT APP")
+        log.info("EXIT APP")
         if self.steam_api:
-            print("SHUTDOWN STEAM API")
+            log.info("SHUTDOWN STEAM API")
             self.steam_api.shutdown()
         pyglet.app.exit()
         if mixer == "pygame":
-            print("SHUTDOWN PYGAME MIXER")
+            log.info("SHUTDOWN PYGAME MIXER")
             pygame.mixer.quit()
 
     def queue_event(self, event, *args, **kwargs):
@@ -10815,11 +10818,12 @@ class Game(metaclass=use_on_events):
                 self._walkthrough) or self._walkthrough_target == 0:
             return  # no walkthrough
         walkthrough = self._walkthrough[self._walkthrough_index]
-        extras = {} if len(walkthrough) == 2 else walkthrough[-1]
+        extras = {} if not isinstance(walkthrough[-1], dict) else walkthrough[-1]
         # extra options include:
         # "screenshot": True -- take a screenshot when screenflag flag enabled
         # "track": True -- when this event triggers the first time, advance the tracking system
         # "hint": <str> -- when this event triggers for the first time, set game.storage.hint to this value
+        # "ignore": bool -- do not print in walkthrough (same as * in name)
         global benchmark_events
         t = datetime.now() - benchmark_events
         benchmark_events = datetime.now()
@@ -10860,7 +10864,7 @@ class Game(metaclass=use_on_events):
                 #        if game.mixer._ambient_filename:
                 #            game.mixer.ambient_play(game.mixer._music_filename, start=game.mixer._music_position)
 
-                print("FINISHED HEADLESS WALKTHROUGH")
+                log.info("FINISHED HEADLESS WALKTHROUGH")
                 if DEBUG_NAMES:
                     print("* DEBUG NAMES")
                     global tmp_objects_first, tmp_objects_second
@@ -10932,9 +10936,10 @@ class Game(metaclass=use_on_events):
         #        elif function_name in ["use"]:
         #            if len(walkthrough) ==  4: human_readable_name = walkthrough[-1]
         actor_name = walkthrough[1]
-        if actor_name[0] == "*":  # an optional, non-trunk step
+        if actor_name[0] == "*" or extras.get("ignore", False):  # an optional, non-trunk step
             self._trunk_step = False
-            actor_name = actor_name[1:]
+            if actor_name[0] == "*":
+                actor_name = actor_name[1:]
         else:
             self._trunk_step = True
 
@@ -10990,7 +10995,7 @@ class Game(metaclass=use_on_events):
             # output text for a walkthrough if -w enabled
             if self._trunk_step and self._output_walkthrough:
                 if obj.name in self._actors.keys():
-                    verbs = ["Talk to", "Interact with"]
+                    verbs = ["Talk to"] #, "Interact with"]
                 else:  # item or portal
                     verbs = ["Click on the"]
                 if obj.name in self._modals:  # probably in modals
