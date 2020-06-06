@@ -53,7 +53,7 @@ import pyglet.clock
 
 
 VERSION_SAVE = 5  # save/load version, only change on incompatible changes
-__version__ = "6.1.5"
+__version__ = "6.1.6"
 
 # major incompatibilities, backwards compat (can run same scripts), patch number
 VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH = [int(x) for x in __version__.split(".")]
@@ -3278,7 +3278,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         """ Use this everywhere for getting the correct name of an Actor 
             eg name = game.mistriss.fog_display_text(game.player)   
             """
-        display_text = self.display_text if self.display_text else self.name
+        display_text = self.display_text if self.display_text is not None else self.name
         fog_text = self._fog_display_text if self._fog_display_text else display_text
         if actor is None:
             return display_text
@@ -4245,7 +4245,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         """
         if logging:
             log.info("%s has started on_asks." % (self.name))
-        name = self.display_text if self.display_text else self.name
+        name = self.display_text if self.display_text is not None else self.name
         if self.game._output_walkthrough and self.game._trunk_step:
             print("%s says \"%s\"" % (name, statement))
         log.info("on_ask before _says: %s.busy = %i" % (self.name, self.busy))
@@ -5423,7 +5423,7 @@ class Portal(Actor, metaclass=use_on_events):
     def portal_text(self):
         """ What to display when hovering over this link """
         link = self.link
-        t = self.name if self.display_text == None else self.display_text
+        t = self.name if self.display_text is None else self.display_text
         t = self.fog_display_text(self.game.player)
         if self.game.settings.portal_exploration and link and link.scene:
             if link.scene.name not in self.game.visited:
