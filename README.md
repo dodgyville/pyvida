@@ -82,6 +82,7 @@ def on_<event>(self) method.
 
 
 ### Tests ###
+pip3 install pytest pytest-mock
 
 Run the tests:
 python3 tests.py

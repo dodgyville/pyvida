@@ -3310,8 +3310,11 @@ class Actor(MotionManager, metaclass=use_on_events):
 
     def on_queue_deltas(self, deltas, block=True, next_action=None):
         """ Fake an goto action using a custom list of deltas """
-        xs, ys = zip(*deltas)
-        destination = self.x + sum(xs), self.y + sum(ys)  # sum of deltas
+        if len(deltas) > 0:
+            xs, ys = zip(*deltas)
+            destination = self.x + sum(xs), self.y + sum(ys)  # sum of deltas
+        else:
+            destination = self.x, self.y
 
         if self.game._headless:
             self._goto(destination, block=block, next_action=next_action)
@@ -8961,10 +8964,15 @@ def load_or_create_settings(game, fname, settings_cls=Settings):
     return existing
 
 
-def fit_to_screen(screen, resolution):
-    # given a screen size and the game's resolution, return a window size and
-    # scaling factor
-
+def fit_to_screen(screen, resolution, fill_scale=1.0):
+    """
+    given a screen size and the game's resolution, return a window size and
+    scaling factor that will fit the game on the screen to the best fit
+    Arguments
+        screen (tuple)
+        resolution (tuple)
+        fill_scale (float): scale the final scale (eg maybe we only want to scale up to 90% of the screen)
+    """
     w, h = screen
     #    scale = 1.0
     scale = w / resolution[0]
@@ -8978,6 +8986,7 @@ def fit_to_screen(screen, resolution):
     else:
         if scale != 1.0:
             log.info("Game screen scaled on width (%0.3f)" % scale)
+    scale *= fill_scale
     if scale != 1.0:
         resolution = round(resolution[0] * scale), round(resolution[1] * scale)
     return resolution, scale
@@ -9044,6 +9053,8 @@ class Game(metaclass=use_on_events):
         self.fullscreen = fullscreen
         self.autoscale = False
         self._window = None
+        self._window_dx = 0  # offset graphics on the window
+        self._window_dy = 0
 
         self.camera = Camera(self)  # the camera object
         self.settings = None  # game-wide settings
@@ -11950,25 +11961,44 @@ class Game(metaclass=use_on_events):
         pass
 
     def create_bars_and_scale(self, w, h, scale):
-        """ Fit game to requested window size """
+        """
+            Fit game to requested window size by centering and adding bars on top or bottom
+            And scale game graphics to fit the requested window size.
+        Parameters
+            w (int): width of game window
+            h (int): height of game window
+            scale (float): scale graphics
+        """
         sw, sh = w, h
-        w, h = self._window.get_size()  # actual size of window
+        window_w, window_h = self._window.get_size()  # actual size of window
+
+        # take the game graphics and scale them up
         gw, gh = self.resolution  # game size
         gw *= scale
         gh *= scale
-        self._window_dx = dx = (w - gw)
-        self._window_dy = dy = (h - gh)
+
+        # offset the game graphics so they are centered on the window
+        self._window_dx = dx = (window_w - gw) / 2
+        self._window_dy = dy = (window_h - gh) / 2
+
         # reset scale
         if self._old_scale:
             s = self._old_scale  # math.sqrt(self._old_scale)
             glTranslatef(-self._old_pos_x, -self._old_pos_y, 0)  # shift back
             pyglet.gl.glScalef(1.0 / s, 1.0 / s, 1.0 / s)
-            # set new scale
+
+        self._old_pos_x, self._old_pos_y = dx , dy
+
+        # fullscreen, no need to translate, as pyglet is doing that for us.
+        if not self.fullscreen:
+            glTranslatef(self._old_pos_x, self._old_pos_y, 0)  # move to middle of screen
+
+        # set new scale
         if scale != 1.0:
             pyglet.gl.glScalef(scale, scale, scale)
             self._old_scale = scale
-        self._old_pos_x, self._old_pos_y = dx / scale, dy / scale
-        glTranslatef(self._old_pos_x, self._old_pos_y, 0)  # move to middle of screen
+
+
         self._bars = []
         pattern = pyglet.image.SolidColorImagePattern((0, 0, 0, 255))
         if int(dx) > 0:  # vertical bars
@@ -12018,7 +12048,11 @@ class Game(metaclass=use_on_events):
         width, height = self.resolution
         scale = 1.0
 
-        # if fullscreen:
+        fit_scale = 1.0  # game graphics to fill 100% of game window
+        if not fullscreen:
+            w *= 0.9  # game graphics and window to be 90% of screen size
+            h *= 0.9
+
         resolution, new_scale = fit_to_screen((w, h), self.resolution)
         # else: # not fullscreen and game does not want to scale in window mode
         #    resolution, new_scale = 
