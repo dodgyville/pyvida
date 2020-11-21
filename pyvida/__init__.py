@@ -1,4 +1,7 @@
-"""pyvida - cross platform point-and-click adventure game engine
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+r"""
+pyvida - cross platform point-and-click adventure game engine
                                                          _______
 _________   _...._                  .----.     .----..--.\  ___ `'.
 \        |.'      '-. .-.          .-\    \   /    / |__| ' |--.\  \
@@ -16,7 +19,7 @@ GPL3
 """
 
 from argparse import ArgumentParser
-from collections import Iterable
+from collections.abc import Iterable
 from datetime import datetime, timedelta
 import copy
 import gc
@@ -53,7 +56,7 @@ import pyglet.clock
 
 
 VERSION_SAVE = 5  # save/load version, only change on incompatible changes
-__version__ = "6.1.0"
+__version__ = "6.2.0"
 
 # major incompatibilities, backwards compat (can run same scripts), patch number
 VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH = [int(x) for x in __version__.split(".")]
@@ -103,18 +106,19 @@ elif 'darwin' in sys.platform:  # check for OS X support
 
 # detect pyinstaller on mac
 frozen = False
+frozen_msg = "Details about frozen vs normal are unknown."
 if getattr(sys, 'frozen', False):  # we are running in a bundle
     frozen = True
 if frozen:
     # get pyinstaller variable or use a default (perhaps cx_freeze)
     working_dir = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(sys.argv[0])))
-    print("Frozen bundle, pyvida directories are at", __file__, working_dir)
+    frozen_msg = f"Frozen bundle, pyvida directories are at { __file__} {working_dir}"
     script_filename = __file__
 else:
     # we are running in a normal Python environment
     working_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
     script_filename = os.path.abspath(__file__)  # pyvida script
-    print("Normal environment, pyvida directories at", working_dir)
+    frozen_msg = f"Normal environment, pyvida directories at {working_dir}"
 
 
 def get_safe_path(relative):
@@ -286,7 +290,7 @@ if mixer == "pygame":
         mixer = "pygame"
     except ImportError:
         mixer = "pyglet"
-print("default mixer is", mixer)
+print("default mixer:", mixer)
 benchmark_events = datetime.now()
 
 """
@@ -724,6 +728,8 @@ if logging:
     log.info("Global variable working_dir set to %s" % working_dir)
     log.info("Global variable script_filename set to %s" % script_filename)
     log.info("Frozen is %s" % frozen)
+    log.info(frozen_msg)
+    log.info("Default mixer:", mixer)
 
 """
 Testing utilities
@@ -3275,7 +3281,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         """ Use this everywhere for getting the correct name of an Actor 
             eg name = game.mistriss.fog_display_text(game.player)   
             """
-        display_text = self.display_text if self.display_text else self.name
+        display_text = self.display_text if self.display_text is not None else self.name
         fog_text = self._fog_display_text if self._fog_display_text else display_text
         if actor is None:
             return display_text
@@ -3307,8 +3313,11 @@ class Actor(MotionManager, metaclass=use_on_events):
 
     def on_queue_deltas(self, deltas, block=True, next_action=None):
         """ Fake an goto action using a custom list of deltas """
-        xs, ys = zip(*deltas)
-        destination = self.x + sum(xs), self.y + sum(ys)  # sum of deltas
+        if len(deltas) > 0:
+            xs, ys = zip(*deltas)
+            destination = self.x + sum(xs), self.y + sum(ys)  # sum of deltas
+        else:
+            destination = self.x, self.y
 
         if self.game._headless:
             self._goto(destination, block=block, next_action=next_action)
@@ -3796,7 +3805,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                     action.available_for_pathplanning = False
 
     def _python_path(self):
-        """ Replace // with \ in all filepaths for this object (used to repair old window save files """
+        r""" Replace // with \ in all filepaths for this object (used to repair old window save files """
         self._images = [x.replace("\\", "/") for x in self._images]
         for action in self._actions.values():
             action._image = action._image.replace("\\", "/")
@@ -4242,8 +4251,8 @@ class Actor(MotionManager, metaclass=use_on_events):
         """
         if logging:
             log.info("%s has started on_asks." % (self.name))
-        name = self.display_text if self.display_text else self.name
-        if self.game._output_walkthrough:
+        name = self.display_text if self.display_text is not None else self.name
+        if self.game._output_walkthrough and self.game._trunk_step:
             print("%s says \"%s\"" % (name, statement))
         log.info("on_ask before _says: %s.busy = %i" % (self.name, self.busy))
         kwargs["key"] = None  # deactivate on_says keyboard shortcut close
@@ -4598,7 +4607,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         self_name = self.fog_display_text(None)
 
         if self.game:
-            if self.game._output_walkthrough:
+            if self.game._output_walkthrough and self.game._trunk_step:
                 print("%s adds %s to inventory." % (self_name, name))
             if self.game._walkthrough_auto and item.name not in self.game._walkthrough_inventorables:
                 self.game._walkthrough_inventorables.append(item.name)
@@ -5420,7 +5429,7 @@ class Portal(Actor, metaclass=use_on_events):
     def portal_text(self):
         """ What to display when hovering over this link """
         link = self.link
-        t = self.name if self.display_text == None else self.display_text
+        t = self.name if self.display_text is None else self.display_text
         t = self.fog_display_text(self.game.player)
         if self.game.settings.portal_exploration and link and link.scene:
             if link.scene.name not in self.game.visited:
@@ -7901,7 +7910,7 @@ class Camera(metaclass=use_on_events):  # the view manager
         self.game.on_wait()
 
 
-class PlayerPygletSFX():
+class PlayerPygletSFX:
     def __init__(self, game):
         self._sound = None
         self.game = game
@@ -7914,12 +7923,16 @@ class PlayerPygletSFX():
             log.debug("loading sfx")
             log.debug(os.getcwd())
             log.debug(fname)
-        if self._sound: self._player.pause()
-        #        self._sound = pygame.mixer.Sound(fname)
+        p = Path(fname)
+        if not p.exists():
+            log.warning("Unable to find %s" % fname)
+
+        if self._sound:
+            self._player.pause()
         try:
             self._sound = pyglet.media.load(fname, streaming=False)
         except pyglet.media.sources.riff.WAVEFormatException:
-            print("AVbin is required to decode compressed media. Unable to load ", fname)
+            log.warning("AVbin is required to decode compressed media. Unable to load %s" % fname)
         new_volume = volume
         self.volume(new_volume)
 
@@ -7962,7 +7975,7 @@ class PlayerPygletSFX():
             self._player.volume = v
 
 
-class PlayerPygletMusic():
+class PlayerPygletMusic:
     def __init__(self, game):
         self.game = game
         self._music = None
@@ -8004,8 +8017,6 @@ class PlayerPygletMusic():
         except pyglet.media.exceptions.MediaException:
             pass
 
-    #        pygame.mixer.music.play(loops=loops, start=start)
-
     def position(self):
         """ Note, this returns the number of seconds, for use with OGG. """
         v = self._player.time if self._player else 0
@@ -8020,7 +8031,7 @@ class PlayerPygletMusic():
             self._player.volume = v
 
     def busy(self):
-        return False
+        return self._player.playing if self._music else False
 
 
 class PlayerPygameSFX():
@@ -8964,10 +8975,15 @@ def load_or_create_settings(game, fname, settings_cls=Settings):
     return existing
 
 
-def fit_to_screen(screen, resolution):
-    # given a screen size and the game's resolution, return a window size and
-    # scaling factor
-
+def fit_to_screen(screen, resolution, fill_scale=1.0):
+    """
+    given a screen size and the game's resolution, return a window size and
+    scaling factor that will fit the game on the screen to the best fit
+    Arguments
+        screen (tuple)
+        resolution (tuple)
+        fill_scale (float): scale the final scale (eg maybe we only want to scale up to 90% of the screen)
+    """
     w, h = screen
     #    scale = 1.0
     scale = w / resolution[0]
@@ -8981,6 +8997,7 @@ def fit_to_screen(screen, resolution):
     else:
         if scale != 1.0:
             log.info("Game screen scaled on width (%0.3f)" % scale)
+    scale *= fill_scale
     if scale != 1.0:
         resolution = round(resolution[0] * scale), round(resolution[1] * scale)
     return resolution, scale
@@ -9047,6 +9064,8 @@ class Game(metaclass=use_on_events):
         self.fullscreen = fullscreen
         self.autoscale = False
         self._window = None
+        self._window_dx = 0  # offset graphics on the window
+        self._window_dy = 0
 
         self.camera = Camera(self)  # the camera object
         self.settings = None  # game-wide settings
@@ -9280,24 +9299,30 @@ class Game(metaclass=use_on_events):
         if "fullscreen" in CONFIG and CONFIG["fullscreen"]:  # use override from game.conf
             fullscreen = CONFIG["fullscreen"]
 
-        options = self.parser.parse_args()
 
-        if options.output_version:
-            print("%s, %s, %s" % (self.name, CONFIG["version"], CONFIG["date"]))
-            return
+        options_resolution = None
+        if "pytest" not in self.parser.prog:
+            options = self.parser.parse_args()
 
-        if options.fullscreen:
-            fullscreen = not fullscreen
+            if options.output_version:
+                print("%s, %s, %s" % (self.name, CONFIG["version"], CONFIG["date"]))
+                return
 
-        if options.resizable:
-            self.resizable = True
+            if options.fullscreen:
+                fullscreen = not fullscreen
+
+            if options.resizable:
+                self.resizable = True
+
+            if options.resolution:
+                options_resolution = options.resolution
 
         override_resolution = override_resolution
         # two ways to override a resolution, from the game.conf file or from the commandline
         if "resolution" in CONFIG and CONFIG["resolution"]:  # use override from game.conf
             override_resolution = CONFIG["resolution"]
-        if options.resolution:  # force a resolution from the commandline
-            override_resolution = options.resolution
+        if options_resolution:  # force a resolution from the commandline
+            override_resolution = options_resolution
 
         if override_resolution:  # force a resolution
             if override_resolution == "0":  # use game resolution with no scaling.
@@ -9349,7 +9374,7 @@ class Game(metaclass=use_on_events):
         # Force game to draw at least at a certain fps (default is 30 fps)
         fps = fps if fps else self.settings.lock_engine_fps
         if self.settings and fps:
-            print("Start engine lock")
+            log.info("Start engine lock")
             pyglet.clock.schedule_interval(self.lock_update, 1.0 / fps)
 
     def stop_engine_lock(self):
@@ -9452,7 +9477,6 @@ class Game(metaclass=use_on_events):
 
         pyglet.clock.unschedule(self.update)
         pyglet.clock.schedule_interval(self.update, 1 / actor_fps)
-        #pyglet.clock.set_fps_limit(fps)
 
     def on_set_fps(self, v):
         self.fps = v
@@ -10010,7 +10034,7 @@ class Game(metaclass=use_on_events):
         if self.last_mouse_release:  # code courtesy from a stackoverflow entry by Andrew
             if (raw_x, raw_y, button) == self.last_mouse_release[:-1]:
                 """Same place, same button, double click shortcut"""
-                if time.clock() - self.last_mouse_release[-1] < 0.2:
+                if time.perf_counter() - self.last_mouse_release[-1] < 0.3:
                     if self.player and self.player._goto_x != None:
                         fx, fy = self.player._goto_x, self.player._goto_y
                         if len(self.player._goto_points) > 0:
@@ -10023,7 +10047,7 @@ class Game(metaclass=use_on_events):
                         return
         self._info_object.display_text = " "  # clear hover text
 
-        self.last_mouse_release = (raw_x, raw_y, button, time.time())
+        self.last_mouse_release = (raw_x, raw_y, button, time.perf_counter())
 
         (window_x, window_y), (scene_x, scene_y) = self.get_points_from_raw(raw_x, raw_y)
 
@@ -10699,7 +10723,7 @@ class Game(metaclass=use_on_events):
         if options.language_code:
             set_language(options.language_code if options.language_code != "default" else None)
         if options.target_step:
-            print("AUTO WALKTHROUGH")
+            log.info("AUTO WALKTHROUGH")
             self._walkthrough_auto = True  # auto advance
             first_step = options.target_step[0]
             last_step = options.target_step[1] if len(options.target_step) == 2 else None
@@ -10709,7 +10733,7 @@ class Game(metaclass=use_on_events):
                         self._walkthrough_index += 1
                         load_game(self, os.path.join("saves", "%s.save" % first_step))
                         first_step = last_step
-                        print("Continuing to", first_step)
+                        log.info("Continuing to", first_step)
 
             if first_step.isdigit():
                 # automatically run to <step> in walkthrough
@@ -10723,7 +10747,7 @@ class Game(metaclass=use_on_events):
             if not last_step:
                 self._walkthrough_target_name = self._walkthrough_start_name
         if options.build:
-            print("fresh build")
+            log.info("fresh build")
             self._build = True
         if options.allow_editor:
             print("enabled editor")
@@ -10774,19 +10798,19 @@ class Game(metaclass=use_on_events):
 
     def on_quit(self):
         if self.settings and self.settings.filename:
-            print("SAVE SETTINGS")
+            log.info("SAVE SETTINGS")
             td = datetime.now() - self.settings._current_session_start
             s = milliseconds(td)
             self.settings.total_time_played += s
             self.settings._last_session_end = datetime.now()
             save_settings(self, self.settings.filename)
-        print("EXIT APP")
+        log.info("EXIT APP")
         if self.steam_api:
-            print("SHUTDOWN STEAM API")
+            log.info("SHUTDOWN STEAM API")
             self.steam_api.shutdown()
         pyglet.app.exit()
         if mixer == "pygame":
-            print("SHUTDOWN PYGAME MIXER")
+            log.info("SHUTDOWN PYGAME MIXER")
             pygame.mixer.quit()
 
     def queue_event(self, event, *args, **kwargs):
@@ -10820,11 +10844,12 @@ class Game(metaclass=use_on_events):
                 self._walkthrough) or self._walkthrough_target == 0:
             return  # no walkthrough
         walkthrough = self._walkthrough[self._walkthrough_index]
-        extras = {} if len(walkthrough) == 2 else walkthrough[-1]
+        extras = {} if not isinstance(walkthrough[-1], dict) else walkthrough[-1]
         # extra options include:
         # "screenshot": True -- take a screenshot when screenflag flag enabled
         # "track": True -- when this event triggers the first time, advance the tracking system
         # "hint": <str> -- when this event triggers for the first time, set game.storage.hint to this value
+        # "ignore": bool -- do not print in walkthrough (same as * in name)
         global benchmark_events
         t = datetime.now() - benchmark_events
         benchmark_events = datetime.now()
@@ -10865,7 +10890,7 @@ class Game(metaclass=use_on_events):
                 #        if game.mixer._ambient_filename:
                 #            game.mixer.ambient_play(game.mixer._music_filename, start=game.mixer._music_position)
 
-                print("FINISHED HEADLESS WALKTHROUGH")
+                log.info("FINISHED HEADLESS WALKTHROUGH")
                 if DEBUG_NAMES:
                     print("* DEBUG NAMES")
                     global tmp_objects_first, tmp_objects_second
@@ -10937,9 +10962,10 @@ class Game(metaclass=use_on_events):
         #        elif function_name in ["use"]:
         #            if len(walkthrough) ==  4: human_readable_name = walkthrough[-1]
         actor_name = walkthrough[1]
-        if actor_name[0] == "*":  # an optional, non-trunk step
+        if actor_name[0] == "*" or extras.get("ignore", False):  # an optional, non-trunk step
             self._trunk_step = False
-            actor_name = actor_name[1:]
+            if actor_name[0] == "*":
+                actor_name = actor_name[1:]
         else:
             self._trunk_step = True
 
@@ -10995,7 +11021,7 @@ class Game(metaclass=use_on_events):
             # output text for a walkthrough if -w enabled
             if self._trunk_step and self._output_walkthrough:
                 if obj.name in self._actors.keys():
-                    verbs = ["Talk to", "Interact with"]
+                    verbs = ["Talk to"] #, "Interact with"]
                 else:  # item or portal
                     verbs = ["Click on the"]
                 if obj.name in self._modals:  # probably in modals
@@ -11950,25 +11976,44 @@ class Game(metaclass=use_on_events):
         pass
 
     def create_bars_and_scale(self, w, h, scale):
-        """ Fit game to requested window size """
+        """
+            Fit game to requested window size by centering and adding bars on top or bottom
+            And scale game graphics to fit the requested window size.
+        Parameters
+            w (int): width of game window
+            h (int): height of game window
+            scale (float): scale graphics
+        """
         sw, sh = w, h
-        w, h = self._window.get_size()  # actual size of window
+        window_w, window_h = self._window.get_size()  # actual size of window
+
+        # take the game graphics and scale them up
         gw, gh = self.resolution  # game size
         gw *= scale
         gh *= scale
-        self._window_dx = dx = (w - gw)
-        self._window_dy = dy = (h - gh)
+
+        # offset the game graphics so they are centered on the window
+        self._window_dx = dx = (window_w - gw) / 2
+        self._window_dy = dy = (window_h - gh) / 2
+
         # reset scale
         if self._old_scale:
             s = self._old_scale  # math.sqrt(self._old_scale)
             glTranslatef(-self._old_pos_x, -self._old_pos_y, 0)  # shift back
             pyglet.gl.glScalef(1.0 / s, 1.0 / s, 1.0 / s)
-            # set new scale
+
+        self._old_pos_x, self._old_pos_y = dx , dy
+
+        # fullscreen, no need to translate, as pyglet is doing that for us.
+        if not self.fullscreen:
+            glTranslatef(self._old_pos_x, self._old_pos_y, 0)  # move to middle of screen
+
+        # set new scale
         if scale != 1.0:
             pyglet.gl.glScalef(scale, scale, scale)
             self._old_scale = scale
-        self._old_pos_x, self._old_pos_y = dx / scale, dy / scale
-        glTranslatef(self._old_pos_x, self._old_pos_y, 0)  # move to middle of screen
+
+
         self._bars = []
         pattern = pyglet.image.SolidColorImagePattern((0, 0, 0, 255))
         if int(dx) > 0:  # vertical bars
@@ -11994,8 +12039,6 @@ class Game(metaclass=use_on_events):
     @property
     def screen(self):
         """ Return the screen being used to display the game. """
-        #display = pyglet.window.get_platform().get_default_display()
-
         display = pyglet.canvas.get_display()
         if self.settings and self.settings.preferred_screen is not None:
             try:
@@ -12023,7 +12066,11 @@ class Game(metaclass=use_on_events):
         width, height = self.resolution
         scale = 1.0
 
-        # if fullscreen:
+        fit_scale = 1.0  # game graphics to fill 100% of game window
+        if not fullscreen:
+            w *= 0.9  # game graphics and window to be 90% of screen size
+            h *= 0.9
+
         resolution, new_scale = fit_to_screen((w, h), self.resolution)
         # else: # not fullscreen and game does not want to scale in window mode
         #    resolution, new_scale = 
