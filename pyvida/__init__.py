@@ -2152,13 +2152,13 @@ class Action(object):
 
     def _load_montage(self, filename):
         fname = os.path.splitext(filename)[0]
-        montage_fname = get_safe_path(fname + ".montage", self.game.working_directory)
+        montage_fname = get_safe_path(fname + ".montage", self.game.working_directory if self.game else '')
 
         if not os.path.isfile(montage_fname):
-            if not os.path.isfile(get_safe_path(filename, self.game.working_directory)):
+            if not os.path.isfile(get_safe_path(filename, self.game.working_directory if self.game else '')):
                 w, h = 0, 0
             else:
-                w, h = get_image_size(get_safe_path(filename, self.game.working_directory))
+                w, h = get_image_size(get_safe_path(filename, self.game.working_directory if self.game else ''))
             num = 1  # single frame animation
         else:
             with open(montage_fname, "r") as f:
@@ -2170,19 +2170,19 @@ class Action(object):
                                   (self.name, montage_fname))
                     num, w, h = 0, 0, 0
         self.num_of_frames = num
-        return (w, h, num)
+        return w, h, num
 
     def smart(self, game, actor=None, filename=None):  # action.smart
         # load the image and slice info if necessary
         self.actor = actor if actor else self.actor
         self.game = game
         try:
-            self._image = get_relative_path(filename, game.working_directory)
+            self._image = get_relative_path(filename, game.working_directory if game else '')
         except ValueError:  # if relpath fails due to cx_Freeze expecting different mounts
             self._image = filename
         w, h, num = self._load_montage(filename)
         fname = os.path.splitext(filename)[0]
-        dfname = get_safe_path(fname + ".defaults", game.working_directory)
+        dfname = get_safe_path(fname + ".defaults", game.working_directory if game else '')
         load_defaults(game, self, "%s - %s" % (actor.name, self.name), dfname)
         set_resource(self.resource_name, w=w, h=h)
         #        self.load_assets(game)
@@ -3719,7 +3719,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             if action_name in exclude:
                 continue
             try:
-                relname = get_relative_path(action_file, game.working_directory)
+                relname = get_relative_path(action_file, game.working_directory if game else '')
             except ValueError:  # if relpath fails due to cx_Freeze expecting different mounts
                 relname = action_file
 
