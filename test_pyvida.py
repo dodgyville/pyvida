@@ -3,9 +3,11 @@ pytest tests
 """
 import pytest
 from unittest.mock import MagicMock
-from time import sleep
+from time import sleep, perf_counter
 
 import pyglet
+
+import pyvida
 
 from pyvida import (
     fit_to_screen,
@@ -94,7 +96,7 @@ class TestPlayerPygletSFX:
     def test_play_full(self):
         game = Game()
         p = PlayerPygletSFX(game)
-        p.load("test_data/sfx/achievement.ogg", 1.0)
+        p.load("test_data/data/sfx/achievement.ogg", 1.0)
         assert p._sound
         p.play()
         sleep(1.2)
@@ -102,7 +104,7 @@ class TestPlayerPygletSFX:
     def test_play_soft(self):
         game = Game()
         p = PlayerPygletSFX(game)
-        p.load("test_data/sfx/achievement.ogg", 0.3)
+        p.load("test_data/data/sfx/achievement.ogg", 0.3)
         assert p._sound
         p.play()
         sleep(1.2)
@@ -118,7 +120,7 @@ class TestPlayerPygletMusic:
         game = Game()
         game.init()
         p = PlayerPygletMusic(game)
-        p.load("test_data/music/dos4gw_newwake.ogg")
+        p.load("test_data/data/music/dos4gw_newwake.ogg")
         assert p._music
         p.play(loops=0)
         while p.busy():
@@ -129,9 +131,31 @@ class TestPlayerPygletMusic:
         game = Game()
         game.init()
         p = PlayerPygletMusic(game)
-        p.load("test_data/music/dos4gw_newwake.ogg")
+        p.load("test_data/data/music/dos4gw_newwake.ogg")
         assert p._music
         p.play(loops=1)
         while p.busy():
             pyglet.clock.tick()
             pyglet.app.platform_event_loop.dispatch_posted_events()
+
+
+class TestSmart:
+    def test_smart_basic(self):
+        game = Game("Test", "1.0", "1.0", "testpyvida", fps=16, afps=16, resolution=(1600, 900))
+        game.working_directory = "/home/luke/Projects/pyvida/test_data"
+        game._smart()
+        assert len(game._items) == 2
+        assert len(game._actors) == 3
+        assert len(game._scenes) == 1
+
+
+class TestClickableAreas:
+    def test_button(self):
+        game = Game("Test", "1.0", "1.0", "testpyvida", fps=16, afps=16, resolution=(1600, 900))
+        game.working_directory = "/home/luke/Projects/pyvida/test_data"
+        game.init()
+        game.smart()
+        game.queue_load_state("title", "initial")
+        game.camera.scene("title")
+        game.schedule_exit(2)
+        game.run()

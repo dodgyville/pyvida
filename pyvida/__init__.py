@@ -121,12 +121,12 @@ else:
     frozen_msg = f"Normal environment, pyvida directories at {working_dir}"
 
 
-def get_safe_path(relative):
+def get_safe_path(relative, override_working_dir=None):
     """ return a path safe for mac bundles and other situations """
     if os.path.isabs(relative):  # return a relative path unchanged
         return relative
 
-    safe = os.path.join(working_dir, relative)
+    safe = os.path.join(override_working_dir if override_working_dir else working_dir, relative)
     return safe
 
 
@@ -1310,7 +1310,7 @@ def get_smart_directory(game, obj):
         d = game.directory_scenes
     # if frozen: #inside a mac bundle
     #    d = os.path.join(working_dir, d)
-    d = get_safe_path(d)
+    d = get_safe_path(d, game.working_directory)
     return d
 
 
@@ -1348,7 +1348,7 @@ def get_best_directory(game, d_raw_name):
             else:
                 directories = [d]
         for directory in directories:
-            safe_dir = get_safe_path(directory)
+            safe_dir = get_safe_path(directory, game.working_directory)
             if os.path.isdir(safe_dir):
                 return safe_dir
     return None
@@ -3835,7 +3835,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                 log.info(
                     "actor.smart - using %s for smart load instead of real name %s" % (using, self.name))
             name = os.path.basename(using)
-            d = get_safe_path(os.path.dirname(using))
+            d = get_safe_path(os.path.dirname(using), game.working_directory)
         else:
             name = self.name
             d = get_smart_directory(game, self)
@@ -6505,7 +6505,6 @@ class Scene(MotionManager, metaclass=use_on_events):
 
     def _load_layer(self, element, cls=Item):
         fname = os.path.splitext(os.path.basename(element))[0]
-        sdir = os.path.dirname(element)
         layer = self.game._add(
             cls("%s_%s" % (self.name, fname)).smart(self.game, image=element),
             replace=True)
@@ -6522,7 +6521,7 @@ class Scene(MotionManager, metaclass=use_on_events):
 
     def _load_layers(self, game, wildcard=None, cls=Item):
         sdir = os.path.join(game.directory_scenes, self.name)
-        absdir = get_safe_path(sdir)
+        absdir = get_safe_path(sdir, game.working_directory)
         wildcard = wildcard if wildcard else os.path.join(absdir, "*.png")
         self._layer = []  # clear old layers
         layers = []
@@ -6609,7 +6608,7 @@ class Scene(MotionManager, metaclass=use_on_events):
             self._remove(obj)
 
     # remove items not in this list from the scene
-    def on_clean(self, objs=[]):
+    def on_clean(self, objs=[]):  # scene.clean
         check_objects = copy.copy(self._objects)
         for i in check_objects:
             obj = get_object(self.game, i)
@@ -7120,7 +7119,7 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         self._sorted_objects = None
         self.index = 0
 
-    def smart(self, *args, **kwargs):
+    def smart(self, *args, **kwargs):  # collection.smart
         dimensions = None
         if "dimensions" in kwargs:
             dimensions = kwargs["dimensions"]
@@ -9032,6 +9031,13 @@ def reset_mouse_cursor(game):
     game.mouse_cursor = MOUSE_POINTER if game.mouse_mode != MOUSE_LOOK else game.mouse_cursor  # reset mouse pointer
 
 
+def hard_quit(dt=0):
+    pyglet.app.exit()
+    if mixer == "pygame":
+        log.info("SHUTDOWN PYGAME MIXER")
+        pygame.mixer.quit()
+
+
 LOCK_UPDATES_TO_DRAWS = False  # deprecated
 
 
@@ -9042,6 +9048,7 @@ class Game(metaclass=use_on_events):
         log.info("pyvida version %s %s %s" % (VERSION_MAJOR, VERSION_MINOR, VERSION_SAVE))
         self.debug_collection = False
         self.writeable_directory = save_directory
+        self.working_directory = working_dir
         self.save_directory = "saves"
         self.setup_saves()
         self.parser = ArgumentParser()
@@ -10527,7 +10534,7 @@ class Game(metaclass=use_on_events):
 
         for obj_cls in [Actor, Item, Emitter, Portal, Scene]:
             dname = "directory_%ss" % obj_cls.__name__.lower()
-            safe_dir = get_safe_path(getattr(self, dname))
+            safe_dir = get_safe_path(getattr(self, dname), self.working_directory)
             if not os.path.exists(safe_dir):
                 continue  # skip directory if non-existent
             for name in os.listdir(safe_dir):
@@ -10537,7 +10544,8 @@ class Game(metaclass=use_on_events):
         for obj_cls in [Actor, Item, Emitter, Portal, Scene]:
             dname = "directory_%ss" % obj_cls.__name__.lower()
             #            dname = get_smart_directory(self, obj)
-            safe_dir = get_safe_path(getattr(self, dname))
+            safe_dir = get_safe_path(getattr(self, dname), self.working_directory)
+            safe_dir = Path(working_dir, safe_dir).as_posix()
             if not os.path.exists(safe_dir):
                 continue  # skip directory if non-existent
             for name in os.listdir(safe_dir):
@@ -10694,10 +10702,77 @@ class Game(metaclass=use_on_events):
         log.info("Editor has done a module reload")
 
     def run(self, splash=None, callback=None, icon=None):
-        # event_loop.run()
-        options = self.parser.parse_args()
+        options_mute = False
+        if "pytest" not in self.parser.prog:
+            options = self.parser.parse_args()
+
+            options_mute = options.mute
+
+            if options.output_version == True:  # init prints version number, so exit
+                return
+            if options.output_walkthrough == True:
+                self._output_walkthrough = True
+                print("Walkthrough for %s" % self.name)
+                t = datetime.now().strftime("%d-%m-%y")
+                print("Created %s, updated %s" % (t, t))
+            # switch on test runner to step through walkthrough
+            if options.profiling:
+                print("Profiling time spent in scripts")
+                self.profile_scripts = True
+            if options.language_code:
+                set_language(options.language_code if options.language_code != "default" else None)
+
+            if options.target_step:
+                log.info("AUTO WALKTHROUGH")
+                self._walkthrough_auto = True  # auto advance
+                first_step = options.target_step[0]
+                last_step = options.target_step[1] if len(options.target_step) == 2 else None
+                if last_step:  # run through walkthrough to that step and do game load, then continue to second target
+                    for i, x in enumerate(self._walkthrough):
+                        if x[1] == last_step:
+                            self._walkthrough_index += 1
+                            load_game(self, os.path.join("saves", "%s.save" % first_step))
+                            first_step = last_step
+                            log.info("Continuing to", first_step)
+
+                if first_step.isdigit():
+                    # automatically run to <step> in walkthrough
+                    self._walkthrough_target = int(first_step)
+                else:  # use a label
+                    for i, x in enumerate(self._walkthrough):
+                        if x[0] == savepoint and x[1] == first_step:
+                            self._walkthrough_start_name = x[1]
+                            if not last_step:
+                                self._walkthrough_target = i + 1
+                if not last_step:
+                    self._walkthrough_target_name = self._walkthrough_start_name
+            if options.build:
+                log.info("fresh build")
+                self._build = True
+            if options.allow_editor:
+                print("enabled editor")
+                self._allow_editing = True
+            if options.exit_step:
+                self.exit_step = True
+            if options.headless:
+                self.on_set_headless(True)
+                self._walkthrough_auto = True  # auto advance
+            if options.test_inventory:
+                self._test_inventory = True
+            if options.test_inventory_per_scene:
+                self._test_inventory_per_scene = True
+            if options.imagereactor == True:
+                """ save a screenshot as requested by walkthrough """
+                if self._headless is True:
+                    print("WARNING, ART REACTOR CAN'T RUN IN HEADLESS MODE")
+                d = "imagereactor %s" % datetime.now()
+                self._imagereactor_directory = os.path.join(self.save_directory, d)
+                # import pdb; pdb.set_trace() #Don't do this. Lesson learned.
+
+
         #        self.mixer._force_mute =  #XXX sound disabled for first draft
-        self.mixer._session_mute = True if options.mute == True else False
+        self.mixer._session_mute = True if options_mute == True else False
+
         if self.settings and not self.settings.disable_joystick:
             joysticks = pyglet.input.get_joysticks()
             if joysticks:
@@ -10708,66 +10783,6 @@ class Game(metaclass=use_on_events):
         #        if options.target_random_steps: # randomly do some options before
         #            self.target_random_steps = options.target_random_steps
         #            self.target_random_steps_counter = options.target_random_steps
-
-        if options.output_version == True:  # init prints version number, so exit
-            return
-        if options.output_walkthrough == True:
-            self._output_walkthrough = True
-            print("Walkthrough for %s" % self.name)
-            t = datetime.now().strftime("%d-%m-%y")
-            print("Created %s, updated %s" % (t, t))
-        # switch on test runner to step through walkthrough
-        if options.profiling:
-            print("Profiling time spent in scripts")
-            self.profile_scripts = True
-        if options.language_code:
-            set_language(options.language_code if options.language_code != "default" else None)
-        if options.target_step:
-            log.info("AUTO WALKTHROUGH")
-            self._walkthrough_auto = True  # auto advance
-            first_step = options.target_step[0]
-            last_step = options.target_step[1] if len(options.target_step) == 2 else None
-            if last_step:  # run through walkthrough to that step and do game load, then continue to second target
-                for i, x in enumerate(self._walkthrough):
-                    if x[1] == last_step:
-                        self._walkthrough_index += 1
-                        load_game(self, os.path.join("saves", "%s.save" % first_step))
-                        first_step = last_step
-                        log.info("Continuing to", first_step)
-
-            if first_step.isdigit():
-                # automatically run to <step> in walkthrough
-                self._walkthrough_target = int(first_step)
-            else:  # use a label
-                for i, x in enumerate(self._walkthrough):
-                    if x[0] == savepoint and x[1] == first_step:
-                        self._walkthrough_start_name = x[1]
-                        if not last_step:
-                            self._walkthrough_target = i + 1
-            if not last_step:
-                self._walkthrough_target_name = self._walkthrough_start_name
-        if options.build:
-            log.info("fresh build")
-            self._build = True
-        if options.allow_editor:
-            print("enabled editor")
-            self._allow_editing = True
-        if options.exit_step:
-            self.exit_step = True
-        if options.headless:
-            self.on_set_headless(True)
-            self._walkthrough_auto = True  # auto advance
-        if options.test_inventory:
-            self._test_inventory = True
-        if options.test_inventory_per_scene:
-            self._test_inventory_per_scene = True
-        if options.imagereactor == True:
-            """ save a screenshot as requested by walkthrough """
-            if self._headless is True:
-                print("WARNING, ART REACTOR CAN'T RUN IN HEADLESS MODE")
-            d = "imagereactor %s" % datetime.now()
-            self._imagereactor_directory = os.path.join(self.save_directory, d)
-            # import pdb; pdb.set_trace() #Don't do this. Lesson learned.
 
         if splash:
             scene = Scene(splash, self)
@@ -10808,10 +10823,7 @@ class Game(metaclass=use_on_events):
         if self.steam_api:
             log.info("SHUTDOWN STEAM API")
             self.steam_api.shutdown()
-        pyglet.app.exit()
-        if mixer == "pygame":
-            log.info("SHUTDOWN PYGAME MIXER")
-            pygame.mixer.quit()
+        hard_quit()
 
     def queue_event(self, event, *args, **kwargs):
         self._events.append((event, args, kwargs))
@@ -11837,6 +11849,9 @@ class Game(metaclass=use_on_events):
                     f.write(
                         '    scene.scales["actors"] = %0.2f\n' % (obj.scale))
 
+    def on_queue_load_state(self, scene, state, load_assets=False):
+        self.load_state(scene, state, load_assets)
+
     def load_state(self, scene, state, load_assets=False):
         scene = self._load_state(scene, state)
         if load_assets:
@@ -11855,7 +11870,7 @@ class Game(metaclass=use_on_events):
                 return
         sfname = os.path.join(
             self.directory_scenes, os.path.join(scene.name, state))
-        sfname = get_safe_path("%s.py" % sfname)
+        sfname = get_safe_path("%s.py" % sfname, self.working_directory)
         variables = {}
         if not os.path.exists(sfname):
             if logging:
@@ -11954,6 +11969,10 @@ class Game(metaclass=use_on_events):
     def on_wait_for_user(self):
         """ Insert a modal click event """
         self._waiting_for_user = True
+
+    def on_schedule_exit(self, duration):
+        """ exit the game in duration seconds """
+        pyglet.clock.schedule_once(hard_quit, duration)
 
     def on_pause(self, duration):
         """ pause the game for duration seconds """
