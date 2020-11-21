@@ -1,20 +1,45 @@
 """
 pytest tests
 """
-import pytest
-from unittest.mock import MagicMock
-from time import sleep, perf_counter
-
+from pathlib import Path
 import pyglet
-
-import pyvida
+import pytest
+from time import sleep
+from unittest.mock import MagicMock
 
 from pyvida import (
+    Actor,
     fit_to_screen,
+    get_resource,
     Game,
+    get_best_file,
     PlayerPygletMusic,
-    PlayerPygletSFX
+    PlayerPygletSFX,
+    PyvidaSprite,
+    Scene
 )
+
+TEST_PATH = "/home/luke/Projects/pyvida/test_data"
+
+
+class TestUtils:
+    @pytest.mark.parametrize("use_game,working_dir,fname, expected",
+                             [
+                                 [False, '', 'nonexistent.txt', 'nonexistent.txt'],
+                                 [True, '', 'nonexistent.txt', 'nonexistent.txt'],
+                                 [True, TEST_PATH, 'nonexistent.txt', 'nonexistent.txt'],
+                                 [True, TEST_PATH, 'data/actors/Adam/idle.png',Path(TEST_PATH, 'data/actors/Adam/idle.png').as_posix()],
+                                 [True, TEST_PATH, 'data/actors/Adam/idle.png',Path(TEST_PATH, 'data/actors/Adam/idle.png').as_posix()],
+                             ]
+                             )
+    def test_get_best_file(self, use_game, working_dir, fname, expected):
+        # '../../../../../Projects/pyvida/test_data/data/actors/Adam/idle.montage'
+        game = Game() if use_game else None
+        if game:
+            game.working_directory = working_dir
+
+        f = get_best_file(game, fname)
+        assert expected in f
 
 
 class TestFullscreen:
@@ -142,11 +167,53 @@ class TestPlayerPygletMusic:
 class TestSmart:
     def test_smart_basic(self):
         game = Game("Test", "1.0", "1.0", "testpyvida", fps=16, afps=16, resolution=(1600, 900))
-        game.working_directory = "/home/luke/Projects/pyvida/test_data"
+        game.working_directory = TEST_PATH
         game._smart()
         assert len(game._items) == 2
         assert len(game._actors) == 3
         assert len(game._scenes) == 1
+
+
+class TestActor:
+    def test_smart(self):
+        game = Game()
+        game.working_directory = "/home/luke/Projects/pyvida/test_data"
+        a = Actor("Adam")
+        a.smart(game)
+
+        assert list(a._actions.keys()) == ["idle"]
+        assert a.resource_name == "Adam"
+
+    def test_load_assets(self):
+        game = Game()
+        game.working_directory = "/home/luke/Projects/pyvida/test_data"
+        a = Actor("Adam")
+        a.smart(game)
+        a.load_assets(game)
+
+        resource = get_resource(a.resource_name)
+        assert resource[0] == 249
+        assert resource[1] == 341
+        assert a.action.w == 249
+        assert a.action.h == 341
+        assert type(resource[2]) == PyvidaSprite
+        assert list(a._actions.keys()) == ["idle"]
+
+
+class TestScene:
+    def test_layers_nogame(self):
+        s = Scene("testscene")
+        s._load_layer(Path(TEST_PATH, "scenes/title/background.png"))
+        assert len(s._layer) == 1
+
+    def test_layers_game(self):
+        game = Game()
+        game.working_directory = "/home/luke/Projects/pyvida/test_data"
+        s = Scene("testscene")
+        game._add(s)
+        s._load_layer("scenes/title/background.png")
+        assert len(s._layer) == 1
+        assert list(game._items.keys()) == ["testscene_background"]
 
 
 class TestClickableAreas:
@@ -159,3 +226,5 @@ class TestClickableAreas:
         game.camera.scene("title")
         game.schedule_exit(2)
         game.run()
+        assert game.scene == game._scenes["title"]
+        assert game.scene._layer[0] == "logo"

@@ -130,13 +130,13 @@ def get_safe_path(relative, override_working_dir=None):
     return safe
 
 
-def get_relative_path(path):
+def get_relative_path(path, override_working_dir=None):
     """ return safe relative path based on game working directory, not necessarily the executing working directory """
     if os.path.isabs(path):
-        safe = os.path.relpath(path, working_dir)
+        safe = os.path.relpath(path, override_working_dir if override_working_dir else working_dir)
     else:  # already relative
         safe = path
-    return safe
+    return Path(safe).as_posix()
 
 
 if SteamApi:
@@ -1023,7 +1023,7 @@ def fonts_smart(game):
     font_files = []
     for d_raw in font_dirs:
         for t in ['data/fonts/*.otf', 'data/fonts/*.ttf']:
-            for f in glob.glob(get_safe_path(os.path.join(d_raw, t))):
+            for f in glob.glob(get_safe_path(os.path.join(d_raw, t), game.working_directory)):
                 font_files.append(f)
                 font = TTFont(f)
                 name, family = shortName(font)
@@ -1297,20 +1297,20 @@ def get_smart_directory(game, obj):
     #    if isinstance(obj, Emitter):
     #        d = game.emitter_dir
     if isinstance(obj, Portal):
-        d = game.directory_portals
+        d = game.directory_portals if game else DIRECTORY_PORTALS
     elif isinstance(obj, Collection):
-        d = game.directory_items
+        d = game.directory_items if game else DIRECTORY_ITEMS
     elif isinstance(obj, Emitter):
-        d = game.directory_emitters
+        d = game.directory_emitters if game else DIRECTORY_EMITTERS
     elif isinstance(obj, Item):
-        d = game.directory_items
+        d = game.directory_items if game else DIRECTORY_ITEMS
     elif isinstance(obj, Actor):
-        d = game.directory_actors
+        d = game.directory_actors if game else DIRECTORY_ACTORS
     elif isinstance(obj, Scene):
-        d = game.directory_scenes
+        d = game.directory_scenes if game else DIRECTORY_SCENES
     # if frozen: #inside a mac bundle
     #    d = os.path.join(working_dir, d)
-    d = get_safe_path(d, game.working_directory)
+    d = get_safe_path(d, game.working_directory if game else '')
     return d
 
 
@@ -1320,9 +1320,6 @@ def get_best_directory(game, d_raw_name):
         return the best option     
         XXX: Possibly not used, see get_best_file_below            
     """
-    if "logo" in d_raw_name:
-        import pdb;
-        pdb.set_trace()
     if language:
         l = os.path.join(os.path.join('data', 'locale'), language)
         d_raws = [os.path.join(l, d_raw_name), d_raw_name]
@@ -1381,12 +1378,12 @@ def get_best_file(game, f_raw):
     d_mod = os.path.join(os.path.join("mod", base), key)  # eg mod/data/items/inventory
     d = os.path.join(base, key)  # eg data/items/inventory, same as d_raw
 
-    if game.low_memory:
+    if game and game.low_memory:
         if CONFIG["mods"]:
             directories = [d_mod_lm, d_lm, d_mod_hc, d_hc, d_mod, d]
         else:
             directories = [d_lm, d_hc, d]
-    elif game.settings and game.settings.high_contrast:
+    elif game and game.settings and game.settings.high_contrast:
         if CONFIG["mods"]:
             directories = [d_mod_hc, d_hc, d_mod, d]
         else:
@@ -1397,7 +1394,7 @@ def get_best_file(game, f_raw):
         else:
             directories = [d]
     for directory in directories:
-        test_f = get_safe_path(os.path.join(directory, f_name))
+        test_f = get_safe_path(os.path.join(directory, f_name), game.working_directory if game else None)
         if os.path.exists(test_f):
             return test_f
     return f_raw  # use default
@@ -2152,13 +2149,13 @@ class Action(object):
 
     def _load_montage(self, filename):
         fname = os.path.splitext(filename)[0]
-        montage_fname = get_safe_path(fname + ".montage")
+        montage_fname = get_safe_path(fname + ".montage", self.game.working_directory)
 
         if not os.path.isfile(montage_fname):
-            if not os.path.isfile(get_safe_path(filename)):
+            if not os.path.isfile(get_safe_path(filename, self.game.working_directory)):
                 w, h = 0, 0
             else:
-                w, h = get_image_size(filename)
+                w, h = get_image_size(get_safe_path(filename, self.game.working_directory))
             num = 1  # single frame animation
         else:
             with open(montage_fname, "r") as f:
@@ -2177,12 +2174,12 @@ class Action(object):
         self.actor = actor if actor else self.actor
         self.game = game
         try:
-            self._image = get_relative_path(filename).replace("\\", "/")
+            self._image = get_relative_path(filename, game.working_directory)
         except ValueError:  # if relpath fails due to cx_Freeze expecting different mounts
             self._image = filename
         w, h, num = self._load_montage(filename)
         fname = os.path.splitext(filename)[0]
-        dfname = get_safe_path(fname + ".defaults")
+        dfname = get_safe_path(fname + ".defaults", game.working_directory)
         load_defaults(game, self, "%s - %s" % (actor.name, self.name), dfname)
         set_resource(self.resource_name, w=w, h=h)
         #        self.load_assets(game)
@@ -2818,7 +2815,8 @@ class Actor(MotionManager, metaclass=use_on_events):
 
     def load_assets(self, game, skip_if_loaded=False):  # actor.load_assets
         self.game = game
-        if not game: import pdb; pdb.set_trace()
+        if not game:
+            logging.error(f"No game object passed to actor.load_assets for actor {self.name}")
         # load actions
         for action in self._actions.values():
             action.load_assets(game, skip_if_loaded=skip_if_loaded)
@@ -3718,7 +3716,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             if action_name in exclude:
                 continue
             try:
-                relname = get_relative_path(action_file)
+                relname = get_relative_path(action_file, game.working_directory)
             except ValueError:  # if relpath fails due to cx_Freeze expecting different mounts
                 relname = action_file
 
@@ -3770,7 +3768,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             if os.path.isfile(filepath):
                 # add file directory to path so that import can find it
                 if os.path.dirname(filepath) not in self.game._sys_paths:
-                    self.game._sys_paths.append(get_relative_path(os.path.dirname(filepath)))
+                    self.game._sys_paths.append(get_relative_path(os.path.dirname(filepath), self.game.working_directory))
                 if os.path.dirname(filepath) not in sys.path:
                     sys.path.append(os.path.dirname(filepath))
                 # add to the list of modules we are tracking
@@ -3851,7 +3849,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             this_dir, this_filename = os.path.split(script_filename)  # script_filename is absolute location of pyvida
             log.debug("Unable to find %s, falling back to %s" %
                       (myd, this_dir))
-            myd = os.path.join(this_dir, get_relative_path(d), name)
+            myd = os.path.join(this_dir, get_relative_path(d, game.working_directory if game else ''), name)
             absd = get_safe_path(myd)
         if not os.path.isdir(absd) and not image:  # fallback to deprecated menu default if item 
             log.warning(
@@ -3875,7 +3873,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                 f.close()
 
         try:
-            self._images = [get_relative_path(x).replace("\\", "/") for x in images]  # make storage relative
+            self._images = [get_relative_path(x, game.working_directory) for x in images]  # make storage relative
         except ValueError:  # cx_Freeze on windows on different mounts may confuse relpath.
             self._images = images
 
@@ -6458,7 +6456,7 @@ class Scene(MotionManager, metaclass=use_on_events):
         load_defaults(game, self, self.name, filepath)
         return self
 
-    def load_assets(self, game):  # scene.load
+    def load_assets(self, game):  # scene.load_assets
         #        print("loading assets for scene",self.name)
         for i in self.load_assets_responsive(game):
             pass
@@ -6503,14 +6501,15 @@ class Scene(MotionManager, metaclass=use_on_events):
             # with open(os.path.join(sdir, fname + ".details")) as f:
             #    pass
 
-    def _load_layer(self, element, cls=Item):
+    def _load_layer(self, element, cls=Item):  # scene._load_layer
         fname = os.path.splitext(os.path.basename(element))[0]
-        layer = self.game._add(
-            cls("%s_%s" % (self.name, fname)).smart(self.game, image=element),
-            replace=True)
+        new_object = cls("%s_%s" % (self.name, fname)).smart(self.game, image=element)
 
-        self._layer.append(layer.name)  # add layer items as items
-        return layer
+        if self.game:
+            self.game._add(new_object, replace=True)
+
+        self._layer.append(new_object.name)  # add layer items as items
+        return new_object
 
     def _sort_layers(self):
         layers = [get_object(self.game, x) for x in self._layer]
@@ -8833,7 +8832,7 @@ def load_game_pickle(game, fname, meta_only=False, keep=[], responsive=False):
             game._selected_options = pickle.load(f)
             game._modules = pickle.load(f)
             paths = pickle.load(f)
-            paths = [get_relative_path(x) for x in paths]
+            paths = [get_relative_path(x, game.working_directory) for x in paths]
             game._sys_paths = paths
             for path in paths:
                 if path not in sys.path:
@@ -11614,10 +11613,9 @@ class Game(metaclass=use_on_events):
         for obj in objects_iterable:
             # check if it is an existing object
             if obj in self._actors.values() or obj in self._items.values() or obj in self._scenes.values():
-                if replace == False:
+                if not replace:
                     continue
-                elif replace == True:
-                    if logging:
+                elif logging:
                         log.info("replacing %s" % obj.name)
             try:
                 obj.game = self
@@ -11880,7 +11878,7 @@ class Game(metaclass=use_on_events):
             if logging:
                 log.debug("load state: load %s for scene %s" %
                           (sfname, scene.name))
-            scene._last_state = get_relative_path(sfname)
+            scene._last_state = get_relative_path(sfname, self.game.working_directory)
             #            execfile("somefile.py", global_vars, local_vars)
             current_headless = self._headless
             if not current_headless:
