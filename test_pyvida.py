@@ -13,10 +13,12 @@ from pyvida import (
     get_resource,
     Game,
     get_best_file,
+    MenuFactory,
     PlayerPygletMusic,
     PlayerPygletSFX,
     PyvidaSprite,
-    Scene
+    Scene,
+    Text,
 )
 
 TEST_PATH = "/home/luke/Projects/pyvida/test_data"
@@ -114,12 +116,12 @@ class TestGame:
 
 class TestPlayerPygletSFX:
     def test_init(self):
-        game = Game()
+        game = Game(resolution=(100, 100))
         p = PlayerPygletSFX(game)
         assert not p._sound
 
     def test_play_full(self):
-        game = Game()
+        game = Game(resolution=(100, 100))
         p = PlayerPygletSFX(game)
         p.load("test_data/data/sfx/achievement.ogg", 1.0)
         assert p._sound
@@ -127,7 +129,7 @@ class TestPlayerPygletSFX:
         sleep(1.2)
 
     def test_play_soft(self):
-        game = Game()
+        game = Game(resolution=(100, 100))
         p = PlayerPygletSFX(game)
         p.load("test_data/data/sfx/achievement.ogg", 0.3)
         assert p._sound
@@ -142,7 +144,7 @@ class TestPlayerPygletMusic:
         assert not p._music
 
     def test_play(self):
-        game = Game()
+        game = Game(resolution=(100, 100))
         game.init()
         p = PlayerPygletMusic(game)
         p.load("test_data/data/music/dos4gw_newwake.ogg")
@@ -153,7 +155,7 @@ class TestPlayerPygletMusic:
             pyglet.app.platform_event_loop.dispatch_posted_events()
 
     def test_play_loop(self):
-        game = Game()
+        game = Game(resolution=(100, 100))
         game.init()
         p = PlayerPygletMusic(game)
         p.load("test_data/data/music/dos4gw_newwake.ogg")
@@ -166,7 +168,7 @@ class TestPlayerPygletMusic:
 
 class TestSmart:
     def test_smart_basic(self):
-        game = Game("Test", "1.0", "1.0", "testpyvida", fps=16, afps=16, resolution=(1600, 900))
+        game = Game("Test", "1.0", "1.0", "testpyvida", fps=16, afps=16, resolution=(100, 100))
         game.working_directory = TEST_PATH
         game._smart()
         assert len(game._items) == 2
@@ -176,7 +178,7 @@ class TestSmart:
 
 class TestActor:
     def test_smart(self):
-        game = Game()
+        game = Game(resolution=(100, 100))
         game.working_directory = "/home/luke/Projects/pyvida/test_data"
         a = Actor("Adam")
         a.smart(game)
@@ -185,7 +187,7 @@ class TestActor:
         assert a.resource_name == "Adam"
 
     def test_load_assets(self):
-        game = Game()
+        game = Game(resolution=(100, 100))
         game.working_directory = "/home/luke/Projects/pyvida/test_data"
         a = Actor("Adam")
         a.smart(game)
@@ -198,6 +200,37 @@ class TestActor:
         assert a.action.h == 341
         assert type(resource[2]) == PyvidaSprite
         assert list(a._actions.keys()) == ["idle"]
+
+
+def create_basic_scene():
+    game = Game("Test", "1.0", "1.0", "testpyvida", fps=16, afps=16, resolution=(1680, 1050))
+    game.autoscale = False
+    game.working_directory = "/home/luke/Projects/pyvida/test_data"
+    game.init()
+    game.smart()
+    game.queue_load_state("title", "initial")
+    game.camera.scene("title")
+    return game
+
+
+class TestText:
+    def test_basic(self):
+        t = Text("hello world")
+        t.load_assets()
+        resource = get_resource(t.resource_name)
+
+        assert isinstance(t, Actor)
+        assert resource[0] == 164
+        assert resource[1] == 39
+
+    def test_create_missing_font(self):
+        t = Text("hello world", font="nonexisting font")
+        t.load_assets()
+        resource = get_resource(t.resource_name)
+
+        assert isinstance(t, Actor)
+        assert resource[0] == 164
+        assert resource[1] == 39
 
 
 class TestScene:
@@ -215,10 +248,9 @@ class TestScene:
         assert len(s._layer) == 1
         assert list(game._items.keys()) == ["testscene_background"]
 
-
-class TestClickableAreas:
-    def test_button(self):
-        game = Game("Test", "1.0", "1.0", "testpyvida", fps=16, afps=16, resolution=(1600, 900))
+    def test_scene_with_item(self):
+        game = Game("Test", "1.0", "1.0", "testpyvida", fps=16, afps=16, resolution=(1680, 1050))
+        game.autoscale = False
         game.working_directory = "/home/luke/Projects/pyvida/test_data"
         game.init()
         game.smart()
@@ -226,5 +258,68 @@ class TestClickableAreas:
         game.camera.scene("title")
         game.schedule_exit(2)
         game.run()
+        logo = game.scene.get_object("logo")
+        assert game.w == 1680
+        assert not game.autoscale
         assert game.scene == game._scenes["title"]
-        assert game.scene._layer[0] == "logo"
+        assert game.scene._layer[0] == "title_background"
+        assert logo
+
+    def test_scene_with_menu(self):
+        game = Game("Test", "1.0", "1.0", "testpyvida", fps=16, afps=16, resolution=(1680, 1050))
+        game.autoscale = False
+        game.working_directory = "/home/luke/Projects/pyvida/test_data"
+        mx, my = game.resolution[0] / 2 - 100, 140  # game.resolution[1]-50
+        game.add(MenuFactory("menu", (mx, my)))
+
+        game._menu_from_factory("menu", [
+            ("menu_new", MagicMock()),
+            ("menu_old", MagicMock()),
+        ])
+
+        game.init()
+        game.smart()
+        game.queue_load_state("title", "initial")
+        game.camera.scene("title")
+        game.set_menu(*["menu_new", "menu_old"], clear=True)
+        game.menu.show()
+
+        game.schedule_exit(6)
+        game.run()
+        assert game.w == 1680
+        assert not game.autoscale
+        assert game.scene == game._scenes["title"]
+        assert game.scene._layer[0] == "title_background"
+        assert game.scene.get_object("logo")
+
+
+class TestMenus:
+    def test_basic(self):
+        game = create_basic_scene()
+        t = Text("hello")
+        t.load_assets()
+        game.add(t)
+        game.set_menu("hello")
+        game.schedule_exit(0.5)
+        game.run()
+        game.wait()
+        assert list(game.scene._objects) == ["logo"]
+        assert list(game._menu) == ["hello"]
+
+    def test_menu_factory(self):
+        game = create_basic_scene()
+        mx, my = game.resolution[0] / 2 - 100, 140  # game.resolution[1]-50
+        game.add(MenuFactory("menu", (mx, my)))
+
+        names = game._menu_from_factory("menu", [
+            ("menu_new", MagicMock()),
+            ("menu_old", MagicMock()),
+        ])
+        game.set_menu("menu_new", "menu_old")
+        game.schedule_exit(0.5)
+        game.run()
+        game.wait()
+
+        assert names == ["menu_new", "menu_old"]
+        assert list(game._menu) == ["menu_old", "menu_new"]
+

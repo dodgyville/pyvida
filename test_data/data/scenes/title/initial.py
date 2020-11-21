@@ -8,12 +8,12 @@ def load_state(game, scene):
     # scene.music("data/music/armadillo_-_chipgurl.ogg")
     scene.scales["actors"] = 1.00
     logo = game.items["logo"]
-    logo.reclickable(Rect(0, 0, 400, 261))
-    logo.resolid(Rect(0, 0, 80, 50))
+    #logo.reclickable(Rect(0, 0, 400, 261))
+    #logo.resolid(Rect(0, 0, 80, 50))
     logo.usage(True, True, True, True, True)
     logo.rescale(1.00)
-    logo.reanchor((-200, -221))
+    logo.reanchor((0, 0))
     logo.restand((150, 0))
     logo.retalk((100, 221))
     logo.respeech((410, 261))
-    logo.relocate(scene, (502, 192))
+    logo.relocate(scene, (100, 800))

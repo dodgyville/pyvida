@@ -1308,6 +1308,9 @@ def get_smart_directory(game, obj):
         d = game.directory_actors if game else DIRECTORY_ACTORS
     elif isinstance(obj, Scene):
         d = game.directory_scenes if game else DIRECTORY_SCENES
+    else:
+        log.error(f"get_smart_directory has no suggestions for {type(obj)}")
+        d = ''
     # if frozen: #inside a mac bundle
     #    d = os.path.join(working_dir, d)
     d = get_safe_path(d, game.working_directory if game else '')
@@ -1741,7 +1744,7 @@ class Settings(object):
         self.allow_internet_debug = ENABLE_LOGGING
 
         self.fullscreen = DEFAULT_FULLSCREEN
-        self.autoscale = True  # scale window to fit screen
+        self.autoscale = DEFAULT_AUTOSCALE  # scale window to fit screen
         self.preferred_screen = None  # for multi-monitors
         self.show_portals = False
         self.show_portal_text = DEFAULT_PORTAL_TEXT
@@ -2816,7 +2819,7 @@ class Actor(MotionManager, metaclass=use_on_events):
     def load_assets(self, game, skip_if_loaded=False):  # actor.load_assets
         self.game = game
         if not game:
-            logging.error(f"No game object passed to actor.load_assets for actor {self.name}")
+            log.error(f"No game object passed to actor.load_assets for actor {self.name}")
         # load actions
         for action in self._actions.values():
             action.load_assets(game, skip_if_loaded=skip_if_loaded)
@@ -3873,7 +3876,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                 f.close()
 
         try:
-            self._images = [get_relative_path(x, game.working_directory) for x in images]  # make storage relative
+            self._images = [get_relative_path(x, game.working_directory if game else '') for x in images]  # make storage relative
         except ValueError:  # cx_Freeze on windows on different mounts may confuse relpath.
             self._images = images
 
@@ -6915,7 +6918,7 @@ class Text(Item, metaclass=use_on_events):
     def resource_offset(self):
         return get_resource(self.resource_name, subkey="offset")[-1]
 
-    def load_assets(self, game):
+    def load_assets(self, game=None):
         self.game = game
         return self.create_label()
 
@@ -6970,7 +6973,7 @@ class Text(Item, metaclass=use_on_events):
         #        except TypeError:
         #            print("ERROR: Unable to create Label for '%s'"%self._animated_text)
 
-        set_resource(self.resource_name, resource=label)
+        set_resource(self.resource_name, w=label.content_width, h=label.content_height, resource=label)
 
         if self.offset:
             label_offset = Label(self._animated_text,
@@ -9066,15 +9069,15 @@ class Game(metaclass=use_on_events):
         self._generator_callback = None
         self._generator_progress = None
 
-        # this session's graphical settings
+        # this session's graphical settings, probably overwritten by settings and user values
         self.fullscreen = fullscreen
-        self.autoscale = False
+        self.autoscale = DEFAULT_AUTOSCALE
         self._window = None
         self._window_dx = 0  # offset graphics on the window
         self._window_dy = 0
 
         self.camera = Camera(self)  # the camera object
-        self.settings = None  # game-wide settings
+        self.settings = Settings()  # game-wide settings
         # initialise sound
         if mixer == "pygame":
             log.info("INITIALISE MIXER START")
@@ -9296,11 +9299,8 @@ class Game(metaclass=use_on_events):
         if "lowmemory" in CONFIG and CONFIG["lowmemory"]:  # use override from game.conf
             self.low_memory = CONFIG["lowmemory"]
 
-        if not self.settings:
-            self.settings = Settings()
-
-        fullscreen = self.settings.fullscreen if self.settings and self.settings.fullscreen else DEFAULT_FULLSCREEN
-        self.autoscale = self.settings.autoscale if self.settings else DEFAULT_AUTOSCALE
+        fullscreen = self.settings.fullscreen if self.settings and self.settings.fullscreen else self.fullscreen
+        #self.autoscale = self.settings.autoscale if self.settings else self.autoscale
 
         if "fullscreen" in CONFIG and CONFIG["fullscreen"]:  # use override from game.conf
             fullscreen = CONFIG["fullscreen"]
@@ -12166,6 +12166,10 @@ class Game(metaclass=use_on_events):
                 splash_finish(0, self)
             else:
                 pyglet.clock.schedule_once(splash_finish, duration, self)
+
+    def on_add_to_scene(self, obj):
+        # useful for queuing an add when there is no scene yet but will be by the time this runs
+        self.scene.on_add(obj)
 
     def on_remap_joystick(self):
         self.settings.joystick_interact = -1
