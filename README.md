@@ -33,16 +33,16 @@ TBA
 
 #### Linux ####
 
-python setup.py install
+python3 setup.py install --user pyvida
 
 ### Dependencies ###
 
- * pyglet 1.2a or above
+ * pyglet 1.5.11
  * pygame (for music and sound)
  * python 3.3+
 
-Currently testing on pyglet 1.3. To install use:
-pip install --upgrade https://bitbucket.org/pyglet/pyglet/get/tip.zip#egg=pyglet-1.3.0
+Older versions of pyvida before 6.2.0 need the older pyglet 1.3:
+>pip install --upgrade https://bitbucket.org/pyglet/pyglet/get/tip.zip#egg=pyglet-1.3.0
 
 ### Writing a game in pyvida ###
 
@@ -82,7 +82,10 @@ def on_<event>(self) method.
 
 
 ### Tests ###
-pip3 install pytest pytest-mock
+pip3 install pytest-cov pytest-mock --user
 
-Run the tests:
+#### Run the tests:
 python3 tests.py
+
+#### Coverage
+pytest --cov=pyvida test_pyvida.py

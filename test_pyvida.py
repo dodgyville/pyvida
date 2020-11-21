@@ -3,8 +3,16 @@ pytest tests
 """
 import pytest
 from unittest.mock import MagicMock
+from time import sleep
 
-from pyvida import Game, fit_to_screen
+import pyglet
+
+from pyvida import (
+    fit_to_screen,
+    Game,
+    PlayerPygletMusic,
+    PlayerPygletSFX
+)
 
 
 class TestFullscreen:
@@ -47,6 +55,83 @@ class TestFullscreen:
         assert game._window_dy == expected_displacement[1]  # displacement by fullscreen mode
 
 
-class TestClass:
-    def test_(self):
-        pass
+class TestGame:
+    def test_game_init(self):
+        g = Game()
+        g.init()
+
+        assert g.resolution == (1920, 1080)
+
+    def test_screen(self):
+        g = Game()
+
+        assert g.screen
+        assert type(g.screen) == pyglet.canvas.xlib.XlibScreen
+
+    def test_screens(self):
+        g = Game()
+
+        assert len(g.screens) == 2
+
+    def test_reset_window(self):
+        res = [1920, 1080]
+        game = Game()
+        game.resolution = res
+        game._window = MagicMock()
+        game._window.get_size.return_value = res
+
+        game.reset_window(fullscreen=False, create=False)
+
+        assert game.fullscreen == False
+
+
+class TestPlayerPygletSFX:
+    def test_init(self):
+        game = Game()
+        p = PlayerPygletSFX(game)
+        assert not p._sound
+
+    def test_play_full(self):
+        game = Game()
+        p = PlayerPygletSFX(game)
+        p.load("test_data/sfx/achievement.ogg", 1.0)
+        assert p._sound
+        p.play()
+        sleep(1.2)
+
+    def test_play_soft(self):
+        game = Game()
+        p = PlayerPygletSFX(game)
+        p.load("test_data/sfx/achievement.ogg", 0.3)
+        assert p._sound
+        p.play()
+        sleep(1.2)
+
+
+class TestPlayerPygletMusic:
+    def test_init(self):
+        game = Game()
+        p = PlayerPygletMusic(game)
+        assert not p._music
+
+    def test_play(self):
+        game = Game()
+        game.init()
+        p = PlayerPygletMusic(game)
+        p.load("test_data/music/dos4gw_newwake.ogg")
+        assert p._music
+        p.play(loops=0)
+        while p.busy():
+            pyglet.clock.tick()
+            pyglet.app.platform_event_loop.dispatch_posted_events()
+
+    def test_play_loop(self):
+        game = Game()
+        game.init()
+        p = PlayerPygletMusic(game)
+        p.load("test_data/music/dos4gw_newwake.ogg")
+        assert p._music
+        p.play(loops=1)
+        while p.busy():
+            pyglet.clock.tick()
+            pyglet.app.platform_event_loop.dispatch_posted_events()

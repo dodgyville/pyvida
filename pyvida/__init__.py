@@ -1,4 +1,7 @@
-"""pyvida - cross platform point-and-click adventure game engine
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+r"""
+pyvida - cross platform point-and-click adventure game engine
                                                          _______
 _________   _...._                  .----.     .----..--.\  ___ `'.
 \        |.'      '-. .-.          .-\    \   /    / |__| ' |--.\  \
@@ -16,7 +19,7 @@ GPL3
 """
 
 from argparse import ArgumentParser
-from collections import Iterable
+from collections.abc import Iterable
 from datetime import datetime, timedelta
 import copy
 import gc
@@ -53,7 +56,7 @@ import pyglet.clock
 
 
 VERSION_SAVE = 5  # save/load version, only change on incompatible changes
-__version__ = "6.1.7"
+__version__ = "6.2.0"
 
 # major incompatibilities, backwards compat (can run same scripts), patch number
 VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH = [int(x) for x in __version__.split(".")]
@@ -3802,7 +3805,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                     action.available_for_pathplanning = False
 
     def _python_path(self):
-        """ Replace // with \ in all filepaths for this object (used to repair old window save files """
+        r""" Replace // with \ in all filepaths for this object (used to repair old window save files """
         self._images = [x.replace("\\", "/") for x in self._images]
         for action in self._actions.values():
             action._image = action._image.replace("\\", "/")
@@ -7907,7 +7910,7 @@ class Camera(metaclass=use_on_events):  # the view manager
         self.game.on_wait()
 
 
-class PlayerPygletSFX():
+class PlayerPygletSFX:
     def __init__(self, game):
         self._sound = None
         self.game = game
@@ -7920,12 +7923,16 @@ class PlayerPygletSFX():
             log.debug("loading sfx")
             log.debug(os.getcwd())
             log.debug(fname)
-        if self._sound: self._player.pause()
-        #        self._sound = pygame.mixer.Sound(fname)
+        p = Path(fname)
+        if not p.exists():
+            log.warning("Unable to find %s" % fname)
+
+        if self._sound:
+            self._player.pause()
         try:
             self._sound = pyglet.media.load(fname, streaming=False)
         except pyglet.media.sources.riff.WAVEFormatException:
-            print("AVbin is required to decode compressed media. Unable to load ", fname)
+            log.warning("AVbin is required to decode compressed media. Unable to load %s" % fname)
         new_volume = volume
         self.volume(new_volume)
 
@@ -7965,7 +7972,7 @@ class PlayerPygletSFX():
             self._player.volume = v
 
 
-class PlayerPygletMusic():
+class PlayerPygletMusic:
     def __init__(self, game):
         self.game = game
         self._music = None
@@ -7998,13 +8005,14 @@ class PlayerPygletMusic():
         if start > 0:
             self._player.seek(start)
         if loops == -1:
-            self._player.eos_action = pyglet.media.SourceGroup.loop
+            self._player.loop = True
         elif loops > 0:
             for i in range(0, loops):
                 self._player.queue(self._music)
-        self._player.play()
-
-    #        pygame.mixer.music.play(loops=loops, start=start)
+        try:
+            self._player.play()
+        except pyglet.media.exceptions.MediaException:
+            pass
 
     def position(self):
         """ Note, this returns the number of seconds, for use with OGG. """
@@ -8020,7 +8028,7 @@ class PlayerPygletMusic():
             self._player.volume = v
 
     def busy(self):
-        return False
+        return self._player.playing if self._music else False
 
 
 class PlayerPygameSFX():
@@ -9288,24 +9296,30 @@ class Game(metaclass=use_on_events):
         if "fullscreen" in CONFIG and CONFIG["fullscreen"]:  # use override from game.conf
             fullscreen = CONFIG["fullscreen"]
 
-        options = self.parser.parse_args()
 
-        if options.output_version:
-            print("%s, %s, %s" % (self.name, CONFIG["version"], CONFIG["date"]))
-            return
+        options_resolution = None
+        if "pytest" not in self.parser.prog:
+            options = self.parser.parse_args()
 
-        if options.fullscreen:
-            fullscreen = not fullscreen
+            if options.output_version:
+                print("%s, %s, %s" % (self.name, CONFIG["version"], CONFIG["date"]))
+                return
 
-        if options.resizable:
-            self.resizable = True
+            if options.fullscreen:
+                fullscreen = not fullscreen
+
+            if options.resizable:
+                self.resizable = True
+
+            if options.resolution:
+                options_resolution = options.resolution
 
         override_resolution = override_resolution
         # two ways to override a resolution, from the game.conf file or from the commandline
         if "resolution" in CONFIG and CONFIG["resolution"]:  # use override from game.conf
             override_resolution = CONFIG["resolution"]
-        if options.resolution:  # force a resolution from the commandline
-            override_resolution = options.resolution
+        if options_resolution:  # force a resolution from the commandline
+            override_resolution = options_resolution
 
         if override_resolution:  # force a resolution
             if override_resolution == "0":  # use game resolution with no scaling.
@@ -9352,7 +9366,7 @@ class Game(metaclass=use_on_events):
         # the pyvida game scripting event loop, XXX: limited to actor fps
         pyglet.clock.schedule_interval(self.update, 1 / self.default_actor_fps)
         self._window.on_draw = self.pyglet_draw
-        pyglet.clock.set_fps_limit(self.fps)
+        # pyglet.clock.set_fps_limit(self.fps)
 
     def start_engine_lock(self, fps=None):
         # Force game to draw at least at a certain fps (default is 30 fps)
@@ -9461,7 +9475,7 @@ class Game(metaclass=use_on_events):
 
         pyglet.clock.unschedule(self.update)
         pyglet.clock.schedule_interval(self.update, 1 / actor_fps)
-        pyglet.clock.set_fps_limit(fps)
+        # pyglet.clock.set_fps_limit(fps)
 
     def on_set_fps(self, v):
         self.fps = v
@@ -12022,7 +12036,7 @@ class Game(metaclass=use_on_events):
     @property
     def screen(self):
         """ Return the screen being used to display the game. """
-        display = pyglet.window.get_platform().get_default_display()
+        display = pyglet.canvas.get_display()
         if self.settings and self.settings.preferred_screen is not None:
             try:
                 screen = display.get_screens()[self.settings.preferred_screen]
@@ -12035,7 +12049,8 @@ class Game(metaclass=use_on_events):
     @property
     def screens(self):
         """ return available screens """
-        return pyglet.window.get_platform().get_default_display().get_screens()
+        display = pyglet.canvas.get_display()
+        return display.get_screens()
 
     def reset_window(self, fullscreen, create=False):
         """ Make the game screen fit the window, create if requested """
