@@ -19,6 +19,7 @@ GPL3
 """
 
 from argparse import ArgumentParser
+from collections import deque
 from collections.abc import Iterable
 from datetime import datetime, timedelta
 import copy
@@ -309,7 +310,7 @@ if DEBUG_NAMES:
 # ENABLE_FKEYS = CONFIG["editor"] # debug shortcut keys
 ENABLE_EDITOR = False and EDITOR_AVAILABLE  # default for editor. Caution: This starts module reloads which ruins pickles
 ENABLE_PROFILING = False  # allow profiling
-ENABLE_LOGGING = True
+ENABLE_LOGGING = False # enable debug logging
 DEFAULT_TEXT_EDITOR = "gedit"
 
 # AVAILABLE BACKENDS
@@ -722,8 +723,8 @@ if logging:
     if ENABLE_LOGGING:
         log_level = logging.DEBUG  # what level of debugging
     else:
-        log_level = logging.WARNING
-    log_level = logging.INFO
+        #log_level = logging.WARNING
+        log_level = logging.INFO
     log = create_log("pyvida", log_level)
     log.warning("MONTAGE IMPORT ONLY DOES A SINGLE STRIP")
     log.warning("Actor.__getstate__ discards essential USES information")
@@ -2218,7 +2219,7 @@ class Action(object):
 
         fname = os.path.splitext(self._image)[0]
         mname = get_best_file(game, fname + ".montage")
-        if "mod" in mname:
+        if "mod" in mname and logging:
             log.info("mod detect for action, loading %s" % fname)
         w, h, num = self._load_montage(mname)  # always reload incase mod is added or removed
 
@@ -4257,14 +4258,17 @@ class Actor(MotionManager, metaclass=use_on_events):
         name = self.display_text if self.display_text is not None else self.name
         if self.game._output_walkthrough and self.game._trunk_step:
             print("%s says \"%s\"" % (name, statement))
-        log.info("on_ask before _says: %s.busy = %i" % (self.name, self.busy))
+        if logging:
+            log.info("on_ask before _says: %s.busy = %i" % (self.name, self.busy))
         kwargs["key"] = None  # deactivate on_says keyboard shortcut close
         items = self._says(statement, **kwargs)
-        log.info("on_ask after _says: %s.busy = %i" % (self.name, self.busy))
+        if logging:
+            log.info("on_ask after _says: %s.busy = %i" % (self.name, self.busy))
         label = None
         keys = {0: K_1, 1: K_2, 2: K_3, 3: K_4, 4: K_5, 5: K_6}  # Map upto 6 options to keys
         if len(args) == 0:
-            log.error("No arguments sent to %s on_ask, skipping" % (self.name))
+            if logging:
+                log.error("No arguments sent to %s on_ask, skipping" % (self.name))
             return
         for item in items:
             if isinstance(item, Text):
@@ -4381,7 +4385,8 @@ class Actor(MotionManager, metaclass=use_on_events):
         if block_for_user is False, then DON'T make the game wait until processing next event
         """
         # do high contrast if requested and available
-        log.info("%s on says %s" % (self.name, text))
+        if logging:
+            log.info("%s on says %s" % (self.name, text))
         background = using if using else None
         if self.game._info_object:  # clear info object
             self.game._info_object.display_text = " "
@@ -4944,7 +4949,8 @@ class Actor(MotionManager, metaclass=use_on_events):
 
     def on_fade(self, target, action=None, seconds=3, block=False):  # actor.fade
         """ target is 0 - 255 """
-        log.info("%s fade to %i" % (self.name, target))
+        if logging:
+            log.debug("%s fade to %i" % (self.name, target))
         if action:
             self._do(action)
         if self.game._headless:  # headless mode skips sound and visuals
@@ -4959,7 +4965,8 @@ class Actor(MotionManager, metaclass=use_on_events):
             self.busy += 1
             self.game.on_wait()  # make all other events wait too.
             self._opacity_target_block = True
-            log.info("%s fade has requested block, so increment busy to %i" % (self.name, self.busy))
+            if logging:
+                log.info("%s fade has requested block, so increment busy to %i" % (self.name, self.busy))
 
     def on_fade_in(self, action=None, seconds=3, block=False):  # actor.fade_in
         self.on_fade(255, action=action, seconds=seconds, block=block)
@@ -5257,7 +5264,8 @@ class Actor(MotionManager, metaclass=use_on_events):
                     goto_motion = action.name
                 break
 
-        log.info("%s preferred goto action is %s" % (self.name, goto_action))
+        if logging:
+            log.info("%s preferred goto action is %s" % (self.name, goto_action))
         if goto_motion is None:  # create a set of evenly spaced deltas to get us there:
             # how far we can travel along the distance in one update
             # use the action that will be doing the goto and use its speed for our deltas
@@ -7448,6 +7456,7 @@ class MenuManager(metaclass=use_on_events):
                 return
             if self.game.mixer and self.game.mixer._force_mute or self.game.mixer._session_mute:
                 return
+        log.debug(f"Playing menu sfx using {sfx}")
         sfx.play()
 
     def on_play_enter_sfx(self):
@@ -7919,7 +7928,7 @@ class PlayerPygletSFX:
         self.game = game
         self.loops = 0
         self._volume = 1
-        self._player = None
+        self._player = pyglet.media.Player()
 
     def load(self, fname, volume):
         if logging:
@@ -7946,9 +7955,11 @@ class PlayerPygletSFX:
                 # it queues the sound 12 times as a hack
                 loops = 12
             # self._player.queue(self._sound)
-            if self._player:
-                self._player.delete()
-            self._player = pyglet.media.Player()
+            #if self._player:
+            #    log.debug(f"delete player for {self}")
+            #    self._player.delete()
+            log.debug(f"creating player for {self}")
+            #self._player = pyglet.media.Player()
             self._player.volume = self._volume
             self._player.queue(self._sound)
             if loops == -1:
@@ -7957,6 +7968,7 @@ class PlayerPygletSFX:
                 for i in range(0, loops):
                     self._player.queue(self._sound)
             try:
+                log.debug(f"play on _player for {self}")
                 self._player.play()
             except pyglet.media.exceptions.MediaException:
                 pass
@@ -8195,11 +8207,11 @@ class Mixer(metaclass=use_on_events):
             log.debug("INITIALISE PLAYERS")
             log.debug("PYGAME MIXER REPORTS", pygame.mixer.get_init())
             self._music_player = PlayerPygameMusic(game)
-            self._sfx_players.extend([PlayerPygameSFX(game), PlayerPygameSFX(game)])  # two SFX can play at once
+            self._sfx_players = deque([PlayerPygameSFX(game) for _ in range(4)])  # four sounds at most
             self._ambient_player = PlayerPygameSFX(game)
         else:
             self._music_player = PlayerPygletMusic(game)
-            self._sfx_players.extend([PlayerPygletSFX(game), PlayerPygletSFX(game)])
+            self._sfx_players = deque([PlayerPygletSFX(game) for _ in range(4)])
             self._ambient_player = PlayerPygletSFX(game)
 
     def __getstate__(self):  # actor.getstate
@@ -8267,7 +8279,6 @@ class Mixer(metaclass=use_on_events):
                     self._music_stash = None
             else:  # no stash so just stop the current music
                 self.on_music_stop(volume=volume)
-
 
     def on_music_play(self, fname=None, description=None, loops=-1, start=None, volume=None, push=False,
                       rule_mode=FRESH_BUT_SHARE):

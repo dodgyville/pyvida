@@ -38,7 +38,7 @@ python3 setup.py install --user pyvida
 ### Dependencies ###
 
  * pyglet 1.5.11
- * pygame (for music and sound)
+ * pygame (optional - for music and sound if pyglet doesn't work)
  * python 3.3+
 
 Older versions of pyvida before 6.2.0 need the older pyglet 1.3:
@@ -84,8 +84,8 @@ def on_<event>(self) method.
 ### Tests ###
 pip3 install pytest-cov pytest-mock --user
 
-#### Run the tests:
-python3 tests.py
+#### Run the tests
+pytest test_pyvida.py
 
-#### Coverage
+#### Code coverage
 pytest --cov=pyvida test_pyvida.py
