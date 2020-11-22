@@ -186,7 +186,7 @@ def load_config():
             data = f.readlines()
             for d in data:
                 if len(d) > 2 and "=" in d:
-                    print(f"Found CONFIG setting {d}")
+                    print(f"Found CONFIG setting {d.strip()}")
                     key, v = d.strip().split("=")
                     if v.upper() == "FALSE":
                         v = False
@@ -9223,6 +9223,7 @@ class Game(metaclass=use_on_events):
         self._window_editor = None
         self._window_editor_objects = []
         self._screen_size_override = None  # game.resolution for the game, this is the window size.
+        self._preferred_screen_override = None  # which monitor to use
 
         self.low_memory = False  # low memory mode for this session (from CONFIG or Settings)
         self.flip_anchor = False  # toggle behaviour of relocate for backwards compat
@@ -9313,6 +9314,10 @@ class Game(metaclass=use_on_events):
         if "fullscreen" in CONFIG and CONFIG["fullscreen"]:  # use override from game.conf
             fullscreen = CONFIG["fullscreen"]
             log.info("Setting fullscreen from CONFIG to %s" % fullscreen)
+
+        if "preferred_screen" in CONFIG and CONFIG["preferred_screen"]: # override monitor choice
+            self._preferred_screen_override = int(CONFIG["preferred_screen"].strip())
+            log.info(f"Setting _preferred_screen_override from CONFIG to {self._preferred_screen_override}")
 
         options_resolution = None
         if "pytest" not in self.parser.prog:
@@ -12073,20 +12078,31 @@ class Game(metaclass=use_on_events):
     def screen(self):
         """ Return the screen being used to display the game. """
         display = pyglet.canvas.get_display()
-        if self.settings and self.settings.preferred_screen is not None:
+        preferred = self.settings.preferred_screen if self.settings and self.settings.preferred_screen is not None else None
+        preferred = self._preferred_screen_override if self._preferred_screen_override is not None else preferred
+
+        screens = display.get_screens()
+
+        if preferred is not None:
             try:
-                screen = display.get_screens()[self.settings.preferred_screen]
+                screen = display.get_screens()[preferred]
             except IndexError:
+                log.error(f"Unable to use preferred monitor {preferred}, using default.")
                 screen = display.get_default_screen()
         else:
             screen = display.get_default_screen()
+
+        log.info(f"Found {len(screens)} screens: {[(x.width, x.height) for x in screens]}, preferred {preferred}, returning {screen.width}x{screen.height}")
         return screen
 
     @property
     def screens(self):
         """ return available screens """
         display = pyglet.canvas.get_display()
-        return display.get_screens()
+        screens = display.get_screens()
+        log.info(f"Found {len(screens)} screens: {[(x.width, x.height) for x in screens]}")
+
+        return screens
 
     def reset_window(self, fullscreen, create=False):
         """ Make the game screen fit the window, create if requested """
@@ -12101,7 +12117,7 @@ class Game(metaclass=use_on_events):
         if not fullscreen and is_request_too_big_for_screen:
             w *= 0.9  # game graphics and window to be 90% of screen size
             h *= 0.9
-            log.info(f"Autoscale but not fullscreen so making graphics slightly smaller than screen {w}, {h}")
+            log.info(f"Game is not fullscreen but window is too big so making slightly smaller than screen {w}, {h}")
 
         resolution, new_scale = fit_to_screen((w, h), self.resolution)
         log.info("fit_to_screen gives resolution %s and new_scale %s" % (resolution, new_scale))
