@@ -181,10 +181,12 @@ def load_config():
     config = {"editor": False, "mixer": "pygame", "mods": True, "language": None, "internet": None,
               "lowmemory": None}  # defaults
     if os.path.exists(fname):
+        print(f"Found config file {fname}")
         with open(fname, "r") as f:
             data = f.readlines()
             for d in data:
                 if len(d) > 2 and "=" in d:
+                    print(f"Found CONFIG setting {d}")
                     key, v = d.strip().split("=")
                     if v.upper() == "FALSE":
                         v = False
@@ -9255,6 +9257,11 @@ class Game(metaclass=use_on_events):
         self.mouse_position_raw = (-50, -50)  # last known position of mouse (init offscreen to hide joystick)
         self.mouse_position = (0, 0)  # last known position of mouse, scaled
 
+        # messages
+        self.message_duration = 5  # how many seconds to display each message
+        self.message_position = (CENTER, BOTTOM)  # position of message queue
+        self._message_object = None
+
         # enable the player's clickable area for one event, useful for interacting
         # with player object on occasion
         self._allow_one_player_interaction = False
@@ -9298,13 +9305,14 @@ class Game(metaclass=use_on_events):
 
         if "lowmemory" in CONFIG and CONFIG["lowmemory"]:  # use override from game.conf
             self.low_memory = CONFIG["lowmemory"]
+            log.info("Setting low memory to %s"% self.low_memory)
 
         fullscreen = self.settings.fullscreen if self.settings and self.settings.fullscreen else self.fullscreen
-        #self.autoscale = self.settings.autoscale if self.settings else self.autoscale
+        log.info("Setting fullscreen from settings to %s" % fullscreen)
 
         if "fullscreen" in CONFIG and CONFIG["fullscreen"]:  # use override from game.conf
             fullscreen = CONFIG["fullscreen"]
-
+            log.info("Setting fullscreen from CONFIG to %s" % fullscreen)
 
         options_resolution = None
         if "pytest" not in self.parser.prog:
@@ -9316,6 +9324,7 @@ class Game(metaclass=use_on_events):
 
             if options.fullscreen:
                 fullscreen = not fullscreen
+                log.info("Setting fullscreen from command line options to %s" % fullscreen)
 
             if options.resizable:
                 self.resizable = True
@@ -9323,20 +9332,24 @@ class Game(metaclass=use_on_events):
             if options.resolution:
                 options_resolution = options.resolution
 
-        override_resolution = override_resolution
         # two ways to override a resolution, from the game.conf file or from the commandline
         if "resolution" in CONFIG and CONFIG["resolution"]:  # use override from game.conf
             override_resolution = CONFIG["resolution"]
+            log.info("Setting resolution from CONFIG to %s" % override_resolution)
+
         if options_resolution:  # force a resolution from the commandline
             override_resolution = options_resolution
+            log.info("Setting resolution from options to %s" % override_resolution)
 
         if override_resolution:  # force a resolution
             if override_resolution == "0":  # use game resolution with no scaling.
-                scale = 1.0
+                #scale = 1.0
+                pass
             else:  # custom window size
                 nw, nh = override_resolution.split("x")
                 nw, nh = int(nw), int(nh)
                 self._screen_size_override = (nw, nh)
+                log.info(f"Override resolution so setting _screen_size_override to {self._screen_size_override}")
         self.reset_window(fullscreen, create=True)  # create self._window
 
         self._window.on_key_press = self.on_key_press
@@ -9353,8 +9366,10 @@ class Game(metaclass=use_on_events):
         contrast_item.load_assets(self)
 
         # setup on screen messages
+        # TODO should come from config and settings
         self.message_duration = 5  # how many seconds to display each message
         self.message_position = (CENTER, BOTTOM)  # position of message queue
+
         # special object for onscreen messages
         self._message_object = Text("_message object", colour=FONT_MESSAGE_COLOUR, font=FONT_MESSAGE,
                                     size=FONT_MESSAGE_SIZE, offset=2)
@@ -9465,6 +9480,7 @@ class Game(metaclass=use_on_events):
 
         if logging:  # redirect log to file
             LOG_FILENAME = get_safe_path(os.path.join(self.save_directory, 'pyvida5.log'))
+            print("log going to %s"%LOG_FILENAME)
             redirect_log(log, LOG_FILENAME)
 
     def log(self, txt):
@@ -12074,35 +12090,35 @@ class Game(metaclass=use_on_events):
 
     def reset_window(self, fullscreen, create=False):
         """ Make the game screen fit the window, create if requested """
-        # if fullscreen: # if fullscreen, use the window we are currently on.
-        #    w, h = self._window.get_size()
-        # else:
         w, h = self.screen_size
-        # print("w,h,",self.screen_size)
+
+        log.info(f"Starting Game.reset_window with screen size {self.screen_size} and resolution {self.resolution} and fullscreen {fullscreen}")
 
         width, height = self.resolution
         scale = 1.0
 
-        fit_scale = 1.0  # game graphics to fill 100% of game window
-        if not fullscreen:
+        is_request_too_big_for_screen = w >= self.screen.width or h >= self.screen.height
+        if not fullscreen and is_request_too_big_for_screen:
             w *= 0.9  # game graphics and window to be 90% of screen size
             h *= 0.9
+            log.info(f"Autoscale but not fullscreen so making graphics slightly smaller than screen {w}, {h}")
 
         resolution, new_scale = fit_to_screen((w, h), self.resolution)
-        # else: # not fullscreen and game does not want to scale in window mode
-        #    resolution, new_scale = 
-        #        print("FULLSCREEN", fullscreen,"resolution of screen if scaling",resolution,"game resolution",self.resolution)
-        #        print("game resolution", width, height, "screen size",w,h)
+        log.info("fit_to_screen gives resolution %s and new_scale %s" % (resolution, new_scale))
+
         # only scale non-fullscreen window if it's larger than screen.
         # or if it's fullscreen, always scale to fit screen
         if fullscreen or (self.autoscale and not fullscreen and (width != w or height != h)):
             # resolution, scale = fit_to_screen((w, h), resolution)
             width, height = resolution
             scale = new_scale
+            log.info(f"will scale graphics {scale}")
         #            print("SCALING",resolution, scale)
         if create:
-            # print("creating window")
             sw, sh = self._screen_size_override if self._screen_size_override else (width, height)
+            if self._screen_size_override:
+                log.info(f"Because of _screen_size_override {self._screen_size_override}, ignoring width,height {width}x{height}")
+            log.info(f"Creating window {sw}x{sh}")
             self._window = Window(width=sw, height=sh, fullscreen=fullscreen, screen=self.screen,
                                   resizable=self.resizable)
             # import pdb; pdb.set_trace()

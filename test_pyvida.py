@@ -86,10 +86,11 @@ class TestFullscreen:
 
 class TestGame:
     def test_game_init(self):
-        g = Game()
+        g = Game(resolution=(100, 100))
+        g.autoscale = False
         g.init()
 
-        assert g.resolution == (1920, 1080)
+        assert g.resolution == (100, 100)
 
     def test_screen(self):
         g = Game()
@@ -103,8 +104,9 @@ class TestGame:
         assert len(g.screens) == 2
 
     def test_reset_window(self):
-        res = [1920, 1080]
+        res = [100,100]
         game = Game()
+        game.autoscale = False
         game.resolution = res
         game._window = MagicMock()
         game._window.get_size.return_value = res
@@ -117,11 +119,13 @@ class TestGame:
 class TestPlayerPygletSFX:
     def test_init(self):
         game = Game(resolution=(100, 100))
+        game.autoscale = False
         p = PlayerPygletSFX(game)
         assert not p._sound
 
     def test_play_full(self):
         game = Game(resolution=(100, 100))
+        game.autoscale = False
         p = PlayerPygletSFX(game)
         p.load("test_data/data/sfx/achievement.ogg", 1.0)
         assert p._sound
@@ -130,6 +134,7 @@ class TestPlayerPygletSFX:
 
     def test_play_soft(self):
         game = Game(resolution=(100, 100))
+        game.autoscale = False
         p = PlayerPygletSFX(game)
         p.load("test_data/data/sfx/achievement.ogg", 0.3)
         assert p._sound
@@ -145,6 +150,7 @@ class TestPlayerPygletMusic:
 
     def test_play(self):
         game = Game(resolution=(100, 100))
+        game.autoscale = False
         game.init()
         p = PlayerPygletMusic(game)
         p.load("test_data/data/music/dos4gw_newwake.ogg")
@@ -156,6 +162,7 @@ class TestPlayerPygletMusic:
 
     def test_play_loop(self):
         game = Game(resolution=(100, 100))
+        game.autoscale = False
         game.init()
         p = PlayerPygletMusic(game)
         p.load("test_data/data/music/dos4gw_newwake.ogg")
@@ -169,6 +176,7 @@ class TestPlayerPygletMusic:
 class TestSmart:
     def test_smart_basic(self):
         game = Game("Test", "1.0", "1.0", "testpyvida", fps=16, afps=16, resolution=(100, 100))
+        game.autoscale = False
         game.working_directory = TEST_PATH
         game._smart()
         assert len(game._items) == 2
@@ -179,6 +187,7 @@ class TestSmart:
 class TestActor:
     def test_smart(self):
         game = Game(resolution=(100, 100))
+        game.autoscale = False
         game.working_directory = "/home/luke/Projects/pyvida/test_data"
         a = Actor("Adam")
         a.smart(game)
@@ -188,6 +197,7 @@ class TestActor:
 
     def test_load_assets(self):
         game = Game(resolution=(100, 100))
+        game.autoscale = False
         game.working_directory = "/home/luke/Projects/pyvida/test_data"
         a = Actor("Adam")
         a.smart(game)
@@ -202,8 +212,8 @@ class TestActor:
         assert list(a._actions.keys()) == ["idle"]
 
 
-def create_basic_scene():
-    game = Game("Test", "1.0", "1.0", "testpyvida", fps=16, afps=16, resolution=(1680, 1050))
+def create_basic_scene(resolution=(1680, 1050)):
+    game = Game("Test", "1.0", "1.0", "testpyvida", fps=16, afps=16, resolution=resolution)
     game.autoscale = False
     game.working_directory = "/home/luke/Projects/pyvida/test_data"
     game.init()
