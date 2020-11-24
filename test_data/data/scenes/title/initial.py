@@ -14,6 +14,4 @@ def load_state(game, scene):
     logo.rescale(1.00)
     logo.reanchor((0, 0))
     logo.restand((150, 0))
-    logo.retalk((100, 221))
-    logo.respeech((410, 261))
     logo.relocate(scene, (100, 800))

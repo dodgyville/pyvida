@@ -89,3 +89,8 @@ pytest test_pyvida.py
 
 #### Code coverage
 pytest --cov=pyvida test_pyvida.py
+
+
+#### changelog
+6.10.0
+- removed deprecated retalk and respeech

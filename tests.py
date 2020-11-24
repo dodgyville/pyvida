@@ -270,16 +270,16 @@ class EventTest(unittest.TestCase):
         self.actor.relocate(self.scene)
         event = self.game._events[0]
         self.assertEqual(len(self.game._events), 1)
-        self.assertEqual(event[0].__name__, "on_relocate")
-        self.assertEqual(event[1][0], self.actor)
-        self.assertEqual(event[1][1], self.scene)
+        self.assertEqual(event[0], "on_relocate")
+        self.assertEqual(event[1], self.actor)
+        self.assertEqual(event[2][0], self.scene)
 
     def test_on_says_using(self):
         self.actor.says("Hello World", using="data/items/_test_item", ok=None)
         self.assertEqual(len(self.game._events), 1)
         event = self.game._events[0]
         self.assertEqual(self.game._event, None)
-        self.assertEqual(event[0].__name__, "on_says")
+        self.assertEqual(event[0], "on_says")
         self.assertEqual(event[1][0], self.actor)
         self.assertEqual(event[1][1], "Hello World")
         self.game.update(0)

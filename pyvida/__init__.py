@@ -222,7 +222,8 @@ language = CONFIG["language"]
 
 
 # language = "de"  # XXX forcing german
-
+gettext = None
+_ = None
 
 def set_language(new_language=None):
     if new_language:
@@ -936,9 +937,9 @@ def _set_function(game, actors, slug=None, fn="interact", full=None):
         if full:
             fn_name = full  # all actors share the same fn
         if fn == "interact":
-            game.on_set_interact(i, get_function(game, fn_name))
+            game.immediate_set_interact(i, get_function(game, fn_name))
         else:
-            game.on_set_look(i, get_function(game, fn_name))
+            game.immediate_set_look(i, get_function(game, fn_name))
 
 
 def set_interacts(game, actors, slug=None, full=None):
@@ -1196,7 +1197,7 @@ def valid_goto_point(game, scene, obj, destination):
 
 class answer(object):
     """
-    A decorator for functions that you wish to use as options in an Actor.on_ask event
+    A decorator for functions that you wish to use as options in an Actor.immediate_ask event
 
     Keyword arguments:
     opt -- the text to display in the question
@@ -1477,6 +1478,13 @@ def use_on_events(name, bases, dic):
     return type(name, bases, dic)
 
 
+def queue_method(f):
+    def new_f(calling_obj, *args, **kwargs):
+        calling_obj.game.queue_event(f, calling_obj, *args, **kwargs)
+        # f(caller, *args, **kwargs)
+    return new_f
+
+
 def open_editor(game, filepath, track=True):
     """
         Open a text editor to edit fname, used by the editor when editing
@@ -1627,7 +1635,7 @@ class Achievement(object):
         return self.slug, self.name, self.description, self.date, self.version
 
 
-class AchievementManager(object, metaclass=use_on_events):
+class AchievementManager:
     """ Basic achievement system, hopefully to plug into Steam and other
     services one day """
 
@@ -2062,7 +2070,7 @@ def load_defaults(game, obj, name, filename):
                 val = eval(val)  # XXX not great
             if key == "fx":  # apply special FX to actor (using defaults)
                 if "sway" in val:
-                    obj.on_sway()
+                    obj.immediate_sway()
                 continue
             if key == "_fog_display_text":  # i18n display text
                 """
@@ -2599,27 +2607,46 @@ Classes
 """
 
 
-class MotionManager(metaclass=use_on_events):
+class MotionManagerOld(metaclass=use_on_events):
+    def on_motion(self, motion=None, mode=None, block=None, destructive=None, index=0):
+        """ Clear all existing motions and do just one motion.
+            mode = ONCE, LOOP (default), PINGPONG
+            index is where in the motion to start, -1 for random.
+            If variable is None then use the Motion's defaults
+        """
+        print("this is a test of the old metaclass")
+
+    @queue_method
+    def decorator_test(self, txt="this is a test of a decorator replacement for metaclass", ringo=False):
+        print(txt)
+
+
+class MotionManager:
     """ Enable subclasses to use motions"""
 
     def __init__(self):
-        self._motions = {}
-        self._applied_motions = []  # list of motions applied at the moment
+        self.motions = {}
+        self.applied_motions = []  # list of motions applied at the moment
+        self.game = None
+        self.busy = 0
+        self.name = ''
 
-    def _smart_motions(self, game, exclude=[]):
+    def _smart_motions(self, game, directory, exclude=None):
         """ smart load the motions """
-        motions = glob.glob(os.path.join(self.directory, "*.motion"))
+        if exclude is None:
+            exclude = []
+        motions = glob.glob(os.path.join(directory, "*.motion"))
         for motion_file in motions:
             motion_name = os.path.splitext(os.path.basename(motion_file))[0]
             if motion_name in exclude:
                 continue
             motion = Motion(motion_name).smart(
                 game, owner=self, filename=motion_file)
-            self._motions[motion_name] = motion
+            self.motions[motion_name] = motion
 
-    def _do_motion(self, motion, mode=None, block=None, destructive=None, index=0):
-        motion = self._motions.get(
-            motion, None) if motion in self._motions.keys() else None
+    def immediate_do_motion(self, motion, mode=None, block=None, destructive=None, index=0):
+        motion = self.motions.get(
+            motion, None) if motion in self.motions.keys() else None
         if motion:
             if mode is None:
                 mode = motion.mode
@@ -2635,7 +2662,7 @@ class MotionManager(metaclass=use_on_events):
                 motion.destructive = destructive
             if block is True and self.game._headless is False:
                 self.busy += 1
-                self.game.on_wait()  # make game wait
+                self.game.immediate_wait()  # make game wait
                 if logging:
                     log.info("%s has started motion %s, so incrementing self.busy to %s." % (
                         self.name, motion.name, self.busy))
@@ -2643,41 +2670,50 @@ class MotionManager(metaclass=use_on_events):
                 motion.apply_full_motion_to_actor(self)
                 return None  # don't add the motion as it has been fully applied.
         else:
-            log.warning("Unable to find motion for actor %s" % (self.name))
+            log.warning("Unable to find motion for actor %s" % self.name)
         return motion
 
-    def _motion(self, motion=None, mode=None, block=None, destructive=None, index=0):
-        motion = self._do_motion(motion, mode, block, destructive, index)
+    def immediate_motion(self, motion=None, mode=None, block=None, destructive=None, index=0):
+        """ Clear all existing motions and just do the requested one """
+        motion = self.immediate_do_motion(motion, mode, block, destructive, index)
         motion = [motion] if motion else []
-        self._applied_motions = motion
+        self.applied_motions = motion
 
-    def on_motion(self, motion=None, mode=None, block=None, destructive=None, index=0):
+    def immediate_add_motion(self, motion, mode=None, block=None, destructive=None):
+        motion = self.immediate_do_motion(motion, mode, block, destructive)
+        if motion is not None:
+            self.applied_motions.append(motion)
+        return motion
+
+    @queue_method
+    def motion(self, motion=None, mode=None, block=None, destructive=None, index=0):
         """ Clear all existing motions and do just one motion.
             mode = ONCE, LOOP (default), PINGPONG
             index is where in the motion to start, -1 for random.
             If variable is None then use the Motion's defaults
         """
-        self._motion(motion, mode, block, destructive, index)
+        self.immediate_motion(motion, mode, block, destructive, index)
 
-    def on_add_motion(self, motion, mode=None, block=None, destructive=None):
-        motion = self._do_motion(motion, mode, block, destructive)
-        if motion is not None:
-            self._applied_motions.append(motion)
-        return motion
+    @queue_method
+    def add_motion(self, motion, mode=None, block=None, destructive=None):
+        """ add another motion to the current motions"""
+        return self.immediate_add_motion(motion, mode, block, destructive)
 
-    def on_create_motion_from_deltas(self, name, deltas=[], mode=LOOP, blocking=False, destructive=None):
+    @queue_method
+    def create_motion_from_deltas(self, name, deltas=None, mode=LOOP, blocking=False, destructive=None):
+        if deltas is None:
+            deltas = []
         motion = Motion(name)
         motion.mode = mode
         motion.blocking = blocking
         motion.destructive = destructive
         motion.add_deltas(deltas)
-        self._motions[name] = motion
+        self.motions[name] = motion
 
 
-class Actor(MotionManager, metaclass=use_on_events):
-
+class Actor(MotionManager):
     def __init__(self, name, interact=None, display_text=None, look=None, drag=None):
-        super().__init__()
+        super(Actor, self).__init__()
         self.name = name
         self._actions = {}
         self._action = None
@@ -2793,7 +2829,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         self._directory = None  # directory this is smart loaded from (if any)
         self._images = []  # image filenames that the actions are based on
         # don't process any more events for this actor until busy is False,
-        # will block all events if game.on_wait()
+        # will block all events if game.immediate_wait()
         self.busy = 0
         self._batch = None
         #        self._events = []
@@ -2828,10 +2864,6 @@ class Actor(MotionManager, metaclass=use_on_events):
             action.load_assets(game, skip_if_loaded=skip_if_loaded)
 
         return self.switch_asset(self.action)
-
-    def on_refresh_assets(self, game):
-        self.unload_assets()
-        self.load_assets(game)
 
     def switch_asset(self, action, **kwargs):
         """ Switch this Actor's main resource to the requested action """
@@ -2868,7 +2900,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         #            sprite.rotation = self.rotate
         sprite.opacity = self.alpha
 
-        sprite.on_animation_end = sprite_callback
+        sprite.immediate_animation_end = sprite_callback
 
         # jump to end
         if self.game and self.game._headless and isinstance(sprite.image, pyglet.image.Animation):
@@ -3262,13 +3294,15 @@ class Actor(MotionManager, metaclass=use_on_events):
 
     alpha = property(get_alpha, set_alpha)
 
-    def on_opacity(self, v):
-        """ 0 - 255 """
-        self.alpha = v
-
     @property
     def resource(self):
         return get_resource(self.resource_name)[-1]
+
+    @property
+    def resource_name(self):
+        """ The key name for this actor's graphic resource in _resources"""
+        name = self.resource_name_override if self.resource_name_override else slugify(self.name)
+        return name
 
     @property
     def w(self):
@@ -3277,9 +3311,6 @@ class Actor(MotionManager, metaclass=use_on_events):
     @property
     def h(self):
         return get_resource(self.resource_name)[1]
-
-    def on_remove_fog(self):
-        self._fog_display_text = None
 
     def fog_display_text(self, actor):
         """ Use this everywhere for getting the correct name of an Actor 
@@ -3315,7 +3346,8 @@ class Actor(MotionManager, metaclass=use_on_events):
             kwargs["size"] = self.game.font_speech_size
         return kwargs
 
-    def on_queue_deltas(self, deltas, block=True, next_action=None):
+    @queue_method
+    def queue_deltas(self, deltas, block=True, next_action=None):
         """ Fake an goto action using a custom list of deltas """
         if len(deltas) > 0:
             xs, ys = zip(*deltas)
@@ -3433,11 +3465,11 @@ class Actor(MotionManager, metaclass=use_on_events):
 
         # apply motions
         remove_motions = []
-        for motion in self._applied_motions:
-            if motion.apply_to_actor(self) == False:  # motion has finished
+        for motion in self.applied_motions:
+            if motion.apply_to_actor(self) is False:  # motion has finished
                 remove_motions.append(motion)
         for motion in remove_motions:
-            self._applied_motions.remove(motion)
+            self.applied_motions.remove(motion)
 
     @property
     def default_idle(self):
@@ -3734,9 +3766,13 @@ class Actor(MotionManager, metaclass=use_on_events):
                 action_names.append(action_name)
 
         if len(action_names) > 0:
-            self.on_set_pathplanning_actions(action_names)
+            self.immediate_set_pathplanning_actions(action_names)
 
-    def on_set_pathplanning_actions(self, action_names, speeds=[]):
+    @queue_method
+    def set_pathplanning_actions(self, action_names, speeds=[]):
+        self.immediate_set_pathplanning_actions(action_names, speeds)
+
+    def immediate_set_pathplanning_actions(self, action_names, speeds=[]):
         # smart actions for pathplanning and which arcs they cover (in degrees)
         if len(action_names) == 1:
             # print("WARNING: %s ONLY ONE ACTION %s USED FOR PATHPLANNING"%(self.name, action_names[0]))
@@ -3784,7 +3820,8 @@ class Actor(MotionManager, metaclass=use_on_events):
                 # reload now to refresh existing references
                 self.game.reload_modules(modules=[module_name])
 
-    def on_swap_actions(self, actions, prefix=None, postfix=None, speeds=[], pathplanning=[]):
+    @queue_method
+    def swap_actions(self, actions, prefix=None, postfix=None, speeds=[], pathplanning=[]):
         """ Take a list of actions and replace them with prefix_action eg set_actions(["idle", "over"], postfix="off") 
             will make Actor._actions["idle"] = Actor._actions["idle_off"]
             Will also force pathplanning to the ones listed in pathplanning.
@@ -3884,7 +3921,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             self._images = images
 
         self._smart_actions(game)  # load the actions
-        self._smart_motions(game)  # load the motions
+        self._smart_motions(game, self.directory)  # load the motions
 
         if len(self._actions) > 0:  # do an action by default
             action = idle if idle in self._actions else list(self._actions.keys())[0]
@@ -4186,7 +4223,22 @@ class Actor(MotionManager, metaclass=use_on_events):
         self._debugs.append(
             rectangle(self.game, self.solid_area.move(dx, dy), (255, 15, 30, 255), absolute=absolute))
 
-    def on_animation_end(self):
+    @queue_method
+    def remove_fog(self):
+        self._fog_display_text = None
+
+    @queue_method
+    def refresh_assets(self, game):
+        self.unload_assets()
+        self.load_assets(game)
+
+    @queue_method
+    def opacity(self, v):
+        """ 0 - 255 """
+        self.alpha = v
+
+    @queue_method
+    def animation_end(self):
         """ The default callback when an animation ends """
         #        log.warning("This function seems to not do anything")
         pass
@@ -4195,7 +4247,8 @@ class Actor(MotionManager, metaclass=use_on_events):
     #        if self.resource and self.resource._animation:
     #            frame = self.resource._animation.frames[self.resource._frame_index]
 
-    def on_animation_end_once(self):
+    @queue_method
+    def animation_end_once(self):
         """ When an animation has been called once only """
         self.busy -= 1
         if logging:
@@ -4204,7 +4257,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         self._do(self._next_action)
         self._next_action = None
 
-    #    def self.on_animation_end_once_block(self):
+    #    def self.immediate_animation_end_once_block(self):
     #        """ Identical to end animation once, except also remove block on game. """
 
     def _frame(self, index):
@@ -4214,23 +4267,25 @@ class Actor(MotionManager, metaclass=use_on_events):
         if self.resource:
             self.resource._frame_index = index
 
-    def on_frame(self, index):
+    @queue_method
+    def frame(self, index):
         self._frame(index)
 
-    def on_frames(self, num_frames):
+    @queue_method
+    def frames(self, num_frames):
         """ Advance the current action <num_frames> frames """
         if not self.resource:
             return
-        self.resource._frame_index = (
-                                             self.resource._frame_index + num_frames) % len(
-            self.resource._animation.frames)
+        self.resource._frame_index = (self.resource._frame_index + num_frames) % len(self.resource._animation.frames)
 
-    def on_random_frame(self):
+    @queue_method
+    def random_frame(self):
         """ Advance the current action to a random frame """
         i = randint(0, len(self.resource._animation.frames))
         self._frame(i)
 
-    def on_asks(self, statement, *args, **kwargs):
+    @queue_method
+    def asks(self, statement, *args, **kwargs):
         """ A queuing function. Display a speech bubble with text and several replies, and wait for player to pick one.
 
             Use the @answer decorator to avoid passing in tuples
@@ -4305,13 +4360,13 @@ class Actor(MotionManager, metaclass=use_on_events):
             #            kwargs["over"] = over_option
             opt = Text("option{}".format(i), display_text=text, **kwargs)
             if i in keys.keys():
-                opt.on_key(keys[i])
+                opt.immediate_key(keys[i])
             # if self.game and not self.game._headless:
             opt.load_assets(self.game)
             padding_x = 10
             opt.x, opt.y = label.x + padding_x, label.y + label.h + i * opt.h + 5
             rx, ry, rw, rh = opt._clickable_area.flat
-            opt.on_reclickable(Rect(rx, ry, msgbox.w - (label.x + padding_x), rh))  # expand option to width of msgbox
+            opt.immediate_reclickable(Rect(rx, ry, msgbox.w - (label.x + padding_x), rh))  # expand option to width of msgbox
             # store this Actor so the callback can modify it.
             opt.tmp_creator = self.name
             # store the colour so we can undo it after hover
@@ -4341,7 +4396,8 @@ class Actor(MotionManager, metaclass=use_on_events):
         self.game.scene._add(label.name)
         return label
 
-    def on_continues(self, text, delay=0.01, step=3, duration=None):
+    @queue_method
+    def continues(self, text, delay=0.01, step=3, duration=None):
         """
         duration: auto-clear after <duration> seconds or if duration == None, use user input.
         """
@@ -4370,7 +4426,8 @@ class Actor(MotionManager, metaclass=use_on_events):
         else:
             log.error("on_continues clearing after duration not complete yet")
 
-    def on_says(self, text, *args, **kwargs):
+    @queue_method
+    def says(self, text, *args, **kwargs):
         items = self._says(text, *args, **kwargs)
         if self.game._walkthrough_auto:  # headless mode skips sound and visuals
             items[0].trigger_interact()  # auto-close the on_says
@@ -4487,7 +4544,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         label.fullscreen(True)
         label.x, label.y = x + dx, y + dy
         if key:
-            label.on_key(key)
+            label.immediate_key(key)
 
         if align == CENTER_HORIZONTAL_TOO:
             label.x += (msgbox.w // 2 - label.w // 2)
@@ -4506,7 +4563,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             log.info("%s has started on_says (%s), so increment self.busy to %s." % (
                 self.name, text, self.busy))
         if block_for_user is True:
-            self.game.on_wait()
+            self.game.immediate_wait()
 
         items = [msgbox, label]
         if ok:
@@ -4545,10 +4602,12 @@ class Actor(MotionManager, metaclass=use_on_events):
                 log.warning(
                     "Can't forget fact '%s' ... was not in memory." % fact)
 
-    def on_update_interact(self, v):
+    @queue_method
+    def update_interact(self, v):
         self.interact = v
 
-    def on_forget(self, fact):
+    @queue_method
+    def forget(self, fact):
         """ A queuing function. Forget a fact from the list of facts 
 
             Example::
@@ -4561,7 +4620,8 @@ class Actor(MotionManager, metaclass=use_on_events):
         if fact not in self.facts:
             self.facts.append(fact)
 
-    def on_remember(self, fact):
+    @queue_method
+    def remember(self, fact):
         """ A queuing function. Remember a fact to the list of facts
 
             Example::
@@ -4599,7 +4659,8 @@ class Actor(MotionManager, metaclass=use_on_events):
             item.scene._remove(item)
         return item
 
-    def on_gets(self, item, remove=True, ok=-1, action="portrait", collection="collection", scale=1.0):
+    @queue_method
+    def gets(self, item, remove=True, ok=-1, action="portrait", collection="collection", scale=1.0):
         """ add item to inventory, remove from scene if remove == True """
         item = self._gets(item, remove, collection, scale)
         if item == None:
@@ -4641,7 +4702,7 @@ class Actor(MotionManager, metaclass=use_on_events):
         #            self.tmp_items = [label.name]
 
         #        if logging: log.info("%s has requested game to wait for on_gets to finish, so game.waiting to True."%(self.name))
-        #        self.game.on_wait()
+        #        self.game.immediate_wait()
 
         if self.game._walkthrough_auto:  # headless mode skips sound and visuals
             items[0].trigger_interact()  # auto-close the on_says
@@ -4654,7 +4715,8 @@ class Actor(MotionManager, metaclass=use_on_events):
         else:
             log.error("Item %s not in inventory" % getattr(item, "name", item))
 
-    def on_loses(self, item):
+    @queue_method
+    def loses(self, item):
         self._loses(item)
 
     #    def _collection_select(self, collection, obj):
@@ -4667,7 +4729,8 @@ class Actor(MotionManager, metaclass=use_on_events):
         if actor and actor not in self._met:
             self._met.append(actor)
 
-    def on_meets(self, actor):
+    @queue_method
+    def meets(self, actor):
         """ Remember this Actor has met actor """
         self._meets(actor)
 
@@ -4723,58 +4786,58 @@ class Actor(MotionManager, metaclass=use_on_events):
 
         sprite = self.resource
         if sprite:
-            sprite.on_animation_end = callback
+            sprite.immediate_animation_end = callback
         else:
 #            set_resource(.resource_name, callback=callback)
             w = "Resource for action %s in object %s not loaded, so store callback in resources"%(action, self.name)
             log.warning(w)
         """
 
-    @property
-    def resource_name(self):
-        """ The key name for this actor's graphic resource in _resources"""
-        name = self.resource_name_override if self.resource_name_override else slugify(self.name)
-        return name
 
     #    def create_sprite(self, action, **kwargs):
 
-    def on_bling(self, block=False):
+    @queue_method
+    def bling(self, block=False):
         """ Perform a little 'bling' animation by distorting the x and y scales of the image """
         # or add a motion_once based on a sine distortion?
         # scale_x, scale_y: 1, 1, 0.9, 1.1, etc
-        # self.on_do_once("bling", block=block)
+        # self.immediate_do_once("bling", block=block)
         if logging:
             log.info("Warning: bling not done yet")
 
-    def on_do_random(self, mode=LOOP):
+    @queue_method
+    def do_random(self, mode=LOOP):
         """ Randomly do an action """
         action = choice(list(self._actions.keys()))
         self._do(action, mode=mode)
 
-    def on_action_mode(self, mode=LOOP):
+    @queue_method
+    def action_mode(self, mode=LOOP):
         """ Set the mode on the current action """
         self.action.mode = mode
 
-    def on_do(self, action, mode=LOOP):
+    @queue_method
+    def do(self, action, mode=LOOP):
         self._do(action, mode=mode)
 
-    def on_do_once(self, action, next_action=None, mode=LOOP, block=False):
+    @queue_method
+    def do_once(self, action, next_action=None, mode=LOOP, block=False):
         #        log.info("do_once does not follow block=True
         #        import pdb; pdb.set_trace()
-        callback = self.on_animation_end_once  # if not block else self.on_animation_end_once_block
+        callback = self.immediate_animation_end_once  # if not block else self.immediate_animation_end_once_block
         self._next_action = next_action if next_action else self.default_idle
         do_event = self.scene or (self.game and self.name in self.game._modals) or (
                 self.game and self.name in self.game._menu)
         if (self.game and self.game._headless is True) or not do_event:  # if headless or not on screen, jump to end
             self.busy += 1
-            self.on_animation_end_once()
+            self.immediate_animation_end_once()
             result = True
             return
         else:
             result = self._do(action, callback, mode=mode)
 
         if block:
-            self.game.on_wait()
+            self.game.immediate_wait()
         if result:
             if logging:
                 log.info("%s has started on_do_once, so increment %s.busy to %i." % (
@@ -4785,12 +4848,14 @@ class Actor(MotionManager, metaclass=use_on_events):
                 log.info("%s has started on_do_once, but self._do return False so keeping %s.busy at %i." % (
                     self.name, self.name, self.busy))
 
-    def on_remove(self):
+    @queue_method
+    def remove(self):
         """ Remove from scene """
         if self.scene:
             self.scene._remove(self)
 
-    def on_mirror(self, reverse=None):
+    @queue_method
+    def mirror(self, reverse=None):
         """ mirror stand point (and perhaps other points) 
             and motions
             if reverse is not None, force a direction.
@@ -4804,7 +4869,8 @@ class Actor(MotionManager, metaclass=use_on_events):
         for motion in self._motions.values():
             motion.mirror()
 
-    def on_speed(self, speed):
+    @queue_method
+    def speed(self, speed):
         #        print("set speed for %s" % self.action.name)
         self.action.speed = speed
 
@@ -4815,22 +4881,27 @@ class Actor(MotionManager, metaclass=use_on_events):
         if self.resource:
             self.resource.color = rgb
 
-    def on_sway(self, speed=0.055, angle=0.3):
+    @queue_method
+    def sway(self, speed=0.055, angle=0.3):
         self._fx_sway = speed
         self._fx_sway_angle = angle
         self._fx_sway_index = randint(0, 360)
 
-    def on_sway_off(self):
-        self.on_sway(0, 0)
+    @queue_method
+    def sway_off(self):
+        self.immediate_sway(0, 0)
 
-    def on_tint(self, rgb=None):
+    @queue_method
+    def tint(self, rgb=None):
         self._set_tint(rgb)
 
-    def on_shake(self, xy=0, x=None, y=None):
+    @queue_method
+    def shake(self, xy=0, x=None, y=None):
         self._shakex = xy if x is None else x
         self._shakey = xy if y is None else y
 
-    def on_idle(self, seconds):
+    @queue_method
+    def idle(self, seconds):
         """ delay processing the next event for this actor """
         self.busy += 1
         if logging:
@@ -4852,34 +4923,41 @@ class Actor(MotionManager, metaclass=use_on_events):
         for a, v in zip(attrs, values):
             setattr(self, a, v)
 
-    def on_reanchor(self, point):
+    @queue_method
+    def reanchor(self, point):
         ax, ay = point
         ax = -ax if self.game and self.game.flip_anchor else ax
         ay = -ay if self.game and self.game.flip_anchor else ay
         self._set(("_ax", "_ay"), (ax, ay))
 
-    def on_reclickable(self, rect):
+    @queue_method
+    def reclickable(self, rect):
         self._clickable_mask = None  # clear the mask
         self._set(["_clickable_area"], [rect])
 
-    def on_resolid(self, rect):
+    @queue_method
+    def resolid(self, rect):
         self._set(["_solid_area"], [rect])
 
-    def on_rotation(self, v):
+    @queue_method
+    def rotation(self, v):
         self._set(["rotate"], [v])
 
-    def on_rescale(self, v):
+    @queue_method
+    def rescale(self, v):
         if self.game and self.game.engine == 1:  # remember rescale for backward compat with load_state
             self._engine_v1_scale = v
         self._set(["scale"], [v])
 
-    def on_reparent(self, p):
+    @queue_method
+    def reparent(self, p):
         parent = get_object(self.game, p) if self.game else p
         self._set(["_parent"], [parent.name if parent else p])
         if parent and self.name not in parent._children:
             parent._children.append(self.name)
 
-    def on_sever_parent(self):
+    @queue_method
+    def sever_parent(self):
         """ Set parent to None but relocate actor to last parented location """
         if self._parent:
             parent = get_object(self.game, self._parent)
@@ -4887,25 +4965,31 @@ class Actor(MotionManager, metaclass=use_on_events):
             self.y += parent.y
             if self.name in parent._children:
                 parent._children.remove(self.name)
-        self.on_reparent(None)
+        self.immediate_reparent(None)
 
-    def on_restand(self, point):
+    @queue_method
+    def restand(self, point):
+        self.immediate_restand(point)
+
+    def immediate_restand(self, point):
         self._set(("sx", "sy"), point)
 
-    def on_retext(self, point):
+    @queue_method
+    def retext(self, point):
+        self.immediate_retext(point)
+
+    def immediate_retext(self, point):
         self._set(["_tx", "_ty"], point)
 
-    def on_rename(self, point):
+    @queue_method
+    def rename(self, point):
+        self.immediate_rename(point)
+
+    def immediate_rename(self, point):
         self._set(["_nx", "_ny"], point)
 
-    def on_retalk(self, point):
-        log.warning("retalk has been renamed rename")
-
-    def on_respeech(self, point):
-        log.warning("respeech has been renamed retext")
-        self.on_retext(point)
-
-    def on_flip(self, horizontal=None, vertical=None, anchor=True):
+    @queue_method
+    def flip(self, horizontal=None, vertical=None, anchor=True):
         """ Flip actor image """
         if vertical != None: self._flip_vertical = vertical
         if horizontal != None:
@@ -4923,7 +5007,8 @@ class Actor(MotionManager, metaclass=use_on_events):
     def _hide(self):
         self._usage(draw=False, update=False)
 
-    def on_hide(self):
+    @queue_method
+    def hide(self):
         """ A queuing function: hide the actor, but leave interact events alone
 
             Example::
@@ -4938,7 +5023,8 @@ class Actor(MotionManager, metaclass=use_on_events):
         self.alpha = self._opacity_target
         self._usage(draw=True, update=True)  # switch everything on
 
-    def on_show(self, interactive=True):
+    @queue_method
+    def show(self, interactive=True):
         """ A queuing function: show the actor, including from all click and hover events
 
             Example::
@@ -4947,7 +5033,8 @@ class Actor(MotionManager, metaclass=use_on_events):
         """
         self._show()
 
-    def on_fade(self, target, action=None, seconds=3, block=False):  # actor.fade
+    @queue_method
+    def fade(self, target, action=None, seconds=3, block=False):  # actor.fade
         """ target is 0 - 255 """
         if logging:
             log.debug("%s fade to %i" % (self.name, target))
@@ -4963,22 +5050,25 @@ class Actor(MotionManager, metaclass=use_on_events):
                                       self._opacity_target - self._opacity) / (self.game.fps * seconds)
         if block == True:
             self.busy += 1
-            self.game.on_wait()  # make all other events wait too.
+            self.game.immediate_wait()  # make all other events wait too.
             self._opacity_target_block = True
             if logging:
                 log.info("%s fade has requested block, so increment busy to %i" % (self.name, self.busy))
 
-    def on_fade_in(self, action=None, seconds=3, block=False):  # actor.fade_in
-        self.on_fade(255, action=action, seconds=seconds, block=block)
+    @queue_method
+    def fade_in(self, action=None, seconds=3, block=False):  # actor.fade_in
+        self.immediate_fade(255, action=action, seconds=seconds, block=block)
 
     def _fade_out(self, action=None, seconds=3, block=False):  # actor.fade_out
-        self.on_fade(0, action=action, seconds=seconds, block=block)
+        self.immediate_fade(0, action=action, seconds=seconds, block=block)
 
     # actor.fade_out
-    def on_fade_out(self, action=None, seconds=3, block=False):
+    @queue_method
+    def fade_out(self, action=None, seconds=3, block=False):
         self._fade_out(action, seconds, block=block)
 
-    def on_usage(self, draw=None, update=None, look=None, interact=None, use=None):
+    @queue_method
+    def usage(self, draw=None, update=None, look=None, interact=None, use=None):
         """ Set the player->object interact flags on this object """
         self._usage(draw, update, look, interact, use)
 
@@ -4994,16 +5084,19 @@ class Actor(MotionManager, metaclass=use_on_events):
         if use != None:
             self.allow_use = use
 
-    def on_displace(self, displacement):
+    @queue_method
+    def displace(self, displacement):
         self._relocate(
             self.scene, (self.x - displacement[0], self.y - displacement[1]))
 
-    def on_rotation(self, r):
+    @queue_method
+    def rotation(self, r):
         """ set rotation """
         self.rotate = r
 
     # actor.relocate
-    def on_relocate(self, scene=None, destination=None, scale=None):
+    @queue_method
+    def relocate(self, scene=None, destination=None, scale=None):
         if not scale and self.game and self.game.engine == 1 and hasattr(self,
                                                                          "_engine_v1_scale") and self._engine_v1_scale:  # remember rescale for backward compat with load_state
             scale = self._engine_v1_scale
@@ -5237,8 +5330,8 @@ class Actor(MotionManager, metaclass=use_on_events):
             self._cancel_goto()
             return  # already there
 
-        #            game.player.on_do("right")
-        #            game.player.on_motion("right", destructive=True)
+        #            game.player.immediate_do("right")
+        #            game.player.immediate_motion("right", destructive=True)
 
         raw_angle = math.atan2(y, x)
         # 0 degrees is towards the top of the screen
@@ -5322,14 +5415,16 @@ class Actor(MotionManager, metaclass=use_on_events):
             if logging:
                 log.info(
                     "%s has request game to wait for goto to finish, so game.waiting to True." % (self.name))
-            self.game.on_wait()
+            self.game.immediate_wait()
 
-    def on_move(self, displacement, ignore=False, block=False, next_action=None):
+    @queue_method
+    def move(self, displacement, ignore=False, block=False, next_action=None):
         """ Move Actor relative to its current position """
         self._goto(
             (self.x + displacement[0], self.y + displacement[1]), ignore, block, next_action)
 
-    def on_goto(self, destination, ignore=False, block=False, next_action=None):  # actor.goto
+    @queue_method
+    def goto(self, destination, ignore=False, block=False, next_action=None):  # actor.goto
         self._goto(destination, ignore=ignore, block=block, next_action=next_action)
 
     def _goto(self, destination, ignore=False, block=False, next_action=None):
@@ -5369,7 +5464,8 @@ class Actor(MotionManager, metaclass=use_on_events):
 
     #        print("GOTO", angle, self._goto_x, self._goto_y, self._goto_dx, self._goto_dy, math.degrees(math.atan(100/10)))
 
-    def on_key(self, key=None):
+    @queue_method
+    def key(self, key=None):
         # set interact_key
         self._interact_key = key
 
@@ -5378,7 +5474,7 @@ class Item(Actor):
     pass
 
 
-class Portal(Actor, metaclass=use_on_events):
+class Portal(Actor):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -5497,7 +5593,8 @@ class Portal(Actor, metaclass=use_on_events):
         for receiver, sender in pre_leave.receivers:
             receiver(self.game, portal, actor)
 
-    def on_auto_align(self):  # auto align display_text
+    @queue_method
+    def auto_align(self):  # auto align display_text
         if not self.game:
             log.warning(
                 "Unable to auto_align {} without a game object".format(self.name))
@@ -5507,7 +5604,8 @@ class Portal(Actor, metaclass=use_on_events):
         if self.nx > self.game.resolution[0] // 2:
             self.display_text_align = RIGHT  # auto align text
 
-    def on_reout(self, pt):
+    @queue_method
+    def reout(self, pt):
         """ queue event for changing the portal out points """
         self._ox, self._oy = pt[0], pt[1]
 
@@ -5637,7 +5735,7 @@ class Particle(object):
         self.terminate = False  # don't renew this particle if True
 
 
-class Emitter(Item, metaclass=use_on_events):
+class Emitter(Item):
     #    def __init__(self, name, *args, **kwargs):
 
     def __init__(self, name, number=10, frames=10, direction=0, fov=0, speed=1,
@@ -5761,7 +5859,7 @@ class Emitter(Item, metaclass=use_on_events):
         #        if p.alpha < 0: p.alpha = 0
         #        if p.alpha > 1.0: p.alpha = 1.0
 
-        for motion in self._applied_motions:
+        for motion in self.applied_motions:
             motion.apply_to_actor(p, p.motion_index)
         p.motion_index += 1
         p.index += 1
@@ -5835,12 +5933,14 @@ class Emitter(Item, metaclass=use_on_events):
         if self.show_debug:
             self.debug_pyglet_draw(absolute=absolute)
 
-    def on_fire(self):
+    @queue_method
+    def fire(self):
         """ Run the emitter for one cycle and then disable but leave the batch particles to complete their cycle """
         self.behaviour = BEHAVIOUR_FIRE
         self._add_particles(self.number, terminate=True)
 
-    def on_cease(self):
+    @queue_method
+    def cease(self):
         """ Cease spawning new particles and finish """
         self.behaviour = BEHAVIOUR_FIRE
         for p in self.particles:
@@ -5848,25 +5948,30 @@ class Emitter(Item, metaclass=use_on_events):
             if self.game and self.game._headless:
                 self.particles.remove(p)
 
-    def on_fastforward(self, frames, something):
+    @queue_method
+    def fastforward(self, frames, something):
         print("**** ERROR: emitter.fastforward not ported yet")
 
-    def on_start(self):
+    @queue_method
+    def start(self):
         """ switch emitter on and start with fresh particles """
         self.behaviour = BEHAVIOUR_FRESH
         self._reset()
 
-    def on_on(self):
+    @queue_method
+    def on(self):
         """ switch emitter on permanently (default) """
         self.behaviour = BEHAVIOUR_CYCLE
         self._reset()
 
-    def on_off(self):
+    @queue_method
+    def off(self):
         """ switch emitter off  """
         self.behaviour = BEHAVIOUR_FIRE
         self._reset()
 
-    def on_reanchor(self, pt):
+    @queue_method
+    def reanchor(self, pt):
         """ queue event for changing the anchor points """
         ax = -pt[0] if self.game and self.game.flip_anchor else pt[0]
         ay = -pt[1] if self.game and self.game.flip_anchor else pt[1]
@@ -5875,7 +5980,8 @@ class Emitter(Item, metaclass=use_on_events):
         for p in self.particles:
             p.ax, p.ay = self._ax, self._ay
 
-    def on_kill(self):
+    @queue_method
+    def kill(self):
         """ stop all particles """
         self.particles = []
 
@@ -5908,10 +6014,12 @@ class Emitter(Item, metaclass=use_on_events):
             p.hidden = True
             p.terminate = terminate
 
-    def on_add_particles(self, num, speed_spawn_min=None, speed_spawn_max=None):
+    @queue_method
+    def add_particles(self, num, speed_spawn_min=None, speed_spawn_max=None):
         self._add_particles(num=num)
 
-    def on_limit_particles(self, num):
+    @queue_method
+    def limit_particles(self, num):
         """ restrict the number of particles to num through attrition """
         for p in self.particles[num:]:
             p.terminate = True
@@ -5922,7 +6030,8 @@ class Emitter(Item, metaclass=use_on_events):
         if self.behaviour in [BEHAVIOUR_CYCLE, BEHAVIOUR_FRESH]:
             self._add_particles(self.number)
 
-    def on_reset(self):
+    @queue_method
+    def reset(self):
         self._reset()
 
 
@@ -6018,7 +6127,7 @@ UNLOCKED = 1
 FREEROAM = 2
 
 
-class WalkAreaManager(metaclass=use_on_events):
+class WalkAreaManager:
     """ Walkarea with waypoints """
 
     def __init__(self, scene):
@@ -6174,7 +6283,8 @@ class WalkAreaManager(metaclass=use_on_events):
         self._polygon_y = [float(p[1]) for p in self._polygon]
         self.generate_waypoints()
 
-    def on_polygon(self, points):
+    @queue_method
+    def polygon(self, points):
         self._polygon = points
         self._update_walkarea()
 
@@ -6186,7 +6296,7 @@ class WalkAreaManager(metaclass=use_on_events):
         :return:
         """
         if len(self._polygon) == 0:
-            self.on_reset_to_default()
+            self.immediate_reset_to_default()
         if self._edit_polygon_index < 0:
             self._edit_polygon_index = 0
         pt1 = self._polygon[self._edit_polygon_index]
@@ -6201,7 +6311,7 @@ class WalkAreaManager(metaclass=use_on_events):
         :return:
         """
         if len(self._polygon) == 0:
-            self.on_reset_to_default()
+            self.immediate_reset_to_default()
         if self._edit_waypoint_index < 0:
             self._edit_waypoint_index = 0
 
@@ -6215,27 +6325,34 @@ class WalkAreaManager(metaclass=use_on_events):
                               + [new_pt] + self._waypoints[self._edit_waypoint_index + 1:]
         self._update_walkarea()
 
-    def on_add_waypoint(self, point):
+    @queue_method
+    def add_waypoint(self, point):
         self._waypoints.append(point)
 
-    def on_waypoints(self, points):
+    @queue_method
+    def waypoints(self, points):
         self._waypoints = points
 
-    def on_toggle_editor(self):
+    @queue_method
+    def toggle_editor(self):
         self._editing = not self._editing
 
-    def on_reset_to_default(self):
-        self.on_polygon(DEFAULT_WALKAREA)
+    @queue_method
+    def reset_to_default(self):
+        self.immediate_polygon(DEFAULT_WALKAREA)
 
-    def on_lock(self):
+    @queue_method
+    def lock(self):
         """ Lock the walkarea so the player can't walk """
         self._state = LOCKED
 
-    def on_unlock(self):
+    @queue_method
+    def unlock(self):
         """ Activate the walkarea """
         self._state = UNLOCKED
 
-    def on_freeroam(self):
+    @queue_method
+    def freeroam(self):
         """ Make the whole screen a walkarea """
         self._state = FREEROAM
 
@@ -6315,12 +6432,12 @@ class WalkAreaManager(metaclass=use_on_events):
         self._pyglet_draw(debug=True)
 
 
-class Scene(MotionManager, metaclass=use_on_events):
+class Scene(MotionManager):
 
     def __init__(self, name, game=None):
         # list of names of objects in this scene (name not object references to
         # assist pickling)
-        super().__init__()
+        super(Scene, self).__init__()
         self._objects = []
         self.name = name
         self._game = game
@@ -6396,7 +6513,8 @@ class Scene(MotionManager, metaclass=use_on_events):
 
     def set_game(self, v):
         self._game = v
-        self.walkarea.game = v
+        if v:
+            self.walkarea.game = v
 
     game = property(get_game, set_game)
 
@@ -6461,7 +6579,7 @@ class Scene(MotionManager, metaclass=use_on_events):
         if os.path.isfile(ambient_name):
             self._ambient_filename = ambient_name
 
-        self._smart_motions(game)  # load the motions
+        self._smart_motions(game, self.directory)  # load the motions
 
         # potentially load some defaults for this scene
         filepath = os.path.join(
@@ -6573,10 +6691,12 @@ class Scene(MotionManager, metaclass=use_on_events):
 
         self._sort_layers()
 
-    def on_camera(self, point):
+    @queue_method
+    def camera(self, point):
         self.x, self.y = point
 
-    def on_add(self, objects):  # scene.add
+    @queue_method
+    def add(self, objects):  # scene.add
         self._add(objects)
 
     def _add(self, objects):
@@ -6610,7 +6730,8 @@ class Scene(MotionManager, metaclass=use_on_events):
         elif self._:
             log.warning("%s not in scene %s" % (obj.name, self.name))
 
-    def on_remove(self, obj):  # scene.remove
+    @queue_method
+    def remove(self, obj):  # scene.remove
         """ queued function for removing object from the scene """
         if type(obj) == list:
             for i in obj:
@@ -6620,7 +6741,8 @@ class Scene(MotionManager, metaclass=use_on_events):
             self._remove(obj)
 
     # remove items not in this list from the scene
-    def on_clean(self, objs=[]):  # scene.clean
+    @queue_method
+    def clean(self, objs=[]):  # scene.clean
         check_objects = copy.copy(self._objects)
         for i in check_objects:
             obj = get_object(self.game, i)
@@ -6635,7 +6757,8 @@ class Scene(MotionManager, metaclass=use_on_events):
                     and obj != self.game.player:
                 self._remove(i)
 
-    def on_do(self, background, ambient=None):  # scene.do
+    @queue_method
+    def do(self, background, ambient=None):  # scene.do
         if self.game.engine != 1:
             print("Deprecated, only used for backwards compatability, do not use.")
         """ replace the background with the image in the scene's directory """
@@ -6655,10 +6778,11 @@ class Scene(MotionManager, metaclass=use_on_events):
             if logging: log.error("scene %s has no image %s available"%(self.name, background))
         """
         if ambient:  # set ambient sound
-            self.on_ambient(filename=ambient)
+            self.immediate_ambient(filename=ambient)
         # self._event_finish()
 
-    def on_set_background(self, fname=None):
+    @queue_method
+    def set_background(self, fname=None):
         self._set_background(fname)
 
     def _set_background(self, fname=None):
@@ -6682,7 +6806,8 @@ class Scene(MotionManager, metaclass=use_on_events):
     #        if fname:
     #            self._background_fname = fname
 
-    def on_fade_objects(self, objects=[], seconds=3, fx=FX_FADE_OUT, block=False):
+    @queue_method
+    def fade_objects(self, objects=[], seconds=3, fx=FX_FADE_OUT, block=False):
         """ fade the requested objects """
         log.warning("scene.fade_objects can only fade out")
         log.info("fading out %s" % [o for o in objects])
@@ -6703,24 +6828,29 @@ class Scene(MotionManager, metaclass=use_on_events):
                 obj._opacity_delta = (
                                              obj._opacity_target - obj._opacity) / (self.game.fps * seconds)
 
-    def on_fade_objects_out(self, objects=[], seconds=3, block=False):
-        self.on_fade_objects(objects, seconds, FX_FADE_OUT, block)
+    @queue_method
+    def fade_objects_out(self, objects=[], seconds=3, block=False):
+        self.immediate_fade_objects(objects, seconds, FX_FADE_OUT, block)
 
-    def on_fade_objects_in(self, objects=[], seconds=3, block=False):
+    @queue_method
+    def fade_objects_in(self, objects=[], seconds=3, block=False):
         """ fade the requested objects """
-        self.on_fade_objects(objects, seconds, FX_FADE_IN, block)
+        self.immediate_fade_objects(objects, seconds, FX_FADE_IN, block)
 
-    def on_hide_objects(self, objects=[], block=False):
+    @queue_method
+    def hide_objects(self, objects=[], block=False):
         for obj_name in objects:
             obj = get_object(self.game, obj_name)
             obj._hide()
 
-    def on_show_objects(self, objects=[], block=False):
+    @queue_method
+    def show_objects(self, objects=[], block=False):
         for obj_name in objects:
             obj = get_object(self.game, obj_name)
             obj._show()
 
-    def on_hide(self, objects=None, backgrounds=None, keep=[], block=False):  # scene.hide
+    @queue_method
+    def hide(self, objects=None, backgrounds=None, keep=[], block=False):  # scene.hide
         if keep is False:
             log.error("Check this function call as")
             raise Exception('The call to on_hide has changed and block is now a later argument, check it.')
@@ -6737,7 +6867,8 @@ class Scene(MotionManager, metaclass=use_on_events):
             obj = get_object(self.game, obj_name)
             obj._hide()
 
-    def on_show(self):
+    @queue_method
+    def show(self):
         objects = self._objects
         backgrounds = self._layer
         # objects = objects if objects else []
@@ -6749,25 +6880,36 @@ class Scene(MotionManager, metaclass=use_on_events):
             obj = get_object(self.game, obj_name)
             obj._show()
 
-    def on_rotate(self, d=0):
+    @queue_method
+    def rotate(self, d=0):
         """ Rotate the scene around the window midpoint"""
         self._rotate = d
 
-    def on_spin(self, d=0):
+    @queue_method
+    def spin(self, d=0):
         """ Start to rotate the scene around the window midpoint"""
         self._spin = d
 
-    def on_flip(self, horizontal=None, vertical=None):
+    @queue_method
+    def flip(self, horizontal=None, vertical=None):
         if vertical is not None:
             self._flip_vertical = vertical
         if horizontal is not None:
             self._flip_horizontal = horizontal
 
-    def on_music(self, filename):
+    @queue_method
+    def music(self, filename):
+        self.immediate_music(self, filename)
+
+    def immediate_music(self, filename):
         """ What music to play on entering the scene? """
         self._music_filename = filename
 
-    def on_music_play(self):
+    @queue_method
+    def music_play(self):
+        self.immediate_music_play()
+
+    def immediate_music_play(self):
         """ Play this scene's music """
         mixer = self.game.mixer
         if mixer._music_filename:  # store position of current track
@@ -6780,20 +6922,28 @@ class Scene(MotionManager, metaclass=use_on_events):
             start = rule.position if rule else 0
             #            mixer.music_fade_out(0.5)
             #            print("PLAY SCENE MUSIC",self._music_filename)
-            mixer.on_music_play(self._music_filename, start=start)
+            mixer.immediate_music_play(self._music_filename, start=start)
 
-    def on_ambient(self, filename=None, description=None):
+    @queue_method
+    def ambient(self, filename=None, description=None):
+        self.immediate_ambient(filename, description)
+
+    def immediate_ambient(self, filename=None, description=None):
         """ What ambient sound to play on entering the scene? Blank to clear """
         self._ambient_filename = filename
         self._ambient_description = description
 
-    def on_ambient_play(self, filename=None, description=None):
+    @queue_method
+    def ambient_play(self, filename=None, description=None):
+        self.immediate_ambient_play(filename, description)
+
+    def immediate_ambient_play(self, filename=None, description=None):
         """ Play this scene's ambient sound now """
         ambient_filename = filename if filename else self._ambient_filename
         ambient_description = description if description else self._ambient_description
         mixer = self.game.mixer
         if ambient_filename:
-            mixer.on_ambient_play(ambient_filename, ambient_description)
+            mixer.immediate_ambient_play(ambient_filename, ambient_description)
 
     def _update(self, dt, obj=None):  # scene._update can be useful in subclassing
         pass
@@ -6858,7 +7008,7 @@ class HTMLLabel(DocumentLabel):
     ''')
 
 
-class Text(Item, metaclass=use_on_events):
+class Text(Item):
 
     def __init__(self, name, pos=(0, 0), display_text=None,
                  colour=(255, 255, 255, 255), font=None, size=DEFAULT_TEXT_SIZE, wrap=800,
@@ -7016,7 +7166,8 @@ class Text(Item, metaclass=use_on_events):
 
     display_text = property(get_display_text, set_display_text)
 
-    def on_text(self, text):
+    @queue_method
+    def text(self, text):
         self.display_text = text
 
     @property
@@ -7089,7 +7240,7 @@ class Text(Item, metaclass=use_on_events):
             self.debug_pyglet_draw()
 
 
-class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
+class Collection(Item, pyglet.event.EventDispatcher):
 
     def __init__(self, name, callback, padding=(10, 10), dimensions=(300, 300), tile_size=(80, 80), limit=-1):
         super().__init__(name)
@@ -7126,7 +7277,8 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
             obj = get_object(game, obj_name)
             obj.load_assets(game)
 
-    def on_empty(self):
+    @queue_method
+    def empty(self):
         self._objects = []
         self._sorted_objects = None
         self.index = 0
@@ -7141,7 +7293,8 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
         self.dimensions = dimensions if dimensions else (self.clickable_area.w, self.clickable_area.h)
         return self
 
-    def on_add(self, objs, callback=None):  # collection.add
+    @queue_method
+    def add(self, objs, callback=None):  # collection.add
         """ Add an object to this collection and set up an event handler for it in the event it gets selected """
         if type(objs) != list:
             objs = [objs]
@@ -7302,7 +7455,7 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
                 x += (self.tile_size[0] + self.padding[0])
 
 
-class MenuManager(metaclass=use_on_events):
+class MenuManager:
 
     def __init__(self, game):
         super().__init__()
@@ -7310,7 +7463,8 @@ class MenuManager(metaclass=use_on_events):
         self.game = game
         self.busy = 0
 
-    def on_add(self, objects):  # menu.add
+    @queue_method
+    def add(self, objects):  # menu.add
         if type(objects) == str:
             objects = [objects]
         if not isinstance(objects, Iterable):
@@ -7321,9 +7475,10 @@ class MenuManager(metaclass=use_on_events):
             obj._usage(draw=True, interact=True)
             self.game._menu.append(obj.name)
 
-    def on_set(self, objects):
-        self.on_clear()
-        self.on_add(objects)
+    @queue_method
+    def set(self, objects):
+        self.immediate_clear()
+        self.immediate_add(objects)
 
     def contains(self, item):
         """ Is this item in the current menu? """
@@ -7345,7 +7500,8 @@ class MenuManager(metaclass=use_on_events):
                 obj.load_assets(self.game)
                 yield
 
-    def on_show(self, menu_items=None):  # menu.show
+    @queue_method
+    def show(self, menu_items=None):  # menu.show
         self._show(menu_items)
 
     def _show(self, menu_items=None):
@@ -7375,7 +7531,8 @@ class MenuManager(metaclass=use_on_events):
             if i_name in self.game._menu:
                 self.game._menu.remove(i_name)
 
-    def on_remove(self, menu_items=None):
+    @queue_method
+    def remove(self, menu_items=None):
         self._remove(menu_items)
 
     def _hide(self, menu_items=None):
@@ -7391,18 +7548,22 @@ class MenuManager(metaclass=use_on_events):
             log.debug("hide menu using place %s" %
                       [x for x in self.game._menu])
 
-    def on_hide(self, menu_items=None):  # menu.hide
+    @queue_method
+    def hide(self, menu_items=None):  # menu.hide
         self._hide(menu_items=menu_items)
 
-    def on_fade_out(self, menu_items=None):
+    @queue_method
+    def fade_out(self, menu_items=None):
         log.warning("menumanager.fade_out does not fade")
         self._hide(menu_items)
 
-    def on_fade_in(self, menu_items=None):
+    @queue_method
+    def fade_in(self, menu_items=None):
         log.warning("menumanager.fade_in does not fade")
         self._show(menu_items)
 
-    def on_push(self):
+    @queue_method
+    def push(self):
         """ push this menu to the list of menus and clear the current menu """
         if logging:
             log.debug("push menu %s, %s" %
@@ -7411,7 +7572,8 @@ class MenuManager(metaclass=use_on_events):
         self.game._menus.append(self.game._menu)
         self.game._menu = []
 
-    def on_pop(self):
+    @queue_method
+    def pop(self):
         """ pull a menu off the list of menus """
         if self.game._menus:
             self.game._menu = self.game._menus.pop()
@@ -7423,11 +7585,13 @@ class MenuManager(metaclass=use_on_events):
         if logging:
             log.debug("pop menu %s" % [x for x in self.game._menu])
 
-    def on_clear_all(self):
+    @queue_method
+    def clear_all(self):
         self.game._menu = []
         self.game._menus = []
 
-    def on_clear(self, menu_items=None):
+    @queue_method
+    def clear(self, menu_items=None):
         """ clear current menu """
         if not menu_items:
             self.game._menu = []
@@ -7439,12 +7603,14 @@ class MenuManager(metaclass=use_on_events):
                 if obj and obj.name in self.game._menu:
                     self.game._menu.remove(obj.name)
 
-    def on_enter_exit_sounds(self, enter_filename=None, exit_filename=None):
+    @queue_method
+    def enter_exit_sounds(self, enter_filename=None, exit_filename=None):
         """ Sounds to play when mouse moves over a menu item """
         self.game._menu_enter_filename = enter_filename  # filename of sfx to play when entering hover over a menu
         self.game._menu_exit_filename = exit_filename  # sfx to play when exiting hover over a menu item
 
-    def on_play_menu_sfx(self, key):
+    @queue_method
+    def play_menu_sfx(self, key):
         if key in _sound_resources:
             sfx = _sound_resources[key]
         else:
@@ -7459,16 +7625,18 @@ class MenuManager(metaclass=use_on_events):
         log.debug(f"Playing menu sfx using {sfx}")
         sfx.play()
 
-    def on_play_enter_sfx(self):
+    @queue_method
+    def play_enter_sfx(self):
         if self.game._menu_enter_filename:
-            self.on_play_menu_sfx(self.game._menu_enter_filename)
+            self.immediate_play_menu_sfx(self.game._menu_enter_filename)
 
-    def on_play_exit_sfx(self):
+    @queue_method
+    def play_exit_sfx(self):
         if self.game._menu_exit_filename:
-            self.on_play_menu_sfx(self.game._menu_exit_filename)
+            self.immediate_play_menu_sfx(self.game._menu_exit_filename)
 
 
-class Camera(metaclass=use_on_events):  # the view manager
+class Camera:  # the view manager
 
     def __init__(self, game):
         #        self._x, self._y = game.resolution[0]/2, game.resolution[1]/2
@@ -7537,10 +7705,10 @@ class Camera(metaclass=use_on_events):  # the view manager
                 self._overlay_tint = random_colour(minimum=200)
                 for item in self.game.scene._layer:
                     obj = get_object(self.game, item)
-                    obj.on_tint(self._overlay_tint)
+                    obj.immediate_tint(self._overlay_tint)
                 for obj_name in self.game.scene._objects:
                     obj = get_object(self.game, obj_name)
-                    obj.on_tint(self._overlay_tint)
+                    obj.immediate_tint(self._overlay_tint)
 
         self._shake_dx, self._shake_dy = 0, 0
         if self._shake_x != 0:
@@ -7591,7 +7759,8 @@ class Camera(metaclass=use_on_events):  # the view manager
             scene = get_object(self.game, transition)
             self.game.scene = scene
 
-    def on_transition(self, scenes=[]):
+    @queue_method
+    def transition(self, scenes=[]):
         """ Quick fire cuts between scenes (without triggering scene change behaviour """
         self._transition = scenes
 
@@ -7658,18 +7827,19 @@ class Camera(metaclass=use_on_events):  # the view manager
         #            import pdb; pdb.set_trace()
 
         if allow_scene_music:  # scene change will override current music
-            self.game.mixer.on_ambient_stop()
+            self.game.mixer.immediate_ambient_stop()
             if scene._ambient_filename:
-                self.game.mixer.on_ambient_play(scene._ambient_filename)
+                self.game.mixer.immediate_ambient_play(scene._ambient_filename)
             else:
-                self.game.mixer.on_ambient_play()  # stop ambient
+                self.game.mixer.immediate_ambient_play()  # stop ambient
             # start music for this scene
-            scene.on_music_play()
+            scene.immediate_music_play()
 
-    def on_scene(self, scene, camera_point=None, allow_scene_music=True, from_save_game=False):  # camera.scene
+    @queue_method
+    def scene(self, scene, camera_point=None, allow_scene_music=True, from_save_game=False):  # camera.scene
         """ change the scene """
         if self._overlay_fx == FX_DISCO:  # remove disco effect
-            self.on_disco_off()
+            self.immediate_disco_off()
         if not self.game._headless:
             pyglet.gl.glClearColor(0, 0, 0, 255)  # reset clear colour to black
         if type(scene) in [str]:
@@ -7708,14 +7878,16 @@ class Camera(metaclass=use_on_events):  # the view manager
             if postcamera_fn:
                 postcamera_fn(self.game, scene, self.game.player, from_save_game=from_save_game)
 
-    def on_player_scene(self):
+    @queue_method
+    def player_scene(self):
         """ Switch the current player scene. Useful because game.player.scene
         may change by the time the camera change scene event is called.
         :return:
         """
         self._scene(self.game.player.scene)
 
-    def on_zoom(self, start, factor, steps=40, target=None, block=False):
+    @queue_method
+    def zoom(self, start, factor, steps=40, target=None, block=False):
         glPushMatrix()
         self._zoom_start = start
         zz = self._zoom_factor = factor
@@ -7727,9 +7899,10 @@ class Camera(metaclass=use_on_events):  # the view manager
         glTranslatef(-ww, -hh, 0)
         self.busy += 1
         if block == True:
-            self.game.on_wait()  # make all other events wait too.
+            self.game.immediate_wait()  # make all other events wait too.
 
-    def on_shake(self, xy=0, x=None, y=None, seconds=None):
+    @queue_method
+    def shake(self, xy=0, x=None, y=None, seconds=None):
         self._shake_x = x if x else xy
         self._shake_y = y if y else xy
 
@@ -7739,19 +7912,23 @@ class Camera(metaclass=use_on_events):  # the view manager
         if seconds != None:
             pyglet.clock.schedule_once(shake_stop, seconds)
 
-    def on_shake_stop(self):
+    @queue_method
+    def shake_stop(self):
         self._shake_x, self._shake_y = 0, 0
 
-    def on_motion(self, motion=[]):
+    @queue_method
+    def motion(self, motion=[]):
         # a list of x,y displacement values
         self._motion = motion
 
-    def on_drift(self, dx=0, dy=0):
+    @queue_method
+    def drift(self, dx=0, dy=0):
         """ start a permanent non-blocking movement in the camera """
         self._goto_dx = dx
         self._goto_dy = dy
 
-    def on_opacity(self, opacity=255, colour="black"):  # camera opacity
+    @queue_method
+    def opacity(self, opacity=255, colour="black"):  # camera opacity
         d = pyglet.resource.get_script_home()
         if colour == "black":
             mask = pyglet.image.load(
@@ -7763,10 +7940,12 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._overlay_start = None
         self._overlay_end = None
 
-    def on_overlay_off(self):
+    @queue_method
+    def overlay_off(self):
         self._overlay = None
 
-    def on_fade_out(self, seconds=3, colour="black", block=False):  # camera.fade
+    @queue_method
+    def fade_out(self, seconds=3, colour="black", block=False):  # camera.fade
         """
         colour can only be black|white
         """
@@ -7778,7 +7957,7 @@ class Camera(metaclass=use_on_events):  # the view manager
         #            items[0].trigger_interact()  # auto-close the on_says
         #        return
         d = pyglet.resource.get_script_home()
-        self.on_opacity(0, colour)
+        self.immediate_opacity(0, colour)
         self._overlay_start = time.time()
         self._overlay_end = time.time() + seconds
         self._overlay_fx = FX_FADE_OUT
@@ -7787,18 +7966,19 @@ class Camera(metaclass=use_on_events):  # the view manager
             log.info("%s has started on_fade_out, so increment %s.busy to %i." % (
                 self.name, self.name, self.busy))
         if block:
-            self.game.on_wait()
+            self.game.immediate_wait()
             if logging:
                 log.info("%s has started on_fade_out with block, so set game._waiting to True." % (
                     self.name))
 
-    def on_fade_in(self, seconds=3, colour="black", block=False):
+    @queue_method
+    def fade_in(self, seconds=3, colour="black", block=False):
         #   items = self.game.player._says("FADE IN", None)
         if self.game._headless:  # headless mode skips sound and visuals
             return
         #            items[0].trigger_interact()  # auto-close the on_says
         #    return
-        self.on_opacity(255, colour)
+        self.immediate_opacity(255, colour)
         self._overlay_start = time.time()
         self._overlay_end = time.time() + seconds
         self._overlay_fx = FX_FADE_IN
@@ -7807,32 +7987,36 @@ class Camera(metaclass=use_on_events):  # the view manager
             log.info("%s has started on_fade_in, so increment %s.busy to %i." % (
                 self.name, self.name, self.busy))
         if block:
-            self.game.on_wait()
+            self.game.immediate_wait()
             if logging:
                 log.info("%s has started on_fade_in with block, so set game._waiting to True." % (
                     self.name))
 
-    def on_tint(self, colour=None):
+    @queue_method
+    def tint(self, colour=None):
         """ Apply a tint to every item in the scene """
         self._overlay_tint = colour
 
-    def on_disco_on(self):
+    @queue_method
+    def disco_on(self):
         self._overlay_fx = FX_DISCO
         self._overlay_cycle = 8
 
-    def on_disco_off(self):
+    @queue_method
+    def disco_off(self):
         self._overlay_fx = None
         self._overlay_cycle = 0
         self._overlay_tint = None
         # TODO: this seems sloppy
         for item in self.game.scene._layer:
             obj = get_object(self.game, item)
-            obj.on_tint(self._overlay_tint)
+            obj.immediate_tint(self._overlay_tint)
         for obj_name in self.game.scene._objects:
             obj = get_object(self.game, obj_name)
-            obj.on_tint(self._overlay_tint)
+            obj.immediate_tint(self._overlay_tint)
 
-    def on_off(self, colour="black"):
+    @queue_method
+    def off(self, colour="black"):
         if self.game._headless:  # headless mode skips sound and visuals
             return
         d = pyglet.resource.get_script_home()
@@ -7845,10 +8029,12 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._overlay_end = time.time() + 60 * 60 * 24 * 365 * 100  # one hundred yeaaaaars
         self._overlay_start = time.time()
 
-    def on_on(self):
+    @queue_method
+    def on(self):
         self._overlay = None
 
-    def on_screenshot(self, filename, size=None):
+    @queue_method
+    def screenshot(self, filename, size=None):
         """ Save the current screen to a file
         :param filename:
         :return:
@@ -7865,10 +8051,12 @@ class Camera(metaclass=use_on_events):  # the view manager
             img.thumbnail(size, Image.ANTIALIAS)
         img.save(fname + ".png")
 
-    def on_relocate(self, position):  # camera.relocate
+    @queue_method
+    def relocate(self, position):  # camera.relocate
         self.game.scene.x, self.game.scene.y = position
 
-    def on_pan(self, left=False, right=False, top=False, bottom=False, percent_vertical=False, speed=None):
+    @queue_method
+    def pan(self, left=False, right=False, top=False, bottom=False, percent_vertical=False, speed=None):
         """ Convenience method for panning camera to left, right, top and/or bottom of scene, left OR right OR Neither AND top OR bottom Or Neither """
         x = 0 if left else self.game.scene.x
         x = self.game.resolution[0] - self.game.scene.w if right else x
@@ -7879,12 +8067,14 @@ class Camera(metaclass=use_on_events):  # the view manager
         y = self.game.resolution[1] - self.game.scene.h * percent_vertical if percent_vertical else y
         self._goto((x, y), speed)
 
-    def on_move(self, displacement, speed=None):
+    @queue_method
+    def move(self, displacement, speed=None):
         """ Move Camera relative to its current position """
         self._goto(
             (self.game.scene.x + displacement[0], self.game.scene.y + displacement[1]), speed)
 
-    def on_goto(self, destination, speed=None):  # camera.goto
+    @queue_method
+    def goto(self, destination, speed=None):  # camera.goto
         self._goto(destination, speed)
 
     def _goto(self, destination, speed=None):
@@ -7919,7 +8109,7 @@ class Camera(metaclass=use_on_events):  # the view manager
         if logging:
             log.info("Camera %s has started _goto, so increment self.busy to %s and game.waiting to True." % (
                 self.name, self.busy))
-        self.game.on_wait()
+        self.game.immediate_wait()
 
 
 class PlayerPygletSFX:
@@ -8150,7 +8340,7 @@ class MusicRule():
         self.pair = []  # songs to pair with
 
 
-class Mixer(metaclass=use_on_events):
+class Mixer:
     def __init__(self, game):
         self.game = game
         self.name = "Default Mixer"
@@ -8228,19 +8418,24 @@ class Mixer(metaclass=use_on_events):
         """ Used by load game to restore the current music settings """
         self.__dict__.update(d)  # update attributes
 
-    def on_resume(self):
+    @queue_method
+    def resume(self):
         """ Resume from a load file, force all sounds and music to play """
-        self.on_publish_volumes()
+        self.immediate_publish_volumes()
         current_music = self._music_filename
         self._music_filename = None
         if current_music:
-            self.on_music_play(current_music, start=self._music_position)
+            self.immediate_music_play(current_music, start=self._music_position)
         current_ambient = self._ambient_filename
         self._ambient_filename = None
         if current_ambient:
-            self.on_ambient_play(current_ambient)
+            self.immediate_ambient_play(current_ambient)
 
-    def on_publish_volumes(self):
+    @queue_method
+    def publish_volumes(self):
+        self.immediate_publish_volumes()
+
+    def immediate_publish_volumes(self):
         """ Use game.settings to set various volumes """
         if self.game:
             options = self.game.parser.parse_args()
@@ -8249,7 +8444,7 @@ class Mixer(metaclass=use_on_events):
         if self.game.settings.mute == True:
             v = 0
         #        pygame.mixer.music.set_volume(v)
-        self.on_music_volume(v)
+        self.immediate_music_volume(v)
         self._music_volume = v
         self._music_volume_target = None
 
@@ -8258,14 +8453,16 @@ class Mixer(metaclass=use_on_events):
             v = 0
         self._ambient_player.volume(v)
 
-    def on_status(self):
+    @queue_method
+    def status(self):
         """ Print the various modifiers on the mixer """
         print(
             "Mixer force mute: %s Mixer session mute: %s\n Master music volume: %f, Master music on: %s\n mixer music volume: %f" % (
                 self._force_mute, self._session_mute, self.game.settings.music_volume, self.game.settings.music_on,
                 self._music_volume))
 
-    def on_music_pop(self, volume=None):
+    @queue_method
+    def music_pop(self, volume=None):
         """ Stop the current track and if there is music stashed, pop it and start playing it """
         if self.game and self.game._headless:
             return
@@ -8275,12 +8472,18 @@ class Mixer(metaclass=use_on_events):
                     return
                 else:  # there is a stash and it is different
                     fname = self._music_stash
-                    self.on_music_play(fname)
+                    self.immediate_music_play(fname)
                     self._music_stash = None
             else:  # no stash so just stop the current music
-                self.on_music_stop(volume=volume)
+                self.immediate_music_stop(volume=volume)
 
-    def on_music_play(self, fname=None, description=None, loops=-1, start=None, volume=None, push=False,
+    @queue_method
+    def music_play(self, fname=None, description=None, loops=-1, start=None, volume=None, push=False,
+                      rule_mode=FRESH_BUT_SHARE):
+        self.immediate_music_play(fname, description, loops, start, volume, push,
+                             rule_mode)
+
+    def immediate_music_play(self, fname=None, description=None, loops=-1, start=None, volume=None, push=False,
                       rule_mode=FRESH_BUT_SHARE):
         """ Description is for subtitles 
             Treat as if we are playing it (remember it, etc), even if a flag stop actual audio.
@@ -8315,7 +8518,7 @@ class Mixer(metaclass=use_on_events):
                 self._music_filename = fname
                 #                print("SETTING CURRENT MUSIC FILENAME TO", fname)
                 self._music_position = 0
-                self.on_publish_volumes()  # reset any fades
+                self.immediate_publish_volumes()  # reset any fades
             else:
                 print("unable to find music file", fname)
                 log.warning("Music file %s missing." % fname)
@@ -8327,12 +8530,13 @@ class Mixer(metaclass=use_on_events):
         #        print("PLAY: SESSION MUTE", self._session_mute)
         if self._force_mute or self._session_mute or self.game._headless:
             return
-        if volume is not None: self.on_music_volume(volume)
+        if volume is not None: self.immediate_music_volume(volume)
 
         start = start if start else default_start
         self._music_player.play(loops=loops, start=start)
 
-    def on_music_fade(self, val=0, duration=5):
+    @queue_method
+    def music_fade(self, val=0, duration=5):
         fps = self.game.fps if self.game else DEFAULT_FPS
         self._music_volume_target = val
         self._music_volume_step = ((val - self._music_volume) / fps) / duration
@@ -8343,31 +8547,36 @@ class Mixer(metaclass=use_on_events):
             log.info("%s has started on_music_fade, so increment %s.busy to %i." % (
                 self.name, self.name, self.busy))
 
-    def on_music_fade_out(self, duration=5):
-        self.on_music_fade(val=0, duration=duration)
+    @queue_method
+    def music_fade_out(self, duration=5):
+        self.immediate_music_fade(val=0, duration=duration)
 
     #        def finish_fade_out(): #XXX: Can't be local for pickle
     #            pass
     #            self._music_player.pause()
     #        self._music_volume_callback = finish_fade_out
 
-    def on_music_fade_in(self, duration=5):
+    @queue_method
+    def music_fade_in(self, duration=5):
         if self._force_mute:
             return
         v = self.game.settings.music_volume if self.game and self.game.settings else 1
-        self.on_music_volume(0)
+        self.immediate_music_volume(0)
         #        self._music_player.play()
-        self.on_music_fade(val=v, duration=duration)
+        self.immediate_music_fade(val=v, duration=duration)
 
-    def on_music_stop(self):
+    @queue_method
+    def music_stop(self):
         if self.game and not self.game._headless:
             self._music_player.pause()
 
-    def on_music_restart(self):
+    @queue_method
+    def music_restart(self):
         if self.game and not self.game._headless:
             self._music_player.play()
 
-    def on_music_volume(self, val):
+    @queue_method
+    def music_volume(self, val):
         """ val 0.0 - 1.0 """
         new_volume = self._music_volume = val
         # scale by the master volume from settings
@@ -8376,7 +8585,8 @@ class Mixer(metaclass=use_on_events):
             self._music_player.volume(new_volume)
         log.info("Setting music volume to %f" % new_volume)
 
-    def on_sfx_volume(self, val=None):
+    @queue_method
+    def sfx_volume(self, val=None):
         """ val 0.0 - 1.0 """
         val = val if val else 1  # reset
         new_volume = self._sfx_volume = val
@@ -8385,7 +8595,8 @@ class Mixer(metaclass=use_on_events):
             for sfx_player in self._sfx_players:
                 sfx_player.volume(new_volume)
 
-    def on_sfx_fade(self, val, duration=5):
+    @queue_method
+    def sfx_fade(self, val, duration=5):
         fps = self.game.fps if self.game else DEFAULT_FPS
         self._sfx_volume_target = val
         self._sfx_volume_step = ((val - self._sfx_volume) / fps) / duration
@@ -8397,10 +8608,11 @@ class Mixer(metaclass=use_on_events):
     def _sfx_stop_callback(self):
         """ callback used by fadeout to stop sfx """
         if self.game and not self.game._headless:
-            self.on_sfx_stop()
+            self.immediate_sfx_stop()
 
-    def on_sfx_fadeout(self, seconds=2):
-        self.on_sfx_fade(0, seconds)
+    @queue_method
+    def sfx_fadeout(self, seconds=2):
+        self.immediate_sfx_fade(0, seconds)
         self._sfx_volume_callback = self._sfx_stop_callback
 
     def _update(self, dt, obj=None):  # mixer.update
@@ -8423,7 +8635,7 @@ class Mixer(metaclass=use_on_events):
                 self._sfx_volume_step = 0
                 self._sfx_volume_callback = None
                 self.busy -= 1
-            self.on_sfx_volume(v)
+            self.immediate_sfx_volume(v)
 
         if self._ambient_volume_target is not None:  # fade the ambient up or down
             v = self._ambient_volume + self._ambient_volume_step
@@ -8441,7 +8653,7 @@ class Mixer(metaclass=use_on_events):
                 self._ambient_volume_step = 0
                 self._ambient_volume_callback = None
                 self.busy -= 1
-            self.on_ambient_volume(v)
+            self.immediate_ambient_volume(v)
 
         if self._music_volume_target is not None:  # fade the volume up or down
             v = self._music_volume + self._music_volume_step
@@ -8460,7 +8672,7 @@ class Mixer(metaclass=use_on_events):
                 self._music_volume_callback = None
                 self.busy -= 1
             #                print("FINISHED FADE", self._music_filename)
-            self.on_music_volume(v)
+            self.immediate_music_volume(v)
 
     def _sfx_play(self, fname=None, description=None, loops=0, fade_music=False, store=None):
         """
@@ -8489,10 +8701,12 @@ class Mixer(metaclass=use_on_events):
         sfx_player.play(loops=loops)
         return
 
-    def on_sfx_play(self, fname=None, description=None, loops=0, fade_music=False, store=None):
+    @queue_method
+    def sfx_play(self, fname=None, description=None, loops=0, fade_music=False, store=None):
         self._sfx_play(fname, description, loops, fade_music, store)
 
-    def on_sfx_stop(self, sfx=None):
+    @queue_method
+    def sfx_stop(self, sfx=None):
         if self.game and not self.game._headless:
             for sfx_player in self._sfx_players:
                 sfx_player.stop()
@@ -8500,18 +8714,24 @@ class Mixer(metaclass=use_on_events):
     #        self._sfx_player.next_source()
     # if sfx: sfx.stop()
 
-    def on_ambient_volume(self, val=None):
+    @queue_method
+    def ambient_volume(self, val=None):
         """ val 0.0 - 1.0 """
         val = val if val else 1  # reset
         new_volume = self._ambient_volume = val
         new_volume *= self.game.settings.ambient_volume if self.game and self.game.settings else 1
         self._ambient_player.volume(new_volume)
 
-    def on_ambient_stop(self):
+    @queue_method
+    def ambient_stop(self):
+        self.immediate_ambient_stop()
+
+    def immediate_ambient_stop(self):
         if self.game and not self.game._headless:
             self._ambient_player.stop()
 
-    def on_ambient_fade(self, val, duration=5):
+    @queue_method
+    def ambient_fade(self, val, duration=5):
         # XXX does not stop sound or reset volume if val is 0, use on_ambient_fadeout instead
         fps = self.game.fps if self.game else DEFAULT_FPS
         self._ambient_volume_target = val
@@ -8523,18 +8743,24 @@ class Mixer(metaclass=use_on_events):
 
     def _ambient_stop_callback(self):
         """ callback used by fadeout to stop ambient """
-        self.on_ambient_stop()
-        self.on_ambient_volume(self.game.settings.ambient_volume)  # reset volume
+        self.immediate_ambient_stop()
+        self.immediate_ambient_volume(self.game.settings.ambient_volume)  # reset volume
 
-    def on_ambient_fadeout(self, seconds=2):
-        self.on_ambient_fade(0, seconds)
+    @queue_method
+    def ambient_fadeout(self, seconds=2):
+        self.immediate_ambient_fade(0, seconds)
         self._ambient_volume_callback = self._ambient_stop_callback
 
-    def on_ambient_fadein(self, seconds=2):
-        self.on_ambient_fade(1, seconds)
+    @queue_method
+    def ambient_fadein(self, seconds=2):
+        self.immediate_ambient_fade(1, seconds)
         self._ambient_volume_callback = self._ambient_stop_callback
 
-    def on_ambient_play(self, fname=None, description=None):
+    @queue_method
+    def ambient_play(self, fname=None, description=None):
+        self.immediate_ambient_play(fname, description)
+
+    def immediate_ambient_play(self,  fname=None, description=None):
         #        print("play ambient",fname,"(on scene %s)"%self.game.scene.name)
         self._ambient_filename = fname
         if fname:
@@ -8555,10 +8781,11 @@ class Mixer(metaclass=use_on_events):
         else:  # no filename, so stop playing
             self._ambient_player.stop()
 
-    def on_music_finish(self, callback=None):
+    @queue_method
+    def music_finish(self, callback=None):
         return
         """ Set a callback function for when the music finishes playing """
-        self._music_player.on_eos = callback
+        self._music_player.immediate_eos = callback
 
 
 """
@@ -8602,7 +8829,7 @@ class Factory(object):
         obj.__dict__ = copy.copy(original.__dict__)
         # reload the pyglet actions for this object
         obj._smart_actions(self.game)
-        obj._smart_motions(self.game)
+        obj._smart_motions(self.game, self.directory)
 
         obj.name = name
         obj.game = self.game
@@ -8613,7 +8840,7 @@ class Factory(object):
         obj._do(original.action.name)
         original.game = self.game  # restore game object to original
         if original._scene:  # add to current scene
-            original.scene.on_add(obj)
+            original.scene.immediate_add(obj)
 
         return obj
 
@@ -8828,8 +9055,8 @@ def load_game_pickle(game, fname, meta_only=False, keep=[], responsive=False):
             game.storage = pickle.load(f)
             game.storage._last_load_time = datetime.now()
             if game.mixer:  # stop all music and ambient noise before rebuilding mixer
-                game.mixer.on_music_stop()
-                game.mixer.on_ambient_stop()
+                game.mixer.immediate_music_stop()
+                game.mixer.immediate_ambient_stop()
 
             game.mixer = pickle.load(f)
             game.mixer._sfx_mixers = getattr(game.mixer, "_sfx_mixers", [])
@@ -8985,7 +9212,7 @@ def load_or_create_settings(game, fname, settings_cls=Settings):
     else:
         game.settings = game.settings.load(fname)
     game.settings._current_session_start = datetime.now()
-    game.mixer.on_publish_volumes()
+    game.mixer.immediate_publish_volumes()
     return existing
 
 
@@ -9021,7 +9248,8 @@ class Window(pyglet.window.Window):
     def __init__(self, *args, **kwargs):
         super(Window, self).__init__(*args, **kwargs)
 
-    def on_draw(self):
+    @queue_method
+    def draw(self):
         #        print("WINDOW DRAW")
         self.clear()
 
@@ -9056,7 +9284,7 @@ def hard_quit(dt=0):
 LOCK_UPDATES_TO_DRAWS = False  # deprecated
 
 
-class Game(metaclass=use_on_events):
+class Game:
     def __init__(self, name="Untitled Game", version="v1.0", engine=VERSION_MAJOR, save_directory="untitledgame",
                  fullscreen=DEFAULT_FULLSCREEN, resolution=DEFAULT_RESOLUTION, fps=DEFAULT_FPS, afps=DEFAULT_ACTOR_FPS,
                  projectsettings=None, scale=1.0):
@@ -9146,7 +9374,7 @@ class Game(metaclass=use_on_events):
         self.resizable = False
         self.nuke = False  # nuke platform dependent files such as game.settings
 
-        #        self._window.on_joybutton_release = self.on_joybutton_release
+        #        self._window.immediate_joybutton_release = self.immediate_joybutton_release
         self.last_mouse_release = None  # track for double clicks
         self._pyglet_batches = []
         self._gui_batch = pyglet.graphics.Batch()
@@ -9502,11 +9730,16 @@ class Game(metaclass=use_on_events):
     def log(self, txt):
         print("*", txt)
 
-    def on_clock_schedule_interval(self, *args, **kwargs):
+    @queue_method
+    def clock_schedule_interval(self, *args, **kwargs):
         """ schedule a repeating callback """
         pyglet.clock.schedule_interval(*args, **kwargs)
 
-    def on_publish_fps(self, fps=None, actor_fps=None, engine_fps=None):
+    @queue_method
+    def publish_fps(self, fps=None, actor_fps=None, engine_fps=None):
+        self.immediate_publish_fps(fps, actor_fps, engine_fps)
+
+    def immediate_publish_fps(self, fps=None, actor_fps=None, engine_fps=None):
         """ Make the engine run at the requested fps """
         fps = fps if fps else self.fps
         actor_fps = actor_fps if actor_fps else self.default_actor_fps
@@ -9516,15 +9749,16 @@ class Game(metaclass=use_on_events):
         pyglet.clock.unschedule(self.update)
         pyglet.clock.schedule_interval(self.update, 1 / actor_fps)
 
-    def on_set_fps(self, v):
+    @queue_method
+    def set_fps(self, v):
         self.fps = v
 
     def set_headless_value(self, v):
         self._headless = v
         if self._headless is True:  # speed up
-            self.on_publish_fps(400, 400)
+            self.immediate_publish_fps(400, 400)
         else:
-            self.on_publish_fps(self.fps, self.default_actor_fps)
+            self.immediate_publish_fps(self.fps, self.default_actor_fps)
 
     def get_headless_value(self):
         return self._headless
@@ -9626,7 +9860,8 @@ class Game(metaclass=use_on_events):
     def time_in_game(self):
         return self.storage._total_time_in_game + (datetime.now() - self.storage._last_load_time)
 
-    def on_test_arrive_at_generated_scene(self, key):
+    @queue_method
+    def test_arrive_at_generated_scene(self, key):
         arrive_at_generated_scene = get_function(self, "arrive_at_generated_scene")
         arrive_at_generated_scene(self, key)
 
@@ -9704,7 +9939,7 @@ class Game(metaclass=use_on_events):
                 print("remap joystick buttons")
 
             if symbol == pyglet.window.key.F9:
-                self.on_publish_fps(300, 150)
+                self.immediate_publish_fps(300, 150)
                 return
 
             if symbol == pyglet.window.key.F10:
@@ -9905,7 +10140,7 @@ class Game(metaclass=use_on_events):
                                                                            "_over_colour")  # an Actor or a Text with menu behaviour
                     if allow_over and over_in_actions and (obj.allow_interact or obj.allow_use or obj.allow_look):
                         if obj._action != obj._over:
-                            self.menu.on_play_enter_sfx()  # play sound if available
+                            self.menu.immediate_play_enter_sfx()  # play sound if available
                         obj._do(obj._over)
 
                     if obj._mouse_motion and not menu_collide:
@@ -9919,7 +10154,7 @@ class Game(metaclass=use_on_events):
                     if allow_over and action_name == obj._over and (
                             obj.allow_interact or obj.allow_use or obj.allow_look):
                         idle = obj._idle  # don't use obj.default_idle as it is scene dependent
-                        self.menu.on_play_exit_sfx()  # play sound if available
+                        self.menu.immediate_play_exit_sfx()  # play sound if available
                         if idle in obj._actions or hasattr(obj, "_over_colour"):
                             obj._do(idle)
                 if menu_collide:
@@ -10054,9 +10289,9 @@ class Game(metaclass=use_on_events):
             self._map_joystick = 0  # finished remap
             # return
         if button == self.settings.joystick_interact:
-            self.on_mouse_release(x, y, pyglet.window.mouse.LEFT, modifiers)
+            self.immediate_mouse_release(x, y, pyglet.window.mouse.LEFT, modifiers)
         elif button == self.settings.joystick_look:
-            self.on_mouse_release(x, y, pyglet.window.mouse.RIGHT, modifiers)
+            self.immediate_mouse_release(x, y, pyglet.window.mouse.RIGHT, modifiers)
         # print(self._joystick.__dict__)
         # print(button, self.settings.joystick_interact, self.settings.joystick_look)
 
@@ -10300,12 +10535,13 @@ class Game(metaclass=use_on_events):
             else:  # editing a point
                 self._editing_point_set(x)
 
-    def on_resize(self, width, height):
+    @queue_method
+    def resize(self, width, height):
         print("Resize window to ", width, " ", height)
         # self._window.set_size(width, height)
         self._screen_size_override = (width, height)
         self.reset_window(self.fullscreen)
-        pyglet.window.Window.on_resize(self._window, width, height)
+        pyglet.window.Window.immediate_resize(self._window, width, height)
 
     def add_arguments(self):
         """ Add allowable commandline arguments """
@@ -10465,7 +10701,7 @@ class Game(metaclass=use_on_events):
             obj.guess_clickable_area()
             for k, v in kwargs.items():
                 if k == "key":
-                    obj.on_key(v)  # set _interact_key
+                    obj.immediate_key(v)  # set _interact_key
                 else:
                     setattr(obj, k, v)
                 # if "text" in kwargs.keys(): obj.update_text() #force update on MenuText
@@ -10506,7 +10742,8 @@ class Game(metaclass=use_on_events):
         log.info("menu from factory creates %s" % m)
         return m
 
-    def on_menu_from_factory(self, menu, items):
+    @queue_method
+    def menu_from_factory(self, menu, items):
         self._menu_from_factory(menu, items)
 
     # system message to display on screen (eg sfx subtitles)
@@ -10528,7 +10765,8 @@ class Game(metaclass=use_on_events):
         self._info_object.x, self._info_object.y = x, y
 
     # game.smart
-    def on_smart(self, player=None, player_class=Actor, draw_progress_bar=None, refresh=False, only=None):
+    @queue_method
+    def smart(self, player=None, player_class=Actor, draw_progress_bar=None, refresh=False, only=None):
         self._smart(player, player_class, draw_progress_bar, refresh, only)
 
     # game.smart
@@ -10786,7 +11024,7 @@ class Game(metaclass=use_on_events):
             if options.exit_step:
                 self.exit_step = True
             if options.headless:
-                self.on_set_headless(True)
+                self.immediate_set_headless(True)
                 self._walkthrough_auto = True  # auto advance
             if options.test_inventory:
                 self._test_inventory = True
@@ -10842,7 +11080,8 @@ class Game(metaclass=use_on_events):
                 r = True
         return r
 
-    def on_quit(self):
+    @queue_method
+    def quit(self):
         if self.settings and self.settings.filename:
             log.info("SAVE SETTINGS")
             td = datetime.now() - self.settings._current_session_start
@@ -10856,8 +11095,8 @@ class Game(metaclass=use_on_events):
             self.steam_api.shutdown()
         hard_quit()
 
-    def queue_event(self, event, *args, **kwargs):
-        self._events.append((event, args, kwargs))
+    def queue_event(self, event, caller, *args, **kwargs):
+        self._events.append((event, caller, args, kwargs))
 
     def _remember_interactable(self, name):
         """ Use by walkthrough runner to track interactive items in a walkthrough for further testing """
@@ -10929,7 +11168,7 @@ class Game(metaclass=use_on_events):
                 self.mixer.initialise_players(self)
                 self.mixer.resume()
                 #                if self.mixer._music_filename:
-                #                    self.mixer.on_music_play(self.mixer._music_filename, start=self.mixer._music_position)
+                #                    self.mixer.immediate_music_play(self.mixer._music_filename, start=self.mixer._music_position)
                 #        if game.mixer._ambient_filename:
                 #            game.mixer.ambient_play(game.mixer._music_filename, start=game.mixer._music_position)
 
@@ -10978,7 +11217,7 @@ class Game(metaclass=use_on_events):
                     for i in sorted(expensive.items(), key=itemgetter(1), reverse=True)[:profile_number]:
                         print(i)
                 if self.exit_step is True:
-                    self.on_quit()
+                    self.immediate_quit()
 
             log.info("FINISHED WALKTHROUGH")
             if self._walkthrough_target_name:
@@ -11021,7 +11260,7 @@ class Game(metaclass=use_on_events):
             d = self._imagereactor_directory
             if not os.path.isdir(d):
                 os.mkdir(d)
-            self.camera.on_screenshot(os.path.join(d, "image%0.5i.png" % self._walkthrough_index))
+            self.camera.immediate_screenshot(os.path.join(d, "image%0.5i.png" % self._walkthrough_index))
         if function_name == "savepoint":
             human_readable_name = walkthrough[1]
         elif function_name == "interact":
@@ -11117,7 +11356,7 @@ class Game(metaclass=use_on_events):
                     portals = scene.portals
                     portal = choice(portals) if len(portals) > 0 else None
                     if portal:
-                        self.player.on_relocate(destination=portal.stand_point)
+                        self.player.immediate_relocate(destination=portal.stand_point)
                     self.scene._remove(self.player)  # remove from current scene
                     scene._add(self.player)  # add to next scene
                     if logging:
@@ -11167,9 +11406,9 @@ class Game(metaclass=use_on_events):
         safe_to_call_again = False  # is it safe to call _handle_events immediately after this?
         waiting_for_user = True
         #        log.info("There are %s events, game._waiting is %s, index is %s and current event is %s",len(self._events), self._waiting, self._event_index, self._event)
-        if self.resizable and self._window.on_resize != self.on_resize:  # now allow our override
+        if self.resizable and self._window.immediate_resize != self.immediate_resize:  # now allow our override
             print("enable resizeable")
-            self._window.on_resize = self.on_resize  # now allow our override
+            self._window.immediate_resize = self.immediate_resize  # now allow our override
 
         if self._waiting_for_user:  # don't do anything until user clicks
             return safe_to_call_again
@@ -11180,7 +11419,7 @@ class Game(metaclass=use_on_events):
             # event_index is point to the game.wait event at the moment
             for event in self._events[:self._event_index]:
                 # first arg is always the object that called the event
-                obj = event[1][0]
+                obj = event[1]
                 # this object is busy so don't remove its event and don't let
                 # game stop waiting if it's waiting
                 if obj.busy > 0:
@@ -11197,42 +11436,45 @@ class Game(metaclass=use_on_events):
         done_events = 0
         del_events = 0
         # if there are events and we are not at the end of them
+        # events are: (fn.__name__, calling_obj, *args, **kwargs)
+        events = self._events
         if len(self._events) > 0:
             if self._event_index > 0:
                 # check the previous events' objects, delete if not busy
                 for event in self._events[:self._event_index]:
-                    if event[1][0].busy == 0:
+                    if event[1].busy == 0:
                         #if hasattr(self, "del_events"):
                         #    print("DEL", event)
 
                         del_events += 1
+                        len1 = len(self._events)
                         self._events.remove(event)
                         self._event_index -= 1
+                        len2 = len(self._events)
 
             if self._event_index < len(self._events):
                 # possibly start the current event
                 # stored as [(function, args))]
-                e = self._events[self._event_index]
-                obj = e[1][0]
+                event = self._events[self._event_index]
+                obj = event[1]
                 if obj.busy > 0:
                     # don't do this event yet if the owner is busy
                     return safe_to_call_again
-                self._event = e
-                #                print("Start",e[0], e[1][0].name, datetime.now(), e[1][0].busy)
+                self._event = event
                 done_events += 1
-                #                print("DOING",e)
-                #                print("doing event",e)
+
                 # call the function with the args and kwargs
                 profiling_start = datetime.now()
+                fn_name = event[0].__name__
                 try:
-                    e[0](*e[1], **e[2])
+                    event[0](event[1], *event[2], **event[3])
                 except:
                     print("Last script: %s, this script: %s, last autosave: %s" % (
-                        self._last_script, e[0].__name__, self._last_autosave))
+                        self._last_script, fn_name, self._last_autosave))
                     raise
 
                 if self.profile_scripts:
-                    self._profiled_scripts.append({e[0].__name__: datetime.now() - profiling_start})
+                    self._profiled_scripts.append({fn_name: datetime.now() - profiling_start})
 
                 #                if self._event_index < len(self._events) - 1:
                 self._event_index += 1  # potentially start next event
@@ -11316,7 +11558,7 @@ class Game(metaclass=use_on_events):
             if y > self.resolution[1] * self._scale: y = self.resolution[1] * self._scale
             if x > self.resolution[0] * self._scale: x = self.resolution[0] * self._scale
 
-            self.on_mouse_motion(x, y, dx=0, dy=0)  # XXX dx, dy are zero
+            self.immediate_mouse_motion(x, y, dx=0, dy=0)  # XXX dx, dy are zero
 
         #        dt = self.fps #time passed (in milliseconds)
         if self.scene:
@@ -11335,8 +11577,11 @@ class Game(metaclass=use_on_events):
 
         layer_objects = self.scene._layer if self.scene else []
         # update all the objects in the scene or the event queue.
+        events = self._events
+        pass
         items_list = [layer_objects, scene_objects, self._menu, modal_objects,
-                      [self.camera], [self.mixer], [obj[1][0] for obj in self._events], self._edit_menu]
+                      [self.camera], [self.mixer], [obj[1] for obj in self._events], self._edit_menu]
+        events2 = self._events
         items_to_update = []
         for items in items_list:
             for item in items:  # _to_update:
@@ -11411,7 +11656,7 @@ class Game(metaclass=use_on_events):
         #       glPushMatrix() #start the scene draw
         popMatrix = False
         apply_transform = self.scene._rotate or len(
-            self.scene._applied_motions) > 0 or self.scene._flip_vertical or self.scene._flip_horizontal
+            self.scene.applied_motions) > 0 or self.scene._flip_vertical or self.scene._flip_horizontal
         if apply_transform:
             # rotate scene before we add menu and modals
             # translate scene to middle
@@ -11423,11 +11668,11 @@ class Game(metaclass=use_on_events):
                 glRotatef(-self.scene._rotate, 0.0, 0.0, 1.0)
             # apply motions
             remove_motions = []
-            for motion in self.scene._applied_motions:
+            for motion in self.scene.applied_motions:
                 if motion.apply_to_scene(self.scene) == False:  # motion has finished
                     remove_motions.append(motion)
             for motion in remove_motions:
-                self.scene._applied_motions.remove(motion)
+                self.scene.applied_motions.remove(motion)
 
             if self.scene._flip_vertical is True:
                 glScalef(1, -1, 1)
@@ -11512,7 +11757,7 @@ class Game(metaclass=use_on_events):
             for item in portals:
                 if item._icon:
                     i = "portal_active" if item.allow_interact or item.allow_look else "portal_inactive"
-                    item._icon.on_do(i)
+                    item._icon.immediate_do(i)
                     if not item._icon.action._loaded:
                         item._icon.load_assets(self)
                     item._icon.x, item._icon.y = item.clickable_area.centre
@@ -11712,7 +11957,8 @@ class Game(metaclass=use_on_events):
         if modal.name not in self._modals: self._modals.append(modal.name)
         self._add(modal)
 
-    def on_modals(self, items=[], replace=False):
+    @queue_method
+    def modals(self, items=[], replace=False):
         if type(items) == str:
             items = [items]
         if not isinstance(items, Iterable):
@@ -11723,26 +11969,31 @@ class Game(metaclass=use_on_events):
             i = get_object(self, i)
             self.add_modal(i)
 
-    def on_remove_modal(self, item):
+    @queue_method
+    def remove_modal(self, item):
         i = get_object(self, item)
         if i and i.name in self._modals:
             self._modals.remove(i.name)
 
-    def on_menu_modal(self, modal=True):
+    @queue_method
+    def menu_modal(self, modal=True):
         """ Set if the menu is currently in modal mode (ie non-menu events are blocked """
         self._menu_modal = modal
 
-    def on_restrict_mouse(self, obj=None):
+    @queue_method
+    def restrict_mouse(self, obj=None):
         """ Restrict mouse to a rect on the window """
         rect = obj
         self._mouse_rect = rect
 
-    def on_set_interact(self, actor, fn):  # game.set_interact
+    @queue_method
+    def set_interact(self, actor, fn):  # game.set_interact
         """ helper function for setting interact on an actor """
         actor = get_object(self, actor)
         actor.interact = fn
 
-    def on_set_look(self, actor, fn):  # game.set_look
+    @queue_method
+    def set_look(self, actor, fn):  # game.set_look
         """ helper function for setting look on an actor """
         actor = get_object(self, actor)
         actor.look = fn
@@ -11844,7 +12095,7 @@ class Game(metaclass=use_on_events):
                                 (slug, parent.name))
                     if obj.action:
                         f.write('    %s.do("%s")\n' % (slug, obj.action.name))
-                    for i, motion in enumerate(obj._applied_motions):
+                    for i, motion in enumerate(obj.applied_motions):
                         m = motion.name if hasattr(motion, "name") else motion
                         if i == 0:
                             f.write('    %s.motion("%s")\n' % (slug, m))
@@ -11879,7 +12130,8 @@ class Game(metaclass=use_on_events):
                     f.write(
                         '    scene.scales["actors"] = %0.2f\n' % (obj.scale))
 
-    def on_queue_load_state(self, scene, state, load_assets=False):
+    @queue_method
+    def queue_load_state(self, scene, state, load_assets=False):
         self.load_state(scene, state, load_assets)
 
     def load_state(self, scene, state, load_assets=False):
@@ -11925,10 +12177,12 @@ class Game(metaclass=use_on_events):
         self._last_load_state = state
         return scene
 
-    def on_save_game(self, fname):
+    @queue_method
+    def save_game(self, fname):
         save_game(self, fname)
 
-    def on_load_game(self, fname):
+    @queue_method
+    def load_game(self, fname):
         load_game(self, fname)
         if self.postload_callback:
             self.postload_callback(self)
@@ -11937,7 +12191,8 @@ class Game(metaclass=use_on_events):
     #       """ Check if the event options request is currently in the queue """
     #       for e, args, kwargs in self._events:
 
-    def on_wait(self):
+    @queue_method
+    def wait(self):
         """ Wait for all scripting events to finish """
         self._waiting = True
         reset_mouse_cursor(self)  # possibly set mouse cursor to hour glass
@@ -11955,18 +12210,20 @@ class Game(metaclass=use_on_events):
                         if m:
                             m.trigger_interact()
                     self._skipping = True
-                    self.on_set_headless(True)
+                    self.immediate_set_headless(True)
                     self._walkthrough_auto = True  # auto advance
 
         else:
             log.warning("ATTEMPT SKIP BUT NOT EVENTS TO SKIP")
 
-    def on_start_skippable(self, key=K_ESCAPE, callback=None):
+    @queue_method
+    def start_skippable(self, key=K_ESCAPE, callback=None):
         self._skip_key = K_ESCAPE
         self._skip_callback = callback
         log.warning("skip callback not implemented yet")
 
-    def on_end_skippable(self):
+    @queue_method
+    def end_skippable(self):
         """ If this special event is in the event queue and the user has triggered "attempt_skip"
             clear all events to here.
         """
@@ -11974,10 +12231,11 @@ class Game(metaclass=use_on_events):
             self._skipping = False
             self._skip_key = None
             self._skip_callback = None
-            self.on_set_headless(False)
+            self.immediate_set_headless(False)
             self._walkthrough_auto = False  # stop auto advance
 
-    def on_autosave(self, actor, tilesize, exclude_from_screenshot=[], fname=None, fast=True, action="portrait"):
+    @queue_method
+    def autosave(self, actor, tilesize, exclude_from_screenshot=[], fname=None, fast=True, action="portrait"):
         game = self
         fname = fname if fname else datetime.now().strftime("%Y%m%d_%H%M%S")
         save_game(game, get_safe_path(os.path.join(self.save_directory, "%s.save" % fname)))
@@ -11985,7 +12243,7 @@ class Game(metaclass=use_on_events):
             obj = get_object(game, i)
             obj.hide()
         if not fast:  # take some time to do a nicer screen grab
-            game.menu.on_hide()
+            game.menu.immediate_hide()
             game.pause(0.4)
         game.camera.screenshot(get_safe_path(os.path.join(self.save_directory, "%s.png" % fname)), tilesize)
         for i in exclude_from_screenshot:
@@ -11996,20 +12254,23 @@ class Game(metaclass=use_on_events):
         if not fast:
             game.menu.show()
 
-    def on_wait_for_user(self):
+    @queue_method
+    def wait_for_user(self):
         """ Insert a modal click event """
         self._waiting_for_user = True
 
-    def on_schedule_exit(self, duration):
+    @queue_method
+    def schedule_exit(self, duration):
         """ exit the game in duration seconds """
         pyglet.clock.schedule_once(hard_quit, duration)
 
-    def on_pause(self, duration):
+    @queue_method
+    def pause(self, duration):
         """ pause the game for duration seconds """
         if self._headless:
             return
         self.busy += 1
-        self.on_wait()
+        self.immediate_wait()
         if logging:
             log.info("game has started on_pause, so increment game.busy to %i." % (self.busy))
 
@@ -12020,7 +12281,8 @@ class Game(metaclass=use_on_events):
 
         pyglet.clock.schedule_once(pause_finish, duration, self)
 
-    def on_popup(self, *args, **kwargs):
+    @queue_method
+    def popup(self, *args, **kwargs):
         log.warning("POPUP NOT DONE YET")
         pass
 
@@ -12161,7 +12423,8 @@ class Game(metaclass=use_on_events):
             self._window_dx, self._window_dy = 0, 0
         """
 
-    def on_toggle_fullscreen(self, fullscreen=None, execute=False):
+    @queue_method
+    def toggle_fullscreen(self, fullscreen=None, execute=False):
         """ Toggle fullscreen, or use <fullscreen> to set the value """
         #        glPopMatrix();
         #        glPushMatrix();
@@ -12176,7 +12439,8 @@ class Game(metaclass=use_on_events):
             self._window.set_fullscreen(fullscreen)
             self.reset_window(fullscreen)
 
-    def on_splash(self, image, callback, duration=None, immediately=False):
+    @queue_method
+    def splash(self, image, callback, duration=None, immediately=False):
         """ show a splash screen then pass to callback after duration 
         """
         if logging:
@@ -12192,7 +12456,7 @@ class Game(metaclass=use_on_events):
             obj = get_object(self, i)
             obj.z = 1.0
         self.busy += 1  # set Game object to busy (only time this happens?)
-        self.on_wait()  # make game wait until splash is finished
+        self.immediate_wait()  # make game wait until splash is finished
         # add scene to game, change over to that scene
         self.add(scene)
         self.camera._scene(scene)
@@ -12210,16 +12474,19 @@ class Game(metaclass=use_on_events):
             else:
                 pyglet.clock.schedule_once(splash_finish, duration, self)
 
-    def on_add_to_scene(self, obj):
+    @queue_method
+    def add_to_scene(self, obj):
         # useful for queuing an add when there is no scene yet but will be by the time this runs
-        self.scene.on_add(obj)
+        self.scene.immediate_add(obj)
 
-    def on_remap_joystick(self):
+    @queue_method
+    def remap_joystick(self):
         self.settings.joystick_interact = -1
         self.settings.joystick_look = -1
         self._map_joystick = 1  # start remap, next two button presses will be stored.
 
-    def on_relocate(self, obj, scene, destination=None, scale=None):  # game.relocate
+    @queue_method
+    def relocate(self, obj, scene, destination=None, scale=None):  # game.relocate
         obj = get_object(self.game, obj)
         scene = get_object(self.game, scene)
         destination = get_point(self.game, destination)
@@ -12231,33 +12498,41 @@ class Game(metaclass=use_on_events):
                 scale = scene.scales["actors"]
         obj._relocate(scene, destination, scale=scale)
 
-    def on_allow_one_player_interaction(self, v=True):
+    @queue_method
+    def allow_one_player_interaction(self, v=True):
         """ Ignore the allow_use, allow_look, allow_interact rules for the
         game.player object just once then go back to standard behaviour.
         :return:
         """
         self._allow_one_player_interaction = v
 
-    def on_default_ok(self, v="ok"):
-        """ Set the default OK button used by Actor.on_says """
+    @queue_method
+    def default_ok(self, v="ok"):
+        """ Set the default OK button used by Actor.immediate_says """
         self._default_ok = v
 
-    def on_set_mouse_mode(self, v):
+    @queue_method
+    def set_mouse_mode(self, v):
         self.mouse_mode = v
 
-    def on_set_mouse_cursor(self, v):
+    @queue_method
+    def set_mouse_cursor(self, v):
         self.mouse_cursor = v
 
-    def on_set_mouse_cursor_lock(self, v):
+    @queue_method
+    def set_mouse_cursor_lock(self, v):
         self.mouse_cursor_lock = v
 
-    def on_set_player_goto_behaviour(self, v):
+    @queue_method
+    def set_player_goto_behaviour(self, v):
         self._player_goto_behaviour = v
 
-    def on_set_headless(self, v):
+    @queue_method
+    def set_headless(self, v):
         self.headless = v
 
-    def on_set_menu(self, *args, clear=True):
+    @queue_method
+    def set_menu(self, *args, clear=True):
         """ add the items in args to the menu
             TODO: to be deprecated in favour of menu.add and other methods on MenuManager
          """
@@ -12323,7 +12598,7 @@ class MenuText(Text):
         # print("Try instead:")
         print("""
 item = game.add(Text("{name}", {pos}, "{text}", size={ssize}, wrap={wrap}, interact={interact}, font="{sfont}", colour={colour}, offset=2), replace=True)
-item.on_key("{key}")
+item.immediate_key("{key}")
 item.set_over_colour(MENU_COLOUR_OVER)
 """.format(**locals()))
         super().__init__(name, pos, text, colour, font, size, wrap, offset=4, interact=interact)
@@ -12339,7 +12614,7 @@ item.set_over_colour(MENU_COLOUR_OVER)
 #            offset=None, interact=None, look=None, delay=0, step=2,
 #            game=None):
 # item = Text(i[0], (280,80), i[1], interact=i[2], wrap=800, font=MENU_FONT, size=38, game)
-# item.on_key(i[3])
+# item.immediate_key(i[3])
 # game.add(item)
 
 
@@ -12381,7 +12656,7 @@ class SubmenuSelect(object):
                 #             hpos=(hx, hy), font=self.font), False, MenuItem)
                 item = game.add(Text("submenu_%s" % i, (280, sy), i, size=26, wrap=800, interact=select_item,
                                      font=DEFAULT_MENU_FONT, colour=(42, 127, 255), offset=2), replace=True)
-                item.on_key("None")
+                item.immediate_key("None")
                 item.set_over_colour(MENU_COLOUR_OVER)
 
                 sy += MENU_Y_DISPLACEMENT
@@ -12403,7 +12678,7 @@ class SubmenuSelect(object):
             item = game.add(Text("submenu_%s" % exit_item, (280, sy), exit_item, size=26, wrap=800,
                                  interact=submenu_return, font=DEFAULT_MENU_FONT, colour=(42, 127, 255), offset=2),
                             replace=True)
-            item.on_key("None")
+            item.immediate_key("None")
             item.set_over_colour(MENU_COLOUR_OVER)
 
             self.menu_items.append(item)
@@ -12818,7 +13093,7 @@ if EDITOR_AVAILABLE:
                 self.game.scene.walkarea.mirror(w)
 
             def _edit_walkarea(scene):
-                scene.walkarea.on_toggle_editor()
+                scene.walkarea.immediate_toggle_editor()
                 if scene.walkarea._editing:
                     self.game._editing = scene.walkarea
                     self.game._editing_point_set = (

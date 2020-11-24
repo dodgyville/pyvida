@@ -13,15 +13,24 @@ from pyvida import (
     get_resource,
     Game,
     get_best_file,
+    Item,
     MenuFactory,
+    Motion,
+    MotionManager,
+    MotionManagerOld,
     PlayerPygletMusic,
     PlayerPygletSFX,
     PyvidaSprite,
     Scene,
+    Settings,
     Text,
 )
 
 TEST_PATH = "/home/luke/Projects/pyvida/test_data"
+
+RESOLUTION_X = 1000
+RESOLUTION_Y = 1000
+RESOLUTION = (RESOLUTION_X, RESOLUTION_Y)
 
 
 class TestUtils:
@@ -185,6 +194,12 @@ class TestSmart:
 
 
 class TestActor:
+    def test_motion_manager(self):
+        # test has inherited correctled.
+        obj = Actor("test")
+        obj.applied_motions.append("hello")
+        assert len(obj.applied_motions) == 1
+
     def test_smart(self):
         game = Game(resolution=(100, 100))
         game.autoscale = False
@@ -210,6 +225,14 @@ class TestActor:
         assert a.action.h == 341
         assert type(resource[2]) == PyvidaSprite
         assert list(a._actions.keys()) == ["idle"]
+
+
+class TestItem:
+    def test_motion_manager(self):
+        # test has inherited correctled.
+        obj = Item("test")
+        obj.applied_motions.append("hello")
+        assert len(obj.applied_motions) == 1
 
 
 def create_basic_scene(resolution=(1680, 1050)):
@@ -332,4 +355,117 @@ class TestMenus:
 
         assert names == ["menu_new", "menu_old"]
         assert list(game._menu) == ["menu_old", "menu_new"]
+
+
+class TestEvents:
+    def set_up(self):
+        self.game = Game("Unit Tests", fps=60, afps=16, resolution=RESOLUTION)
+        self.game.settings = Settings()
+        self.actor = Actor("_test_actor").smart(self.game)
+        self.msgbox = Item("msgbox").smart(self.game, using="data/items/_test_item")
+        self.ok = Item("ok").smart(self.game, using="data/items/_test_item")
+        self.scene = Scene("_test_scene")
+        self.item = Item("test_item")
+        self.game.add([self.scene, self.actor, self.msgbox, self.ok, self.item])
+        self.scene._add(self.actor)
+        self.game.scene = self.scene
+
+    def test_relocate(self):
+        # setup
+        self.set_up()
+        self.actor.relocate(self.scene)
+        event = self.game._events[0]
+        assert len(self.game._events) == 1
+        assert event[0].__name__ == "relocate"
+        assert event[1] == self.actor
+        assert event[2][0] == self.scene
+
+
+class TestEventQueue:
+    def test_handle_events(self):
+        game = Game("Unit Tests", fps=60, afps=16, resolution=RESOLUTION)
+
+
+class TestQueueMeta:
+    # test decorator replacement for metaclass use_on_event
+    def test_use_on_events(self):
+        g = Game()
+        m = MotionManagerOld()
+        m.game = g
+        m.motion("jump", 'test2', destructive=True)
+        event = g._events[0]
+        assert event[0].__name__ == "on_motion"
+        assert event[1:] == (m, ('jump', 'test2'), {'destructive': True})
+
+    def test_decorator(self):
+        g = Game()
+        m = MotionManagerOld()
+        m.game = g
+        m.decorator_test("photograph", ringo=True)
+
+        event = g._events[0]
+        assert event[0].__name__ == "decorator_test"
+        assert event[1:] == (m, ('photograph',), {'ringo': True})
+
+    def test_both(self):
+        g = Game()
+        m = MotionManagerOld()
+        m.game = g
+        m.decorator_test("photograph", ringo=True)
+        m.motion("jump", 'test2', destructive=True)
+        event0 = g._events[0]
+        event1 = g._events[1]
+
+        assert event0[1:] == (m, ('photograph',), {'ringo': True})
+        assert event1[1:] == (m, ('jump', 'test2'), {'destructive': True})
+
+
+class TestMotionManager:
+    def setup(self):
+        g = Game()
+        m = MotionManager()
+        m.game = g
+        mt = Motion("jump")
+        m.motions["jump"] = mt
+        return g, m
+
+    def test_immediate_motion(self):
+        g, m = self.setup()
+        m.immediate_motion("jump")
+        assert len(m.applied_motions) == 1
+
+    def test_immediate_motion(self):
+        # only one motion at a time
+        g, m = self.setup()
+        mt2 = Motion("shine")
+        m.motions["shine"] = mt2
+        m.immediate_motion("jump")
+        m.immediate_motion("shine")
+        assert len(m.applied_motions) == 1
+
+    def test_motion(self):
+        # queuing method
+        g, m = self.setup()
+        m.motion("jump")
+        event = g._events[0]
+        assert event[0].__name__ == "motion"
+        assert event[1:] == (m, ('jump',), {})
+
+    def test_immediate_add_motion(self):
+        # mutliple motions at a time
+        g, m = self.setup()
+        mt2 = Motion("shine")
+        m.motions["shine"] = mt2
+        m.immediate_motion("jump")
+        m.immediate_motion("shine")
+        assert len(m.applied_motions) == 1
+
+    def test_add_motion(self):
+        # queuing method
+        g, m = self.setup()
+        m.add_motion("jump")
+        event = g._events[0]
+        assert event[0].__name__ == "add_motion"
+        assert event[1:] == (m, ('jump',), {})
+
 
