@@ -83,15 +83,23 @@ try:
 
     EDITOR_AVAILABLE = True
 except ImportError:
+    tk = None
     EDITOR_AVAILABLE = False
 
 try:
-    from pyglet.gl import *
+    from pyglet.gl import (
+        glMultMatrixf,
+        glPopMatrix,
+        glPushMatrix,
+        glRotatef,
+        glScalef,
+        glTranslatef,
+    )
     from pyglet.gl.gl import c_float
     from pyglet.image.codecs.png import PNGImageDecoder
     import pyglet.window.mouse
 except pyglet.window.NoSuchConfigException:
-    pass
+    c_float = None
 
 editor_queue = queue.Queue()  # used to share info between editor and game
 
@@ -209,7 +217,7 @@ def save_config(config):
         for key, value in config.items():
             if type(value) == str:
                 value = "default" if value.upper() == "DEFAULT" else value
-            value = "default" if value == None else value
+            value = "default" if value is None else value
             f.write("%s=%s\n" % (key, str(value).lower()))
 
 
@@ -223,7 +231,8 @@ language = CONFIG["language"]
 
 # language = "de"  # XXX forcing german
 gettext = None
-_ = None
+_ = lambda a: a
+
 
 def set_language(new_language=None):
     if new_language:
@@ -1246,7 +1255,7 @@ def close_on_says(game, obj, player):
         return
 
     try:
-        game._remove(actor.tmp_items)  # remove temporary items from game
+        game.immediate_remove(actor.tmp_items)  # remove temporary items from game
     except AttributeError:
         log.warning("%s has no tmp_items in close_on_says. Might not be a problem in walkthrough_auto mode.",
                     actor.name)
@@ -1274,8 +1283,8 @@ def option_answer_callback(game, btn, player, *args):
 
     # remove modals from game (mostly so we don't have to pickle the knotty
     # little bastard custom callbacks!)
-    game._remove(creator.tmp_items)
-    game._remove(creator.tmp_modals)
+    game.immediate_remove(creator.tmp_items)
+    game.immediate_remove(creator.tmp_modals)
     game._modals = []  # empty modals
     creator.tmp_items = None
     creator.tmp_modals = None
@@ -3371,10 +3380,10 @@ class Actor(MotionManager):
     def resolve_action(self):
         """ Finish the current action and move into the next one or an idle """
         if self._next_action in self._actions.keys():
-            self._do(self._next_action)
+            self.immediate_do(self._next_action)
             self._next_action = None
         else:  # try the default
-            self._do(self.default_idle)
+            self.immediate_do(self.default_idle)
 
     def _update(self, dt, obj=None):  # actor._update, use obj to override self
         self._vx, self._vy = 0, 0
@@ -3925,7 +3934,7 @@ class Actor(MotionManager):
 
         if len(self._actions) > 0:  # do an action by default
             action = idle if idle in self._actions else list(self._actions.keys())[0]
-            self._do(action)
+            self.immediate_do(action)
 
         if isinstance(self, Actor) and not isinstance(self, Item) and self.action and self.action.name == idle:
             self._ax = -int(self.w / 2)
@@ -4254,7 +4263,7 @@ class Actor(MotionManager):
         if logging:
             log.info("%s has finished on_animation_end_once, so decrement %s.busy to %i." % (
                 self.name, self.name, self.busy))
-        self._do(self._next_action)
+        self.immediate_do(self._next_action)
         self._next_action = None
 
     #    def self.immediate_animation_end_once_block(self):
@@ -4410,7 +4419,7 @@ class Actor(MotionManager):
         # close speech after continues.
         def _close_on_continues(game, obj, player):
             game._modals.remove(label.name)
-            game._remove(label)
+            game.immediate_remove(label)
             self.busy -= 1
             if logging:
                 log.info("%s has finished on_continues (%s), so decrement %s.busy to %i." % (
@@ -4509,7 +4518,7 @@ class Actor(MotionManager):
             portrait.game = self.game
             portrait._actions[action.name] = action
             portrait.load_assets(self.game)
-            portrait._do(action.name)
+            portrait.immediate_do(action.name)
             portrait = self.game.add(portrait)
             #            portrait_x, portrait_y = 5, 5 #top corner for portrait offset
             #           portrait_w, portrait_h = portrait.w, portrait.h
@@ -4651,12 +4660,12 @@ class Actor(MotionManager):
         if item:
             log.info("Actor %s gets: %s" % (self.name, item.name))
         if collection and hasattr(item, "_actions") and collection in item._actions.keys():
-            item._do(collection)
+            item.immediate_do(collection)
             item.load_assets(self.game)
         self.inventory[item.name] = item
         item.scale = scale  # scale to normal size for inventory
         if remove == True and item.scene:
-            item.scene._remove(item)
+            item.scene.immediate_remove(item)
         return item
 
     @queue_method
@@ -4743,7 +4752,7 @@ class Actor(MotionManager):
         actor = actor.name if actor else actor
         return True if actor in self._met else met
 
-    def _do(self, action, callback=None, mode=LOOP):
+    def immediate_do(self, action, callback=None, mode=LOOP):
         """ Callback is called when animation ends, returns False if action not found 
         """
         myA = action
@@ -4809,7 +4818,7 @@ class Actor(MotionManager):
     def do_random(self, mode=LOOP):
         """ Randomly do an action """
         action = choice(list(self._actions.keys()))
-        self._do(action, mode=mode)
+        self.immediate_do(action, mode=mode)
 
     @queue_method
     def action_mode(self, mode=LOOP):
@@ -4818,7 +4827,7 @@ class Actor(MotionManager):
 
     @queue_method
     def do(self, action, mode=LOOP):
-        self._do(action, mode=mode)
+        self.immediate_do(action, mode=mode)
 
     @queue_method
     def do_once(self, action, next_action=None, mode=LOOP, block=False):
@@ -4834,7 +4843,7 @@ class Actor(MotionManager):
             result = True
             return
         else:
-            result = self._do(action, callback, mode=mode)
+            result = self.immediate_do(action, callback, mode=mode)
 
         if block:
             self.game.immediate_wait()
@@ -4852,7 +4861,7 @@ class Actor(MotionManager):
     def remove(self):
         """ Remove from scene """
         if self.scene:
-            self.scene._remove(self)
+            self.scene.immediate_remove(self)
 
     @queue_method
     def mirror(self, reverse=None):
@@ -5039,7 +5048,7 @@ class Actor(MotionManager):
         if logging:
             log.debug("%s fade to %i" % (self.name, target))
         if action:
-            self._do(action)
+            self.immediate_do(action)
         if self.game._headless:  # headless mode skips sound and visuals
             self.alpha = target
             return
@@ -5112,7 +5121,7 @@ class Actor(MotionManager):
             self.load_assets(self.game)
         if scene:
             if self.scene:  # remove from current scene
-                self.scene._remove(self)
+                self.scene.immediate_remove(self)
             scene = get_object(self.game, scene)
             scene._add(self)
         if scale:
@@ -5405,7 +5414,7 @@ class Actor(MotionManager):
                 self._goto_deltas = [(x / steps, d[1] * ratio) for d in self._goto_deltas]
 
         if goto_action:
-            self._do(goto_action)
+            self.immediate_do(goto_action)
 
         self.busy += 1
         if logging:
@@ -6716,7 +6725,7 @@ class Scene(MotionManager):
                 obj.scale = self.scales["actors"]
             self._objects.append(obj.name)
 
-    def _remove(self, obj):
+    def immediate_remove(self, obj):
         """ remove object from the scene """
         obj = get_object(self.game, obj)
         if obj.name not in self._objects:
@@ -6735,10 +6744,10 @@ class Scene(MotionManager):
         """ queued function for removing object from the scene """
         if type(obj) == list:
             for i in obj:
-                self._remove(i)
+                self.immediate_remove(i)
 
         else:
-            self._remove(obj)
+            self.immediate_remove(obj)
 
     # remove items not in this list from the scene
     @queue_method
@@ -6755,7 +6764,7 @@ class Scene(MotionManager):
 
             if i not in objs and not isinstance(obj, Portal) \
                     and obj != self.game.player:
-                self._remove(i)
+                self.immediate_remove(i)
 
     @queue_method
     def do(self, background, ambient=None):  # scene.do
@@ -7088,7 +7097,7 @@ class Text(Item):
             colour = (colour[0], colour[1], colour[2], 255)
         self._over_colour = colour
 
-    def _do(self, action, callback=None, mode=LOOP):
+    def immediate_do(self, action, callback=None, mode=LOOP):  # text.do
         """ Only mimmicks behaviour using "idle" and "over" """
         if not self._over_colour:
             return
@@ -7520,7 +7529,7 @@ class MenuManager:
             log.debug("show menu using place %s" %
                       [x for x in self.game._menu])
 
-    def _remove(self, menu_items=None):
+    def immediate_remove(self, menu_items=None):
         if not menu_items:
             menu_items = self.game._menu
         if type(menu_items) not in [tuple, list]:
@@ -7533,7 +7542,7 @@ class MenuManager:
 
     @queue_method
     def remove(self, menu_items=None):
-        self._remove(menu_items)
+        self.immediate_remove(menu_items)
 
     def _hide(self, menu_items=None):
         """ hide the menu (all or partial)"""
@@ -8837,7 +8846,7 @@ class Factory(object):
             obj.resource_name_override = original.name  # use the original object's resource.
         #        else:
         #            obj.load_assets(self.game)
-        obj._do(original.action.name)
+        obj.immediate_do(original.action.name)
         original.game = self.game  # restore game object to original
         if original._scene:  # add to current scene
             original.scene.immediate_add(obj)
@@ -9909,11 +9918,6 @@ class Game:
                     import pdb
                     pdb.set_trace()
 
-            if symbol == pyglet.window.key.F3:
-                html_editor(game)
-                self.editor = True
-                webbrowser.open("http://127.0.0.1:%i" % PORT)
-
             if symbol == pyglet.window.key.F4:
                 print("RELOADED MODULES")
                 self._allow_editing = True
@@ -10141,7 +10145,7 @@ class Game:
                     if allow_over and over_in_actions and (obj.allow_interact or obj.allow_use or obj.allow_look):
                         if obj._action != obj._over:
                             self.menu.immediate_play_enter_sfx()  # play sound if available
-                        obj._do(obj._over)
+                        obj.immediate_do(obj._over)
 
                     if obj._mouse_motion and not menu_collide:
                         fn = get_function(self, obj._mouse_motion, obj)
@@ -10156,7 +10160,7 @@ class Game:
                         idle = obj._idle  # don't use obj.default_idle as it is scene dependent
                         self.menu.immediate_play_exit_sfx()  # play sound if available
                         if idle in obj._actions or hasattr(obj, "_over_colour"):
-                            obj._do(idle)
+                            obj.immediate_do(idle)
                 if menu_collide:
                     return
 
@@ -10463,7 +10467,7 @@ class Game:
                 return
 
         if potentially_do_idle:
-            self.player._do(self.player.default_idle)
+            self.player.immediate_do(self.player.default_idle)
 
     def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
         if self._generator:
@@ -11357,7 +11361,7 @@ class Game:
                     portal = choice(portals) if len(portals) > 0 else None
                     if portal:
                         self.player.immediate_relocate(destination=portal.stand_point)
-                    self.scene._remove(self.player)  # remove from current scene
+                    self.scene.immediate_remove(self.player)  # remove from current scene
                     scene._add(self.player)  # add to next scene
                     if logging:
                         log.info("TEST SUITE: Player goes %s" %
@@ -11513,19 +11517,6 @@ class Game:
     def update(self, dt, single_event=False):  # game.update
         """ Run update on scene objects """
         #        print("GAME UPDATE")
-
-        if self.editor:  # let editor have a go for a moment.
-            try:
-                request_game_object = editor_queue.get(block=False)
-            except queue.Empty:
-                request_game_object = None
-            if type(request_game_object) is RequestGameObject:
-                editor_queue.task_done()  # finished task with request_game_object
-                print("hand over to editor")
-                editor_queue.put(self)
-                print("put game object on queue, waiting until editor finishes with it")
-                editor_queue.join()
-                print("editor finished with game object")
 
         scene_objects = []
         fn = get_function(self, "game_update")  # special update function game can use
@@ -11867,7 +11858,7 @@ class Game:
         #   self._window.dispatch_event('on_draw')
         self._window.flip()
 
-    def _remove(self, objects):  # game.remove
+    def immediate_remove(self, objects):  # game.remove
         """ Removes objects from the game's storage (it may still exist in other lists, etc) """
         objects_iterable = [objects] if not isinstance(
             objects, Iterable) else objects
@@ -11881,7 +11872,7 @@ class Game:
                 self._scenes.pop(name)
 
     def remove(self, objects):  # game.remove (not an event driven function)
-        return self._remove(objects)
+        return self.immediate_remove(objects)
 
     def _add(self, objects, replace=False):  # game.add
         objects_iterable = [objects] if not isinstance(
@@ -12776,7 +12767,7 @@ if EDITOR_AVAILABLE:
     class SelectDialog(tk.simpledialog.Dialog):
 
         def __init__(self, game, title, objects, *args, **kwargs):
-            parent = tkinter._default_root
+            parent = tk._default_root
             self.game = game
             self.objects = objects
             super().__init__(parent, title)
@@ -13378,294 +13369,3 @@ def editor(game):
     app = MyTkApp(game)
     return app
 
-
-# pyglet editor
-def pyglet_editor(game):
-    # window = pyglet.window.Window()
-    # @window.event
-    # def on_draw():
-    #    game.combined_update(0)
-    # game.publish_fps()
-    #    game._window_editor = pyglet.window.Window(200,600)
-    #    game._window_editor.on_draw = game.pyglet_editor_draw
-    #    EDITOR_ITEMS = [
-    #        ("e_save", (10,10)),
-    #        ("e_load", (40,10)),
-    #    ]
-    # edit_object(self, list(self.scene._objects.values()), 0)
-    game.menu_from_factory("editor", MENU_EDITOR)
-    game.menu_from_factory("editor", [
-        (MENU_NEW, new_game),
-        (MENU_LOAD_GAME, savegame_add),
-        (MENU_EXTRAS, menu_extras),
-        (MENU_SETTINGS, menu_settings),
-        (MENU_EXIT_GAME, menu_exit_game),
-    ])
-
-    for i in EDITOR_ITEMS:
-        o = Item(i[0]).smart(game)
-        game.add(o)
-
-
-#        o.load_assets(game)
-#        o.x, o.y = i[1]
-#    game._window_editor_objects = [i[0] for i in EDITOR_ITEMS]
-
-
-# html editor
-from http.server import BaseHTTPRequestHandler, HTTPServer
-import socketserver
-
-
-class RequestGameObject:
-    pass
-
-
-class HTTPEditorServer(BaseHTTPRequestHandler):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.game = None
-
-    def _navigate(self, delta):
-        objects = self.game.scene._objects + self.game.scene._layer
-        num_objects = len(objects)
-        if num_objects == 0:
-            print("No objects in scene")
-            return
-        obj = objects[self.index]
-        obj = get_object(self.game, obj)
-        obj.show_debug = False
-        self.index += delta
-        if self.index < 0:
-            self.index = num_objects - 1
-        if self.index >= num_objects:
-            self.index = 0
-        obj = objects[self.index]
-        self.set_edit_object(obj)
-
-    def prev(self):
-        _navigate(-1)  # decrement navigation
-
-    def next(self):
-        _navigate(1)  # increment navigation
-
-    def _set_headers(self):
-        self.send_response(200)
-        self.send_header('Content-type', 'text/html')
-        self.end_headers()
-
-    def grab_game_object(self):
-        editor_queue.put(RequestGameObject())
-        print("put game object request")
-        editor_queue.join()
-        print("waiting to get game object in editor")
-        game = editor_queue.get()
-        if game is None:
-            print("no game object handed to editor")
-            return
-        print("Have game object for", game.name)
-        self.game = game
-
-    def release_game_object(self):
-        editor_queue.task_done()
-        print("now release")
-
-    def do_GET(self):
-        self.grab_game_object()
-        self._set_headers()
-        game = self.game
-        this_dir, this_filename = os.path.split(__file__)
-        with open(os.path.join(this_dir, 'editor.html')) as f:
-            editor_html = f.read()
-        with open(os.path.join(this_dir, 'project.html')) as f:
-            project = f.read()
-        scene_options = "\n".join(
-            ["<option value='{s.name}'>{s.name}</option>".format(**locals) for s in game._scenes.values()])
-        #        with open('editor.html') as f:
-        #            editor_html = f.read()
-        #        with open('editor.html') as f:
-        #            editor_html = f.read()
-        html = editor_html % {"scene_options": scene_options, "project": project}
-        objs = copy.copy(self.game.scene._objects)
-        objs.sort()
-        set_edit_object(self.game, objs[0], None)
-        for o in objs:
-            obj = get_object(self.game, o)
-            slug = slugify(obj.name)
-            print("form for", obj.name)
-            OBJECT_FORM = """
-<form name="{slug}" class="form-horizontal" method="post">
-<fieldset>
-<!-- Form Name -->
-<legend>Form Name {obj.name}</legend>
-<!-- Multiple Radios -->
-<div id="form-group-{slug}">
-  <label class="col-md-4 control-label" for="radios">Drag</label>
-  <div class="col-md-4">
-  <div class="radio">
-    <label for="radios-0">
-      <input name="radios" id="radios-0" value="1" checked="checked" type="radio">
-      scale
-    </label>
-	</div>
-  <div class="radio">
-    <label for="radios-1">
-      <input name="radios" id="radios-1" value="2" type="radio">
-      position
-    </label>
-	</div>
-  <div class="radio">
-    <label for="radios-2">
-      <input name="radios" id="radios-2" value="3" type="radio">
-      anchor
-    </label>
-	</div>
-  <div class="radio">
-    <label for="radios-3">
-      <input name="radios" id="radios-3" value="4" type="radio">
-      stand point
-    </label>
-	</div>
-  <div class="radio">
-    <label for="radios-4">
-      <input name="radios" id="radios-4" value="5" type="radio">
-      info text
-    </label>
-	</div>
-  </div>
-</div>
-
-  <label class="col-md-4 control-label" for="checkboxes">Allow</label>
-  <div class="col-md-4">
-  <div class="checkbox">
-    <label for="checkboxes-0">
-      <input name="checkboxes" id="checkboxes-0" value="draw" type="checkbox">
-      draw
-    </label>
-	</div>
-  <div class="checkbox">
-    <label for="checkboxes-1">
-      <input name="checkboxes" id="checkboxes-1" value="interact" type="checkbox">
-      interact
-    </label>
-	</div>
-  <div class="checkbox">
-    <label for="checkboxes-2">
-      <input name="checkboxes" id="checkboxes-2" value="look" type="checkbox">
-      look
-    </label>
-	</div>
-  <div class="checkbox">
-    <label for="checkboxes-3">
-      <input name="checkboxes" id="checkboxes-3" value="use" type="checkbox">
-      update
-    </label>
-	</div>
-  <div class="checkbox">
-    <label for="checkboxes-4">
-      <input name="checkboxes" id="checkboxes-4" value="update" type="checkbox">
-      editor save
-    </label>
-	</div>
-  <div class="checkbox">
-    <label for="checkboxes-5">
-      <input name="checkboxes" id="checkboxes-5" value="editor save" type="checkbox">
-      use
-    </label>
-	</div>
-  </div>
-</div>
-
-<!-- Button Drop Down -->
-<div class="form-group">
-  <label class="col-md-4 control-label" for="buttondropdown">Action</label>
-  <div class="col-md-4">
-    <div class="input-group">
-      <input id="buttondropdown" name="buttondropdown" class="form-control" placeholder="placeholder" type="text">
-      <div class="input-group-btn">
-        <button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">
-          Edit
-          <span class="caret"></span>
-        </button>
-        <ul class="dropdown-menu pull-right">
-          <li><a href="#">idle</a></li>
-          <li><a href="#">left</a></li>
-        </ul>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Button Drop Down -->
-<div class="form-group">
-  <label class="col-md-4 control-label" for="buttondropdown">Default Idle</label>
-  <div class="col-md-4">
-    <div class="input-group">
-      <input id="buttondropdown" name="buttondropdown" class="form-control" placeholder="placeholder" type="text">
-      <div class="input-group-btn">
-        <button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">
-          Set
-          <span class="caret"></span>
-        </button>
-        <ul class="dropdown-menu pull-right">
-          <li><a href="#">idle</a></li>
-        </ul>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Button -->
-<div class="form-group">
-  <label class="col-md-4 control-label" for="singlebutton">Single Button</label>
-  <div class="col-md-4">
-    <button id="{slug}" name="singlebutton" class="btn btn-primary">Button</button>
-  </div>
-</div>
-</fieldset>
-</form>
-""".format(**locals)
-
-            #            self.wfile.write(bytes(OBJECT_FORM, "utf8"))
-            html += OBJECT_FORM
-        self.wfile.write(bytes("{html}".format(**locals), "utf8"))
-        self.release_game_object()
-
-    def do_HEAD(self):
-        self._set_headers()
-
-    def do_POST(self):
-        # Doesn't do anything with posted data
-        self._set_headers()
-        message = "<html><body><h1>POST!</h1></body></html>"
-        self.wfile.write(bytes(message, "utf8"))
-
-
-def my_tcp_server():
-    import http.server
-    import socketserver
-
-    Handler = HTTPEditorServer  # http.server.SimpleHTTPRequestHandler
-    keep_running = True
-    with socketserver.TCPServer(("", PORT), Handler) as httpd:
-        print("serving at port", PORT)
-        #        import pdb; pdb.set_trace()
-        #        httpd.serve_forever()
-        while keep_running:
-            """
-            if game == None:
-                print("No game")
-            else:
-                if game._window == None:
-                    keep_running = False
-                print("game")
-            editor_queue.task_done()
-            print("done, handing back")
-            """
-            print("hello")
-            httpd.handle_request()
-
-
-def html_editor(game):
-    import threading
-    threading.Thread(target=my_tcp_server).start()
