@@ -4,7 +4,8 @@
 def load_state(game, scene):
     from pyvida import WalkArea, Rect
     scene.clean(["logo"])
-    scene.walkareas.set([WalkArea().smart(game, [(100, 600), (900, 560), (920, 700), (80, 720)]),])
+    scene.walkarea.polygon([(1190, 423), (1584, 415), (1586, 682), (1239, 564)])
+    scene.walkarea.waypoints([])
     # scene.music("data/music/armadillo_-_chipgurl.ogg")
     scene.scales["actors"] = 1.00
     logo = game.items["logo"]

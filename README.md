@@ -92,5 +92,8 @@ pytest --cov=pyvida test_pyvida.py
 
 
 #### changelog
-6.10.0
+7.0.0
+- added unit tests
+- replaced use_one_events metaclass with queue_event decorator
 - removed deprecated retalk and respeech
+- removed deprecated walkareas

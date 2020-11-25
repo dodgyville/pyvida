@@ -2,8 +2,10 @@
 pytest tests
 """
 from pathlib import Path
+import pickle
 import pyglet
 import pytest
+import tempfile
 from time import sleep
 from unittest.mock import MagicMock
 
@@ -11,8 +13,10 @@ from pyvida import (
     Actor,
     fit_to_screen,
     get_resource,
+    Factory,
     Game,
     get_best_file,
+    get_object,
     Item,
     MenuFactory,
     Motion,
@@ -21,9 +25,12 @@ from pyvida import (
     PlayerPygletMusic,
     PlayerPygletSFX,
     PyvidaSprite,
+    save_game_pickle,
     Scene,
     Settings,
     Text,
+    WalkArea,
+    WalkAreaManager
 )
 
 TEST_PATH = "/home/luke/Projects/pyvida/test_data"
@@ -31,6 +38,19 @@ TEST_PATH = "/home/luke/Projects/pyvida/test_data"
 RESOLUTION_X = 1000
 RESOLUTION_Y = 1000
 RESOLUTION = (RESOLUTION_X, RESOLUTION_Y)
+
+
+def create_basic_scene(resolution=(1680, 1050), with_update=False):
+    game = Game("Test", "1.0", "1.0", "testpyvida", fps=16, afps=16, resolution=resolution)
+    game.autoscale = False
+    game.working_directory = "/home/luke/Projects/pyvida/test_data"
+    game.init()
+    game.smart()
+    game.queue_load_state("title", "initial")
+    game.camera.scene("title")
+    if with_update:
+        game.update()  # perform all the queued events
+    return game
 
 
 class TestUtils:
@@ -51,6 +71,14 @@ class TestUtils:
 
         f = get_best_file(game, fname)
         assert expected in f
+
+    def test_get_object(self):
+        game = create_basic_scene(with_update=True)
+        item = get_object(game, "logo")
+        actor = get_object(game, "Adam")
+
+        assert item.name == "logo"
+        assert actor.name == "Adam"
 
 
 class TestFullscreen:
@@ -100,6 +128,16 @@ class TestGame:
         g.init()
 
         assert g.resolution == (100, 100)
+
+    def test_pickle(self):
+        game = create_basic_scene()
+        game.update()  # perform all the queued events
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            fname = Path(tmpdirname, "blackbird.savegame")
+            save_game_pickle(game, fname)
+
+        assert game.scene.walkarea.game == game
+        assert game.scene._objects == ['logo']
 
     def test_screen(self):
         g = Game()
@@ -193,6 +231,8 @@ class TestSmart:
         assert len(game._scenes) == 1
 
 
+# classes
+
 class TestActor:
     def test_motion_manager(self):
         # test has inherited correctled.
@@ -227,43 +267,23 @@ class TestActor:
         assert list(a._actions.keys()) == ["idle"]
 
 
+class TestFactory:
+    def test_create_object(self):
+        g = create_basic_scene(with_update=True)
+        template = "Adam"
+        f = Factory(g, template)
+        new_obj = f._create_object("franz", share_resource=True)
+
+        assert new_obj.name == "franz"
+        assert new_obj.game == g
+
+
 class TestItem:
     def test_motion_manager(self):
         # test has inherited correctled.
         obj = Item("test")
         obj.applied_motions.append("hello")
         assert len(obj.applied_motions) == 1
-
-
-def create_basic_scene(resolution=(1680, 1050)):
-    game = Game("Test", "1.0", "1.0", "testpyvida", fps=16, afps=16, resolution=resolution)
-    game.autoscale = False
-    game.working_directory = "/home/luke/Projects/pyvida/test_data"
-    game.init()
-    game.smart()
-    game.queue_load_state("title", "initial")
-    game.camera.scene("title")
-    return game
-
-
-class TestText:
-    def test_basic(self):
-        t = Text("hello world")
-        t.load_assets()
-        resource = get_resource(t.resource_name)
-
-        assert isinstance(t, Actor)
-        assert resource[0] == 164
-        assert resource[1] == 39
-
-    def test_create_missing_font(self):
-        t = Text("hello world", font="nonexisting font")
-        t.load_assets()
-        resource = get_resource(t.resource_name)
-
-        assert isinstance(t, Actor)
-        assert resource[0] == 164
-        assert resource[1] == 39
 
 
 class TestScene:
@@ -276,7 +296,7 @@ class TestScene:
         game = Game()
         game.working_directory = "/home/luke/Projects/pyvida/test_data"
         s = Scene("testscene")
-        game._add(s)
+        game.immediate_add(s)
         s._load_layer("scenes/title/background.png")
         assert len(s._layer) == 1
         assert list(game._items.keys()) == ["testscene_background"]
@@ -305,7 +325,7 @@ class TestScene:
         mx, my = game.resolution[0] / 2 - 100, 140  # game.resolution[1]-50
         game.add(MenuFactory("menu", (mx, my)))
 
-        game._menu_from_factory("menu", [
+        game.immediate_menu_from_factory("menu", [
             ("menu_new", MagicMock()),
             ("menu_old", MagicMock()),
         ])
@@ -326,6 +346,46 @@ class TestScene:
         assert game.scene.get_object("logo")
 
 
+class TestText:
+    def test_basic(self):
+        t = Text("hello world")
+        t.load_assets()
+        resource = get_resource(t.resource_name)
+
+        assert isinstance(t, Actor)
+        assert resource[0] == 164
+        assert resource[1] == 39
+
+    def test_create_missing_font(self):
+        t = Text("hello world", font="nonexisting font")
+        t.load_assets()
+        resource = get_resource(t.resource_name)
+
+        assert isinstance(t, Actor)
+        assert resource[0] == 164
+        assert resource[1] == 39
+
+
+class TestWalkarea:
+    def test_pickle(self):
+        game = create_basic_scene()
+        w = WalkArea()
+
+
+class TestWalkareaManager:
+    def test_pickle(self):
+        game = create_basic_scene()
+        game.update()  # perform all the queued events
+        with tempfile.TemporaryFile() as f:
+            pickle.dump(game.scene.walkarea, f)
+        assert game.scene._objects == ['logo']
+
+    def test_immediate_add_waypoint(self):
+        w = WalkAreaManager(Scene("test"))
+        w.immediate_add_waypoint([5,6])
+
+# higher level
+
 class TestMenus:
     def test_basic(self):
         game = create_basic_scene()
@@ -344,7 +404,7 @@ class TestMenus:
         mx, my = game.resolution[0] / 2 - 100, 140  # game.resolution[1]-50
         game.add(MenuFactory("menu", (mx, my)))
 
-        names = game._menu_from_factory("menu", [
+        names = game.immediate_menu_from_factory("menu", [
             ("menu_new", MagicMock()),
             ("menu_old", MagicMock()),
         ])
@@ -367,7 +427,7 @@ class TestEvents:
         self.scene = Scene("_test_scene")
         self.item = Item("test_item")
         self.game.add([self.scene, self.actor, self.msgbox, self.ok, self.item])
-        self.scene._add(self.actor)
+        self.scene.immediate_add(self.actor)
         self.game.scene = self.scene
 
     def test_relocate(self):
