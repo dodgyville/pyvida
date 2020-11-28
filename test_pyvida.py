@@ -9,15 +9,21 @@ import tempfile
 from time import sleep
 from unittest.mock import MagicMock
 
+
 from pyvida import (
     Actor,
     fit_to_screen,
     get_resource,
+    Emitter,
     Factory,
     Game,
+    get_available_languages,
     get_best_file,
+    get_function,
+    get_image_size,
     get_object,
     Item,
+    line_seg_intersect,
     MenuFactory,
     Motion,
     MotionManager,
@@ -72,6 +78,13 @@ class TestUtils:
         f = get_best_file(game, fname)
         assert expected in f
 
+    def test_get_function(self, mocker):
+        game = create_basic_scene((100,100), with_update=True)
+        e = Emitter("spark")
+        fn = get_function(game, "terminate_by_frame", e)
+
+        assert fn is not None
+
     def test_get_object(self):
         game = create_basic_scene(with_update=True)
         item = get_object(game, "logo")
@@ -79,6 +92,39 @@ class TestUtils:
 
         assert item.name == "logo"
         assert actor.name == "Adam"
+
+    def test_get_image_size_jpg(self):
+        m = get_image_size(Path(TEST_PATH, "data/items/logo/idle.jpg"))
+        assert m == (234, 78)
+
+    def test_get_image_size_png(self):
+        m = get_image_size(Path(TEST_PATH, "data/items/logo/idle.png"))
+        assert m == (234, 78)
+
+    def test_get_image_size_gif(self):
+        m = get_image_size(Path(TEST_PATH, "data/items/logo/idle.gif"))
+        assert m == (234, 78)
+
+    def test_line_seg_intersect_miss(self):
+        result = line_seg_intersect((0, 5), (8, 5), (10, 0), (10, 10))
+        assert result is False
+
+    def test_line_seg_intersect(self):
+        result = line_seg_intersect((0, 5), (10, 5), (5, 0), (5, 10))
+        assert result == (5, 5)
+
+    def test_line_seg_intersect2(self):
+        result = line_seg_intersect((-1, -1), (1, 1), (-1, 1), (1, -1))
+        assert result == (0, 0)
+
+
+class TestLocale:
+    def test_get_available_languages(self, mocker):
+        # api_call is from slow.py but imported to main.py
+        mocker.patch('pyvida.get_safe_path', return_value=Path(TEST_PATH, "data/locale/*").as_posix())
+        available = get_available_languages()
+
+        assert available == ["en-au",]
 
 
 class TestFullscreen:

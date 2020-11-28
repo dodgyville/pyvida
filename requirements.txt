@@ -3,3 +3,5 @@ pyglet==1.5.11
 babel
 fonttools
 pytest-cov
+pytest-mock
+shapely

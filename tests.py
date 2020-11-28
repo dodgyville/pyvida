@@ -543,7 +543,7 @@ class WalkthroughTest(unittest.TestCase):
         self.msgbox = Item("msgbox").smart(self.game, using="data/items/_test_item")
         self.ok = Item("ok").smart(self.game, using="data/items/_test_item")
         self.scene = Scene("_test_scene")
-        self.game._headless = True
+        self.game.headless = True
         self.game.add([self.scene, self.actor, self.msgbox, self.ok])
         self.game.camera._scene(self.scene)
         self.scene._add(self.actor)
@@ -599,7 +599,7 @@ class CameraEventTest(unittest.TestCase):
         self.msgbox = Item("msgbox").smart(self.game, using="data/items/_test_item")
         self.ok = Item("ok").smart(self.game, using="data/items/_test_item")
         self.scene = Scene("_test_scene_large")
-        self.game._headless = True
+        self.game.headless = True
         self.game.add([self.scene, self.actor, self.msgbox, self.ok])
         self.scene._set_background(fname="data/scenes/_test_scene_large/background.png")
         self.game.scene = self.scene
@@ -632,7 +632,7 @@ class GotoTest(unittest.TestCase):
         self.msgbox = Item("msgbox").smart(self.game, using="data/items/_test_item")
         self.ok = Item("ok").smart(self.game, using="data/items/_test_item")
         self.scene = Scene("_test_scene")
-        self.game._headless = False
+        self.game.headless = False
         self.game.add([self.scene, self.actor, self.msgbox, self.ok])
         self.scene._add(self.actor)
         self.game.camera._scene(self.scene)
@@ -746,7 +746,7 @@ class PortalTest(unittest.TestCase):
         self.portal1.sx, self.portal1.sy = 0,0
         self.portal1.ox, self.portal1.oy = -100,0
 
-        self.game._headless = False
+        self.game.headless = False
         self.game.player = self.actor
         self.game.add([self.scene, self.actor, self.portal1, self.portal2])
         self.scene._add([self.actor, self.portal1])

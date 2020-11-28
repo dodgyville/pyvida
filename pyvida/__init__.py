@@ -966,7 +966,7 @@ def get_available_languages():
     languages = glob.glob(get_safe_path("data/locale/*"))
     languages = [os.path.basename(x) for x in languages if os.path.isdir(x)]
     languages.sort()
-    if default_language not in languages:
+    if default_language.upper() not in [x.upper() for x in languages]:
         languages.append(default_language)  # the default
     return languages
 
@@ -979,13 +979,6 @@ def load_image(fname, convert_alpha=False, eight_bit=False):
             im = pyglet.image.codecs.pil.PILImageDecoder().decode(f, fname)
     except:
         im = pyglet.image.load(fname)
-    #    texture = im.get_texture()
-    #    pyglet.gl.glTexParameteri(pyglet.gl.GL_TEXTURE_2D, pyglet.gl.GL_TEXTURE_MAG_FILTER, pyglet.gl.GL_LINEAR) #blurry
-    #    pyglet.gl.glTexParameteri(pyglet.gl.GL_TEXTURE_2D, pyglet.gl.GL_TEXTURE_MAG_FILTER, pyglet.gl.GL_NEAREST) #pixel
-    #    im = texture
-    #    im = pyglet.image.codecs.png.PNGImageDecoder().decode(open(fname, "rb"), fname)
-    #    im = pyglet.image.load(fname)
-    #    im = pyglet.image.load(fname, decoder=PNGImageDecoder())
     return im
 
 
@@ -1125,58 +1118,18 @@ def have_same_signs(a, b):
     return (int(a) ^ int(b)) >= 0
 
 
+from shapely.geometry import LineString
+
+
 def line_seg_intersect(line1point1, line1point2, line2point1, line2point2):
     """ do these two lines intersect """
-    x1 = line1point1[0]
-    y1 = line1point1[1]
-    x2 = line1point2[0]
-    y2 = line1point2[1]
-    x3 = line2point1[0]
-    y3 = line2point1[1]
-    x4 = line2point2[0]
-    y4 = line2point2[1]
-
-    a1 = y2 - y1
-    b1 = x1 - x2
-    c1 = (x2 * y1) - (x1 * y2)
-
-    r3 = (a1 * x3) + (b1 * y3) + c1
-    r4 = (a1 * x4) + (b1 * y4) + c1
-
-    if (r3 != 0) and (r4 != 0) and have_same_signs(r3, r4):
-        return DONT_INTERSECT
-
-    a2 = y4 - y3
-    b2 = x3 - x4
-    c2 = x4 * y3 - x3 * y4
-
-    r1 = a2 * x1 + b2 * y1 + c2
-    r2 = a2 * x2 + b2 * y2 + c2
-
-    if (r1 != 0) and (r2 != 0) and have_same_signs(r1, r2):
-        return DONT_INTERSECT
-
-    denom = (a1 * b2) - (a2 * b1)
-    if denom == 0:
-        return (COLINEAR)
-    elif denom < 0:
-        offset = (-1 * denom / 2)
+    line1 = LineString([line1point1, line1point2])
+    line2 = LineString([line2point1, line2point2])
+    intersect = line1.intersection(line2)
+    if intersect.is_empty:
+        return False
     else:
-        offset = denom / 2
-
-    num = (b1 * c2) - (b2 * c1)
-    if num < 0:
-        x = (num - offset) / denom
-    else:
-        x = (num + offset) / denom
-
-    num = (a2 * c1) - (a1 * c2)
-    if num < 0:
-        y = (num - offset) / denom
-    else:
-        y = (num - offset) / denom
-
-    return x, y
+        return intersect.x, intersect.y
 
 
 def collide(rect, x, y):
@@ -1438,11 +1391,12 @@ def get_function(game, basic, obj=None, warn_on_empty=True):
             return fn
 
     script = None
-    # which module to search for functions
+    # which module to search for functions, search main, then user defined, then pyvida last
     module = "main" if android else "__main__"
     extra_modules = game._modules if __name__ == "pyvida" and game else {}
     modules = [module]
     modules.extend(extra_modules.keys())
+    modules.append("pyvida")
     for m in modules:
         if m not in sys.modules:
             continue
@@ -1682,7 +1636,7 @@ class AchievementManager:
 
     def present(self, game, slug):
         a = self._achievements[slug]
-        if game._headless is True: return
+        if game.headless is True: return
         if not game.settings.silent_achievements:
             game.achievement.load_assets(game)
             game.achievement.relocate(game.scene, (120, game.resolution[1]))
@@ -2243,7 +2197,7 @@ class Action(object):
         quickload = os.path.abspath(get_best_file(game, fname + ".quickload"))
         full_load = True
         resource = False  # don't update resource
-        if game._headless:  # only load defaults
+        if game.headless:  # only load defaults
             if os.path.isfile(quickload):  # read w,h without loading full image
                 try:
                     with open(quickload, "r") as f:
@@ -2669,13 +2623,13 @@ class MotionManager:
                 motion.index = index
             if destructive is not None:
                 motion.destructive = destructive
-            if block is True and self.game._headless is False:
+            if block is True and self.game.headless is False:
                 self.busy += 1
                 self.game.immediate_wait()  # make game wait
                 if logging:
                     log.info("%s has started motion %s, so incrementing self.busy to %s." % (
                         self.name, motion.name, self.busy))
-            if self.game._headless is True and mode == ONCE:
+            if self.game.headless is True and mode == ONCE:
                 motion.apply_full_motion_to_actor(self)
                 return None  # don't add the motion as it has been fully applied.
         else:
@@ -2892,7 +2846,7 @@ class Actor(MotionManager):
 
         sprite_callback = get_function(self.game, self._pyglet_animation_callback, obj=self)
 
-        if self.game and self.game._headless:
+        if self.game and self.game.headless:
             sprite_callback()
             return
 
@@ -2912,7 +2866,7 @@ class Actor(MotionManager):
         sprite.immediate_animation_end = sprite_callback
 
         # jump to end
-        if self.game and self.game._headless and isinstance(sprite.image, pyglet.image.Animation):
+        if self.game and self.game.headless and isinstance(sprite.image, pyglet.image.Animation):
             sprite._frame_index = len(sprite.image.frames)
 
         set_resource(self.resource_name, w=sprite.width, h=sprite.height, resource=sprite)
@@ -3364,7 +3318,7 @@ class Actor(MotionManager):
         else:
             destination = self.x, self.y
 
-        if self.game._headless:
+        if self.game.headless:
             self.immediate_goto(destination, block=block, next_action=next_action)
             return
 
@@ -4188,7 +4142,7 @@ class Actor(MotionManager):
             glPopMatrix();
 
     def pyglet_draw(self, absolute=False, force=False, window=None):  # actor.draw
-        if self.game and self.game._headless and not force:
+        if self.game and self.game.headless and not force:
             return
         if not self.game:
             print(self.name, "has no game attribute")
@@ -4234,15 +4188,24 @@ class Actor(MotionManager):
 
     @queue_method
     def remove_fog(self):
+        self.immediate_remove_fog()
+
+    def immediate_remove_fog(self):
         self._fog_display_text = None
 
     @queue_method
     def refresh_assets(self, game):
+        self.immediate_refresh_assets(game)
+
+    def immediate_refresh_assets(self, game):
         self.unload_assets()
         self.load_assets(game)
 
     @queue_method
     def opacity(self, v):
+        self.immediate_opacity(v)
+
+    def immediate_opacity(self, v):
         """ 0 - 255 """
         self.alpha = v
 
@@ -4373,7 +4336,7 @@ class Actor(MotionManager):
             opt = Text("option{}".format(i), display_text=text, **kwargs)
             if i in keys.keys():
                 opt.immediate_key(keys[i])
-            # if self.game and not self.game._headless:
+            # if self.game and not self.game.headless:
             opt.load_assets(self.game)
             padding_x = 10
             opt.x, opt.y = label.x + padding_x, label.y + label.h + i * opt.h + 5
@@ -4433,7 +4396,7 @@ class Actor(MotionManager):
         self.game.immediate_add(label)
         if not duration:
             self.game._modals.append(label.name)
-            if self.game._headless:  # headless mode skips sound and visuals
+            if self.game.headless:  # headless mode skips sound and visuals
                 label.trigger_interact()  # auto-close the on_says
         else:
             log.error("on_continues clearing after duration not complete yet")
@@ -4628,18 +4591,18 @@ class Actor(MotionManager):
         """
         self._forget(fact)
 
-    def immediate_remember(self, fact):
+    def immediate_memorise(self, fact):
         if fact not in self.facts:
             self.facts.append(fact)
 
     @queue_method
-    def remember(self, fact):
+    def memorise(self, fact):
         """ A queuing function. Remember a fact to the list of facts
 
             Example::
-                player.remember("spoken to everyone")            
+                player.memorise("spoken to everyone")
         """
-        self.immediate_remember(fact)
+        self.immediate_memorise(fact)
 
     def remembers(self, fact):
         """ A pseudo-queuing function. Return true if fact in the list of facts 
@@ -4720,6 +4683,10 @@ class Actor(MotionManager):
         if self.game._walkthrough_auto:  # headless mode skips sound and visuals
             items[0].trigger_interact()  # auto-close the on_says
 
+    @queue_method
+    def loses(self, item):
+        self.immediate_loses(item)
+
     def immediate_loses(self, item):
         """ remove item from inventory """
         obj = get_object(self.game, item)
@@ -4729,23 +4696,15 @@ class Actor(MotionManager):
             log.error("Item %s not in inventory" % getattr(item, "name", item))
 
     @queue_method
-    def loses(self, item):
-        self.immediate_loses(item)
+    def meets(self, actor):
+        """ Remember this Actor has met actor """
+        self.immediate_meets(actor)
 
-    #    def _collection_select(self, collection, obj):
-    #        """ Called when this object is selected in a collection """
-    #        print("handling object selection")
-
-    def _meets(self, actor):
+    def immediate_meets(self, actor):
         actor = get_object(self.game, actor)
         actor = actor.name if actor else actor
         if actor and actor not in self._met:
             self._met.append(actor)
-
-    @queue_method
-    def meets(self, actor):
-        """ Remember this Actor has met actor """
-        self._meets(actor)
 
     def has_met(self, actor):
         """ Return True if either Actor recalls meeting the other """
@@ -4820,6 +4779,9 @@ class Actor(MotionManager):
 
     @queue_method
     def do_random(self, mode=LOOP):
+        self.immediate_do_random(mode)
+
+    def immediate_do_random(self, mode=LOOP):
         """ Randomly do an action """
         action = choice(list(self._actions.keys()))
         self.immediate_do(action, mode=mode)
@@ -4841,7 +4803,7 @@ class Actor(MotionManager):
         self._next_action = next_action if next_action else self.default_idle
         do_event = self.scene or (self.game and self.name in self.game._modals) or (
                 self.game and self.name in self.game._menu)
-        if (self.game and self.game._headless is True) or not do_event:  # if headless or not on screen, jump to end
+        if (self.game and self.game.headless is True) or not do_event:  # if headless or not on screen, jump to end
             self.busy += 1
             self.immediate_animation_end_once()
             result = True
@@ -4915,10 +4877,16 @@ class Actor(MotionManager):
 
     @queue_method
     def tint(self, rgb=None):
+        self.immediate_tint(rgb)
+
+    def immediate_tint(self, rgb=None):
         self._set_tint(rgb)
 
     @queue_method
     def shake(self, xy=0, x=None, y=None):
+        self.immediate_shake(xy, x, y)
+
+    def immediate_shake(self, xy=0, x=None, y=None):
         self._shakex = xy if x is None else x
         self._shakey = xy if y is None else y
 
@@ -4936,7 +4904,7 @@ class Actor(MotionManager):
                 log.info("%s has finished on_idle, so decrement %s.busy to %i." % (
                     self.name, self.name, self.busy))
 
-        if self.game and not self.game._headless:
+        if self.game and not self.game.headless:
             pyglet.clock.schedule_once(finish_idle, seconds, datetime.now())
         else:
             finish_idle(0, datetime.now())
@@ -5033,6 +5001,9 @@ class Actor(MotionManager):
 
     @queue_method
     def flip(self, horizontal=None, vertical=None, anchor=True):
+        self.immediate_flip(horizontal, vertical, anchor)
+
+    def immediate_flip(self, horizontal=None, vertical=None, anchor=True):
         """ Flip actor image """
         if vertical != None: self._flip_vertical = vertical
         if horizontal != None:
@@ -5047,9 +5018,6 @@ class Actor(MotionManager):
         self.flip(horizontal=False, anchor=False)
         self.game.pause(0.5)
 
-    def _hide(self):
-        self.immediate_usage(draw=False, update=False)
-
     @queue_method
     def hide(self):
         """ A queuing function: hide the actor, but leave interact events alone
@@ -5058,7 +5026,10 @@ class Actor(MotionManager):
 
             player.hide()
         """
-        self._hide()
+        self.immediate_hide()
+
+    def immediate_hide(self):
+        self.immediate_usage(draw=False, update=False)
 
     def immediate_show(self):
         self._opacity_delta = 0
@@ -5086,7 +5057,7 @@ class Actor(MotionManager):
             log.debug("%s fade to %i" % (self.name, target))
         if action:
             self.immediate_do(action)
-        if self.game._headless:  # headless mode skips sound and visuals
+        if self.game.headless:  # headless mode skips sound and visuals
             self.alpha = target
             return
         if target == self.alpha:  # already there.
@@ -5156,7 +5127,7 @@ class Actor(MotionManager):
         """
         destination can be a point, an Actor, or CENTER (to center on screen).
         """
-        if self.action and self.action._loaded == False and self.game and not self.game._headless:
+        if self.action and self.action._loaded == False and self.game and not self.game.headless:
             self.load_assets(self.game)
         if scene:
             if self.scene:  # remove from current scene
@@ -5226,7 +5197,8 @@ class Actor(MotionManager):
                     clear_path = False
                     return clear_path
                 w1 = w2
-            if line_seg_intersect(end, start, w2, w0): clear_path = False
+            if line_seg_intersect(end, start, w2, w0):
+                clear_path = False
         for rect in solids:  # test the solids
             collide = rect.intersect(start, end)
             if collide is True:
@@ -5482,14 +5454,14 @@ class Actor(MotionManager):
         """ Get a path to the destination and then start walking """
 
         # if in auto mode but not headless, force player to walk everywhere.
-        if self.game and self == self.game.player and self.game._walkthrough_auto == True and self.game._headless == False:
+        if self.game and self == self.game.player and self.game._walkthrough_auto == True and self.game.headless == False:
             block = True
 
         point = get_point(self.game, destination, self)
         if next_action:
             self._next_action = next_action
 
-        if self.game._headless:  # skip pathplanning if in headless mode
+        if self.game.headless:  # skip pathplanning if in headless mode
             log.info("%s jumps to point." % self.name)
             self.x, self.y = point
             return
@@ -5799,7 +5771,7 @@ class Emitter(Item):
             direction: what is the angle of the emitter
             fov: what is the arc of the emitter's 'nozzle'?
         """
-        super().__init__(name)
+        super(Emitter, self).__init__(name)
         self.name = name
         self.number = number
         self.frames = frames
@@ -5918,6 +5890,7 @@ class Emitter(Item):
         p.action_index += 1
 
         test_terminate = get_function(self.game, self.test_terminate, self)
+        #import pdb; pdb.set_trace()
         if test_terminate(self.game, self, p):  # reset if needed
             #            print("RESET PARTICLE", self.frames, p.index)
             self.reset_particle(p)
@@ -5930,14 +5903,14 @@ class Emitter(Item):
 
     def _update(self, dt, obj=None):  # emitter.update
         Item._update(self, dt, obj=obj)
-        if self.game and self.game._headless:
+        if self.game and self.game.headless:
             return
         for i, p in enumerate(self.particles):
             self._update_particle(dt, p)
 
     def pyglet_draw(self, absolute=False, force=False):  # emitter.draw
         #        if self.resource and self._allow_draw: return
-        if self.game and self.game._headless and not force:
+        if self.game and self.game.headless and not force:
             return
 
         if not self.action:
@@ -5997,7 +5970,7 @@ class Emitter(Item):
         self.behaviour = BEHAVIOUR_FIRE
         for p in self.particles:
             p.terminate = True
-            if self.game and self.game._headless:
+            if self.game and self.game.headless:
                 self.particles.remove(p)
 
     @queue_method
@@ -6834,7 +6807,7 @@ class Scene(MotionManager):
         if fname:
             for i in self._layer:
                 obj = get_object(self.game, i)
-                # if self.game and not self.game._headless:
+                # if self.game and not self.game.headless:
                 obj.load_assets(self.game)
                 # self.immediate_add(obj)
             log.debug("Set background for scene %s to %s" % (self.name, fname))
@@ -6854,16 +6827,16 @@ class Scene(MotionManager):
             obj = get_object(self.game, obj_name)
 
             if fx == FX_FADE_OUT:
-                if self.game._headless:  # headless mode skips sound and visuals
+                if self.game.headless:  # headless mode skips sound and visuals
                     obj.alpha = 0
                     continue
                 obj._opacity_target = 0
             else:
-                if self.game._headless:  # headless mode skips sound and visuals
+                if self.game.headless:  # headless mode skips sound and visuals
                     obj.alpha = 255
                     continue
                 obj._opacity_target = 255
-            if not self.game._headless:
+            if not self.game.headless:
                 obj._opacity_delta = (
                                              obj._opacity_target - obj._opacity) / (self.game.fps * seconds)
 
@@ -7145,7 +7118,7 @@ class Text(Item):
         if len(c) == 3:
             c = (c[0], c[1], c[2], 255)
 
-        if self.game and self.game._headless is True:
+        if self.game and self.game.headless is True:
             self._text_index = len(self._display_text)
             self._animated_text = self._display_text[:self._text_index]
             return
@@ -7243,7 +7216,7 @@ class Text(Item):
             self.resource_offset.text = self._animated_text
 
     def pyglet_draw(self, absolute=False):  # text.draw 
-        if self.game and self.game._headless:
+        if self.game and self.game.headless:
             return
 
         if not self.allow_draw:
@@ -7428,7 +7401,7 @@ class Collection(Item, pyglet.event.EventDispatcher):
 
     # collection.draw, by default uses screen values
     def pyglet_draw(self, absolute=True):
-        if self.game and self.game._headless:
+        if self.game and self.game.headless:
             return
         if not self.resource: return
 
@@ -7666,7 +7639,7 @@ class MenuManager:
             sfx = _sound_resources[key] = SFX_Class(self.game)
             sfx.load(get_safe_path(key), self.game.settings.sfx_volume)
         if self.game:
-            if self.game._headless or (self.game.settings and self.game.settings.mute):
+            if self.game.headless or (self.game.settings and self.game.settings.mute):
                 return
             if self.game.mixer and self.game.mixer._force_mute or self.game.mixer._session_mute:
                 return
@@ -7862,7 +7835,7 @@ class Camera:  # the view manager
         # unload assets from older scenes 
         KEEP_SCENES_RESIDENT = 10
         unload = self.game._resident[:-KEEP_SCENES_RESIDENT]  # unload older scenes
-        if len(unload) > 0 and not self.game._headless:
+        if len(unload) > 0 and not self.game.headless:
             for unload_scene in unload:
                 s = get_object(self.game, unload_scene)
                 log.debug("Unload scene %s" % (unload_scene))
@@ -7894,7 +7867,7 @@ class Camera:  # the view manager
         """ change the scene """
         if self._overlay_fx == FX_DISCO:  # remove disco effect
             self.immediate_disco_off()
-        if not self.game._headless:
+        if not self.game.headless:
             pyglet.gl.glClearColor(0, 0, 0, 255)  # reset clear colour to black
         if type(scene) in [str]:
             if scene in self.game._scenes:
@@ -8003,11 +7976,11 @@ class Camera:  # the view manager
         """
         colour can only be black|white
         """
-        if self.game._headless:  # headless mode skips sound and visuals
+        if self.game.headless:  # headless mode skips sound and visuals
             return
 
         #       items = self.game.player._says("FADE OUT", None)
-        #        if self.game._headless:  # headless mode skips sound and visuals
+        #        if self.game.headless:  # headless mode skips sound and visuals
         #            items[0].trigger_interact()  # auto-close the on_says
         #        return
         d = pyglet.resource.get_script_home()
@@ -8028,7 +8001,7 @@ class Camera:  # the view manager
     @queue_method
     def fade_in(self, seconds=3, colour="black", block=False):
         #   items = self.game.player._says("FADE IN", None)
-        if self.game._headless:  # headless mode skips sound and visuals
+        if self.game.headless:  # headless mode skips sound and visuals
             return
         #            items[0].trigger_interact()  # auto-close the on_says
         #    return
@@ -8071,7 +8044,7 @@ class Camera:  # the view manager
 
     @queue_method
     def off(self, colour="black"):
-        if self.game._headless:  # headless mode skips sound and visuals
+        if self.game.headless:  # headless mode skips sound and visuals
             return
         d = pyglet.resource.get_script_home()
         if colour == "black":
@@ -8137,7 +8110,7 @@ class Camera:  # the view manager
 
         point = get_point(self.game, destination, self)
 
-        if self.game._headless:  # skip pathplanning if in headless mode
+        if self.game.headless:  # skip pathplanning if in headless mode
             self.game.scene.x, self.game.scene.y = point
             return
 
@@ -8290,7 +8263,7 @@ class PlayerPygletMusic:
             self._player.volume = v
 
     def busy(self):
-        return self._player.playing if self._music else False
+        return self._player.playing if self._player and self._music else False
 
 
 class PlayerPygameSFX():
@@ -8524,7 +8497,7 @@ class Mixer:
 
     def immediate_music_pop(self, volume=None):
         """ Stop the current track and if there is music stashed, pop it and start playing it """
-        if self.game and self.game._headless:
+        if self.game and self.game.headless:
             return
         if self._music_filename:  # currently playing music
             if self._music_stash:  # there is a file on the stash
@@ -8573,7 +8546,7 @@ class Mixer:
 
             if os.path.exists(absfilename):  # new music
                 log.info("Loading music file %s" % absfilename)
-                if self.game and not self.game._headless:
+                if self.game and not self.game.headless:
                     self._music_player.load(absfilename)
                 self._music_filename = fname
                 #                print("SETTING CURRENT MUSIC FILENAME TO", fname)
@@ -8588,7 +8561,7 @@ class Mixer:
             print("NO MUSIC FILE", fname)
             return
         #        print("PLAY: SESSION MUTE", self._session_mute)
-        if self._force_mute or self._session_mute or self.game._headless:
+        if self._force_mute or self._session_mute or self.game.headless:
             return
         if volume is not None: self.immediate_music_volume(volume)
 
@@ -8636,7 +8609,7 @@ class Mixer:
         self.immediate_music_stop()
 
     def immediate_music_stop(self):
-        if self.game and not self.game._headless:
+        if self.game and not self.game.headless:
             self._music_player.pause()
 
     @queue_method
@@ -8644,7 +8617,7 @@ class Mixer:
         self.immediate_music_restart()
 
     def immediate_music_restart(self):
-        if self.game and not self.game._headless:
+        if self.game and not self.game.headless:
             self._music_player.play()
 
     @queue_method
@@ -8656,7 +8629,7 @@ class Mixer:
         new_volume = self._music_volume = val
         # scale by the master volume from settings
         new_volume *= self.game.settings.music_volume if self.game and self.game.settings else 1
-        if self.game and not self.game._headless:
+        if self.game and not self.game.headless:
             self._music_player.volume(new_volume)
         log.info("Setting music volume to %f" % new_volume)
 
@@ -8669,7 +8642,7 @@ class Mixer:
         val = val if val else 1  # reset
         new_volume = self._sfx_volume = val
         new_volume *= self.game.settings.sfx_volume if self.game and self.game.settings else 1
-        if self.game and not self.game._headless:
+        if self.game and not self.game.headless:
             for sfx_player in self._sfx_players:
                 sfx_player.volume(new_volume)
 
@@ -8688,7 +8661,7 @@ class Mixer:
 
     def _sfx_stop_callback(self):
         """ callback used by fadeout to stop sfx """
-        if self.game and not self.game._headless:
+        if self.game and not self.game.headless:
             self.immediate_sfx_stop()
 
     @queue_method
@@ -8702,7 +8675,7 @@ class Mixer:
 
         if self._sfx_volume_target is not None:  # fade the volume up or down
             v = self._sfx_volume + self._sfx_volume_step
-            if self.game._headless or self.game._walkthrough_auto: v = self._sfx_volume_target
+            if self.game.headless or self.game._walkthrough_auto: v = self._sfx_volume_target
             finish = False
             if self._sfx_volume_step < 0 and v <= self._sfx_volume_target:
                 finish = True
@@ -8720,7 +8693,7 @@ class Mixer:
 
         if self._ambient_volume_target is not None:  # fade the ambient up or down
             v = self._ambient_volume + self._ambient_volume_step
-            if self.game._headless or self.game._walkthrough_auto: v = self._ambient_volume_target
+            if self.game.headless or self.game._walkthrough_auto: v = self._ambient_volume_target
             finish = False
             if self._ambient_volume_step < 0 and v <= self._ambient_volume_target:
                 finish = True
@@ -8738,7 +8711,7 @@ class Mixer:
 
         if self._music_volume_target is not None:  # fade the volume up or down
             v = self._music_volume + self._music_volume_step
-            if self.game._headless or self.game._walkthrough_auto: v = self._music_volume_target
+            if self.game.headless or self.game._walkthrough_auto: v = self._music_volume_target
             finish = False
             if self._music_volume_step < 0 and v <= self._music_volume_target:
                 finish = True
@@ -8773,12 +8746,12 @@ class Mixer:
             absfilename = get_safe_path(fname)
             if os.path.exists(absfilename):
                 log.info("Loading sfx file %s" % absfilename)
-                if self.game and not self.game._headless:
+                if self.game and not self.game.headless:
                     sfx_player.load(absfilename, self.game.settings.sfx_volume)
             else:
                 log.warning("SFX file %s missing." % absfilename)
                 return
-        if self.game.settings.mute or self.game._headless or self._force_mute or self._session_mute:
+        if self.game.settings.mute or self.game.headless or self._force_mute or self._session_mute:
             return
         if self.game.settings and self.game.settings.sfx_subtitles and description:
             d = "<sound effect: %s>" % description
@@ -8791,7 +8764,7 @@ class Mixer:
         self.immediate_sfx_stop(sfx)
 
     def immediate_sfx_stop(self, sfx=None):
-        if self.game and not self.game._headless:
+        if self.game and not self.game.headless:
             for sfx_player in self._sfx_players:
                 sfx_player.stop()
 
@@ -8814,7 +8787,7 @@ class Mixer:
         self.immediate_ambient_stop()
 
     def immediate_ambient_stop(self):
-        if self.game and not self.game._headless:
+        if self.game and not self.game.headless:
             self._ambient_player.stop()
 
     @queue_method
@@ -8857,12 +8830,12 @@ class Mixer:
             absfilename = get_safe_path(fname)
             if os.path.exists(absfilename):
                 log.info("Loading ambient file %s" % absfilename)
-                if self.game and not self.game._headless:
+                if self.game and not self.game.headless:
                     self._ambient_player.load(absfilename, self.game.settings.ambient_volume)
             else:
                 log.warning("Ambient file %s missing." % absfilename)
                 return
-        if (self.game.settings and self.game.settings.mute) or self.game._headless:
+        if (self.game.settings and self.game.settings.mute) or self.game.headless:
             return
         if self._force_mute or self._session_mute:
             return
@@ -9196,8 +9169,8 @@ def load_game_pickle(game, fname, meta_only=False, keep=[], responsive=False):
 
             # switch off headless mode to force graphical assets of most recently
             # accessed scenes to load.
-            headless = game._headless
-            game._headless = False
+            headless = game.headless
+            game.headless = False
             for scene_name in game._resident:
                 scene = get_object(game, scene_name)
                 if scene:
@@ -9207,7 +9180,7 @@ def load_game_pickle(game, fname, meta_only=False, keep=[], responsive=False):
                     log.warning("Pickle load: scene %s is resident but not actually in Game, " % scene_name)
             load_menu_assets(game)
 
-            game._headless = headless
+            game.headless = headless
 
             # load pyglet fonts
             for fontfile, fontname in _pyglet_fonts.items():
@@ -9863,11 +9836,12 @@ class Game:
         self.fps = v
 
     def set_headless_value(self, v):
+        if v != self._headless:
+            if v is True:  # speed up
+                self.immediate_publish_fps(400, 400)
+            else: # normal speed
+                self.immediate_publish_fps(self.fps, self.default_actor_fps)
         self._headless = v
-        if self._headless is True:  # speed up
-            self.immediate_publish_fps(400, 400)
-        else:
-            self.immediate_publish_fps(self.fps, self.default_actor_fps)
 
     def get_headless_value(self):
         return self._headless
@@ -10205,7 +10179,7 @@ class Game:
             reset_mouse_cursor(self)
             return
 
-        if not self.scene or self._headless or self._walkthrough_auto:
+        if not self.scene or self.headless or self._walkthrough_auto:
             return
         # check modals as first priority
         modal_collide = False
@@ -10335,7 +10309,7 @@ class Game:
         y = self.resolution[1] - y  # invert y-axis if needed
 
         self.mouse_down = (x, y)
-        if self._headless: return
+        if self.headless: return
 
         # if editing walkarea, set the index to the nearest point
         if self._editing:
@@ -10432,7 +10406,7 @@ class Game:
             1]:  # mouse is outside game window
             return
 
-        if self._headless or self._walkthrough_auto: return
+        if self.headless or self._walkthrough_auto: return
 
         # we are editing something, so don't interact with objects
         if self.editor and self._selector:  # select an object
@@ -11136,7 +11110,7 @@ class Game:
                 self._test_inventory_per_scene = True
             if options.imagereactor == True:
                 """ save a screenshot as requested by walkthrough """
-                if self._headless is True:
+                if self.headless is True:
                     print("WARNING, ART REACTOR CAN'T RUN IN HEADLESS MODE")
                 d = "imagereactor %s" % datetime.now()
                 self._imagereactor_directory = os.path.join(self.save_directory, d)
@@ -11251,7 +11225,7 @@ class Game:
         self._walkthrough_index += 1
 
         if self._walkthrough_index > self._walkthrough_target or self._walkthrough_index > len(self._walkthrough):
-            if self._headless:
+            if self.headless:
                 if self._test_inventory:
                     print("Test inventory. Walkthrough report:")
                     print("Inventoried items: %s" % self._walkthrough_inventorables)
@@ -11360,7 +11334,7 @@ class Game:
 
         if options.imagereactor == True and "screenshot" in extras:
             """ save a screenshot as requested by walkthrough """
-            if self._headless is True:
+            if self.headless is True:
                 print("WARNING, ART REACTOR CAN'T RUN IN HEADLESS MODE")
             d = self._imagereactor_directory
             if not os.path.isdir(d):
@@ -11715,7 +11689,7 @@ class Game:
 
         #        print("game update", self._headless, self._walkthrough_target>self._walkthrough_index, len(self._modals)>0, len(self._events))
 
-        if not self._headless:
+        if not self.headless:
             self.current_clock_tick = int(round(time.time() * 1000))
             # only delay as much as needed
         #            used_time = self.current_clock_tick - self.last_clock_tick #how much time did computation use of this loop
@@ -11740,7 +11714,7 @@ class Game:
 
         if not self.scene:
             return
-        if self._headless or self._walkthrough_auto:
+        if self.headless or self._walkthrough_auto:
             return
         #        print("GAME DRAW")
 
@@ -12262,7 +12236,7 @@ class Game:
                           (sfname, scene.name))
             scene._last_state = get_relative_path(sfname, self.game.working_directory)
             #            execfile("somefile.py", global_vars, local_vars)
-            current_headless = self._headless
+            current_headless = self.headless
             if not current_headless:
                 self.set_headless_value(True)
             with open(sfname) as f:
@@ -12368,7 +12342,7 @@ class Game:
     @queue_method
     def pause(self, duration):
         """ pause the game for duration seconds """
-        if self._headless:
+        if self.headless:
             return
         self.busy += 1
         self.immediate_wait()
@@ -12570,7 +12544,7 @@ class Game:
             callback(d, game)
 
         if callback:
-            if not duration or self._headless:
+            if not duration or self.headless:
                 splash_finish(0, self)
             else:
                 pyglet.clock.schedule_once(splash_finish, duration, self)
