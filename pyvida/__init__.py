@@ -46,7 +46,6 @@ import sys
 import threading
 import time
 import traceback
-import webbrowser
 
 # 3rd party modules
 import euclid3 as eu
@@ -77,13 +76,16 @@ except ImportError:
 
 try:
     import tkinter as tk
-    import tkinter.filedialog
-    import tkinter.simpledialog
-    import tkinter.messagebox
+    import tkinter.filedialog as tkfiledialog
+    import tkinter.simpledialog as tksimpledialog
+    import tkinter.messagebox as tkmessagebox
 
     EDITOR_AVAILABLE = True
 except ImportError:
     tk = None
+    tkfiledialog = None
+    tksimpledialog = None
+    tkmessagebox = None
     EDITOR_AVAILABLE = False
 
 try:
@@ -96,7 +98,6 @@ try:
         glTranslatef,
     )
     from pyglet.gl.gl import c_float
-    from pyglet.image.codecs.png import PNGImageDecoder
     import pyglet.window.mouse
 except pyglet.window.NoSuchConfigException:
     c_float = None
@@ -1868,15 +1869,11 @@ class Motion(object):
             actor._vy += dy if dy != None else 0
         actor.z += d[2] if d[2] != None else 0
         actor.rotate += d[3] if d[3] != None else 0
-        if d[4] != None: actor.scale = d[4]
-        if d[5] != None:
+        if d[4] is not None: actor.scale = d[4]
+        if d[5] is not None:
             actor._frame(int(d[5]))
-        #            if actor.action.mode != MANUAL:
-
-        #                print("warning: %s action %s not in manual mode, so motion %s "
-        #                      "frame requests fighting with auto frame advance"%
-        #                      (actor.name, actor.action.name, self.name))
-        if d[6] != None: actor.alpha = d[6]
+        if d[6] is not None:
+            actor.immediate_set_alpha(d[6])
 
     def apply_full_motion_to_actor(self, actor, index=None):
         """ Apply motion to an actor during headless mode. 
@@ -2705,12 +2702,12 @@ class Actor(MotionManager):
         self._goto_block = False  # is this a*star multi-step process blocking?
         self._use_astar = False
 
-        self._opacity = 255
+        self.opacity = 255
 
-        self._opacity_target = None
-        self._opacity_delta = 0
+        self.opacity_target = None
+        self.opacity_delta = 0
         # is opacity change blocking other events
-        self._opacity_target_block = False
+        self.opacity_target_block = False
 
         self._flip_vertical = False
         self._flip_horizontal = False
@@ -2861,7 +2858,7 @@ class Actor(MotionManager):
             sprite.scale = self.scale
         #        if self.rotate:
         #            sprite.rotation = self.rotate
-        sprite.opacity = self.alpha
+        sprite.opacity = self.get_alpha()
 
         sprite.immediate_animation_end = sprite_callback
 
@@ -3194,7 +3191,7 @@ class Actor(MotionManager):
 
     interact = property(get_interact, set_interact)
 
-    def set_look(self, v):
+    def set_look(self, v):  # actor.set_look
         self._look = v
 
     def get_look(self):
@@ -3242,20 +3239,22 @@ class Actor(MotionManager):
 
     allow_update = property(get_allow_update, set_allow_update)
 
+    @queue_method
     def set_alpha(self, v):
+        self.immediate_set_alpha(v)
+
+    def immediate_set_alpha(self, v):
         """ 0 - 255 """
-        self._opacity = v
+        self.opacity = v
 
         if isinstance(self, Text) and self.resource:
-            new_colour = (self.resource.color[0], self.resource.color[1], self.resource.color[2], int(self._opacity))
+            new_colour = (self.resource.color[0], self.resource.color[1], self.resource.color[2], int(self.opacity))
             self.resource.color = new_colour
         elif self.resource:
-            self.resource.opacity = self._opacity
+            self.resource.opacity = self.opacity
 
     def get_alpha(self):
-        return self._opacity
-
-    alpha = property(get_alpha, set_alpha)
+        return self.opacity
 
     @property
     def resource(self):
@@ -3340,6 +3339,8 @@ class Actor(MotionManager):
             self.immediate_do(self.default_idle)
 
     def _update(self, dt, obj=None):  # actor._update, use obj to override self
+        if self.allow_update is False:
+            return
         self._vx, self._vy = 0, 0
         self._scroll_dx += self.scroll[0]
         if self.w and self._scroll_dx < -self.w:
@@ -3348,31 +3349,32 @@ class Actor(MotionManager):
             self._scroll_dx -= self.w
 
         self._scroll_dy += self.scroll[1]  # %self.h
-        if self._opacity_target != None:
-            self._opacity += self._opacity_delta
-            if self._opacity_delta < 0 and self._opacity < self._opacity_target:
-                self._opacity = self._opacity_target
-                self._opacity_target = None
-                if self._opacity_target_block:
+
+        if self.opacity_target is not None:
+            self.opacity += self.opacity_delta
+            if self.opacity_delta < 0 and self.opacity < self.opacity_target:
+                self.opacity = self.opacity_target
+                self.opacity_target = None
+                if self.opacity_target_block:
                     self.busy -= 1  # stop blocking
-                    self._opacity_target_block = False
+                    self.opacity_target_block = False
                     if logging:
                         log.info("%s has finished on_fade_out, so decrement self.busy to %i." % (
                             self.name, self.busy))
 
-            elif self._opacity_delta > 0 and self._opacity > self._opacity_target:
-                self._opacity = self._opacity_target
-                self._opacity_target = None
-                if self._opacity_target_block:
-                    self._opacity_target_block = False
+            elif self.opacity_delta > 0 and self.opacity > self.opacity_target:
+                self.opacity = self.opacity_target
+                self.opacity_target = None
+                if self.opacity_target_block:
+                    self.opacity_target_block = False
                     self.busy -= 1  # stop blocking
                     if logging:
                         log.info("%s has finished on_fade_in, so decrement self.busy to %i." % (
                             self.name, self.busy))
 
-            self.alpha = self._opacity
+            self.immediate_set_alpha(self.opacity)
 
-        if self._goto_x != None:
+        if self._goto_x is not None:
             dx, dy = 0, 0
             if len(self._goto_deltas) > 0:
                 dx, dy = self._goto_deltas[self._goto_deltas_index]
@@ -3784,13 +3786,19 @@ class Actor(MotionManager):
                 self.game.reload_modules(modules=[module_name])
 
     @queue_method
-    def swap_actions(self, actions, prefix=None, postfix=None, speeds=[], pathplanning=[]):
+    def swap_actions(self, actions, prefix=None, postfix=None, speeds=None, pathplanning=None):
         """ Take a list of actions and replace them with prefix_action eg set_actions(["idle", "over"], postfix="off") 
             will make Actor._actions["idle"] = Actor._actions["idle_off"]
             Will also force pathplanning to the ones listed in pathplanning.
         """
-        if logging: log.info("player.set_actions using prefix %s on %s" % (prefix, actions))
-        self.editor_clean = False  # actor no longer has permissions as set by editor
+        if pathplanning is None:
+            pathplanning = []
+        if speeds is None:
+            speeds = []
+
+        if logging:
+            log.info("player.set_actions using prefix %s on %s" % (prefix, actions))
+
         for i, action in enumerate(actions):
             key = action
             if prefix:
@@ -3801,6 +3809,7 @@ class Actor(MotionManager):
                 self._actions[action] = self._actions[key]
                 if len(actions) == len(speeds):
                     self._actions[action].speed = speeds[i]
+
         if len(pathplanning) > 0:
             for key, action in self._actions.items():
                 if key in pathplanning:
@@ -4201,13 +4210,13 @@ class Actor(MotionManager):
         self.unload_assets()
         self.load_assets(game)
 
-    @queue_method
-    def opacity(self, v):
-        self.immediate_opacity(v)
+    #@queue_method
+    #def opacity(self, v):
+    #    self.immediateopacity(v)
 
-    def immediate_opacity(self, v):
-        """ 0 - 255 """
-        self.alpha = v
+    #def immediateopacity(self, v):
+    #    """ 0 - 255 """
+    #    self.alpha = v
 
     @queue_method
     def animation_end(self):
@@ -5032,9 +5041,9 @@ class Actor(MotionManager):
         self.immediate_usage(draw=False, update=False)
 
     def immediate_show(self):
-        self._opacity_delta = 0
-        self._opacity_target = 255
-        self.alpha = self._opacity_target
+        self.opacity_delta = 0
+        self.opacity_target = 255
+        self.immediate_set_alpha(self.opacity_target)
         self.immediate_usage(draw=True, update=True)  # switch everything on
 
     @queue_method
@@ -5058,17 +5067,16 @@ class Actor(MotionManager):
         if action:
             self.immediate_do(action)
         if self.game.headless:  # headless mode skips sound and visuals
-            self.alpha = target
+            self.immediate_set_alpha(target)
             return
-        if target == self.alpha:  # already there.
+        if target == self.get_alpha():  # already there.
             return
-        self._opacity_target = target
-        self._opacity_delta = (
-                                      self._opacity_target - self._opacity) / (self.game.fps * seconds)
-        if block == True:
+        self.opacity_target = target
+        self.opacity_delta = (self.opacity_target - self.opacity) / (self.game.fps * seconds)
+        if block is True:
             self.busy += 1
             self.game.immediate_wait()  # make all other events wait too.
-            self._opacity_target_block = True
+            self.opacity_target_block = True
             if logging:
                 log.info("%s fade has requested block, so increment busy to %i" % (self.name, self.busy))
 
@@ -6828,41 +6836,50 @@ class Scene(MotionManager):
 
             if fx == FX_FADE_OUT:
                 if self.game.headless:  # headless mode skips sound and visuals
-                    obj.alpha = 0
+                    obj.immediate_set_alpha(0)
                     continue
-                obj._opacity_target = 0
+                obj.opacity_target = 0
             else:
                 if self.game.headless:  # headless mode skips sound and visuals
-                    obj.alpha = 255
+                    obj.immediate_set_alpha(255)
                     continue
-                obj._opacity_target = 255
+                obj.opacity_target = 255
             if not self.game.headless:
-                obj._opacity_delta = (
-                                             obj._opacity_target - obj._opacity) / (self.game.fps * seconds)
+                obj.opacity_delta = (obj.opacity_target - obj.opacity) / (self.game.fps * seconds)
 
     @queue_method
-    def fade_objects_out(self, objects=[], seconds=3, block=False):
+    def fade_objects_out(self, objects=None, seconds=3, block=False):
+        if objects is None:
+            objects = []
         self.immediate_fade_objects(objects, seconds, FX_FADE_OUT, block)
 
     @queue_method
-    def fade_objects_in(self, objects=[], seconds=3, block=False):
+    def fade_objects_in(self, objects=None, seconds=3, block=False):
         """ fade the requested objects """
+        if objects is None:
+            objects = []
         self.immediate_fade_objects(objects, seconds, FX_FADE_IN, block)
 
     @queue_method
-    def hide_objects(self, objects=[], block=False):
+    def hide_objects(self, objects=None, block=False):
+        if objects is None:
+            objects = []
         for obj_name in objects:
             obj = get_object(self.game, obj_name)
             obj._hide()
 
     @queue_method
-    def show_objects(self, objects=[], block=False):
+    def show_objects(self, objects=None, block=False):
+        if objects is None:
+            objects = []
         for obj_name in objects:
             obj = get_object(self.game, obj_name)
             obj.immediate_show()
 
     @queue_method
-    def hide(self, objects=None, backgrounds=None, keep=[], block=False):  # scene.hide
+    def hide(self, objects=None, backgrounds=None, keep=None, block=False):  # scene.hide
+        if keep is None:
+            keep = []
         if keep is False:
             log.error("Check this function call as")
             raise Exception('The call to on_hide has changed and block is now a later argument, check it.')
@@ -7199,6 +7216,8 @@ class Text(Item):
         pyglet.clock.unschedule(self._animate_text)
 
     def _update(self, dt, obj=None):  # Text.update
+        if self.allow_update is False:
+            return
         animated = getattr(self, "_pyglet_animate_scheduled", False)  # getattr for backwards compat
         if animated and self._text_index >= len(self.display_text):
             self._unschedule_animated_text()  # animated text might be finished
@@ -7530,7 +7549,7 @@ class MenuManager:
             if not obj:  # XXX temp disable missing menu items
                 continue
             obj.load_assets(self.game)
-            obj.immediate_usage(draw=True, interact=True)
+            obj.immediate_usage(draw=True, interact=True)  # menu items turn on interacts by force
         if logging:
             log.debug("show menu using place %s" %
                       [x for x in self.game._menu])
@@ -7676,7 +7695,7 @@ class Camera:  # the view manager
         self._shake_dx = 0
         self._shake_dy = 0
         self._overlay = None  # image to overlay
-        self._overlay_opacity_delta = 0
+        self._overlayopacity_delta = 0
         self._overlay_cycle = 0  # used with overlay counter to trigger next stage in fx
         self._overlay_counter = 0
         self._overlay_end = None
@@ -7984,7 +8003,7 @@ class Camera:  # the view manager
         #            items[0].trigger_interact()  # auto-close the on_says
         #        return
         d = pyglet.resource.get_script_home()
-        self.immediate_opacity(0, colour)
+        self.immediateopacity(0, colour)
         self._overlay_start = time.time()
         self._overlay_end = time.time() + seconds
         self._overlay_fx = FX_FADE_OUT
@@ -8005,7 +8024,7 @@ class Camera:  # the view manager
             return
         #            items[0].trigger_interact()  # auto-close the on_says
         #    return
-        self.immediate_opacity(255, colour)
+        self.immediateopacity(255, colour)
         self._overlay_start = time.time()
         self._overlay_end = time.time() + seconds
         self._overlay_fx = FX_FADE_IN
@@ -9948,6 +9967,57 @@ class Game:
         arrive_at_generated_scene = get_function(self, "arrive_at_generated_scene")
         arrive_at_generated_scene(self, key)
 
+    def interact_with_scene(self, scene_x, scene_y, alt_button):
+        """
+        returns True if scene consumed event
+        """
+        #            scene_objects = copy.copy(self.scene._objects)
+        scene_objects = self.scene.objects_sorted
+        #            scene_objects.reverse()
+        if (ALLOW_USE_ON_PLAYER and self.player) or \
+                (self._allow_one_player_interaction == True):  # add player object
+            if self.player in scene_objects:
+                scene_objects.insert(0, self.player.name)  # prioritise player over other items
+        for obj_name in scene_objects:
+            obj = get_object(self, obj_name)
+            if self.mouse_mode == MOUSE_USE and self._mouse_object == obj: continue  # can't use item on self
+            allow_player_use = (self.player and self.player == obj) and (
+                    ALLOW_USE_ON_PLAYER or self._allow_one_player_interaction)
+            allow_use = (obj.allow_draw and (
+                    obj.allow_interact or obj.allow_use or obj.allow_look)) or allow_player_use
+            if self._allow_one_player_interaction:  # switch off special player interact
+                self._allow_one_player_interaction = False
+            if obj.collide(scene_x, scene_y) and allow_use:
+                # if wanting to interact or use an object go to it. If engine
+                # says to go to object for look, do that too.
+                if (self.mouse_mode != MOUSE_LOOK or GOTO_LOOK) and (
+                        obj.allow_interact or obj.allow_use or obj.allow_look):
+                    allow_goto_object = True if self._player_goto_behaviour in [GOTO, GOTO_OBJECTS] else False
+                    if self.player and self.player.name in self.scene._objects and self.player != obj and allow_goto_object:
+                        if valid_goto_point(self, self.scene, self.player, obj):
+                            self.player.goto(obj, block=True)
+                            self.player.set_idle(obj)
+                        else:  # can't walk there, so do next_action if available to finish any stored actions.
+                            self.player.resolve_action()
+                if alt_button or self.mouse_mode == MOUSE_LOOK:
+                    if obj.allow_look or allow_player_use:
+                        user_trigger_look(self, obj)
+                    return True
+                else:
+                    # allow use if object allows use, or in special case where engine allows use on the player actor
+                    allow_final_use = (obj.allow_use) or allow_player_use
+                    if self.mouse_mode == MOUSE_USE and self._mouse_object and allow_final_use:
+                        user_trigger_use(self, obj, self._mouse_object)
+                        self._mouse_object = None
+                        self.mouse_mode = MOUSE_INTERACT
+                        return True
+                    elif obj.allow_interact:
+                        user_trigger_interact(self, obj)
+                        return True
+                    else:  # potential case where player.allow_interact is false, so pretend no collision.
+                        pass
+        return False
+
     def on_key_press(self, symbol, modifiers):
         global use_effect
         game = self
@@ -10485,52 +10555,11 @@ class Game:
                 potentially_do_idle = True
             else:
                 return
+
         if self.scene:
-            #            scene_objects = copy.copy(self.scene._objects)
-            scene_objects = self.scene.objects_sorted
-            #            scene_objects.reverse()
-            if (ALLOW_USE_ON_PLAYER and self.player) or \
-                    (self._allow_one_player_interaction == True):  # add player object
-                if self.player in scene_objects:
-                    scene_objects.insert(0, self.player.name)  # prioritise player over other items
-            for obj_name in scene_objects:
-                obj = get_object(self, obj_name)
-                if self.mouse_mode == MOUSE_USE and self._mouse_object == obj: continue  # can't use item on self
-                allow_player_use = (self.player and self.player == obj) and (
-                        ALLOW_USE_ON_PLAYER or self._allow_one_player_interaction)
-                allow_use = (obj.allow_draw and (
-                        obj.allow_interact or obj.allow_use or obj.allow_look)) or allow_player_use
-                if self._allow_one_player_interaction:  # switch off special player interact
-                    self._allow_one_player_interaction = False
-                if obj.collide(scene_x, scene_y) and allow_use:
-                    # if wanting to interact or use an object go to it. If engine
-                    # says to go to object for look, do that too.
-                    if (self.mouse_mode != MOUSE_LOOK or GOTO_LOOK) and (
-                            obj.allow_interact or obj.allow_use or obj.allow_look):
-                        allow_goto_object = True if self._player_goto_behaviour in [GOTO, GOTO_OBJECTS] else False
-                        if self.player and self.player.name in self.scene._objects and self.player != obj and allow_goto_object:
-                            if valid_goto_point(self, self.scene, self.player, obj):
-                                self.player.goto(obj, block=True)
-                                self.player.set_idle(obj)
-                            else:  # can't walk there, so do next_action if available to finish any stored actions.
-                                self.player.resolve_action()
-                    if button & pyglet.window.mouse.RIGHT or self.mouse_mode == MOUSE_LOOK:
-                        if obj.allow_look or allow_player_use:
-                            user_trigger_look(self, obj)
-                        return
-                    else:
-                        # allow use if object allows use, or in special case where engine allows use on the player actor
-                        allow_final_use = (obj.allow_use) or allow_player_use
-                        if self.mouse_mode == MOUSE_USE and self._mouse_object and allow_final_use:
-                            user_trigger_use(self, obj, self._mouse_object)
-                            self._mouse_object = None
-                            self.mouse_mode = MOUSE_INTERACT
-                            return
-                        elif obj.allow_interact:
-                            user_trigger_interact(self, obj)
-                            return
-                        else:  # potential case where player.allow_interact is false, so pretend no collision.
-                            pass
+            alt_button = button & pyglet.window.mouse.RIGHT
+            if self.interact_with_scene(scene_x, scene_y, alt_button):
+                return
 
         # no objects to interact with, so just go to the point
         if self.player and self.scene and self.player.scene == self.scene:
@@ -11160,6 +11189,9 @@ class Game:
 
     @queue_method
     def quit(self):
+        self.immediate_quit()
+
+    def immediate_quit(self):
         if self.settings and self.settings.filename:
             log.info("SAVE SETTINGS")
             td = datetime.now() - self.settings._current_session_start
@@ -12854,7 +12886,7 @@ if EDITOR_AVAILABLE:
     if log: log.info("EDITOR AVAILABLE")
 
 
-    class SelectDialog(tk.simpledialog.Dialog):
+    class SelectDialog(tksimpledialog.Dialog):
 
         def __init__(self, game, title, objects, *args, **kwargs):
             parent = tk._default_root
@@ -12985,7 +13017,7 @@ if EDITOR_AVAILABLE:
                 if obj == None:
                     return
                 if not obj:
-                    tk.messagebox.showwarning(
+                    tkmessagebox.showwarning(
                         "Add Object",
                         "Unable to find %s in list of game objects" % d.result,
                     )
@@ -12996,13 +13028,13 @@ if EDITOR_AVAILABLE:
                 self.set_edit_object(obj)
 
             def new_actor():
-                d = tk.simpledialog.askstring("New Actor", "Name:")
+                d = tksimpledialog.askstring("New Actor", "Name:")
                 if not d:
                     return
                 _new_object(Actor(d))
 
             def new_item():
-                d = tk.simpledialog.askstring("New Item", "Name:")
+                d = tksimpledialog.askstring("New Item", "Name:")
                 if not d:
                     return
                 _new_object(Item(d))
@@ -13016,7 +13048,7 @@ if EDITOR_AVAILABLE:
                 self.obj.guess_link()
 
             def import_object():
-                fname = tk.filedialog.askdirectory(
+                fname = tkfiledialog.askdirectory(
                     initialdir="./data/scenes/mship",
                     title='Please select a directory containing an Actor, Item or Scene')
 
@@ -13028,13 +13060,13 @@ if EDITOR_AVAILABLE:
                         self.game.immediate_add(o)
                         o.smart(self.game)
                         refresh(self._sceneselect)
-                        tk.messagebox.showwarning(
+                        tkmessagebox.showwarning(
                             "Import Object",
                             "Imported %s as new %s" % (
                                 name, obj_cls.__name__.lower()),
                         )
                         return
-                tk.messagebox.showwarning(
+                tkmessagebox.showwarning(
                     "Import Object",
                     "Cannot guess the type of object (is it stored in data/actors data/items data/scenes?)"
                 )
@@ -13123,7 +13155,7 @@ if EDITOR_AVAILABLE:
                     self.game._save_state(state_name)
                 return
                 # non-threadsafe
-                d = tk.filedialog.SaveFileDialog(self.app)
+                d = tkfiledialog.SaveFileDialog(self.app)
                 pattern, default, key = "*.py", "", None
                 fname = d.go(self.game.scene.directory, pattern, default, key)
                 if fname is None:
@@ -13133,7 +13165,7 @@ if EDITOR_AVAILABLE:
                     self.game._save_state(state_name)
 
             def load_state(*args, **kwargs):
-                d = tk.filedialog.LoadFileDialog(self.app)
+                d = tkfiledialog.LoadFileDialog(self.app)
                 pattern, default, key = "*.py", "", None
                 fname = d.go(self.game.scene.directory, pattern, default, key)
                 if fname is None:

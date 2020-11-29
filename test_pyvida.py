@@ -208,6 +208,9 @@ class TestGame:
 
         assert game.fullscreen == False
 
+    def test_interact_with_scene(self):
+        pass
+
 
 class TestPlayerPygletSFX:
     def test_init(self):
@@ -430,6 +433,7 @@ class TestWalkareaManager:
         w = WalkAreaManager(Scene("test"))
         w.immediate_add_waypoint([5,6])
 
+
 # higher level
 
 class TestMenus:
@@ -461,6 +465,44 @@ class TestMenus:
 
         assert names == ["menu_new", "menu_old"]
         assert list(game._menu) == ["menu_old", "menu_new"]
+
+    def test_usage_draw(self):
+        game = create_basic_scene()
+        t = Text("hello")
+        t.load_assets()
+        game.add(t)
+        game.set_menu("hello")
+        t.usage(draw=False)
+        game.update()  # perform all the queued events
+        assert t.allow_draw is False
+
+    def test_usage_update(self):
+        game = create_basic_scene()
+        t = Text("hello")
+        t.load_assets()
+        game.add(t)
+        game.set_menu("hello")
+        t.usage(update=False)
+        game.update()  # perform all the queued events
+        assert t.allow_update is False
+
+    def test_usage_look(self, mocker):
+        game = create_basic_scene()
+        t = Text("hello", interact=MagicMock())
+        def test_look(self, *args, **kwargs):
+            pass
+        t.testLook = test_look
+        spy = mocker.spy(t, "testLook")
+        t.load_assets()
+        game.add(t)
+        game.set_menu("hello")
+        t.usage(look=False)
+        t.set_look(t.testLook)
+        game.update()  # perform all the queued events
+        game.on_mouse_release(5, 5, pyglet.window.mouse.RIGHT, None)
+        #assert t.allow_look is False
+        #spy.assert_called()
+#        game.run()
 
 
 class TestEvents:

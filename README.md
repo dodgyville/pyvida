@@ -97,3 +97,4 @@ pytest --cov=pyvida test_pyvida.py
 - replaced use_one_events metaclass with queue_event decorator
 - removed deprecated retalk and respeech
 - removed deprecated walkareas
+- replaced opacity and alpha handing with single set_alpha and get_alpha methods
