@@ -31,6 +31,7 @@ from pyvida import (
     PlayerPygletMusic,
     PlayerPygletSFX,
     PyvidaSprite,
+    Rect,
     save_game_pickle,
     Scene,
     Settings,
@@ -276,7 +277,7 @@ class TestSmart:
         game.working_directory = TEST_PATH
         game._smart()
         assert len(game._items) == 2
-        assert len(game._actors) == 3
+        assert len(game._actors) == 4
         assert len(game._scenes) == 1
 
 
@@ -314,6 +315,53 @@ class TestActor:
         assert a.action.h == 341
         assert type(resource[2]) == PyvidaSprite
         assert list(a._actions.keys()) == ["idle"]
+
+    def test_do_once(self, mocker):
+        game = create_basic_scene((400,700), with_update=True)
+        game.scene.immediate_add(game.astronaut)
+        spy = mocker.spy(game.astronaut, "immediate_do")
+        spy_end = mocker.spy(game.astronaut, "on_animation_end_once")
+        game.astronaut.load_assets(game)
+        game.astronaut.immediate_do_once("left", "idle1")
+
+        game.schedule_exit(2)
+        game.run()
+
+        spy.assert_called()
+        assert game.astronaut.resource is not None
+        spy_end.assert_called()
+
+
+class TestRect:
+    def test_intersect(self):
+        r = Rect(10, 10, 50, 50)
+        result = r.intersect((0, 0), (11, 11))
+        assert result is True
+
+    def test_intersect_miss(self):
+        r = Rect(10, 10, 50, 50)
+        result = r.intersect((0, 0), (9, 11))
+        assert result is False
+
+    def test_intersect_cut(self):
+        r = Rect(10, 10, 50, 50)
+        result = r.intersect((0, 0), (100, 100))
+        assert result is True
+
+    def test_intersect_touch_outside(self):
+        r = Rect(10, 10, 50, 50)
+        result = r.intersect((0, 0), (10, 10))
+        assert result is True
+
+    def test_intersect_touch_inside(self):
+        r = Rect(10, 10, 50, 50)
+        result = r.intersect((20, 20), (10, 10))
+        assert result is True
+
+    def test_intersect_inside(self):
+        r = Rect(10, 10, 50, 50)
+        result = r.intersect((20, 20), (40, 40))
+        assert result is True
 
 
 class TestFactory:

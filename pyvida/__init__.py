@@ -1541,6 +1541,9 @@ class PyvidaSprite(pyglet.sprite.Sprite):
     ''')
 
     def _animate(self, dt):
+        """ Override the pyglet sprite _animate method to prevent it scheduling the next frame with the clock
+            Since we want to control what the next frame will be (eg ping pong)
+        """
         self._frame_index += 1
         if self._animation is None:
             return
@@ -2345,12 +2348,6 @@ class Rect(object):
             if (x1 < self.left and x2 < self.left): intersect = False
             if (y1 < self.top and y2 < self.top): intersect = False
             if (y1 > self.bottom and y2 > self.bottom): intersect = False
-        #            if not intersect:
-        #                print("cancel possible intersect",start,end,"does not collide with",self.flat2)
-        #            else:
-        #                print("definite intersect",start,end,"does collide with",self.flat2)
-        #        else:
-        #            print("no initial intersect",start,end,"does not collide with",self.flat2)
         return intersect
 
     def move(self, dx, dy):
@@ -2860,7 +2857,10 @@ class Actor(MotionManager):
         #            sprite.rotation = self.rotate
         sprite.opacity = self.get_alpha()
 
-        sprite.immediate_animation_end = sprite_callback
+        sprite.on_animation_end = sprite_callback  # this is a pyglet event handler, not a pyvida queuing method
+        name = self.name
+        if "astronaut" == self.name:
+            print("hello")
 
         # jump to end
         if self.game and self.game.headless and isinstance(sprite.image, pyglet.image.Animation):
@@ -3421,6 +3421,7 @@ class Actor(MotionManager):
                     self.resolve_action()
                     #   else:
         #      print("missed",target,self.x, self.y)
+
         # update the PyvidaSprite animate manually
         if self.resource and hasattr(self.resource, "_animate"):
             try:
@@ -4218,8 +4219,7 @@ class Actor(MotionManager):
     #    """ 0 - 255 """
     #    self.alpha = v
 
-    @queue_method
-    def animation_end(self):
+    def on_animation_end(self):
         """ The default callback when an animation ends """
         #        log.warning("This function seems to not do anything")
         pass
@@ -4228,12 +4228,8 @@ class Actor(MotionManager):
     #        if self.resource and self.resource._animation:
     #            frame = self.resource._animation.frames[self.resource._frame_index]
 
-    @queue_method
-    def animation_end_once(self):
-        self.immediate_animation_end_once()
-
-    def immediate_animation_end_once(self):
-        """ When an animation has been called once only """
+    def on_animation_end_once(self):
+        """ When an animation has been called once only, this is a pyglet callback not a pyvida queuing method """
         self.busy -= 1
         if logging:
             log.info("%s has finished on_animation_end_once, so decrement %s.busy to %i." % (
@@ -4724,59 +4720,6 @@ class Actor(MotionManager):
         actor = actor.name if actor else actor
         return True if actor in self._met else met
 
-    def immediate_do(self, action, callback=None, mode=LOOP):
-        """ Callback is called when animation ends, returns False if action not found 
-        """
-        myA = action
-        if type(action) == str and action not in self._actions.keys():
-            log.error("Unable to find action %s in object %s" %
-                      (action, self.name))
-            return False
-        # new action for this Actor
-        if isinstance(action, Action) and action.name not in self._actions:
-            self._actions[action.name] = action
-        elif type(action) == str:
-            action = self._actions[action]
-        #        log.info("%s doing %s"%(self.name, action.name))
-        resource = self.resource
-        #        if resource:
-        #            resource.opacity = max(0, min(round(self.alpha*255), 255))
-        #            if action and action.name == "alive":
-        #                import pdb; pdb.set_trace()
-
-        # store the callback in resources
-        callback = "on_animation_end" if callback == None else getattr(callback, "__name__", callback)
-        self._pyglet_animation_callback = callback
-
-        # action if isinstance(action, Action) else self._actions[action]
-        action = getattr(action, "name", action)
-        self._action = action
-
-        if action not in self._actions:
-            if self.game and not self.game.fullscreen:
-                import pdb;
-                pdb.set_trace()
-        self.switch_asset(self._actions[action])  # create the asset to the new action's
-        self._actions[action].mode = mode
-
-        # TODO: group sprites in batches and OrderedGroups
-        kwargs = {}
-        #        if self.game and self.game._pyglet_batch: kwargs["batch"] = self.game._pyglet_batch
-        return True
-        """
-
-        sprite = self.resource
-        if sprite:
-            sprite.immediate_animation_end = callback
-        else:
-#            set_resource(.resource_name, callback=callback)
-            w = "Resource for action %s in object %s not loaded, so store callback in resources"%(action, self.name)
-            log.warning(w)
-        """
-
-
-    #    def create_sprite(self, action, **kwargs):
-
     @queue_method
     def bling(self, block=False):
         """ Perform a little 'bling' animation by distorting the x and y scales of the image """
@@ -4804,17 +4747,50 @@ class Actor(MotionManager):
     def do(self, action, mode=LOOP):
         self.immediate_do(action, mode=mode)
 
+    def immediate_do(self, action, callback=None, mode=LOOP):
+        """ Callback is called when animation ends, returns False if action not found
+        """
+        myA = action
+        if type(action) == str and action not in self._actions.keys():
+            log.error("Unable to find action %s in object %s" %
+                      (action, self.name))
+            return False
+        # new action for this Actor
+        if isinstance(action, Action) and action.name not in self._actions:
+            self._actions[action.name] = action
+        elif type(action) == str:
+            action = self._actions[action]
+
+        # store the callback in resources
+        callback = "on_animation_end" if callback is None else getattr(callback, "__name__", callback)
+        self._pyglet_animation_callback = callback
+
+        # action if isinstance(action, Action) else self._actions[action]
+        action = getattr(action, "name", action)
+        self._action = action
+
+        if action not in self._actions:
+            if self.game and not self.game.fullscreen:
+                log.error(f"Requested action {action} not in actions.")
+        self.switch_asset(self._actions[action])  # create the asset to the new action's
+        self._actions[action].mode = mode
+
+        return True
+
     @queue_method
     def do_once(self, action, next_action=None, mode=LOOP, block=False):
+        self.immediate_do_once(action, next_action, mode, block)
+
+    def immediate_do_once(self, action, next_action=None, mode=LOOP, block=False):
         #        log.info("do_once does not follow block=True
         #        import pdb; pdb.set_trace()
-        callback = self.immediate_animation_end_once  # if not block else self.immediate_animation_end_once_block
+        callback = self.on_animation_end_once  # if not block else self.on_animation_end_once_block
         self._next_action = next_action if next_action else self.default_idle
         do_event = self.scene or (self.game and self.name in self.game._modals) or (
                 self.game and self.name in self.game._menu)
         if (self.game and self.game.headless is True) or not do_event:  # if headless or not on screen, jump to end
             self.busy += 1
-            self.immediate_animation_end_once()
+            self.on_animation_end_once()
             result = True
             return
         else:
