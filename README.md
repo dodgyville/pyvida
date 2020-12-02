@@ -98,3 +98,4 @@ pytest --cov=pyvida test_pyvida.py
 - removed deprecated retalk and respeech
 - removed deprecated walkareas
 - replaced opacity and alpha handing with single set_alpha and get_alpha methods
+- when adding modals, they must be added to game object first.

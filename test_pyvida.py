@@ -11,6 +11,8 @@ from unittest.mock import MagicMock
 
 
 from pyvida import (
+    Achievement,
+    AchievementManager,
     Actor,
     fit_to_screen,
     get_resource,
@@ -24,21 +26,28 @@ from pyvida import (
     get_object,
     Item,
     line_seg_intersect,
+    load_game,
+    load_game_json,
+    load_game_pickle,
     MenuFactory,
     Motion,
+    MotionDelta,
     MotionManager,
     MotionManagerOld,
     PlayerPygletMusic,
     PlayerPygletSFX,
+    Portal,
     PyvidaSprite,
     Rect,
+    save_game,
+    save_game_json,
     save_game_pickle,
     Scene,
     Settings,
     Text,
     WalkArea,
-    WalkAreaManager
-)
+    WalkAreaManager,
+    RIGHT)
 
 TEST_PATH = "/home/luke/Projects/pyvida/test_data"
 
@@ -119,6 +128,31 @@ class TestUtils:
         assert result == (0, 0)
 
 
+class TestAchievementManager:
+    def test_register(self):
+        manager = AchievementManager()
+        slug = "hello"
+        name = "Hello"
+        achievement_description = "Hello World"
+        filename = "hello.png"
+        manager.register(None, slug, name, achievement_description, filename)
+
+        assert len(manager.achievements) == 1
+        assert isinstance(manager.achievements[slug], Achievement) is True
+
+    def test_no_dupes(self):
+        manager = AchievementManager()
+        slug = "hello"
+        name = "Hello"
+        achievement_description = "Hello World"
+        filename = "hello.png"
+        manager.register(None, slug, name, achievement_description, filename)
+        manager.register(None, slug, name, achievement_description, filename)
+
+        assert len(manager.achievements) == 1
+        assert isinstance(manager.achievements[slug], Achievement) is True
+
+
 class TestLocale:
     def test_get_available_languages(self, mocker):
         # api_call is from slow.py but imported to main.py
@@ -184,7 +218,7 @@ class TestGame:
             save_game_pickle(game, fname)
 
         assert game.scene.walkarea.game == game
-        assert game.scene._objects == ['logo']
+        assert game.scene.objects == ['logo']
 
     def test_screen(self):
         g = Game()
@@ -211,6 +245,24 @@ class TestGame:
 
     def test_interact_with_scene(self):
         pass
+
+    def test_save_game(self):
+        game = create_basic_scene((100,100), with_update=True)
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            fname = Path(tmpdirname, "test.savegame")
+            save_game(game, fname)
+
+    def test_load_game_pickle(self):
+        game = create_basic_scene((100,100), with_update=True)
+        game = load_game(game, "test_data/saves/pleasure192.save")
+
+        assert len(game.scenes) == 54
+
+    def test_save_game_json(self):
+        game = create_basic_scene((100,100), with_update=True)
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            fname = Path("/home/luke/Projects/pyvida/saves", "test.json")
+            save_game_json(game, fname)
 
 
 class TestPlayerPygletSFX:
@@ -276,9 +328,9 @@ class TestSmart:
         game.autoscale = False
         game.working_directory = TEST_PATH
         game._smart()
-        assert len(game._items) == 2
-        assert len(game._actors) == 4
-        assert len(game._scenes) == 1
+        assert len(game.items) == 2
+        assert len(game.actors) == 4
+        assert len(game.scenes) == 1
 
 
 # classes
@@ -297,7 +349,7 @@ class TestActor:
         a = Actor("Adam")
         a.smart(game)
 
-        assert list(a._actions.keys()) == ["idle"]
+        assert list(a.actions.keys()) == ["idle"]
         assert a.resource_name == "Adam"
 
     def test_load_assets(self):
@@ -309,12 +361,13 @@ class TestActor:
         a.load_assets(game)
 
         resource = get_resource(a.resource_name)
+        action = a.get_action()
         assert resource[0] == 249
         assert resource[1] == 341
-        assert a.action.w == 249
-        assert a.action.h == 341
+        assert action.w == 249
+        assert action.h == 341
         assert type(resource[2]) == PyvidaSprite
-        assert list(a._actions.keys()) == ["idle"]
+        assert list(a.actions.keys()) == ["idle"]
 
     def test_do_once(self, mocker):
         game = create_basic_scene((400,700), with_update=True)
@@ -387,7 +440,7 @@ class TestScene:
     def test_layers_nogame(self):
         s = Scene("testscene")
         s._load_layer(Path(TEST_PATH, "scenes/title/background.png"))
-        assert len(s._layer) == 1
+        assert len(s.layers) == 1
 
     def test_layers_game(self):
         game = Game()
@@ -395,8 +448,8 @@ class TestScene:
         s = Scene("testscene")
         game.immediate_add(s)
         s._load_layer("scenes/title/background.png")
-        assert len(s._layer) == 1
-        assert list(game._items.keys()) == ["testscene_background"]
+        assert len(s.layers) == 1
+        assert list(game.items.keys()) == ["testscene_background"]
 
     def test_scene_with_item(self):
         game = Game("Test", "1.0", "1.0", "testpyvida", fps=16, afps=16, resolution=(1680, 1050))
@@ -411,8 +464,8 @@ class TestScene:
         logo = game.scene.get_object("logo")
         assert game.w == 1680
         assert not game.autoscale
-        assert game.scene == game._scenes["title"]
-        assert game.scene._layer[0] == "title_background"
+        assert game.scene == game.scenes["title"]
+        assert game.scene.layers[0] == "title_background"
         assert logo
 
     def test_scene_with_menu(self):
@@ -438,8 +491,8 @@ class TestScene:
         game.run()
         assert game.w == 1680
         assert not game.autoscale
-        assert game.scene == game._scenes["title"]
-        assert game.scene._layer[0] == "title_background"
+        assert game.scene == game.scenes["title"]
+        assert game.scene.layers[0] == "title_background"
         assert game.scene.get_object("logo")
 
 
@@ -475,7 +528,7 @@ class TestWalkareaManager:
         game.update()  # perform all the queued events
         with tempfile.TemporaryFile() as f:
             pickle.dump(game.scene.walkarea, f)
-        assert game.scene._objects == ['logo']
+        assert game.scene.objects == ['logo']
 
     def test_immediate_add_waypoint(self):
         w = WalkAreaManager(Scene("test"))
@@ -494,8 +547,8 @@ class TestMenus:
         game.schedule_exit(0.5)
         game.run()
         game.wait()
-        assert list(game.scene._objects) == ["logo"]
-        assert list(game._menu) == ["hello"]
+        assert list(game.scene.objects) == ["logo"]
+        assert list(game.menu_items) == ["hello"]
 
     def test_menu_factory(self):
         game = create_basic_scene()
@@ -512,7 +565,7 @@ class TestMenus:
         game.wait()
 
         assert names == ["menu_new", "menu_old"]
-        assert list(game._menu) == ["menu_old", "menu_new"]
+        assert list(game.menu_items) == ["menu_old", "menu_new"]
 
     def test_usage_draw(self):
         game = create_basic_scene()
@@ -560,18 +613,18 @@ class TestEvents:
         self.actor = Actor("_test_actor").smart(self.game)
         self.msgbox = Item("msgbox").smart(self.game, using="data/items/_test_item")
         self.ok = Item("ok").smart(self.game, using="data/items/_test_item")
-        self.scene = Scene("_test_scene")
-        self.item = Item("test_item")
+        self.scene = Scene("_test_scene").name
+        self.item = Item("test_item").name
         self.game.add([self.scene, self.actor, self.msgbox, self.ok, self.item])
         self.scene.immediate_add(self.actor)
-        self.game.scene = self.scene
+        self.game.scene = self.scene.name
 
     def test_relocate(self):
         # setup
         self.set_up()
         self.actor.relocate(self.scene)
-        event = self.game._events[0]
-        assert len(self.game._events) == 1
+        event = self.game.events[0]
+        assert len(self.game.events) == 1
         assert event[0].__name__ == "relocate"
         assert event[1] == self.actor
         assert event[2][0] == self.scene
@@ -589,7 +642,7 @@ class TestQueueMeta:
         m = MotionManagerOld()
         m.game = g
         m.motion("jump", 'test2', destructive=True)
-        event = g._events[0]
+        event = g.events[0]
         assert event[0].__name__ == "on_motion"
         assert event[1:] == (m, ('jump', 'test2'), {'destructive': True})
 
@@ -599,7 +652,7 @@ class TestQueueMeta:
         m.game = g
         m.decorator_test("photograph", ringo=True)
 
-        event = g._events[0]
+        event = g.events[0]
         assert event[0].__name__ == "decorator_test"
         assert event[1:] == (m, ('photograph',), {'ringo': True})
 
@@ -609,11 +662,32 @@ class TestQueueMeta:
         m.game = g
         m.decorator_test("photograph", ringo=True)
         m.motion("jump", 'test2', destructive=True)
-        event0 = g._events[0]
-        event1 = g._events[1]
+        event0 = g.events[0]
+        event1 = g.events[1]
 
         assert event0[1:] == (m, ('photograph',), {'ringo': True})
         assert event1[1:] == (m, ('jump', 'test2'), {'destructive': True})
+
+
+class TestMotionDelta:
+    def test_basic(self):
+        m = MotionDelta()
+        m.r = 0
+
+        assert m.r == 0
+        assert m.x is None
+
+    def test_flat(self):
+        m = MotionDelta()
+        m.x = 10
+        m.scale = 0.5
+
+        assert m.flat() == (10, None, None, None, 0.5, None, None)
+
+
+class TestMotion:
+    def test_deltas(self):
+        m = Motion("right")
 
 
 class TestMotionManager:
@@ -643,7 +717,7 @@ class TestMotionManager:
         # queuing method
         g, m = self.setup()
         m.motion("jump")
-        event = g._events[0]
+        event = g.events[0]
         assert event[0].__name__ == "motion"
         assert event[1:] == (m, ('jump',), {})
 
@@ -660,8 +734,53 @@ class TestMotionManager:
         # queuing method
         g, m = self.setup()
         m.add_motion("jump")
-        event = g._events[0]
+        event = g.events[0]
         assert event[0].__name__ == "add_motion"
         assert event[1:] == (m, ('jump',), {})
 
 
+class TestPortal:
+    def setup(self):
+        self.game = Game("Unit Tests", fps=60, afps=16, resolution=RESOLUTION)
+        self.game.settings = Settings()
+        self.actor = Actor("_test_actor").smart(self.game)
+        speed = 10
+        for i in self.actor.actions.values(): i.speed = speed
+
+        self.scene = Scene("_test_scene")
+        self.scene2 = Scene("_test_scene2")
+        self.portal1 = Portal("_test_portal1")
+        self.portal2 = Portal("_test_portal2")
+        self.portal1.link = self.portal2.name
+        self.portal2.link = self.portal1.name
+
+        self.portal1.x, self.portal1.y = 100,0
+        self.portal1.sx, self.portal1.sy = 0,0
+        self.portal1.ox, self.portal1.oy = 100,0
+
+        self.portal2.x, self.portal2.y = 1100,0
+        self.portal1.sx, self.portal1.sy = 0,0
+        self.portal1.ox, self.portal1.oy = -100,0
+
+        self.game.headless = False
+        self.game.player = self.actor
+        self.game.add([self.scene, self.actor, self.portal1, self.portal2])
+        self.scene._add([self.actor, self.portal1])
+        self.scene2._add([self.portal2])
+        self.game.camera.immediate_scene(self.scene)
+
+    def test_events(self):
+        portal = self.portal1
+        game = self.game
+
+        #queue the events
+        portal.exit_here()
+        game.camera.scene("aqueue", RIGHT)
+        game.camera.pan(left=True)
+        portal.relocate_link() #move player to new scene
+        portal.enter_link() #enter scene
+        self.assertEqual([x[0].__name__ for x in self.game.events],['on_goto', 'on_goto', 'on_scene', 'on_pan', 'on_relocate', 'on_goto'])
+        for i in range(0,11): #finish first goto
+            self.game.update(0, single_event=True)
+#            self.assertAlmostEqual(self.actor.y, 200+(i+1)*self.actor._goto_dy)
+        self.assertEqual([x[0].__name__ for x in self.game.events],['on_goto', 'on_scene', 'on_pan', 'on_relocate', 'on_goto'])
