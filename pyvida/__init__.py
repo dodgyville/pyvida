@@ -298,6 +298,7 @@ try:
 except ImportError:
     logging = None
 
+
 mixer = CONFIG["mixer"] if "mixer" in CONFIG else None
 if mixer == "pygame":
     try:
@@ -746,6 +747,7 @@ if logging:
     log.info("Frozen is %s" % frozen)
     log.info(frozen_msg)
     log.info("Default mixer:", mixer)
+
 
 """
 Testing utilities
@@ -1650,7 +1652,7 @@ class AchievementManager:
         new_achievement.date = datetime.now()
         new_achievement.version = game.version
         self.granted[slug] = new_achievement
-        game.settings.save()
+        game.settings.save_json()
         return True
 
     def present(self, game, slug):
@@ -1717,101 +1719,87 @@ NORMAL = 1
 FAST = 2
 
 
-class Settings(object):
+@dataclass_json
+@dataclass
+class Settings:
     """ game settings saveable by user """
+    mute: bool = False
+    music_on: bool = True
+    sfx_on: bool = True
+    voices_on: bool = True
+    music_volume = 0.6
+    music_volume = 0.6
+    ambient_volume = 0.6
+    sfx_volume = 0.8
+    sfx_subtitles = False
+    voices_volume = 0.8
+    voices_subtitles = True
+
+    resolution_x = 1024
+    resolution_y = 768
+
+    allow_internet = None  # True | False | None (user hasn't been asked)
+    allow_internet_debug = ENABLE_LOGGING  # send profiling reports home
+
+    fullscreen = DEFAULT_FULLSCREEN
+    autoscale = DEFAULT_AUTOSCALE  # scale window to fit screen
+    preferred_screen = None  # for multi-monitors
+    show_portals = False
+    show_portal_text = DEFAULT_PORTAL_TEXT
+    portal_exploration = DEFAULT_EXPLORATION
+    textspeed = NORMAL
+    fps = DEFAULT_FPS
+    lock_engine_fps = DEFAULT_ENGINE_FPS  # lock pyvida to forcing a draw at this rate (NONE to not lock)
+    stereoscopic = False  # display game in stereoscopic (3D)
+    hardware_accelerate = False
+    backend = BACKEND
+
+    silent_achievements = ALLOW_SILENT_ACHIEVEMENTS
+    achievements: AchievementManager = None
+
+    high_contrast = False
+    # use this font to override main font (good for using dsylexic-friendly
+    # fonts)
+    accessibility_font = None
+    font_size_adjust = 0  # increase or decrease font size
+    show_gui = True  # when in-game, show a graphical user interface
+    low_memory = False  # game is running on a low memory machine (up to developer to decide what that means)
+
+    invert_mouse = False  # for lefties
+    language = "en"
+    disable_joystick = False  # allow joystick if available
+    # joystick button remapping
+    joystick_manually_mapped = False
+    joystick_interact = 0  # index to joystick.buttons that corresponds to mouse left-click
+    joystick_look = 1  # index to joystick.buttons that corresponds to mouse right-click
+
+    # some game play information
+    _current_session_start = None  # what date and time did the current session start
+    _last_session_end = None  # what time did the last session end
+
+    total_time_played = 0  # total time playing this game in ms
+    fastest_playthrough = None
+    filename = None
 
     def __init__(self):
-        self.mute = False
-        self.music_on = True
-        self.sfx_on = True
-        self.voices_on = True
-
-        #        self.music_volume = 0.6
-        self.music_volume = 0.6
-        self.ambient_volume = 0.6
-        self.sfx_volume = 0.8
-        self.sfx_subtitles = False
-        self.voices_volume = 0.8
-        self.voices_subtitles = True
-
-        self.resolution_x = 1024
-        self.resolution_y = 768
-
-        # True|False|None check for updates and report stats - None == False
-        # and user hasn't been asked
-        self.allow_internet = None
-        # send profiling reports home
-        self.allow_internet_debug = ENABLE_LOGGING
-
-        self.fullscreen = DEFAULT_FULLSCREEN
-        self.autoscale = DEFAULT_AUTOSCALE  # scale window to fit screen
-        self.preferred_screen = None  # for multi-monitors
-        self.show_portals = False
-        self.show_portal_text = DEFAULT_PORTAL_TEXT
-        self.portal_exploration = DEFAULT_EXPLORATION
-        self.textspeed = NORMAL
-        self.fps = DEFAULT_FPS
-        self.lock_engine_fps = DEFAULT_ENGINE_FPS  # lock pyvida to forcing a draw at this rate (NONE to not lock)
-        self.stereoscopic = False  # display game in stereoscopic (3D)
-        self.hardware_accelerate = False
-        self.backend = BACKEND
-
         self.achievements = AchievementManager()
-        self.silent_achievements = ALLOW_SILENT_ACHIEVEMENTS
 
-        self.high_contrast = False
-        # use this font to override main font (good for using dsylexic-friendly
-        # fonts)
-        self.accessibility_font = None
-        self.font_size_adjust = 0  # increase or decrease font size
-        self.show_gui = True  # when in-game, show a graphical user interface
-        self.low_memory = False  # game is running on a low memory machine (up to developer to decide what that means)
-
-        self.invert_mouse = False  # for lefties
-        self.language = "en"
-        self.disable_joystick = False  # allow joystick if available
-        # joystick button remapping
-        self.joystick_manually_mapped = False
-        self.joystick_interact = 0  # index to joystick.buttons that corresponds to mouse left-click
-        self.joystick_look = 1  # index to joystick.buttons that corresponds to mouse right-click
-
-        # some game play information
-        self._current_session_start = None  # what date and time did the current session start
-        self._last_session_end = None  # what time did the last session end
-
-        self.total_time_played = 0  # total time playing this game in ms
-        self.fastest_playthrough = None
-        self.filename = None
-
-    def save(self, fname=None):
-        """ save the current game settings """
+    def save_json(self, fname=None):
         if fname:
             self.filename = fname
-        if logging:
-            log.info("Saving settings to %s" % get_safe_path(self.filename))
-        with open(get_safe_path(self.filename), "wb") as f:
-            #            pickle.dump(self.achievements, f) # specially store achievements so they can be retrieved if settings change
-            pickle.dump(self, f)
+        with open(get_safe_path(self.filename), "w") as f:
+            f.write(self.to_json(indent=4))
 
-    def load(self, fname=None):
+    def load_json(self, fname=None):
         """ load the current game settings """
         if fname:
             self.filename = fname
         if logging:
             log.info("Loading settings from %s" % get_safe_path(self.filename))
         try:
-            with open(get_safe_path(self.filename), "rb") as f:
-                data = pickle.load(f)
-                if not hasattr(data, "lock_engine_fps"):  # compatible with older games
-                    data.lock_engine_fps = DEFAULT_ENGINE_FPS
-                if not hasattr(data, "low_memory"):  # compatible with older games
-                    data.low_memory = False
-                if not hasattr(data, "preferred_screen"):  # compatible with older games
-                    data.preferred_screen = None
-                if not hasattr(data, "autoscale"):  # compatible with older games
-                    data.autoscale = True
-                if not hasattr(data, "joystick_manually_mapped"):
-                    data.joystick_manually_mapped = False
+            with open(get_safe_path(self.filename), "r") as f:
+                data = f.readlines()
+                data = self.from_json(data)
             return data  # use loaded settings
         except:  # if any problems, use default settings
             log.warning(
@@ -1908,22 +1896,23 @@ class Motion(object):
     def _apply_delta(self, actor, d: MotionDelta):
         dx, dy, z, r, scale, frame_index, alpha = d.flat()
         if actor.scale != 1.0:
-            if dx != None: dx *= actor.scale
-            if dy != None: dy *= actor.scale
+            if dx is not None: dx *= actor.scale
+            if dy is not None: dy *= actor.scale
 
         if self.destructive is True:  # apply to actor's actual co-ordinates
-            actor.x += dx if dx != None else 0
-            actor.y += dy if dy != None else 0
+            actor.x += dx if dx is not None else 0
+            actor.y += dy if dy is not None else 0
         else:  # apply only to a temporary visual displacement
-            actor._vx += dx if dx != None else 0
-            actor._vy += dy if dy != None else 0
-        actor.z += d[2] if d[2] != None else 0
-        actor.rotate += d[3] if d[3] != None else 0
-        if d[4] is not None: actor.scale = d[4]
-        if d[5] is not None:
-            actor._frame(int(d[5]))
-        if d[6] is not None:
-            actor.immediate_set_alpha(d[6])
+            actor._vx += dx if dx is not None else 0
+            actor._vy += dy if dy is not None else 0
+        actor.z += z if z is not None else 0
+        actor.rotate += r if r is not None else 0
+        if scale is not None:
+            actor.scale = scale
+        if frame_index is not None:
+            actor.immediate_frame(int(frame_index))
+        if alpha is not None:
+            actor.immediate_set_alpha(alpha)
 
     def apply_full_motion_to_actor(self, actor, index=None):
         """ Apply motion to an actor during headless mode. 
@@ -2903,6 +2892,9 @@ class Actor(MotionManager):
     def switch_asset(self, action, **kwargs):
         """ Switch this Actor's main resource to the requested action """
         # create sprite
+        if not action:
+            return
+
         action_obj = action if isinstance(action, Action) else self.actions[action]
 
         if not action_obj:
@@ -3309,6 +3301,14 @@ class Actor(MotionManager):
         return self._allow_update
 
     allow_update = property(get_allow_update, set_allow_update)
+
+    #@queue_method  # replaced with on_set_alpha
+    #def opacity(self, v):
+    #    self.immediateopacity(v)
+
+    #def immediateopacity(self, v):
+    #    """ 0 - 255 """
+    #    self.alpha = v
 
     @queue_method
     def set_alpha(self, v):
@@ -4286,14 +4286,6 @@ class Actor(MotionManager):
         self.unload_assets()
         self.load_assets(game)
 
-    #@queue_method
-    #def opacity(self, v):
-    #    self.immediateopacity(v)
-
-    #def immediateopacity(self, v):
-    #    """ 0 - 255 """
-    #    self.alpha = v
-
     def on_animation_end(self):
         """ The default callback when an animation ends """
         #        log.warning("This function seems to not do anything")
@@ -4315,7 +4307,7 @@ class Actor(MotionManager):
     #    def self.immediate_animation_end_once_block(self):
     #        """ Identical to end animation once, except also remove block on game. """
 
-    def _frame(self, index):
+    def immediate_frame(self, index):
         """ Take the current action resource to the frame index (ie jump to a different spot in the animation) """
         action = self.get_action()
         if action and action.mode == MANUAL:
@@ -4325,7 +4317,7 @@ class Actor(MotionManager):
 
     @queue_method
     def frame(self, index):
-        self._frame(index)
+        self.immediate_frame(index)
 
     @queue_method
     def frames(self, num_frames):
@@ -4338,7 +4330,7 @@ class Actor(MotionManager):
     def random_frame(self):
         """ Advance the current action to a random frame """
         i = randint(0, len(self.resource._animation.frames))
-        self._frame(i)
+        self.immediate_frame(i)
 
     @queue_method
     def asks(self, statement, *args, **kwargs):
@@ -4485,7 +4477,7 @@ class Actor(MotionManager):
     @queue_method
     def says(self, text, *args, **kwargs):
         items = self._says(text, *args, **kwargs)
-        if self.game._walkthrough_auto:  # headless mode skips sound and visuals
+        if self.game.walkthrough_auto:  # headless mode skips sound and visuals
             items[0].trigger_interact()  # auto-close the on_says
 
     def create_text(self, name, *args, **kwargs):
@@ -4515,7 +4507,7 @@ class Actor(MotionManager):
         msgbox.load_assets(self.game)
 
         if ok == -1:  # use the game's default ok
-            ok = self.game._default_ok
+            ok = self.game.default_ok
         if ok:
             ok = self.game.add(Item(ok).smart(self.game, assets=True))
             ok.load_assets(self.game)
@@ -4560,7 +4552,7 @@ class Actor(MotionManager):
             action = self.actions.get(
                 "portrait", self.actions.get("idle", None))
 
-        if action != None:
+        if action is not None:
             portrait = Item("_portrait")
             portrait.game = self.game
             portrait.actions[action.name] = action
@@ -4594,6 +4586,7 @@ class Actor(MotionManager):
         kwargs["display_text"] = text
         name = "_%s_text_obj" % self.name
         label = self.create_text(name, **kwargs)
+        self.game.add(label, replace=True)
         label.load_assets(self.game)
 
         #        label.game = self.game
@@ -4735,7 +4728,7 @@ class Actor(MotionManager):
         if self.game:
             if self.game._output_walkthrough and self.game._trunk_step:
                 print("%s adds %s to inventory." % (self_name, name))
-            if self.game._walkthrough_auto and item.name not in self.game._walkthrough_inventorables:
+            if self.game.walkthrough_auto and item.name not in self.game._walkthrough_inventorables:
                 self.game._walkthrough_inventorables.append(item.name)
 
         if self.game and self == self.game.player:
@@ -4761,7 +4754,7 @@ class Actor(MotionManager):
         #        if logging: log.info("%s has requested game to wait for on_gets to finish, so game.waiting to True."%(self.name))
         #        self.game.immediate_wait()
 
-        if self.game._walkthrough_auto:  # headless mode skips sound and visuals
+        if self.game.walkthrough_auto:  # headless mode skips sound and visuals
             items[0].trigger_interact()  # auto-close the on_says
 
     @queue_method
@@ -5452,7 +5445,6 @@ class Actor(MotionManager):
             self._goto_deltas_average_speed = action.speed
         else:  # use the goto_motion to create a list of deltas
             motion = self.motions[goto_motion]
-            speed = math.hypot(motion.average_dx, motion.average_dy)
             self._goto_deltas_average_speed = 5  # Not used when the motion provides its own deltas.
             distance_travelled = 0
             distance_travelled_x = 0
@@ -5480,7 +5472,6 @@ class Actor(MotionManager):
 
             # if x or y distance travelled is beneath the needed x or y travel distances, create the missing deltas for that axis, and subtract it from the other.
             raw_angle = math.atan2(y, x)
-            angle = math.degrees(raw_angle) + 90
             if abs(distance_travelled_y) < distance_travelled:  # fallen short on y-axis, so generate new y deltas
                 ratio = (x / distance)
                 self._goto_deltas = [(d[0] * ratio, y / steps) for d in self._goto_deltas]
@@ -5518,7 +5509,7 @@ class Actor(MotionManager):
         """ Get a path to the destination and then start walking """
 
         # if in auto mode but not headless, force player to walk everywhere.
-        if self.game and self == self.game.player and self.game._walkthrough_auto == True and self.game.headless == False:
+        if self.game and self == self.game.player and self.game.walkthrough_auto == True and self.game.headless == False:
             block = True
 
         point = get_point(self.game, destination, self)
@@ -7750,7 +7741,7 @@ class MenuManager:
         self.immediate_play_enter_sfx()
 
     def immediate_play_enter_sfx(self):
-        if self.game._menu_enter_filename:
+        if self.game.menu_enter_filename:
             self.immediate_play_menu_sfx(self.game.menu_enter_filename)
 
     @queue_method
@@ -7758,7 +7749,7 @@ class MenuManager:
         self.immediate_play_exit_sfx()
 
     def immediate_play_exit_sfx(self):
-        if self.game._menu_exit_filename:
+        if self.game.menu_exit_filename:
             self.immediate_play_menu_sfx(self.game.menu_exit_filename)
 
 @dataclass_json
@@ -8057,6 +8048,9 @@ class Camera:  # the view manager
 
     @queue_method
     def opacity(self, opacity=255, colour="black"):  # camera opacity
+        self.immediate_opacity(opacity, colour)  # camera opacity
+
+    def immediate_opacity(self, opacity=255, colour="black"):  # camera opacity
         d = pyglet.resource.get_script_home()
         if colour == "black":
             mask = pyglet.image.load(
@@ -8085,7 +8079,7 @@ class Camera:  # the view manager
         #            items[0].trigger_interact()  # auto-close the on_says
         #        return
         d = pyglet.resource.get_script_home()
-        self.immediateopacity(0, colour)
+        self.immediate_opacity(0, colour)
         self._overlay_start = time.time()
         self._overlay_end = time.time() + seconds
         self._overlay_fx = FX_FADE_OUT
@@ -8106,7 +8100,7 @@ class Camera:  # the view manager
             return
         #            items[0].trigger_interact()  # auto-close the on_says
         #    return
-        self.immediateopacity(255, colour)
+        self.immediate_opacity(255, colour)
         self._overlay_start = time.time()
         self._overlay_end = time.time() + seconds
         self._overlay_fx = FX_FADE_IN
@@ -8789,7 +8783,8 @@ class Mixer:
 
         if self._sfx_volume_target is not None:  # fade the volume up or down
             v = self._sfx_volume + self._sfx_volume_step
-            if self.game.headless or self.game._walkthrough_auto: v = self._sfx_volume_target
+            if self.game.headless or self.game.walkthrough_auto:
+                v = self._sfx_volume_target
             finish = False
             if self._sfx_volume_step < 0 and v <= self._sfx_volume_target:
                 finish = True
@@ -8807,7 +8802,7 @@ class Mixer:
 
         if self._ambient_volume_target is not None:  # fade the ambient up or down
             v = self._ambient_volume + self._ambient_volume_step
-            if self.game.headless or self.game._walkthrough_auto: v = self._ambient_volume_target
+            if self.game.headless or self.game.walkthrough_auto: v = self._ambient_volume_target
             finish = False
             if self._ambient_volume_step < 0 and v <= self._ambient_volume_target:
                 finish = True
@@ -8825,7 +8820,7 @@ class Mixer:
 
         if self._music_volume_target is not None:  # fade the volume up or down
             v = self._music_volume + self._music_volume_step
-            if self.game.headless or self.game._walkthrough_auto: v = self._music_volume_target
+            if self.game.headless or self.game.walkthrough_auto: v = self._music_volume_target
             finish = False
             if self._music_volume_step < 0 and v <= self._music_volume_target:
                 finish = True
@@ -9424,7 +9419,7 @@ def load_game_responsive(game, fname, meta_only=False, keep=[], callback=None, p
 
 def save_settings(game, fname):
     """ save the game settings (eg volume, accessibilty options) """
-    game.settings.save(fname)
+    game.settings.save_json(fname)
 
 
 def load_or_create_settings(game, fname, settings_cls=Settings):
@@ -9438,7 +9433,7 @@ def load_or_create_settings(game, fname, settings_cls=Settings):
     if not os.path.isfile(get_safe_path(fname)):  # settings file not available, create new object
         existing = False
     else:
-        game.settings = game.settings.load(fname)
+        game.settings = game.settings.load_json(fname)
     game.settings._current_session_start = datetime.now()
     game.mixer.immediate_publish_volumes()
     return existing
@@ -9717,8 +9712,8 @@ class Game:
         # TODO: for jumping back to a previous state in the game (WIP)
         self._walkthrough_stored_state = None
         self._help_index = 0  # this tracks the walkthrough as the player plays
-        self._headless = False  # no user input or graphics
-        self._walkthrough_auto = False  # play the game automatically, emulating player input.
+        self._headless = False  # no user input or graphics (use underscore)
+        self.walkthrough_auto = False  # play the game automatically, emulating player input.
         self.exit_step = False  # exit when walkthrough reaches end
 
         # if set to true (via --B option), smart load will ignore quick load
@@ -10139,10 +10134,10 @@ class Game:
         player_goto_event = False
         if len(self.events) > 0:
             interruptable_event = False
-            if self.events[0][0].__name__ == "on_goto" and self.events[0][1][0] == self.player:
+            if self.events[0][0].__name__ == "goto" and self.events[0][1][0] == self.player:
                 interruptable_event = True
                 player_goto_event = False  # True if we don't want strict hourglass when player is walking
-            if self.events[0][0].__name__ == "on_set_mouse_cursor":  # don't allow hourglass to override our request
+            if self.events[0][0].__name__ == "set_mouse_cursor":  # don't allow hourglass to override our request
                 interruptable_event = True
             if len(self.modals) > 0:
                 interruptable_event = True
@@ -10351,7 +10346,8 @@ class Game:
                 self.events = []
 
         # if we are allowing events to be skipped, check for that first.
-        if self._skip_key and self._skip_key == symbol:
+        if self.skip_key and self.skip_key == symbol:
+            log.info("requesting skip")
             self.attempt_skip()
             return
 
@@ -10483,12 +10479,14 @@ class Game:
             reset_mouse_cursor(self)
             return
 
-        if not self.scene or self.headless or self._walkthrough_auto:
+        if not self.scene or self.headless or self.walkthrough_auto:
             return
         # check modals as first priority
         modal_collide = False
         for name in self.modals:
             obj = get_object(self, name)
+            if not obj:
+                continue
             allow_collide = True if (obj.allow_look or obj.allow_use) \
                 else False
             if obj.collide(window_x, window_y) and allow_collide:  # absolute screen values
@@ -10710,7 +10708,7 @@ class Game:
             1]:  # mouse is outside game window
             return
 
-        if self.headless or self._walkthrough_auto: return
+        if self.headless or self.walkthrough_auto: return
 
         # we are editing something, so don't interact with objects
         if self.editor and self._selector:  # select an object
@@ -10749,7 +10747,7 @@ class Game:
 
         # if the event queue is busy, don't allow user interaction
         if len(self.events) == 0 or (
-                len(self.events) == 1 and self.events[0][0].__name__ == "on_goto" and self.events[0][1][
+                len(self.events) == 1 and self.events[0][0].__name__ == "goto" and self.events[0][1][
             0] == self.player):
             pass
         else:
@@ -10772,7 +10770,7 @@ class Game:
         potentially_do_idle = False
         if len(self.events) == 1:
             # if the only event is a goto for the player to a uninteresting point, clear it.
-            if self.events[0][0].__name__ == "on_goto" and self.events[0][1][0] == self.player:
+            if self.events[0][0].__name__ == "goto" and self.events[0][1][0] == self.player:
                 if self.player._finished_goto:
                     finished_fn = get_function(self, self.player._finished_goto, self.player)
                     if finished_fn:
@@ -11334,7 +11332,7 @@ class Game:
 
             if options.target_step:
                 log.info("AUTO WALKTHROUGH")
-                self._walkthrough_auto = True  # auto advance
+                self.walkthrough_auto = True  # auto advance
                 first_step = options.target_step[0]
                 last_step = options.target_step[1] if len(options.target_step) == 2 else None
                 if last_step:  # run through walkthrough to that step and do game load, then continue to second target
@@ -11366,7 +11364,7 @@ class Game:
                 self.exit_step = True
             if options.headless:
                 self.immediate_set_headless(True)
-                self._walkthrough_auto = True  # auto advance
+                self.walkthrough_auto = True  # auto advance
             if options.test_inventory:
                 self._test_inventory = True
             if options.test_inventory_per_scene:
@@ -11501,7 +11499,7 @@ class Game:
                                                              self._walkthrough_interactables, execute=True)
 
                 self.headless = False
-                self._walkthrough_auto = False
+                self.walkthrough_auto = False
                 self._resident = []  # force refresh on scenes assets that may not have loaded during headless mode
                 if self.scene:
                     self.scene.load_assets(self)
@@ -11633,7 +11631,7 @@ class Game:
             if not obj:
                 log.error("Unable to find %s in game" % actor_name)
                 self._walkthrough_target = 0
-                self._walkthrough_auto = False
+                self.walkthrough_auto = False
                 self.headless = False
                 return
             # if not in same scene as camera, and not in modals or menu, log
@@ -11769,7 +11767,7 @@ class Game:
                 # game stop waiting if it's waiting
                 if obj.busy > 0:
                     none_busy = False
-            if none_busy == True:
+            if none_busy is True:
                 if logging:
                     log.info(
                         "Game has no busy events, so setting game.waiting to False.")
@@ -11781,7 +11779,7 @@ class Game:
         done_events = 0
         del_events = 0
         # if there are events and we are not at the end of them
-        # events are: (fn.__name__, calling_obj, *args, **kwargs)
+        # events are: (fn, calling_obj, *args, **kwargs)
         events = self.events
         if len(self.events) > 0:
             if self.event_index > 0:
@@ -11965,7 +11963,7 @@ class Game:
 
         # if waiting for user input, assume the event to trigger the modal is
         # in the walkthrough
-        if self._walkthrough_auto and self._walkthrough_target >= self._walkthrough_index and len(self.modals) > 0:
+        if self.walkthrough_auto and self._walkthrough_target >= self._walkthrough_index and len(self.modals) > 0:
             if not self._generator:  # don't process walkthrough if a generator is running (eg loading a save game)
                 self._process_walkthrough()
 
@@ -11980,7 +11978,7 @@ class Game:
 
         if not self.scene:
             return
-        if self.headless or self._walkthrough_auto:
+        if self.headless or self.walkthrough_auto:
             return
         #        print("GAME DRAW")
 
@@ -12107,9 +12105,8 @@ class Game:
         for name in self.modals:
             modal = get_object(self, name)
             if not modal:
-                import pdb
-                pdb.set_trace()
-            #            if modal:
+                log.error(f"game.update unable to find modal {name} in game.objects")
+                continue
             modal.game = self
             modal.pyglet_draw(absolute=True)
 
@@ -12549,26 +12546,27 @@ class Game:
 
     def attempt_skip(self):
         if len(self.events) > 0:
-            # if the only event is a goto for the player to a uninteresting point, clear it.        
+            # if the only event is a goto for the player to a uninteresting point, clear it.
+            # events are: (fn, calling_obj, *args, ** kwargs)
             for i, event in enumerate(self.events):
-                print(event[0].__name__)
-                if event[0].__name__ == "on_end_skippable":
-                    print("CAN SKIP TO HERE:", i)
+                log.info(f" skip request on: {i}.{event[0].__name__}")
+                if event[0].__name__ == "end_skippable":
+                    log.info(f"attempting skip to {i}: {event[0].__name__}")
                     if len(self.modals) > 0:  # try and clear modals
                         m = get_object(self, self.modals[0])
                         if m:
                             m.trigger_interact()
-                    self._skipping = True
+                    self.skipping = True
                     self.immediate_set_headless(True)
-                    self._walkthrough_auto = True  # auto advance
+                    self.walkthrough_auto = True  # auto advance
 
         else:
-            log.warning("ATTEMPT SKIP BUT NOT EVENTS TO SKIP")
+            log.warning("ATTEMPT SKIP BUT NO EVENTS TO SKIP")
 
     @queue_method
     def start_skippable(self, key=K_ESCAPE, callback=None):
-        self._skip_key = K_ESCAPE
-        self._skip_callback = callback
+        self.skip_key = K_ESCAPE
+        self.skip_callback = callback
         log.warning("skip callback not implemented yet")
 
     @queue_method
@@ -12576,12 +12574,13 @@ class Game:
         """ If this special event is in the event queue and the user has triggered "attempt_skip"
             clear all events to here.
         """
-        if self._skipping:
-            self._skipping = False
-            self._skip_key = None
-            self._skip_callback = None
+        if self.skipping:
+            log.info("end skippable")
+            self.skipping = False
+            self.skip_key = None
+            self.skip_callback = None
             self.immediate_set_headless(False)
-            self._walkthrough_auto = False  # stop auto advance
+            self.walkthrough_auto = False  # stop auto advance
 
     @queue_method
     def autosave(self, actor, tilesize, exclude_from_screenshot=None, fname=None, fast=True, action="portrait"):
@@ -12867,7 +12866,7 @@ class Game:
     @queue_method
     def set_default_ok(self, v="ok"):
         """ Set the default OK button used by Actor.immediate_says """
-        self._default_ok = v
+        self.default_ok = v
 
     @queue_method
     def set_mouse_mode(self, v):

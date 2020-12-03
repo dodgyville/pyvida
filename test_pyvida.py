@@ -9,6 +9,8 @@ import tempfile
 from time import sleep
 from unittest.mock import MagicMock
 
+from dataclasses import dataclass
+from dataclasses_json import dataclass_json
 
 from pyvida import (
     Achievement,
@@ -500,6 +502,39 @@ class TestScene:
         assert game.scene == game.scenes["title"]
         assert game.scene.layers[0] == "title_background"
         assert game.scene.get_object("logo")
+
+
+@dataclass_json
+@dataclass
+class FancySettings(Settings):
+    magpie: str = "caribou"
+
+
+class TestSettings:
+    def test_save_json(self):
+        settings = Settings()
+        settings.music_volume = 500
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            fname = Path(tmpdirname, "blackbird.settings")
+            settings.save_json(fname)
+            assert fname.exists() is True
+            result = settings.load_json(fname)
+        assert settings.music_volume == result.music_volume
+
+    def test_save_custom_class(self):
+        settings = FancySettings()
+        settings.magpie = "daniel"
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            fname = Path(tmpdirname, "blackbird.settings")
+            settings.save_json(fname)
+            assert fname.exists() is True
+            with open(fname) as f:
+                raw = f.readlines()
+            result = settings.load_json(fname)
+        assert isinstance(result, FancySettings) is True
+       # assert result.achievements is not None
+        assert "daniel" in "".join(raw)
+        assert result.magpie == "daniel"
 
 
 class TestText:
