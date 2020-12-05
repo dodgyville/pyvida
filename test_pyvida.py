@@ -330,7 +330,7 @@ class TestSmart:
         game = Game("Test", "1.0", "1.0", "testpyvida", fps=16, afps=16, resolution=(100, 100))
         game.autoscale = False
         game.working_directory = TEST_PATH
-        game._smart()
+        game.immediate_smart()
         assert len(game.items) == 2
         assert len(game.actors) == 4
         assert len(game.scenes) == 1
@@ -415,7 +415,7 @@ class TestActor:
         game.astronaut.load_assets(game)
         game.astronaut.immediate_do_once("left", "idle1")
 
-        game.schedule_exit(2)
+        game.schedule_exit(1.8)
         game.run()
 
         spy.assert_called()
@@ -501,8 +501,9 @@ class TestScene:
         game.smart()
         game.queue_load_state("title", "initial")
         game.camera.scene("title")
-        game.schedule_exit(2)
-        game.run()
+
+        game.update()  # run events
+
         logo = game.scene.get_object("logo")
         assert game.w == 1680
         assert not game.autoscale
@@ -529,8 +530,8 @@ class TestScene:
         game.set_menu(*["menu_new", "menu_old"], clear=True)
         game.menu.show()
 
-        game.schedule_exit(6)
-        game.run()
+        game.update()  # run events
+
         assert game.w == 1680
         assert not game.autoscale
         assert game.scene == game.scenes["title"]
@@ -606,9 +607,9 @@ class TestMenus:
         t.load_assets()
         game.add(t)
         game.set_menu("hello")
-        game.schedule_exit(0.5)
-        game.run()
-        game.wait()
+
+        game.update()  # run events
+
         assert list(game.scene.objects) == ["logo"]
         assert list(game.menu_items) == ["hello"]
 
@@ -622,9 +623,8 @@ class TestMenus:
             ("menu_old", MagicMock()),
         ])
         game.set_menu("menu_new", "menu_old")
-        game.schedule_exit(0.5)
-        game.run()
-        game.wait()
+
+        game.update()  # run events
 
         assert names == ["menu_new", "menu_old"]
         assert list(game.menu_items) == ["menu_old", "menu_new"]
@@ -751,6 +751,22 @@ class TestMotion:
     def test_deltas(self):
         m = Motion("right")
         assert m.default_mode == LOOP
+
+
+class TestPathplanning:
+    def test_get_goto_action_motion(self):
+        a = Actor("astronaut").smart(None, using=Path(TEST_PATH, "data/actors/astronaut").as_posix())
+        a.x = 50
+        a.y = 50
+        action, motion = a.get_goto_action_motion(100, 100)
+        assert action == "right"
+        assert motion == "right"
+
+    def test_calculate_goto(self):
+        a = Actor("astronaut").smart(None, using=Path(TEST_PATH, "data/actors/astronaut").as_posix())
+        a._calculate_goto(destination=(1000,1000))
+
+        #assert a.
 
 
 class TestMotionManager:
