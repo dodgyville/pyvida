@@ -80,6 +80,7 @@ def on_<event>(self) method.
     self.game._waiting = True  # to make the event block all other events in the game.
 
 
+pip3 install -e . --no-binary :all:
 
 ### Tests ###
 pip3 install pytest-cov pytest-mock --user
@@ -99,3 +100,6 @@ pytest --cov=pyvida test_pyvida.py
 - removed deprecated walkareas
 - replaced opacity and alpha handing with single set_alpha and get_alpha methods
 - when adding modals, they must be added to game object first.
+- removed deprecated WalkArea (deprecated since pyvida4)
+- remove pickle code, replaced with json for loading and save games and settings
+- 

@@ -2,7 +2,7 @@
 
 
 def load_state(game, scene):
-    from pyvida import WalkArea, Rect
+    from pyvida import Rect
     scene.clean(["logo"])
     scene.walkarea.polygon([(1190, 423), (1584, 415), (1586, 682), (1239, 564)])
     scene.walkarea.waypoints([])

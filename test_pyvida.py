@@ -15,11 +15,13 @@ from dataclasses_json import dataclass_json
 from pyvida import (
     Achievement,
     AchievementManager,
+    Action,
     Actor,
     fit_to_screen,
     get_resource,
     Emitter,
     Factory,
+    float_colour,
     Game,
     get_available_languages,
     get_best_file,
@@ -28,9 +30,9 @@ from pyvida import (
     get_object,
     Item,
     line_seg_intersect,
-    load_game,
     load_game_json,
-    load_game_pickle,
+    load_image,
+    LOOP,
     MenuFactory,
     Motion,
     MotionDelta,
@@ -41,13 +43,10 @@ from pyvida import (
     Portal,
     PyvidaSprite,
     Rect,
-    save_game,
     save_game_json,
-    save_game_pickle,
     Scene,
     Settings,
     Text,
-    WalkArea,
     WalkAreaManager,
     RIGHT)
 
@@ -90,12 +89,20 @@ class TestUtils:
         f = get_best_file(game, fname)
         assert expected in f
 
-    def test_get_function(self, mocker):
+    def test_get_function(self):
         game = create_basic_scene((100,100), with_update=True)
         e = Emitter("spark")
         fn = get_function(game, "terminate_by_frame", e)
 
         assert fn is not None
+
+    def test_float_colour_alpha(self):
+        result = float_colour((255, 255, 255, 255))
+        assert result == (1.0, 1.0, 1.0, 1.0)
+
+    def test_float_colour(self):
+        result = float_colour((255, 0, 51))
+        assert result == (1.0, 0, 0.2)
 
     def test_get_object(self):
         game = create_basic_scene(with_update=True)
@@ -104,6 +111,10 @@ class TestUtils:
 
         assert item.name == "logo"
         assert actor.name == "Adam"
+
+    def load_image_missing(self):
+        m = load_image(Path(TEST_PATH, "data/items/logo/idle.jiff"))
+        assert m is None
 
     def test_get_image_size_jpg(self):
         m = get_image_size(Path(TEST_PATH, "data/items/logo/idle.jpg"))
@@ -218,16 +229,6 @@ class TestGame:
         game.scene = s
         assert game.scene is None
 
-    def test_pickle(self):
-        game = create_basic_scene()
-        game.update()  # perform all the queued events
-        with tempfile.TemporaryDirectory() as tmpdirname:
-            fname = Path(tmpdirname, "blackbird.savegame")
-            save_game_pickle(game, fname)
-
-        assert game.scene.walkarea.game == game
-        assert game.scene.objects == ['logo']
-
     def test_screen(self):
         g = Game()
 
@@ -258,13 +259,7 @@ class TestGame:
         game = create_basic_scene((100,100), with_update=True)
         with tempfile.TemporaryDirectory() as tmpdirname:
             fname = Path(tmpdirname, "test.savegame")
-            save_game(game, fname)
-
-    def test_load_game_pickle(self):
-        game = create_basic_scene((100,100), with_update=True)
-        #game = load_game(game, "test_data/saves/pleasure192.save")
-
-        #assert len(game.scenes) == 54
+            #save_game(game, fname)
 
     def test_save_game_json(self):
         game = create_basic_scene((100,100), with_update=True)
@@ -342,6 +337,13 @@ class TestSmart:
 
 
 # classes
+class TestAction:
+    def test_create(self):
+        a = Action("landmine")
+        data = a.to_json(indent=4)
+        b = Action.from_json(data)
+        assert b.name == "landmine"
+
 
 class TestActor:
     def test_motion_manager(self):
@@ -349,6 +351,34 @@ class TestActor:
         obj = Actor("test")
         obj.applied_motions.append("hello")
         assert len(obj.applied_motions) == 1
+
+    def test_create(self):
+        a = Actor("lovely head")
+        result = a.to_json(indent=4)
+        # print(result)
+        b = Actor().from_json(result)
+        assert isinstance(b, Actor)
+        assert isinstance(b._clickable_area, Rect)
+
+    def test_create_smart(self):
+        a = Actor("astronaut").smart(None, using=Path(TEST_PATH, "data/actors/astronaut").as_posix())
+        result = a.to_json(indent=4)
+        # print(result)
+        b = Actor().from_json(result)
+        assert isinstance(b, Actor)
+        assert isinstance(list(b.actions.values())[0], Action)
+
+    def test_inherit(self):
+        @dataclass_json
+        @dataclass
+        class FancyActor(Actor):
+            fancy = "tenderness"
+
+        a = FancyActor("love is a landmine")
+        result = a.to_json(indent=4)
+        b = FancyActor().from_json(result)
+        #assert "tenderness" in result
+        #assert "fancy" in result
 
     def test_smart(self):
         game = Game(resolution=(100, 100))
@@ -394,6 +424,10 @@ class TestActor:
 
 
 class TestRect:
+    def test_create(self):
+        r = Rect()
+        assert r.flat == (0.0, 0.0, 0.0, 0.0)
+
     def test_intersect(self):
         r = Rect(10, 10, 50, 50)
         result = r.intersect((0, 0), (11, 11))
@@ -430,7 +464,7 @@ class TestFactory:
         g = create_basic_scene(with_update=True)
         template = "Adam"
         f = Factory(g, template)
-        new_obj = f._create_object("franz", share_resource=True)
+        new_obj = f.create_object("franz", share_resource=True)
 
         assert new_obj.name == "franz"
         assert new_obj.game == g
@@ -532,7 +566,7 @@ class TestSettings:
                 raw = f.readlines()
             result = settings.load_json(fname)
         assert isinstance(result, FancySettings) is True
-       # assert result.achievements is not None
+        assert result.achievements is not None
         assert "daniel" in "".join(raw)
         assert result.magpie == "daniel"
 
@@ -557,20 +591,7 @@ class TestText:
         assert resource[1] == 39
 
 
-class TestWalkarea:
-    def test_pickle(self):
-        game = create_basic_scene()
-        w = WalkArea()
-
-
 class TestWalkareaManager:
-    def test_pickle(self):
-        game = create_basic_scene()
-        game.update()  # perform all the queued events
-        with tempfile.TemporaryFile() as f:
-            pickle.dump(game.scene.walkarea, f)
-        assert game.scene.objects == ['logo']
-
     def test_immediate_add_waypoint(self):
         w = WalkAreaManager(Scene("test"))
         w.immediate_add_waypoint([5,6])
@@ -729,6 +750,7 @@ class TestMotionDelta:
 class TestMotion:
     def test_deltas(self):
         m = Motion("right")
+        assert m.default_mode == LOOP
 
 
 class TestMotionManager:

@@ -21,7 +21,10 @@ GPL3
 from argparse import ArgumentParser
 from collections import deque
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import (
+    dataclass,
+    field
+)
 from dataclasses_json import dataclass_json
 from datetime import datetime, timedelta
 import copy
@@ -48,14 +51,20 @@ import sys
 import threading
 import time
 import traceback
+from typing import (
+    Dict,
+    List,
+    Optional,
+    Tuple
+)
 
 # 3rd party modules
 import euclid3 as eu
 from babel.numbers import format_decimal
 from fontTools.ttLib import TTFont
+from PIL import Image
 import pyglet
 import pyglet.clock
-
 
 VERSION_SAVE = 5  # save/load version, only change on incompatible changes
 __version__ = "7.0.0"
@@ -741,7 +750,6 @@ if logging:
         log_level = logging.INFO
     log = create_log("pyvida", log_level)
     log.warning("MONTAGE IMPORT ONLY DOES A SINGLE STRIP")
-    log.warning("Actor.__getstate__ discards essential USES information")
     log.info("Global variable working_dir set to %s" % working_dir)
     log.info("Global variable script_filename set to %s" % script_filename)
     log.info("Frozen is %s" % frozen)
@@ -976,25 +984,22 @@ def get_available_languages():
     return languages
 
 
-def load_image(fname, convert_alpha=False, eight_bit=False):
+def load_image(fname):
     if not os.path.isfile(fname):
         return None
-    try:
-        with open(fname, "rb") as f:
-            im = pyglet.image.codecs.pil.PILImageDecoder().decode(f, fname)
-    except:
-        im = pyglet.image.load(fname)
+    im = pyglet.image.load(fname)
     return im
 
 
-def get_font(game, filename, fontname):
+def get_font(_game, filename, fontname):
     # XXX should fallback to pyvida subdirectories if not in game subdirectory
+    font = None
     try:
         pyglet.font.add_file(get_safe_path(filename))
         font = pyglet.font.load(fontname)
-    #        fonts = [x[0].lower() for x in font._memory_fonts.keys()]
-    #        if font.name.lower() not in fonts:
-    #            log.error("Font %s appears not be in our font dictionary, fontname must match name in TTF file. Real name might be in: %s"%(fontname, font._memory_fonts.keys()))
+    # fonts = [x[0].lower() for x in font._memory_fonts.keys()] if font.name.lower() not in fonts: log.error("Font %s
+    # appears not be in our font dictionary, fontname must match name in TTF file. Real name might be in: %s"%(
+    # fontname, font._memory_fonts.keys()))
     except FileNotFoundError:
         font = None
     except AttributeError:
@@ -1021,7 +1026,8 @@ def shortName(font):
             name = name_str
         elif record.nameID == FONT_SPECIFIER_FAMILY_ID and not family:
             family = name_str
-        if name and family: break
+        if name and family:
+            break
     return name, family
 
 
@@ -1084,17 +1090,18 @@ def get_object(game, obj, case_insensitive=False):
         items_lower = {k.lower(): v for k, v in game.items.items()}
         actors_lower = {k.lower(): v for k, v in game.actors.items()}
     else:
-        scenes_lower = game.scenes
-        items_lower = game.items
-        actors_lower = game.actors
+        scenes_lower = game.scenes if game else {}
+        items_lower = game.items if game else {}
+        actors_lower = game.actors if game else {}
 
     if obj in scenes_lower:  # a scene
+        robj = scenes_lower[obj]
         robj = scenes_lower[obj]
     elif obj in items_lower:
         robj = items_lower[obj]
     elif obj in actors_lower:
         robj = actors_lower[obj]
-    else:
+    elif game:
         # look for the display names in _items in case obj is the name of an
         # on_ask option or translated
         for i in game.items.values():
@@ -1206,7 +1213,7 @@ def close_on_says(game, obj, player):
                 # test if this item is mid-animated text and unschedule if needed
                 mobj = get_object(game, item)
                 if getattr(mobj, "_pyglet_animate_scheduled", False):
-                    mobj._unschedule_animated_text()
+                    mobj.unschedule_animated_text()
     except TypeError:
         log.warning("%s has no tmp_items in close_on_says. Might not be a problem in walkthrough_auto mode.",
                     actor.name)
@@ -1440,9 +1447,9 @@ def create_event(q):
 
 def use_on_events(name, bases, dic):
     """ create a small method for each "on_<x>" queue function """
-    for queue_method in [x for x in dic.keys() if x[:3] == 'on_']:
-        qname = queue_method[3:]
-        dic[qname] = create_event(dic[queue_method])
+    for queue_method_details in [x for x in dic.keys() if x[:3] == 'on_']:
+        qname = queue_method_details[3:]
+        dic[qname] = create_event(dic[queue_method_details])
     return type(name, bases, dic)
 
 
@@ -1709,9 +1716,6 @@ class Storage(object):
 
         self.hint = None
 
-    def __getstate__(self):
-        return self.__dict__
-
 
 # If we use text reveal
 SLOW = 0
@@ -1781,7 +1785,7 @@ class Settings:
     fastest_playthrough = None
     filename = None
 
-    def __init__(self):
+    def __post_init__(self):
         self.achievements = AchievementManager()
 
     def save_json(self, fname=None):
@@ -1849,42 +1853,23 @@ class Motion(object):
     """ A motion is an event independent set of displacement values for an Actor or Scene
         Perfect for setting up repetitive background motions.
     """
-    name: str
-    #owner: str
-    motion_filename: str
-    deltas: list
-    default: int
-    mode: int
-    index: int
-    blocking: bool
-    destructive: bool
+    name: str = ''
+    owner: str = None
+    motion_filename: str = None
+    deltas: List[MotionDelta] = field(default_factory=list)
+    default_mode: int = LOOP
+    mode: int = LOOP
+    index: int = 0 # where in the motion we currently are
+    blocking: bool = False # block events from firing
+    destructive: bool = True  # apply permanently to actor
 
-    average_dx: float
-    average_dy: float
-    total_dx: float
-    total_dy: float
+    average_dx: float = 0.0  # useful for pathplanning
+    average_dy: float = 0.0
+    total_dx: float = 0.0
+    total_dy: float = 0.0
 
-    def __init__(self, name):
-        self.name = name
-        self.owner = None
+    def __post_init__(self):
         self.game = None
-        self.motion_filename = None
-        # (x,y,z,rotate,scale) NOTE: scale is absolute, not a delta
-        self.deltas = []
-        self.default = LOOP
-        self.mode = self.default
-        self.index = 0  # where in the motion we currently are
-        self.blocking = False  # block events from firing
-        self.destructive = True  # apply permanently to actor
-
-        self.average_dx = 0  # useful for pathplanning
-        self.average_dy = 0
-        self.total_dx = 0
-        self.total_dy = 0
-
-    def __getstate__(self):
-        self.game = None
-        return self.__dict__
 
     def add_delta(self, x=None, y=None, z=None, r=None, scale=None, f=None, alpha=None):
         self.deltas.append([x, y, z, r, scale, f, alpha])
@@ -2118,41 +2103,26 @@ def load_defaults(game, obj, name, filename):
 
 @dataclass_json
 @dataclass
-class Action(object):
-    name: str
-    actor: str
-    speed: float
-    angle_start: float
-    angle_end: float
-    available_for_pathplanning: bool
-    num_of_frames: int
+class Action:
+    name: str = ''
+    actor: str = None
+    speed: float = 10 # speed if used in pathplanning
+    angle_start: float = 0.0 # arc zone this action can be used for in pathplanning
+    angle_end: float = 0.0
+    available_for_pathplanning: bool = False
+    num_of_frames: int = 0
+    default_mode: int = LOOP
+    mode: int = LOOP
+    _x: float = 0.0  # is this action offset from the regular actor's x,y
+    _y: float = 0.0
+    displace_clickable: bool = False   # if action is displaced, also displace clickable_area
+
     #animation: any
 
-    def __init__(self, name):
-        self.name = name
-        self.actor = None
-        self.game = None
-        self.speed = 10  # speed if used in pathplanning
-        # arc zone this action can be used for in pathplanning
-        self.angle_start = 0
-        self.angle_end = 0
-        self.available_for_pathplanning = False
-        self.num_of_frames = 0
-        #self.animation = None
+    def __post_init__(self):
         self._image = None
-        #        self.w, self.h = 0, 0
         self._loaded = False
-        self.default = LOOP
-        self.mode = self.default
         self._manual_index = 0  # used by MANUAL mode to lock animation at a single frame
-        self._x, self._y = 0, 0  # is this action offset from the regular actor's x,y
-        self.displace_clickable = False  # if action is displaced, also displace clickable_area
-
-    def __getstate__(self):
-        self.game = None
-        self.actor = getattr(
-            self.actor, "name", self.actor) if self.actor else "unknown_actor"
-        return self.__dict__
 
     @property
     def resource_name(self):
@@ -2295,23 +2265,25 @@ class Action(object):
                 print("unable to create", quickload)
 
 
+@dataclass_json
+@dataclass
 class Rect(object):
-
-    def __init__(self, x, y, w, h):
-        self.x, self.y = x, y
-        self._w, self._h = w, h
-        self.scale = 1.0
+    x: float = 0.0
+    y: float = 0.0
+    _w: float = 0.0
+    _h: float = 0.0
+    scale: float = 1.0
 
     def serialise(self):
         return "[{}, {}, {}, {}, {}]".format(self.x, self.y, self._w, self._h, self.scale)
 
     @property
     def flat(self):
-        return (self.x, self.y, self._w, self._h)
+        return self.x, self.y, self._w, self._h
 
     @property
     def flat2(self):
-        return (self.topleft, self.bottomleft, self.topright, self.bottomright)
+        return self.topleft, self.bottomleft, self.topright, self.bottomright
 
     def __str__(self):
         return self.serialise()
@@ -2353,30 +2325,30 @@ class Rect(object):
 
     @property
     def topleft(self):
-        return (self.left, self.top)
+        return self.left, self.top
 
     @property
     def bottomleft(self):
-        return (self.left, self.bottom)
+        return self.left, self.bottom
 
     @property
     def topright(self):
-        return (self.right, self.top)
+        return self.right, self.top
 
     @property
     def bottomright(self):
-        return (self.right, self.bottom)
+        return self.right, self.bottom
 
     @property
     def centre(self):
-        return (self.left + self.w / 2, self.top + self.h / 2)
+        return self.left + self.w / 2, self.top + self.h / 2
 
     @property
     def center(self):
         return self.centre
 
     def random_point(self):
-        return (randint(self.x, self.x + self.w), randint(self.y, self.y + self.h))
+        return randint(self.x, self.x + self.w), randint(self.y, self.y + self.h)
 
     def collidepoint(self, x, y):
         return collide((self.x, self.y, self.w, self.h), x, y)
@@ -2396,10 +2368,14 @@ class Rect(object):
         intersect = possible_intersect
         if possible_intersect:
             intersect = True
-            if (x1 > self.right and x2 > self.right): intersect = False
-            if (x1 < self.left and x2 < self.left): intersect = False
-            if (y1 < self.top and y2 < self.top): intersect = False
-            if (y1 > self.bottom and y2 > self.bottom): intersect = False
+            if x1 > self.right and x2 > self.right:
+                intersect = False
+            if x1 < self.left and x2 < self.left:
+                intersect = False
+            if y1 < self.top and y2 < self.top:
+                intersect = False
+            if y1 > self.bottom and y2 > self.bottom:
+                intersect = False
         return intersect
 
     def move(self, dx, dy):
@@ -2416,12 +2392,8 @@ class Rect(object):
         return [pts.topleft, pts.topright, pts.bottomright, pts.bottomleft]
 
 
-#    def scale(self, v):
-#        self.w, self.h = int(self.w*v), int(self.h*v)
-
-
 def crosshair(game, point, colour, absolute=False, txt=""):
-    fcolour = fColour(colour)
+    fcolour = float_colour(colour)
 
     # y is inverted for pyglet
     x, y = int(point[0]), int(game.resolution[1] - point[1])
@@ -2466,7 +2438,7 @@ def coords(game, txt, x, y, invert=True):
 
 
 # def polygon(points, colour=(255, 255, 255, 255), fill=False):
-#    fcolour = fColour(colour)
+#    fcolour = float_colour(colour)
 #    pyglet.gl.glColor4f(*fcolour)
 ##    points = [item for sublist in [p1, p2, p3, p4] for item in sublist]
 #   pyglet.graphics.draw(4, pyglet.gl.GL_POLYGON, ('v2i', points))
@@ -2486,7 +2458,7 @@ def polygon(game, points, colors=None, fill=False):
 
 
 def rectangle(game, rect, colour=(255, 255, 255, 255), fill=False, label=True, absolute=False):
-    fcolour = fColour(colour)
+    fcolour = float_colour(colour)
     pyglet.gl.glColor4f(*fcolour)
     x, y = int(rect.x), int(rect.y)
     w, h = int(rect.w), int(rect.h)
@@ -2528,9 +2500,9 @@ def rectangle(game, rect, colour=(255, 255, 255, 255), fill=False, label=True, a
     return [p1, p2, p3, p4]
 
 
-def fColour(colour):
+def float_colour(colour):
     """ Convert a pyglet colour (0-255) to a floating point (0 - 1.0) colour as used by GL  """
-    return map(lambda x: x / 255, colour)
+    return tuple(map(lambda x: x / 255, colour))
 
 
 def get_pixel_from_image(image, x, y):
@@ -2575,9 +2547,9 @@ class Signal(object):
             providing_args = []
         self.providing_args = set(providing_args)
 
-    def connect(self, receiver, sender):
-        if (receiver, sender) not in self.receivers:
-            self.receivers.append((receiver, sender))
+    def connect(self, new_receiver, sender):
+        if (new_receiver, sender) not in self.receivers:
+            self.receivers.append((new_receiver, sender))
 
 
 post_interact = Signal(providing_args=["game", "instance", "player"])
@@ -2634,17 +2606,10 @@ class MotionManagerOld(metaclass=use_on_events):
 @dataclass
 class MotionManager:
     """ Enable subclasses to use motions"""
-    name: str
-    applied_motions: list  # names of applied motions
-    busy: int
-    motions: dict
-
-    def __init__(self):
-        self.motions = {}
-        self.applied_motions = []  # list of motions applied at the moment
-        self.game = None
-        self.busy = 0
-        self.name = ''
+    name: str = ''
+    applied_motions: List[str] = field(default_factory=list)  # names of applied motions
+    busy: int = 0
+    motions: dict = field(default_factory=dict)
 
     def immediate_smart_motions(self, game, directory, exclude=None):
         """ smart load the motions """
@@ -2729,143 +2694,141 @@ class MotionManager:
 @dataclass_json
 @dataclass
 class Actor(MotionManager):
-    name: str
-    """
-    actions: dict
-    scene: str
-    action: str
-    """
+    name: str = 'unknown actor'
+    interact: str = None
+    display_text: str = None
+    look: str = None
+    drag: str = None
+    actions: Dict[str, Action] = field(default_factory=dict)
+    scene: str = None
+    action: str = None
+    _next_action: str = None
+    _x: float = 0.0
+    _y: float = 0.0
+    z: float = 1.0 # used for parallax
 
-    def __init__(self, name, interact=None, display_text=None, look=None, drag=None):
-        super(Actor, self).__init__()
-        self.name = name
-        self.actions = {}
-        self.action = None
-        self._next_action = None  # for use by do_once and goto and move
-        # list of activities (fn, (*args)) to loop through - good for
-        # background actors
-        self.control_queue = []
+    interact_key: any = None  # keyboard key assigned to this interact
+    interact: str = None  # special queuing function for interacts
+    look:str = None  # override queuing function for look
+    _preupdate: str = None  # call before _update
+    _finished_goto: str = None  # override function when goto has finished
+    # allow drag if not None, function will be called when item is released
+    # after being dragged
+    _mouse_motion: str = None  # called when mouse is hovering over object
+    # called when mouse is not hovering over object
+    _mouse_none: str = None
+    scroll: Tuple[float, float] = (0.0, 0.0)  # scrolling speeds (x,y) for texture
+    _scroll_dx: float = 0.0  # when scrolling, what is our displacement?
+    _scroll_dy: float = 0.0
+    _scroll_mode: int = SCROLL_TILE_HORIZONTAL  # scroll mode
 
+    # target when walking somewhere
+    _goto_x: Optional[float] = None
+    _goto_y: Optional[float] = None
+
+    _goto_deltas: List[tuple] = field(default_factory=list)  # list of steps to get to or pass over _goto_x, goto_y
+    _goto_deltas_index: int = 0
+    _goto_deltas_average_speed: float = 0.0
+    _goto_destination_test = True  # during goto, test if over destination point
+    _goto_dx: float = 0.0
+    goto_dy: float = 0.0
+    _goto_points: List[tuple]  = field(default_factory=list)   # list of points Actor is walking through
+    _goto_block: bool = False  # is this a*star multi-step process blocking?
+    _use_astar: bool = False
+
+    opacity: float = 255
+
+    opacity_target: float = None
+    opacity_delta: float = 0.0
+    opacity_target_block: bool = False  # is opacity change blocking other events
+
+    _flip_vertical: bool = False
+    _flip_horizontal: bool = False
+
+    _sx: float = 0.0
+    _sy: float = 0.0  # stand point
+    _ax: float = 0.0
+    _ay: float = 0.0  # anchor point
+    _nx: float = 0.0
+    _ny: float = 0.0  # displacement point for name
+    _tx: float = 0.0
+    _ty: float = 0.0  # displacement point for text
+    _vx: float = 0.0
+    _vy: float = 0.0  # temporary visual displacement (used by motions)
+    _shakex: float = 0.0
+    _shakey: float = 0.0
+    _parent: str = None
+    _children: List[str] = field(default_factory=list)   # used by reparent
+    resource_name_override: str = None  # override actor name to use when accessing resource dict
+
+    # when an actor stands at this actor's stand point, request an idle
+    idle_stand: str = None
+    _idle: str = "idle"  # the default idle action for this actor
+    _over: str = "over"  # the default over action for this actor when in menu
+
+    _scale: float = 1.0
+    _rotate: float = 0.0
+    _mirrored: bool = False  # has actor been mirrored by on_mirror?
+    _pyglet_animation_callback: str = None  # when an animation ends, this function will be called
+
+    # can override name for game.info display text
+    display_text_align: int = LEFT
+    # if the player hasn't met this Actor use these "fog of war" variables.
+    _fog_display_text: str = None
+    description: str = None  # text for blind users
+
+    font_speech: str = None  # use default font if None (from game), else filename key for _pyglet_fonts
+    font_speech_size: float = None  # use default font size (from game)
+    font_colour: any = None  # use default
+    portrait_offset_x: float = 0.0
+    portrait_offset_y: float = 0.0
+
+    _solid_area: Rect = Rect(0, 0, 60, 100)
+    # always used for x,y and also w,h if clickable_mask if one is
+    # available
+    _clickable_area: Rect = Rect(0, 0, 0, 0)
+    _clickable_mask: any = None
+    # override clickable to make it cover all the screen
+    _clickable_fullscreen: bool = False
+
+    _allow_draw: bool = True
+    _allow_update: bool = True
+    _allow_use: bool = True
+    _allow_interact: bool = True
+    _allow_look: bool = True
+    # how the collide method for this Actor functions
+    collide_mode: int = COLLIDE_CLICKABLE
+
+    show_debug: bool = False
+
+    # called when item is selected in a collection
+    _collection_select: str = None
+    uses: Dict[str, str] = field(default_factory=dict)  # override use functions (actor is key name)
+    facts: List[str] = field(default_factory=list)
+    _met: List[str] = field(default_factory=list)   # list of Actors this actor has interacted with
+    inventory: List[str] = field(default_factory=dict)
+
+    _directory: str = None  # directory this is smart loaded from (if any)
+    _images: List[str] = field(default_factory=list)   # image filenames that the actions are based on
+    # don't process any more events for this actor until busy is False,
+    # will block all events if game.immediate_wait()
+    busy: int = 0
+    _batch: any = None
+
+    # sepcial visual effects
+    _tint: any = None
+    _fx_sway: float = 0.0  # sway speed
+    _fx_sway_angle: float = 0.0  # in degrees
+    _fx_sway_index = 0  # TODO: there is no limit to how high this might go
+
+    # engine backwards compatibility
+    _engine_v1_scale: float = None
+
+    def __post_init__(self):
         self.game = None
-        self.scene = None
-        self._x, self._y = 0.0, 0.0
-        self.z = 1.0  # used for parallax
-        self.scroll = (0.0, 0.0)  # scrolling speeds (x,y) for texture
-        self._scroll_dx = 0.0  # when scrolling, what is our displacement?
-        self._scroll_dy = 0.0
-        self._scroll_mode = SCROLL_TILE_HORIZONTAL  # scroll mode
-
-        # target when walking somewhere
-        self._goto_x, self._goto_y = None, None
-        self._goto_deltas = []  # list of steps to get to or pass over _goto_x, goto_y
-        self._goto_deltas_index = 0
-        self._goto_deltas_average_speed = 0
-        self._goto_destination_test = True  # during goto, test if over destination point
-        self._goto_dx, self._goto_dy = 0, 0
-        self._goto_points = []  # list of points Actor is walking through
-        self._goto_block = False  # is this a*star multi-step process blocking?
-        self._use_astar = False
-
-        self.opacity = 255
-
-        self.opacity_target = None
-        self.opacity_delta = 0
-        # is opacity change blocking other events
-        self.opacity_target_block = False
-
-        self._flip_vertical = False
-        self._flip_horizontal = False
-
-        self._sx, self._sy = 0, 0  # stand point
-        self._ax, self._ay = 0, 0  # anchor point
-        self._nx, self._ny = 0, 0  # displacement point for name
-        self._tx, self._ty = 0, 0  # displacement point for text
-        self._vx, self._vy = 0, 0  # temporary visual displacement (used by motions)
-        self._shakex, self._shakey = 0, 0
-        self._parent = None
-        self._children = []  # used by reparent
-        self.resource_name_override = None  # override actor name to use when accessing resource dict
-
-        # when an actor stands at this actor's stand point, request an idle
-        self.idle_stand = None
-        self._idle = "idle"  # the default idle action for this actor
-        self._over = "over"  # the default over action for this actor when in menu
-
-        self._scale = 1.0
-        self._rotate = 0
-        self._mirrored = False  # has actor been mirrored by on_mirror?
-        self._pyglet_animation_callback = None  # when an animation ends, this function will be called
-
-        # can override name for game.info display text
-        self.display_text = display_text
-        self.display_text_align = LEFT
-        # if the player hasn't met this Actor use these "fog of war" variables.
-        self._fog_display_text = None
-        self.description = None  # text for blind users
-
-        self.font_speech = None  # use default font if None (from game), else filename key for _pyglet_fonts
-        self.font_speech_size = None  # use default font size (from game)
-        self.font_colour = None  # use default
-        self.portrait_offset_x = 0
-        self.portrait_offset_y = 0
-
-        self._solid_area = Rect(0, 0, 60, 100)
-        # always used for x,y and also w,h if clickable_mask if one is
-        # available
-        self._clickable_area = Rect(0, 0, 0, 0)
-        self._clickable_mask = None
-        # override clickable to make it cover all the screen
-        self._clickable_fullscreen = False
-
-        self._allow_draw = True
-        self._allow_update = True
-        self._allow_use = True
-        self._allow_interact = True
-        self._allow_look = True
         self._editing = None  # what attribute of this Actor are we editing
         self._editing_save = True  # allow saving via the editor
-        # how the collide method for this Actor functions
-        self.collide_mode = COLLIDE_CLICKABLE
-
         self._tk_edit = {}  # used by tk editor to update values in widgets
-
-        self.show_debug = False
-
-        self._interact_key = None  # keyboard key assigned to this interact
-        self._interact = interact  # special queuing function for interacts
-        self._look = look  # override queuing function for look
-        self._preupdate = None  # call before _update
-        self._finished_goto = None  # override function when goto has finished
-        # allow drag if not None, function will be called when item is released
-        # after being dragged
-        self._drag = drag
-        self._mouse_motion = None  # called when mouse is hovering over object
-        # called when mouse is not hovering over object
-        self._mouse_none = None
-
-        # called when item is selected in a collection
-        self._collection_select = None
-        self.uses = {}  # override use functions (actor is key name)
-        self.facts = []
-        self._met = []  # list of Actors this actor has interacted with
-        self.inventory = {}
-
-        self._directory = None  # directory this is smart loaded from (if any)
-        self._images = []  # image filenames that the actions are based on
-        # don't process any more events for this actor until busy is False,
-        # will block all events if game.immediate_wait()
-        self.busy = 0
-        self._batch = None
-        #        self.events = []
-
-        # sepcial visual effects
-        self._tint = None
-        self._fx_sway = 0  # sway speed
-        self._fx_sway_angle = 0  # in degrees
-        self._fx_sway_index = 0  # TODO: there is no limit to how high this might go
-
-        # engine backwards compatibility
-        self._engine_v1_scale = None
 
         self.set_editable()
 
@@ -2942,41 +2905,6 @@ class Actor(MotionManager):
         set_resource(self.resource_name, w=sprite.width, h=sprite.height, resource=sprite)
         return sprite
 
-    def __getstate__(self):  # actor.getstate
-        """ Prepare the object for pickling """
-        # functions that are probably on the object so search them first.
-        for fn_name in ["_interact", "_look", "_drag", "_mouse_motion", "_mouse_none", "_collection_select"]:
-            fn = getattr(self, fn_name)
-            if hasattr(fn, "__name__"):
-                setattr(self, fn_name, fn.__name__)
-
-        game = self.game
-        fullscreen = game.fullscreen if game else False
-        self.game = None  # re-populated after load
-        self._editable = []  # re-populated after load
-
-        self._tk_edit = {}  # undo any editor
-        # PROBLEM values:
-        # self.uses = {}
-        # convert functions to strings in .uses
-        for k, v in self.uses.items():
-            if callable(v):  # textify function/method calls
-                self.uses[k] = v.__name__
-                # if not get_function(game, v.__name__, self):
-
-        # convert functions to strings
-        for k, v in self.__dict__.items():
-            if callable(v):  # textify function/method calls
-                self.__dict__[k] = v.__name__
-                if not get_function(game, v.__name__, self):
-                    vv = v
-                    print("*******UNABLE TO FIND function",
-                          v.__name__, "for", k, "on", self.name)
-                    if not fullscreen:
-                        import pdb;
-                        pdb.set_trace()
-        return self.__dict__
-
     def set_editable(self):
         """ Set which attributes are editable in the editor """
         self._editable = [  # (human readable, get variable names, set variable names, widget types)
@@ -2991,7 +2919,7 @@ class Actor(MotionManager):
             ("anchor", (self.get_ax, self.get_ay),
              (self.set_ax, self.set_ay), (int, int)),
             ("scale", self.get_scale, self.adjust_scale_x, float),
-            ("interact", self.get_interact, self.set_interact, str),
+            #("interact", self.get_interact, self.set_interact, str),
             ("clickable area", "clickable_area", "_clickable_area", Rect),
             ("solid area", "solid_area", "_solid_area", Rect),
             # ( "allow_update", "allow_use", "allow_interact", "allow_look"]
@@ -3006,14 +2934,6 @@ class Actor(MotionManager):
             ("editing save", self.get_editing_save,
              self.set_editing_save, bool),
         ]
-
-    def get_busy(self):
-        return self._busy
-
-    def set_busy(self, v):
-        self._busy = v
-
-    busy = property(get_busy, set_busy)
 
     def get_action(self) -> Action:
         action = self.actions.get(self.action, None)
@@ -3246,22 +3166,6 @@ class Actor(MotionManager):
     #    def position(self):
     #        return (self.x, self.y)
 
-    def set_interact(self, v):
-        self._interact = v
-
-    def get_interact(self):
-        return self._interact
-
-    interact = property(get_interact, set_interact)
-
-    def set_look(self, v):  # actor.set_look
-        self._look = v
-
-    def get_look(self):
-        return self._look
-
-    look = property(get_look, set_look)
-
     def set_allow_draw(self, v):
         self._allow_draw = v
 
@@ -3453,8 +3357,7 @@ class Actor(MotionManager):
                 if self._goto_deltas_index > len(self._goto_deltas):
                     print("deltas have missed target")
                     if self.game and not self.game.fullscreen:
-                        import pdb;
-                        pdb.set_trace()
+                        log.error(f"Deltas have missed target for {self.name} going to {dx, dy}")
             self.x = self.x + dx
             self.y = self.y + dy
             speed = self._goto_deltas_average_speed
@@ -3643,7 +3546,7 @@ class Actor(MotionManager):
                     if logging:
                         log.warning("No interact script for %s (write a def %s(game, %s, player): function)" % (
                             self.name, basic, slugify(self.name)))
-                script = None  # self._interact_default
+                script = None  # self.interact_default
                 self._interact_default(self.game, self, self.game.player if self.game else None)
 
         # do the signals for post_interact
@@ -3715,12 +3618,12 @@ class Actor(MotionManager):
 
         self.game.mouse_mode = MOUSE_INTERACT  # reset mouse mode
 
-        if self._look:  # if user has supplied a look override
-            script = get_memorable_function(self.game, self._look)
+        if self.look:  # if user has supplied a look override
+            script = get_memorable_function(self.game, self.look)
             if script:
                 script(self.game, self, self.game.player)
             else:
-                log.error("no look script for %s found called %s" % (self.name, self._look))
+                log.error("no look script for %s found called %s" % (self.name, self.look))
         else:  # else, search several namespaces or use a default
             basic = "look_%s" % slugify(self.name)
             script = get_memorable_function(self.game, basic)
@@ -3774,7 +3677,7 @@ class Actor(MotionManager):
     def guess_clickable_area(self):
         """ guessing cLickable only works if assets are loaded, not likely during smart load """
         if self.w == 0:
-            self._clickable_area = DEFAULT_CLICKABLE = Rect(0, 0, 70, 110)
+            self._clickable_area = default_clickable = Rect(0, 0, 70, 110)
         else:
             self._clickable_area = Rect(0, 0, self.w, self.h)
 
@@ -3915,14 +3818,14 @@ class Actor(MotionManager):
 
         If <action_prefix>, prefix value to defaults (eg astar, idle), useful for swapping clothes on actor, etc 
         """
-        DEFAULT_CLICKABLE = Rect(0, 0, 70, 110)
+        default_clickable = Rect(0, 0, 70, 110)
         self.game = game
         if using:
             if logging:
                 log.info(
                     "actor.smart - using %s for smart load instead of real name %s" % (using, self.name))
             name = os.path.basename(using)
-            d = get_safe_path(os.path.dirname(using), game.working_directory)
+            d = get_safe_path(os.path.dirname(using), game.working_directory if game else None)
         else:
             name = self.name
             d = get_smart_directory(game, self)
@@ -3991,7 +3894,7 @@ class Actor(MotionManager):
                 if logging:
                     log.warning("%s %s smart load unable to get clickable area from action image, using default" % (
                         self.__class__, self.name))
-            self._clickable_area = DEFAULT_CLICKABLE
+            self._clickable_area = default_clickable
 
         # potentially load some defaults for this actor
         filepath = os.path.join(
@@ -4359,7 +4262,7 @@ class Actor(MotionManager):
         if logging:
             log.info("%s has started on_asks." % (self.name))
         name = self.display_text if self.display_text is not None else self.name
-        if self.game._output_walkthrough and self.game._trunk_step:
+        if self.game.output_walkthrough and self.game.trunk_step:
             print("%s says \"%s\"" % (name, statement))
         if logging:
             log.info("on_ask before _says: %s.busy = %i" % (self.name, self.busy))
@@ -4693,7 +4596,7 @@ class Actor(MotionManager):
         obj = get_object(self.game, item)
         if not obj:
             log.error("inventory get_object can't find requested object in game", obj)
-        return obj.name in self.inventory.keys()
+        return obj.name in self.inventory
 
     def immediate_gets(self, item, remove=True, collection="collection", scale=1.0):
         item = get_object(self.game, item)
@@ -4702,18 +4605,23 @@ class Actor(MotionManager):
         if collection and hasattr(item, "_actions") and collection in item.actions.keys():
             item.immediate_do(collection)
             item.load_assets(self.game)
-        print("INVENTORY", self.inventory)
-        self.inventory[item.name] = item
+        log.debug(f"inventory at inventory.gets: {self.inventory}")
+        if item.name not in self.inventory:
+            self.inventory.append(item.name)
         item.scale = scale  # scale to normal size for inventory
-        if remove == True and item.scene:
-            item.scene.immediate_remove(item)
+        if remove is True and item.scene:
+            scene = get_object(self.game, item.scene)
+            if scene:
+                scene.immediate_remove(item)
+            else:
+                log.error(f"Unable to remove {item.name} from missing scene {item.scene}")
         return item
 
     @queue_method
     def gets(self, item, remove=True, ok=-1, action="portrait", collection="collection", scale=1.0):
         """ add item to inventory, remove from scene if remove == True """
         item = self.immediate_gets(item, remove, collection, scale)
-        if item == None:
+        if item is None:
             return
         # with open('inventory.txt', 'a') as f:
         #    f.write('    "%s": _(""),\n'%item.name)
@@ -4726,10 +4634,10 @@ class Actor(MotionManager):
         self_name = self.fog_display_text(None)
 
         if self.game:
-            if self.game._output_walkthrough and self.game._trunk_step:
+            if self.game.output_walkthrough and self.game.trunk_step:
                 print("%s adds %s to inventory." % (self_name, name))
-            if self.game.walkthrough_auto and item.name not in self.game._walkthrough_inventorables:
-                self.game._walkthrough_inventorables.append(item.name)
+            if self.game.walkthrough_auto and item.name not in self.game.walkthrough_inventorables:
+                self.game.walkthrough_inventorables.append(item.name)
 
         if self.game and self == self.game.player:
             text = _("%s added to your inventory!") % name
@@ -4764,10 +4672,10 @@ class Actor(MotionManager):
     def immediate_loses(self, item):
         """ remove item from inventory """
         obj = get_object(self.game, item)
-        if obj in self.inventory.values():
-            del self.inventory[obj.name]
+        if obj.name in self.inventory:
+            self.inventory.remove(obj.name)
         else:
-            log.error("Item %s not in inventory" % getattr(item, "name", item))
+            log.error(f"Item {obj.name} not in inventory")
 
     @queue_method
     def meets(self, actor):
@@ -5139,6 +5047,13 @@ class Actor(MotionManager):
     @queue_method
     def fade_out(self, action=None, seconds=3, block=False):
         self._fade_out(action, seconds, block=block)
+
+    @queue_method
+    def set_look(self, v):
+        self.immediate_set_look(v)
+
+    def immediate_set_look(self, v):
+        self.look = v
 
     @queue_method
     def usage(self, draw=None, update=None, look=None, interact=None, use=None):
@@ -5546,7 +5461,7 @@ class Actor(MotionManager):
 
     def immediate_key(self, key=None):
         # set interact_key
-        self._interact_key = key
+        self.interact_key = key
 
 
 class Item(Actor):
@@ -5556,19 +5471,12 @@ class Item(Actor):
 @dataclass_json
 @dataclass
 class Portal(Actor):
-    link: str
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._ox, self._oy = 0, 0  # out point for this portal
-        #        self.interact = self._interact_default
-        self.link = None  # the connecting Portal
-        #        self.link_display_text = None #override scene name
-
-        # look and use are disabled by default for Portals
-        self._allow_use = False
-        self._allow_look = False
-        self._icon = None
+    link: str = None # the connecting Portal
+    _ox: float = 0.0  # out point for this portal
+    _oy: float = 0.0
+    _allow_look: bool = False  # look and use are disabled by default for Portals
+    _allow_use: bool = False  # look and use are disabled by default for Portals
+    _icon: any = None
 
     def generate_icons(self):
         # create portal icon for settings.show_portals 
@@ -5588,15 +5496,6 @@ class Portal(Actor):
         # and there's no easy way to switch them all off.
         # For the general release, they now default to off.
         super().immediate_usage(draw=draw, update=update, look=False, interact=interact, use=False)
-
-    #    def __getstate__(self):
-    #        """ Prepare the object for pickling """
-    #        self.__dict__ = super().__getstate__()
-    #        if self.link.scene
-    #        return self.__dict__
-
-    #    @property
-    #    def link(self):
 
     def get_link(self):
         return get_object(self.game, self.link)
@@ -6115,19 +6014,6 @@ class Emitter(Item):
         self._reset()
 
 
-class WalkArea(object):
-    """ Comptability layer with pyvida4 walkareas """
-
-    def __init__(self, *args, **kwargs):
-        log.warning("WalkArea deprecated, please update your code")
-
-    def serialise(self):
-        return []
-
-    def smart(self, *args, **kwargs):
-        return self
-
-
 DEFAULT_WALKAREA = [(100, 600), (1500, 560), (1520, 800), (80, 820)]
 
 
@@ -6210,12 +6096,6 @@ class WalkAreaManager:
         self._edit_waypoint_index = -1
 
         self.busy = 0
-
-    def __getstate__(self):
-        state = self.__dict__.copy()
-        # Remove the unpicklable entries.
-        del state['game']
-        return state
 
     def _set_point(self, x=None, y=None, z=None):
         i = -1
@@ -6471,12 +6351,12 @@ class WalkAreaManager:
         pts = [item for sublist in zip(self._polygon_x, ypts) for item in sublist]
         #        polygon(self.game, pts)
         if self._fill_colour is not None:
-            colours = list(fColour(self._fill_colour)) * self._polygon_count
+            colours = list(float_colour(self._fill_colour)) * self._polygon_count
             polygon(self.game, pts, colours, fill=True)
 
         if debug is True:
             colour = (24, 169, 181, 255)
-            colours = list(fColour(colour)) * self._polygon_count
+            colours = list(float_colour(colour)) * self._polygon_count
             polygon(self.game, pts, colours)
             for pt in self._polygon:
                 crosshair(self.game, pt, colour)
@@ -6499,7 +6379,6 @@ class WalkAreaManager:
 
     def debug_pyglet_draw(self):
         self._pyglet_draw(debug=True)
-
 
 class Scene(MotionManager):
 
@@ -6540,10 +6419,6 @@ class Scene(MotionManager):
         self._ignore_highcontrast = False  # if True, then game._contrast will not be blitted on this scene.
 
         # self.walkareas = OldWalkAreaManager(self, game)  # pyvida4 compatability
-
-    def __getstate__(self):
-        self.game = None
-        return self.__dict__
 
     def get_x(self):  # scene.x
         return self._x
@@ -7158,10 +7033,6 @@ class Text(Item):
         self._clickable_area = Rect(
             0, 0, w, h)
 
-    def __getstate__(self):
-        self.__dict__ = super().__getstate__()
-        return self.__dict__
-
     @property
     def resource_offset(self):
         return get_resource(self.resource_name, subkey="offset")[-1]
@@ -7268,7 +7139,7 @@ class Text(Item):
         v = self._height if self._height else self.resource.content_height
         return v
 
-    def _unschedule_animated_text(self):
+    def unschedule_animated_text(self):
         """ remove the scheduled animated text call from pyglet """
         #        print("*** UNSCHEDULE ",len(pyglet.clock._default._schedule_interval_items), self.display_text[:60])
         self._pyglet_animate_scheduled = False
@@ -7279,7 +7150,7 @@ class Text(Item):
             return
         animated = getattr(self, "_pyglet_animate_scheduled", False)  # getattr for backwards compat
         if animated and self._text_index >= len(self.display_text):
-            self._unschedule_animated_text()  # animated text might be finished
+            self.unschedule_animated_text()  # animated text might be finished
         super()._update(dt, obj=obj)
 
     def _animate_text(self, dt):
@@ -7939,7 +7810,7 @@ class Camera:  # the view manager
             log.debug("changing scene to %s" % scene.name)
         if self.game._test_inventory_per_scene and self.game.player:
             print("\nChanging scene, running inventory tests")
-            self.game._test_inventory_against_objects(list(self.game.player.inventory.keys()), scene.objects,
+            self.game.test_inventory_against_objects(list(self.game.player.inventory), scene.objects,
                                                       execute=False)
 
         #        if scene.name == "aspaceship":
@@ -8165,7 +8036,6 @@ class Camera:  # the view manager
         # im = ImageGrab.grab()
         # im.save(filename)
         pyglet.image.get_buffer_manager().get_color_buffer().save(filename)
-        from PIL import Image
         img = Image.open(filename)
         img = img.convert('RGB')  # remove alpha
         fname, ext = os.path.splitext(filename)
@@ -8538,20 +8408,6 @@ class Mixer:
             self._music_player = PlayerPygletMusic(game)
             self._sfx_players = deque([PlayerPygletSFX(game) for _ in range(4)])
             self._ambient_player = PlayerPygletSFX(game)
-
-    def __getstate__(self):  # actor.getstate
-        """ Prepare the object for pickling """
-        self._music_position = self._music_player.position()
-        self._music_player = None
-        self._sfx_players = []
-        self._ambient_player = None
-        self.game = None
-        #        print("DEINITIALISE PLAYERS AT POSITION",self._music_position)
-        return dict(self.__dict__)
-
-    def __setstate__(self, d):
-        """ Used by load game to restore the current music settings """
-        self.__dict__.update(d)  # update attributes
 
     @queue_method
     def resume(self):
@@ -8990,12 +8846,8 @@ class Factory:
         self.template = obj.name
         self.clone_count = 0
 
-    def __getstate__(self):
-        self.game = None
-        return self.__dict__
-
-    def _create_object(self, name, share_resource=True):
-
+    def create_object(self, name, share_resource=True):
+        """ Best used inside factory.create """
         original = get_object(self.game, self.template)
         obj = copy.copy(original)
         obj.__dict__ = copy.copy(original.__dict__)
@@ -9016,11 +8868,13 @@ class Factory:
 
         return obj
 
-    def create(self, objects=[], num_of_objects=None, start=0, share_resource=True):
+    def create(self, objects=None, num_of_objects=None, start=0, share_resource=True):
         """
            objects : use the names in objects as the names of the new objects
            num_of_objects : create a number of objects using the template's name as the base name 
         """
+        if objects is None:
+            objects = []
         new_objects = []
         original = get_object(self.game, self.template)
         if len(objects) > 0:  # TODO: custom names no implemented yet
@@ -9029,7 +8883,7 @@ class Factory:
             self.clone_count = start
             for i in range(0, num_of_objects):
                 name = "{}{}".format(original.name, i + self.clone_count)
-                new_objects.append(self._create_object(name, share_resource=share_resource))
+                new_objects.append(self.create_object(name, share_resource=share_resource))
         # self.clone_count += num_of_objects # if Factory is called again, add to clones don't replace
         return new_objects
 
@@ -9168,66 +9022,6 @@ def load_game_json(game, fname, meta_only=False, keep=[], responsive=False):
             game.storage = pickle.load(f)
 
 
-def save_game_pickle(game, fname):
-    log.info("Saving game to %s" % fname)
-    # time since game created or loaded
-    dt = datetime.now() - game.storage.last_load_time
-    game.storage.total_time_in_game += dt.total_seconds()
-    game.storage.last_save_time = game.storage.last_load_time = datetime.now()
-    parser = game.parser
-    game.parser = None
-    with open(fname, 'wb') as f:
-        # dump some metadata (eg date, title, etc)
-        pickle.dump(game.get_game_info, f)
-        # dump info about the player, including history
-        pickle.dump(game.get_player_info, f)
-        pickle.dump(game.get_engine, f)
-        pickle.dump(game.storage, f)
-        mixer1, sfx_mixers, mixer3 = game.mixer._music_player, game.mixer._sfx_players, game.mixer._ambient_player
-        pickle.dump(game.mixer, f)
-        game.mixer._music_player, game.mixer._sfx_players, game.mixer._ambient_player = mixer1, sfx_mixers, mixer3
-        game.mixer.game = game
-        pickle.dump(_pyglet_fonts, f)
-        pickle.dump(game.menu_items, f)
-        pickle.dump(game.menus, f)
-        pickle.dump(game.modals, f)
-        pickle.dump(game.visited, f)
-        pickle.dump(game._selected_options, f)
-        pickle.dump(game._modules, f)
-        pickle.dump(game._sys_paths, f)
-        pickle.dump(game._resident, f)
-
-        pyvida_classes = [
-            Actor, Item, Scene, Portal, Text, Emitter, Collection]
-        # dump info about all the objects and scenes in the game
-        for objects in [game.actors, game.items, game.scenes]:
-            #            objects_to_pickle = []
-            for o in objects.values():  # test objects
-                if o.__class__ not in pyvida_classes:
-                    log.warning("Pickling {}, a NON-PYVIDA CLASS {}".format(o.name, o.__class__))
-                #                    continue
-                try:
-                    pickle.dumps(o)
-                except:
-                    for k, x in o.__dict__.items():
-                        try:
-                            pickle.dumps(x)
-                        except:
-                            print("failed on", k, x)
-                    print("Error:", sys.exc_info())
-                    print("failed pickling", o.name)
-            pickle.dump(objects, f)
-            # restore game object and editables that were cleansed for pickle
-            for o in objects.values():
-                restore_object(game, o)
-        game.parser = parser
-        for o in game._resident:
-            scene = get_object(game, o)
-            if scene: restore_object(game, scene)
-
-
-#    log.warning("POST PICKLE inventory %s"%game.inventory.name)
-
 def load_menu_assets(game):
     for menu_item in game.menu_items:
         obj = get_object(game, menu_item)
@@ -9250,163 +9044,13 @@ def load_game_meta_pickle(game, fname):
     return meta
 
 
-def load_game_pickle(game, fname, meta_only=False, keep=[], responsive=False):
-    """ A generator function, call and set """
-    global _pyglet_fonts
-    keep_scene_objects = []
-    for i in keep:
-        obj = get_object(game, i)
-        if obj:
-            keep_scene_objects.append(obj)
-        else:
-            print(i, "not in game")
-
-    with open(fname, "rb") as f:
-        meta = pickle.load(f)
-        if meta_only is False:
-            player_info = pickle.load(f)
-            engine_info = pickle.load(f)
-            game.set_engine(engine_info)
-            data = pickle.load(f)
-            if not hasattr(data, "total_time_in_game"):
-                data.total_time_in_game = data._total_time_in_game
-                data.last_save_time = None
-                data.created = data._created
-            game.storage = data
-            game.storage.last_load_time = datetime.now()
-            if game.mixer:  # stop all music and ambient noise before rebuilding mixer
-                game.mixer.immediate_music_stop()
-                game.mixer.immediate_ambient_stop()
-
-            game.mixer = pickle.load(f)
-            game.mixer._sfx_mixers = getattr(game.mixer, "_sfx_mixers", [])
-
-            # restore mixer
-            game.mixer.game = game
-            game.mixer.initialise_players(game)
-            game.mixer.resume()
-
-            _pyglet_fonts = pickle.load(f)
-
-            game.menu_items = pickle.load(f)
-            game.menus = pickle.load(f)
-            game.modals = pickle.load(f)
-            game.visited = pickle.load(f)
-            game._selected_options = pickle.load(f)
-            game._modules = pickle.load(f)
-            paths = pickle.load(f)
-            paths = [get_relative_path(x, game.working_directory) for x in paths]
-            game._sys_paths = paths
-            for path in paths:
-                if path not in sys.path:
-                    sys.path.append(get_safe_path(path))
-            game._resident = pickle.load(f)
-            data = pickle.load(f)
-            game.actors = data
-
-            new_items = pickle.load(f)
-            game.items = new_items
-            game.scenes = pickle.load(f)
-
-            for obj in keep_scene_objects:
-                game.add(obj, replace=True)
-                scene = get_object(game, obj.scene)
-                if scene:
-                    scene.immediate_add(obj)
-            #                game.scene.immediate_add(obj)
-
-            # restore game object and editable info
-            for objects in [game.actors.values(), game.items.values(), game.scenes.values()]:
-                for o in objects:
-                    restore_object(game, o)
-                    yield
-
-            # restore fonts
-            fonts_smart(game)  # load fonts, pick up any overrides such as language
-
-            # switch off headless mode to force graphical assets of most recently
-            # accessed scenes to load.
-            headless = game.headless
-            game.headless = False
-            for scene_name in game._resident:
-                scene = get_object(game, scene_name)
-                if scene:
-                    for i in scene.load_assets_responsive(game):
-                        yield
-                else:
-                    log.warning("Pickle load: scene %s is resident but not actually in Game, " % scene_name)
-            load_menu_assets(game)
-
-            game.headless = headless
-
-            # load pyglet fonts
-            for fontfile, fontname in _pyglet_fonts.items():
-                game.add_font(fontfile, fontname)
-
-            # change camera to scene
-            if player_info["player"]:
-                game.player = get_object(game, player_info["player"])
-                game.player.load_assets(game)
-            if player_info["scene"]:
-                game.camera.immediate_scene(player_info["scene"], from_save_game=True)
-            for module_name in game._modules:
-                try:
-                    __import__(module_name)  # load now
-                except ImportError:
-                    log.error("Unable to import {}".format(module_name))
-            game.reload_modules()  # reload now to refresh existing references
-            #            log.warning("POST UNPICKLE inventory %s"%(game.inventory.name))
-            set_language(language)  # set language
-
-    if responsive:
-        game._generator = None
-    return meta
-
-
-class PyvidaEncoder(json.JSONEncoder):
-
-    def default(self, obj):
-        if isinstance(obj, datetime):
-            encoded_object = list(obj.timetuple())[0:6]
-        elif isinstance(obj, Actor):
-            encoded_object = obj.serialise()
-        elif isinstance(obj, Action):
-            encoded_object = obj.serialise()
-        elif isinstance(obj, Scene):
-            encoded_object = obj.serialise()
-        elif isinstance(obj, Rect):
-            encoded_object = obj.serialise()
-        elif isinstance(obj, WalkArea):
-            encoded_object = obj.serialise()
-        elif isinstance(obj, WalkAreaManager):
-            encoded_object = obj.serialise()
-        else:
-            encoded_object = json.JSONEncoder.default(self, obj)
-        return encoded_object
-
-
-def save_game(game, fname):
-    """ save the game
-        NOTE: This is a raw function and does not make the fname safe
-    """
-    game._last_autosave = fname
-    save_game_pickle(game, fname)
-
-
-def load_game(game, fname, meta_only=False, keep=[]):
-    meta = load_game_meta_pickle(game, fname)
-    if meta_only:
-        return meta
-    # run the load game generator in place
-    for i in load_game_pickle(game, fname, meta_only=meta_only, keep=keep):
-        pass
-    return meta
-
-
 def load_game_responsive(game, fname, meta_only=False, keep=[], callback=None, progress=None):
     """
         callback when finished
         progress called every yield
+    """
+    log.warning("DEPRECATED")
+    return None
     """
     if meta_only:
         raise Exception("responsive doesn't handle meta_only)")
@@ -9415,7 +9059,7 @@ def load_game_responsive(game, fname, meta_only=False, keep=[], callback=None, p
     game._generator_callback = callback
     #    game._generator_args = (game, fname, meta_only, keep)
     return None
-
+    """
 
 def save_settings(game, fname):
     """ save the game settings (eg volume, accessibilty options) """
@@ -9539,7 +9183,7 @@ class Game:
     directory_screencast: str
     storage: Storage
     waiting: bool
-    busy: bool  # game is never busy but might be checked by generic functions
+    busy: int  # game is never busy but might be checked by generic functions
     waiting_for_user: bool  # used by wait_for_user queing funct
 
     skip_key: any  # if in a cutscene and allowing players to skip
@@ -9657,7 +9301,7 @@ class Game:
         # If true, don't process any new events until the existing ones are no
         # longer busy
         self.waiting = False
-        self.busy = False  # game is never busy
+        self.busy = 0  # game is never busy
         self.waiting_for_user = False  # used by on_wait_for_user
 
         self.skip_key = None  # if in a cutscene and allowing players to skip
@@ -9667,7 +9311,7 @@ class Game:
         self.events = []
         self.event = None
         self.event_index = 0
-        self._drag = None  # is mouse dragging an object
+        self.drag = None  # is mouse dragging an object
         # how many events has the player triggered in this game (useful for
         # some game logic)
         self.event_count = 0
@@ -9701,8 +9345,8 @@ class Game:
         # if auto-creating a savefile for this walkthrough
         self._walkthrough_target_name = None
         self._walkthrough_start_name = None  # fast load from a save file
-        self._walkthrough_interactables = []  # all items and actors interacted on by the end of this walkthrough
-        self._walkthrough_inventorables = []  # all items that were in the inventory at some point during the game
+        self.walkthrough_interactables = []  # all items and actors interacted on by the end of this walkthrough
+        self.walkthrough_inventorables = []  # all items that were in the inventory at some point during the game
         self._test_inventory = False
         self._test_inventory_per_scene = False
         self._record_walkthrough = False  # output the current interactions as a walkthrough (toggle with F11)
@@ -9720,8 +9364,8 @@ class Game:
         # files and rebuild them.
         self._build = False
 
-        self._output_walkthrough = False
-        self._trunk_step = False
+        self.output_walkthrough = False
+        self.trunk_step = False
         self._create_from_walkthrough = False
         # engine will try and continue after encountering exception
         self._catch_exceptions = True
@@ -9836,6 +9480,8 @@ class Game:
 
         return s
     """
+    def __post_init__(self):
+        self.busy = 0
 
     def init(self, override_resolution=None):
         """ Complete all the pyglet and pygame initialisation """
@@ -10356,7 +10002,7 @@ class Game:
         # check menu items for key matches
         for name in self.modals:
             obj = get_object(self, name)
-            if obj and obj.allow_interact and obj._interact_key == symbol:
+            if obj and obj.allow_interact and obj.interact_key == symbol:
                 user_trigger_interact(self, obj)
                 return
 
@@ -10367,7 +10013,7 @@ class Game:
         # try menu events
         for obj_name in self.menu_items:
             obj = get_object(self, obj_name)
-            if obj and obj.allow_interact and obj._interact_key == symbol:
+            if obj and obj.allow_interact and obj.interact_key == symbol:
                 user_trigger_interact(self, obj)
                 return
 
@@ -10377,7 +10023,7 @@ class Game:
         if self.scene:  # check objects in scene
             for obj_name in self.scene.objects:
                 obj = get_object(self, obj_name)
-                if obj and obj._interact_key == symbol:
+                if obj and obj.interact_key == symbol:
                     obj.trigger_interact()  # XXX possible user_trigger_interact()
 
     def get_info_position(self, obj):
@@ -10626,8 +10272,8 @@ class Game:
                     print("Unable to find", obj_name)
                     import pdb;
                     pdb.set_trace()
-                if obj.collide(x, y) and obj._drag:
-                    self._drag = obj
+                if obj.collide(x, y) and obj.drag:
+                    self.drag = obj
 
     def on_joyhat_motion(self, joystick, hat_x, hat_y):
         # WIP - possibly merge with a X-Y buttons 
@@ -10722,9 +10368,9 @@ class Game:
         if self._editing and self._editing_point_set:
             return
 
-        if self._drag:
-            self._drag._drag(self, self._drag, self.player)
-            self._drag = None
+        if self.drag:
+            self.drag.drag(self, self.drag, self.player)
+            self.drag = None
 
         # if in use mode and player right-clicks, then cancel use mode
         if button & pyglet.window.mouse.RIGHT and self.mouse_mode == MOUSE_USE and self._mouse_object:
@@ -10815,8 +10461,8 @@ class Game:
             self._motion_output_raw.append((dx, -dy))
 
         x, y = x / self._scale, y / self._scale  # if window is being scaled
-        if self._drag:
-            obj = self._drag
+        if self.drag:
+            obj = self.drag
             obj.x += dx
             obj.y -= dy
 
@@ -11299,13 +10945,13 @@ class Game:
                         # only replace if function found, else rely on existing
                         # fn
                         i.interact = new_fn
-            if i._look:
-                if type(i._look) != str:
-                    new_fn = get_function(self.game, i._look.__name__)
+            if i.look:
+                if type(i.look) != str:
+                    new_fn = get_function(self.game, i.look.__name__)
                     if new_fn:
                         # only replace if function found, else rely on existing
                         # fn
-                        i._look = new_fn
+                        i.look = new_fn
 
         log.info("Editor has done a module reload")
 
@@ -11319,7 +10965,7 @@ class Game:
             if options.output_version == True:  # init prints version number, so exit
                 return
             if options.output_walkthrough == True:
-                self._output_walkthrough = True
+                self.output_walkthrough = True
                 print("Walkthrough for %s" % self.name)
                 t = datetime.now().strftime("%d-%m-%y")
                 print("Created %s, updated %s" % (t, t))
@@ -11442,10 +11088,10 @@ class Game:
 
     def _remember_interactable(self, name):
         """ Use by walkthrough runner to track interactive items in a walkthrough for further testing """
-        if name not in self._walkthrough_interactables:
-            self._walkthrough_interactables.append(name)
+        if name not in self.walkthrough_interactables:
+            self.walkthrough_interactables.append(name)
 
-    def _test_inventory_against_objects(self, inventory_items, interactive_items, execute=False):
+    def test_inventory_against_objects(self, inventory_items, interactive_items, execute=False):
         # execute: if true, then actually call the script.
         for obj_name in inventory_items:
             for subject_name in interactive_items:
@@ -11482,7 +11128,7 @@ class Game:
         except:
             import pdb
             pdb.set_trace()
-        if self._output_walkthrough is False and DEBUG_STDOUT is True:
+        if self.output_walkthrough is False and DEBUG_STDOUT is True:
             print("[step]", function_name, walkthrough[1:], t.seconds, "   [hint]",
                   self.storage.hint if self.storage else "(no storage)")
 
@@ -11492,11 +11138,11 @@ class Game:
             if self.headless:
                 if self._test_inventory:
                     print("Test inventory. Walkthrough report:")
-                    print("Inventoried items: %s" % self._walkthrough_inventorables)
-                    print("Interactable items: %s" % self._walkthrough_interactables)
+                    print("Inventoried items: %s" % self.walkthrough_inventorables)
+                    print("Interactable items: %s" % self.walkthrough_interactables)
                     if self._test_inventory:
-                        self._test_inventory_against_objects(self._walkthrough_inventorables,
-                                                             self._walkthrough_interactables, execute=True)
+                        self.test_inventory_against_objects(self.walkthrough_inventorables,
+                                                             self.walkthrough_interactables, execute=True)
 
                 self.headless = False
                 self.walkthrough_auto = False
@@ -11588,11 +11234,11 @@ class Game:
         #            if len(walkthrough) ==  4: human_readable_name = walkthrough[-1]
         actor_name = walkthrough[1]
         if actor_name[0] == "*" or extras.get("ignore", False):  # an optional, non-trunk step
-            self._trunk_step = False
+            self.trunk_step = False
             if actor_name[0] == "*":
                 actor_name = actor_name[1:]
         else:
-            self._trunk_step = True
+            self.trunk_step = True
 
         options = self.parser.parse_args()
 
@@ -11637,14 +11283,14 @@ class Game:
             # if not in same scene as camera, and not in modals or menu, log
             # the error
             if self.scene and self.scene != obj.scene and obj.name not in self.modals and obj.name not in self.menu_items:
-                if self._output_walkthrough is False:
+                if self.output_walkthrough is False:
                     log.error("{} not in scene {}, it's on {}".format(
                         actor_name, self.scene.name, obj.scene.name if obj.scene else "no scene"))
             if self.player:
                 self.player.x, self.player.y = obj.x + obj.sx, obj.y + obj.sy
             x, y = obj.clickable_area.centre
             # output text for a walkthrough if -w enabled
-            if self._trunk_step and self._output_walkthrough:
+            if self.trunk_step and self.output_walkthrough:
                 if obj.name in self.actors.keys():
                     verbs = ["Talk to"] #, "Interact with"]
                 else:  # item or portal
@@ -11681,7 +11327,7 @@ class Game:
             obj_name = obj.display_text if obj.display_text else obj.name
             subject = get_object(self, actor_name)
             subject_name = subject.display_text if subject.display_text else subject.name
-            if self._trunk_step and self._output_walkthrough:
+            if self.trunk_step and self.output_walkthrough:
                 print("Use %s on %s." % (obj_name, subject_name))
             user_trigger_use(self, subject, obj)
             self._mouse_object = None
@@ -11706,10 +11352,10 @@ class Game:
                         log.info("TEST SUITE: Player goes %s" %
                                  ([x.name for x in scene_path]))
                     name = scene.display_text if scene.display_text not in [None, ""] else scene.name
-                    if self._trunk_step and self._output_walkthrough: print("Go to %s." % (name))
+                    if self.trunk_step and self.output_walkthrough: print("Go to %s." % (name))
                     self.camera.scene(scene)
                 else:
-                    #                    if self._trunk_step and self._output_walkthrough: print("Unable to go to %s."%(actor_name))
+                    #                    if self.trunk_step and self.output_walkthrough: print("Unable to go to %s."%(actor_name))
                     if logging:
                         log.error(
                             "Unable to get player from scene %s to scene %s" % (self.scene.name, obj.name))
@@ -11717,10 +11363,10 @@ class Game:
                 if logging:
                     log.error("Going from no scene to scene %s" % obj.name)
         elif function_name == "description":
-            if self._trunk_step and self._output_walkthrough:
+            if self.trunk_step and self.output_walkthrough:
                 print(actor_name)
         elif function_name == "look":
-            if self._trunk_step and self._output_walkthrough: print("Look at %s." % (actor_name))
+            if self.trunk_step and self.output_walkthrough: print("Look at %s." % (actor_name))
             obj = get_object(self, actor_name)
             # trigger the look
             if obj:
@@ -12257,7 +11903,7 @@ class Game:
         for key, value in MOUSE_CURSORS:
             # use specific mouse cursors or use pyvida defaults
             cursor_pwd = get_safe_path(os.path.join(self.directory_interface, value))
-            image = load_image(cursor_pwd, convert_alpha=True)
+            image = load_image(cursor_pwd)
             if not image:
                 if logging:
                     log.warning(
@@ -12265,12 +11911,12 @@ class Game:
                 this_dir, this_filename = os.path.split(script_filename)
                 myf = os.path.join(this_dir, self.directory_interface, value)
                 if os.path.isfile(myf):
-                    image = load_image(myf, convert_alpha=True)
+                    image = load_image(myf)
             self.mouse_cursors[key] = image
 
     def _add_mouse_cursor(self, key, filename):
         if os.path.isfile(filename):
-            image = load_image(filename, convert_alpha=True)
+            image = load_image(filename)
         self.mouse_cursors[key] = image
 
     def add_font(self, filename, fontname):
@@ -12366,7 +12012,7 @@ class Game:
         with open(sfname, 'w') as f:
             f.write("# generated by ingame editor v0.2\n\n")
             f.write("def load_state(game, scene):\n")
-            f.write('    from pyvida import WalkArea, Rect\n')
+            f.write('    from pyvida import Rect\n')
             f.write('    import os\n')
             if has_emitter:
                 f.write('    import copy\n')
