@@ -38,6 +38,7 @@ from pyvida import (
     MotionDelta,
     MotionManager,
     MotionManagerOld,
+    MOUSE_POINTER,
     PlayerPygletMusic,
     PlayerPygletSFX,
     Portal,
@@ -47,8 +48,8 @@ from pyvida import (
     Scene,
     Settings,
     Text,
-    WalkAreaManager,
-    RIGHT)
+    WalkAreaManager
+)
 
 TEST_PATH = "/home/luke/Projects/pyvida/test_data"
 
@@ -251,6 +252,10 @@ class TestGame:
         game.reset_window(fullscreen=False, create=False)
 
         assert game.fullscreen == False
+
+    def test_info_obj(self):
+        game = create_basic_scene((100, 100), with_update=True)
+        game.info("hello", 10, 10)
 
     def test_interact_with_scene(self):
         pass
@@ -754,11 +759,11 @@ class TestMotion:
 
 
 class TestPathplanning:
-    def test_get_goto_action_motion(self):
+    def test_getgoto_action_motion(self):
         a = Actor("astronaut").smart(None, using=Path(TEST_PATH, "data/actors/astronaut").as_posix())
         a.x = 50
         a.y = 50
-        action, motion = a.get_goto_action_motion(100, 100)
+        action, motion = a.getgoto_action_motion(100, 100)
         assert action == "right"
         assert motion == "right"
 
@@ -767,6 +772,13 @@ class TestPathplanning:
         a._calculate_goto(destination=(1000,1000))
 
         #assert a.
+    def test_goto_event(self):
+        game = create_basic_scene(with_update=True)
+        game.astronaut.relocate(destination=(50, 50))
+        game.update()  # perform all the queued events
+        game.astronaut.goto(destination=(100, 100))
+        game.immediate_request_mouse_cursor(MOUSE_POINTER)
+        assert len(game.events) == 1
 
 
 class TestMotionManager:
@@ -783,7 +795,7 @@ class TestMotionManager:
         m.immediate_motion("jump")
         assert len(m.applied_motions) == 1
 
-    def test_immediate_motion(self):
+    def test_immediate_motion_single(self):
         # only one motion at a time
         g, m = self.setup()
         mt2 = Motion("shine")
@@ -818,8 +830,12 @@ class TestMotionManager:
         assert event[1:] == (m, ('jump',), {})
 
 
-"""
 class TestPortal:
+    def test_create(self):
+        p = Portal()
+        assert p.name == "unknown actor"
+
+    """
     def setup(self):
         self.game = Game("Unit Tests", fps=60, afps=16, resolution=RESOLUTION)
         self.game.settings = Settings()
@@ -862,6 +878,6 @@ class TestPortal:
         self.assertEqual([x[0].__name__ for x in self.game.events],['on_goto', 'on_goto', 'on_scene', 'on_pan', 'on_relocate', 'on_goto'])
         for i in range(0,11): #finish first goto
             self.game.update(0, single_event=True)
-#            self.assertAlmostEqual(self.actor.y, 200+(i+1)*self.actor._goto_dy)
+#            self.assertAlmostEqual(self.actor.y, 200+(i+1)*self.actor.goto_dy)
         self.assertEqual([x[0].__name__ for x in self.game.events],['on_goto', 'on_scene', 'on_pan', 'on_relocate', 'on_goto'])
 """
