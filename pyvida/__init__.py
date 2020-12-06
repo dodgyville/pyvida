@@ -1048,24 +1048,18 @@ def fonts_smart(game):
 
 
 def get_point(game, destination, actor=None):
-    """ get a point from a tuple, str or destination """
+    """ get a point from a tuple, str or destination actor """
     obj = None
     if game.player and destination == game.player and actor == game.player:
-        print("Player moving to self seems like a mistake")
-        import pdb
-        pdb.set_trace()
-    if type(destination) in [str]:
-        if destination in game.actors:
-            obj = game.actors[destination]
-        elif destination in game.items:
-            obj = game.items[destination]
-    elif isinstance(destination, Actor):
-        obj = destination
-
+        log.warning("get_point suggests player moving to self seems like a mistake")
+    if isinstance(destination, tuple) or isinstance(destination, list):
+        pass
+    else:
+        obj = get_object(game, destination)
     if obj:
         x, y = obj.sx + obj.x, obj.sy + obj.y
-        if obj._parent:
-            parent = get_object(game, obj._parent)
+        if obj.parent:
+            parent = get_object(game, obj.parent)
             x += parent.x
             y += parent.y
         destination = (x, y)
@@ -2752,8 +2746,8 @@ class Actor(MotionManager):
     _vy: float = 0.0  # temporary visual displacement (used by motions)
     _shakex: float = 0.0
     _shakey: float = 0.0
-    _parent: str = None
-    _children: List[str] = field(default_factory=list)  # used by reparent
+    parent: str = None
+    chidren: List[str] = field(default_factory=list)  # used by reparent
     resource_name_override: str = None  # override actor name to use when accessing resource dict
 
     # when an actor stands at this actor's stand point, request an idle
@@ -2996,8 +2990,8 @@ class Actor(MotionManager):
     def rank(self):
         """ draw rank in scene order """
         y = self._y
-        if self._parent:
-            parent = get_object(self.game, self._parent)
+        if self.parent:
+            parent = get_object(self.game, self.parent)
             y += parent.y
             y += parent._vy
         return y
@@ -3460,11 +3454,11 @@ class Actor(MotionManager):
             # options can.
             return False
 
-        if self._parent:
-            parent = get_object(self.game, self._parent)
+        if self.parent:
+            parent = get_object(self.game, self.parent)
             x = x - parent.x
             y = y - parent.y
-            # print(self.name, (x,y), (nx,ny), self.clickable_area, (self._parent.x, self._parent.y))
+            # print(self.name, (x,y), (nx,ny), self.clickable_area, (self.parent.x, self.parent.y))
         if self._clickable_fullscreen:
             return True
         if not self.clickable_area.collidepoint(x, y):
@@ -3918,8 +3912,8 @@ class Actor(MotionManager):
     def pyglet_draw_coords(self, absolute, window, resource_height):
         """ return pyglet coordinates for this object modified by all factors such as parent, camera, shaking """
         x, y = self.x, self.y
-        if self._parent:
-            parent = get_object(self.game, self._parent)
+        if self.parent:
+            parent = get_object(self.game, self.parent)
             x += parent.x
             y += parent.y
             x += parent._vx
@@ -4146,8 +4140,8 @@ class Actor(MotionManager):
         """ Draw some debug info (store it for the unittests) """
         x, y = self.x, self.y
         dx, dy = 0, 0
-        if self._parent:
-            parent = get_object(self.game, self._parent)
+        if self.parent:
+            parent = get_object(self.game, self.parent)
             dx, dy = parent.x, parent.y
             x += dx
             y += dy
@@ -4476,7 +4470,7 @@ class Actor(MotionManager):
                 self.portrait_offset_x, self.portrait_offset_y = 6, 6
 
             portrait.x, portrait.y = self.portrait_offset_x, self.portrait_offset_y
-            portrait._parent = msgbox
+            portrait.parent = msgbox
             dx += portrait.w + self.portrait_offset_x
 
         if "wrap" not in kwargs:
@@ -4510,7 +4504,7 @@ class Actor(MotionManager):
             label.x += offset[0]
             label.y += offset[1]
         if ok and ok.viewable:
-            ok._parent = msgbox
+            ok.parent = msgbox
             ok.x, ok.y = msgbox.w - (ok.w * 2) // 3, msgbox.h - (ok.h * 2) // 3
         msgbox.x, msgbox.y = x, y
 
@@ -4930,22 +4924,22 @@ class Actor(MotionManager):
 
     def immediate_reparent(self, p):
         parent = get_object(self.game, p) if self.game else p
-        self._set(["_parent"], [parent.name if parent else p])
-        if parent and self.name not in parent._children:
-            parent._children.append(self.name)
+        self._set(["parent"], [parent.name if parent else p])
+        if parent and self.name not in parent.chidren:
+            parent.chidren.append(self.name)
 
     @queue_method
-    def sever_parent(self):
-        self.immediate_sever_parent()
+    def severparent(self):
+        self.immediate_severparent()
 
-    def immediate_sever_parent(self):
+    def immediate_severparent(self):
         """ Set parent to None but relocate actor to last parented location """
-        if self._parent:
-            parent = get_object(self.game, self._parent)
+        if self.parent:
+            parent = get_object(self.game, self.parent)
             self.x += parent.x
             self.y += parent.y
-            if self.name in parent._children:
-                parent._children.remove(self.name)
+            if self.name in parent.chidren:
+                parent.chidren.remove(self.name)
         self.immediate_reparent(None)
 
     @queue_method
@@ -5121,9 +5115,9 @@ class Actor(MotionManager):
             pt = get_point(self.game, destination, self)
             self.x, self.y = pt
         if self.game:  # potentially move child objects too
-            for c in self._children:
+            for c in self.chidren:
                 child = get_object(self.game, c)
-                if child and child._parent == self.name:
+                if child and child.parent == self.name:
                     child._relocate(scene)
         return
 
@@ -5817,8 +5811,8 @@ class Emitter(Item):
     def get_particle_start_pos(self):
         x = self.x + randint(0, self._solid_area.w)
         y = self.y + randint(0, self._solid_area.h)
-        if self._parent:
-            parent = get_object(self.game, self._parent)
+        if self.parent:
+            parent = get_object(self.game, self.parent)
             x += parent.x
             y += parent.y
         return x, y
@@ -10028,8 +10022,8 @@ class Game:
     def get_info_position(self, obj):
         obj = get_object(self, obj)
         x, y = obj.x, obj.y
-        if obj._parent:
-            parent = get_object(self, obj._parent)
+        if obj.parent:
+            parent = get_object(self, obj.parent)
             x += parent.x
             y += parent.y
         return (x + obj.nx, y + obj.ny)
@@ -11716,7 +11710,7 @@ class Game:
                 obj = get_object(self, obj_name)
                 if obj:
                     scene_objects.append(obj)
-        # - x._parent.y if x._parent else 0
+        # - x.parent.y if x.parent else 0
         try:
             objects = sorted(scene_objects, key=lambda x: x.rank, reverse=False)
             objects = sorted(objects, key=lambda x: x.z, reverse=False)
@@ -12001,11 +11995,12 @@ class Game:
         actor = get_object(self, actor)
         actor.look = fn
 
-    def _save_state(self, state=""):
+    def _save_state(self, state="", directory_override=None):
         game = self
         if state == "":
             return
-        sfname = os.path.join(self.scene.directory, state)
+        directory = directory_override if directory_override else self.scene.directory
+        sfname = os.path.join(directory, state)
         sfname = "%s.py" % sfname
         keys = []
         for obj_name in game.scene.objects:
@@ -12092,8 +12087,8 @@ class Game:
                                 (slug, obj.idle_stand))
                     if obj.z != 1.0:
                         f.write('    %s.z = %f\n' % (slug, obj.z))
-                    if obj._parent:
-                        parent = get_object(game, obj._parent)
+                    if obj.parent:
+                        parent = get_object(game, obj.parent)
                         f.write('    %s.reparent(\"%s\")\n' %
                                 (slug, parent.name))
                     if obj.action:
@@ -12244,29 +12239,29 @@ class Game:
 
     @queue_method
     def autosave(self, actor, tilesize, exclude_from_screenshot=None, fname=None, fast=True, action="portrait"):
-        if exclude_from_screenshot is None:
-            exclude_from_screenshot = []
         self.immediate_autosave(actor, tilesize, exclude_from_screenshot, fname, fast, action)
 
     def immediate_autosave(self, actor, tilesize, exclude_from_screenshot=None, fname=None, fast=True,
-                           action="portrait"):
+                           action="portrait", directory_override=None):
         if exclude_from_screenshot is None:
             exclude_from_screenshot = []
         game = self
         fname = fname if fname else datetime.now().strftime("%Y%m%d_%H%M%S")
-        save_game(game, get_safe_path(os.path.join(self.save_directory, "%s.save" % fname)))
+        directory = directory_override if directory_override else self.save_directory
+        save_game(game, get_safe_path(os.path.join(directory, "%s.save" % fname)))
         for i in exclude_from_screenshot:
             obj = get_object(game, i)
             obj.hide()
         if not fast:  # take some time to do a nicer screen grab
             game.menu.immediate_hide()
             game.pause(0.4)
-        game.camera.screenshot(get_safe_path(os.path.join(self.save_directory, "%s.png" % fname)), tilesize)
+        game.camera.screenshot(get_safe_path(os.path.join(directory, "%s.png" % fname)), tilesize)
         for i in exclude_from_screenshot:
             obj = get_object(game, i)
             obj.show()
-        actor = get_object(game, actor)
-        actor.says(_("Game saved."), action=action)
+        if actor:
+            actor = get_object(game, actor)
+            actor.says(_("Game saved."), action=action)
         if not fast:
             game.menu.show()
 
@@ -12443,10 +12438,13 @@ class Game:
 
     @queue_method
     def toggle_fullscreen(self, fullscreen=None, execute=False):
+        self.immediate_toggle_fullscreen(fullscreen, execute)
+
+    def immediate_toggle_fullscreen(self, fullscreen=None, execute=False):
         """ Toggle fullscreen, or use <fullscreen> to set the value """
         #        glPopMatrix();
         #        glPushMatrix();
-        if fullscreen == None:
+        if fullscreen is None:
             fullscreen = not self._window.fullscreen
         if self.settings:
             self.settings.fullscreen = fullscreen
@@ -12459,6 +12457,9 @@ class Game:
 
     @queue_method
     def splash(self, image, callback, duration=None, immediately=False):
+        self.immediate_splash(image, callback, duration, immediately)
+
+    def immediate_splash(self, image, callback, duration=None, immediately=False):
         """ show a splash screen then pass to callback after duration 
         """
         if logging:

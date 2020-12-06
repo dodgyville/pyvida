@@ -28,6 +28,7 @@ from pyvida import (
     get_function,
     get_image_size,
     get_object,
+    get_point,
     Item,
     line_seg_intersect,
     load_game_json,
@@ -96,6 +97,29 @@ class TestUtils:
         fn = get_function(game, "terminate_by_frame", e)
 
         assert fn is not None
+
+    def test_get_point_point(self):
+        game = create_basic_scene((100,100), with_update=True)
+        destination = (50, 50)
+        x, y = get_point(game, destination, actor=None)
+        assert x, y == (50, 50)
+
+    def test_get_point_name(self):
+        game = create_basic_scene((100,100), with_update=True)
+        game.logo._x = 20
+        game.logo._y = 20
+        destination = "logo"
+        x, y = get_point(game, destination, actor=None)
+
+        assert x, y == (20, 20)
+
+    def test_get_point_obj(self):
+        game = create_basic_scene((100,100), with_update=True)
+        game.logo._x = 20
+        game.logo._y = 20
+        x, y = get_point(game, game.logo, actor=None)
+
+        assert x, y == (20, 20)
 
     def test_float_colour_alpha(self):
         result = float_colour((255, 255, 255, 255))
@@ -240,6 +264,59 @@ class TestGame:
         g = Game()
 
         assert len(g.screens) == 2
+
+    def test_immediate_remove(self):
+        game = create_basic_scene(resolution=[5, 5], with_update=True)
+
+        assert "logo" in game.items
+
+        game.immediate_remove(game.logo)
+
+        assert "logo" not in game.items
+
+    def test_immediate_autosave(self):
+        game = create_basic_scene(resolution=[500, 500], with_update=True)
+
+        game.schedule_exit(0.5)
+
+        fname = "test_autosave"
+        tilesize = (50,50)
+        with tempfile.TemporaryDirectory() as directory_override:
+            game.immediate_autosave(None, tilesize, fname=fname, directory_override=directory_override)
+
+            game.run()
+
+            savefile = Path(directory_override, f"{fname}.save")
+            imgfile = Path(directory_override, f"{fname}.png")
+
+#            assert savefile.exists() is True
+            assert imgfile.exists()
+
+    def test_save_state(self):
+        fname = "weird"
+        game = create_basic_scene(resolution=[5, 5], with_update=True)
+        with tempfile.TemporaryDirectory() as directory_override:
+            game._save_state(fname, directory_override=directory_override)
+            saved_state = Path(directory_override, f"{fname}.py")
+
+            assert saved_state.exists()
+
+    def test_immediate_toggle_fullscreen(self):
+        game = Game()
+        game.immediate_toggle_fullscreen(True, False)
+
+        assert game.settings.fullscreen is True
+
+    def test_immediate_splash(self):
+        game = Game()
+        game.result = False
+
+        def hello(*args, **kwargs):
+            game.result = True
+
+        game.immediate_splash(Path(TEST_PATH, "test_data/data/interface/test.png").as_posix(), callback=hello)
+
+        assert game.result is True
 
     def test_reset_window(self):
         res = [100,100]
