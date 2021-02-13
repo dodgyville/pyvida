@@ -2,6 +2,9 @@ pyvida
 ======
 #### an easy-to-use fully-featured cross platform point-and-click adventure game engine ####
 
+### Note:
+Currently undergoing a large refactor and main branch is unstable.
+
 ### Features ###
 
 * cross platform - windows, mac and linux
@@ -68,6 +71,11 @@ Please refer to the documentation in pyvida/docs
     app.run()  # start the event loop
 ```
 
+### Queue_method decorator
+The game engine uses an internal event queue for game scripts.
+
+To create an method that will be called in the correct place in the script, add the @event_method decorator
+and create an "immediate_<method>" method, which will be called when the even queue is ready to call that event.
 
 ### Developer ###
 

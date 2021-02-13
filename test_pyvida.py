@@ -347,7 +347,7 @@ class TestGame:
         game = create_basic_scene((100,100), with_update=True)
         with tempfile.TemporaryDirectory() as tmpdirname:
             fname = Path("/home/luke/Projects/pyvida/saves", "test.json")
-#            save_game_json(game, fname)
+            save_game_json(game, fname)
 
 
 class TestPlayerPygletSFX:
@@ -612,7 +612,7 @@ class TestScene:
         game.set_menu(*["menu_new", "menu_old"], clear=True)
         game.menu.show()
 
-        game.update()  # run events
+        game.update()  # run ls
 
         assert game.w == 1680
         assert not game.autoscale
@@ -676,7 +676,7 @@ class TestText:
 
 class TestWalkareaManager:
     def test_immediate_add_waypoint(self):
-        w = WalkAreaManager(Scene("test"))
+        w = WalkAreaManager(Scene("test").name)
         w.immediate_add_waypoint([5,6])
 
 
@@ -769,8 +769,8 @@ class TestEvents:
         self.actor.relocate(self.scene)
         event = self.game.events[0]
         assert len(self.game.events) == 1
-        assert event[0].__name__ == "relocate"
-        assert event[1] == self.actor
+        assert event[0] == "immediate_relocate"
+        assert get_object(self.game, self.actor).name == event[1]
         assert event[2][0] == self.scene
 
 
@@ -787,8 +787,8 @@ class TestQueueMeta:
         m.game = g
         m.motion("jump", 'test2', destructive=True)
         event = g.events[0]
-        assert event[0].__name__ == "on_motion"
-        assert event[1:] == (m, ('jump', 'test2'), {'destructive': True})
+        assert event[0] == "immediate_on_motion"
+        assert event[1:] == (m.name, ('jump', 'test2'), {'destructive': True})
 
     def test_decorator(self):
         g = Game()
@@ -797,8 +797,8 @@ class TestQueueMeta:
         m.decorator_test("photograph", ringo=True)
 
         event = g.events[0]
-        assert event[0].__name__ == "decorator_test"
-        assert event[1:] == (m, ('photograph',), {'ringo': True})
+        assert event[0] == "immediate_decorator_test"
+        assert event[1:] == (m.name, ('photograph',), {'ringo': True})
 
     def test_both(self):
         g = Game()
@@ -809,8 +809,8 @@ class TestQueueMeta:
         event0 = g.events[0]
         event1 = g.events[1]
 
-        assert event0[1:] == (m, ('photograph',), {'ringo': True})
-        assert event1[1:] == (m, ('jump', 'test2'), {'destructive': True})
+        assert event0[1:] == (m.name, ('photograph',), {'ringo': True})
+        assert event1[1:] == (m.name, ('jump', 'test2'), {'destructive': True})
 
 
 class TestMotionDelta:
@@ -886,8 +886,8 @@ class TestMotionManager:
         g, m = self.setup()
         m.motion("jump")
         event = g.events[0]
-        assert event[0].__name__ == "motion"
-        assert event[1:] == (m, ('jump',), {})
+        assert event[0] == "immediate_motion"
+        assert event[1:] == ('', ('jump',), {})
 
     def test_immediate_add_motion(self):
         # mutliple motions at a time
@@ -903,8 +903,8 @@ class TestMotionManager:
         g, m = self.setup()
         m.add_motion("jump")
         event = g.events[0]
-        assert event[0].__name__ == "add_motion"
-        assert event[1:] == (m, ('jump',), {})
+        assert event[0] == "immediate_add_motion"
+        assert event[1:] == ('', ('jump',), {})
 
 
 class TestPortal:
