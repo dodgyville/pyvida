@@ -939,7 +939,8 @@ class TestPathplanning:
         a = Actor("astronaut").smart(None, using=Path(TEST_PATH, "data/actors/astronaut").as_posix())
         a._calculate_goto(destination=(1000, 1000))
 
-        # assert a.
+        # TODO: This is not actually testing it
+        assert len(a.goto_deltas) == 177
 
     def test_goto_event(self):
         game = create_basic_scene(with_update=True)
@@ -948,6 +949,16 @@ class TestPathplanning:
         game.astronaut.goto(destination=(100, 100))
         game.immediate_request_mouse_cursor(MOUSE_POINTER)
         assert len(game.events) == 1
+
+    def test_immediate_goto(self):
+        a = Actor("astronaut").smart(None, using=Path(TEST_PATH, "data/actors/astronaut").as_posix())
+        a.x = 50
+        a.y = 50
+
+        a.immediate_goto((100, 100))
+
+        # TODO: This is not actually testing it
+        assert len(a.goto_deltas) == 9
 
 
 class TestMotionManager:
@@ -1003,6 +1014,14 @@ class TestPortal:
     def test_create(self):
         p = Portal()
         assert p.name == "unknown actor"
+
+    def test_guess_link(self):
+        g = Game()
+        g.immediate_add(Portal("Utopia_to_Nirvana"))
+        p = Portal("Nirvana_To_Utopia")
+        g.immediate_add(p)
+        p.guess_link()
+        p.link = "Utopia_to_Nirvana"
 
     """
     def setup(self):
