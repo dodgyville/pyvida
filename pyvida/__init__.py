@@ -24,7 +24,6 @@ from collections.abc import Iterable
 from dataclasses import (
     dataclass,
     field,
-    InitVar
 )
 from dataclasses_json import dataclass_json
 from datetime import datetime, timedelta
@@ -909,7 +908,8 @@ def random_colour(minimum=0, maximum=255):
     return randint(minimum, maximum), randint(minimum, maximum), randint(minimum, maximum)
 
 
-def milliseconds(td):  # milliseconds of a timedelta
+def milliseconds(td):
+    """ milliseconds of a timedelta """
     return td.days * 86400000 + td.seconds * 1000 + td.microseconds / 1000
 
 
@@ -1835,7 +1835,8 @@ class MotionDelta(object):
         self.f = f  # frame of the animation of the action
         self.alpha = alpha
 
-    def flat(self):
+    @property
+    def flat(self) -> tuple:
         return self.x, self.y, self.z, self.r, self.scale, self.f, self.alpha
 
     def __add__(self, b):
@@ -1876,14 +1877,14 @@ class Motion(object):
         self.game = None
 
     def add_delta(self, x=None, y=None, z=None, r=None, scale=None, f=None, alpha=None):
-        self.deltas.append([x, y, z, r, scale, f, alpha])
+        self.deltas.append(MotionDelta(x, y, z, r, scale, f, alpha))
 
     def add_deltas(self, deltas):
         for d in deltas:
             self.add_delta(*d)
 
     def _apply_delta(self, actor, d: MotionDelta):
-        dx, dy, z, r, scale, frame_index, alpha = d.flat()
+        dx, dy, z, r, scale, frame_index, alpha = d.flat
         if actor.scale != 1.0:
             if dx is not None: dx *= actor.scale
             if dy is not None: dy *= actor.scale
@@ -1941,7 +1942,7 @@ class Motion(object):
         num_deltas = len(self.deltas)
         delta_index = index if index else self.index
         d = self.deltas[delta_index % num_deltas]
-        dx, dy, z, r, scale, frame_index, alpha = d
+        dx, dy, z, r, scale, frame_index, alpha = d.flat
         pyglet.gl.glScalef(scale, scale, 1)
         #        import pdb; pdb.set_trace()
         if index is None:
@@ -1949,21 +1950,26 @@ class Motion(object):
         return True
 
     def half_speed(self):
+        """
+        Move at half speed (ie take twice as long to cover same distance)
+        """
         new_deltas = []
-        for i in range(0, len(self.deltas) - 1):
-            a = MotionDelta(*self.deltas[i])
+        for i in range(0, len(self.deltas)):
+            a = MotionDelta(*self.deltas[i].flat)
             a.x /= 2
             a.y /= 2
-            #            b = MotionDelta(*self.deltas[i+1])
-            #            nd = a + b
-            new_deltas.append(a)
+            b = MotionDelta(*a.flat)
+            new_deltas.extend([a,b])
         self.deltas = new_deltas
 
     def double_tempo(self):
+        """
+        Travel same distance in half the time.
+        """
         new_deltas = []
         for i in range(0, len(self.deltas) - 1, 2):
-            a = MotionDelta(*self.deltas[i])
-            b = MotionDelta(*self.deltas[i + 1])
+            a = MotionDelta(*self.deltas[i].flat)
+            b = MotionDelta(*self.deltas[i + 1].flat)
             nd = a + b
             new_deltas.append(nd)
         self.deltas = new_deltas
@@ -1971,7 +1977,7 @@ class Motion(object):
     def mirror(self):
         new_deltas = []
         for i in self.deltas:
-            a = MotionDelta(*i)
+            a = MotionDelta(*i.flat)
             a.x = -a.x
             new_deltas.append(a)
         self.deltas = new_deltas
@@ -1999,8 +2005,7 @@ class Motion(object):
                 try:
                     setattr(m, key, float(d[i]))
                 except:
-                    import pdb
-                    pdb.set_trace()
+                    log.error(f"Unable to add delta from string {d}")
             self.deltas.append(m)
             self.average_dx += m.x if m.x else 0
             self.average_dy += m.y if m.y else 0
@@ -2288,7 +2293,7 @@ class Rect(object):
         return self.x, self.y, self._w, self._h
 
     @property
-    def flat2(self):
+    def flat_coords(self):
         return self.topleft, self.bottomleft, self.topright, self.bottomright
 
     def __str__(self):
@@ -5135,7 +5140,7 @@ class Actor(MotionManager):
             for c in self.chidren:
                 child = get_object(self.game, c)
                 if child and child.parent == self.name:
-                    child._relocate(scene)
+                    child.immediate_relocate(scene)
         return
 
     def set_idle(self, target=None):
@@ -5290,9 +5295,7 @@ class Actor(MotionManager):
             Using a*star
             ignore = True | False ignore out-of-bounds areas
         """
-        x, y = end[0] - start[0], end[1] - start[1]
-        distance = math.hypot(x, y)
-        if -5 < distance < 5:
+        if -5 < distance(start, end) < 5:
             log.info("%s already there, so not calculating path" % self.name)
             #            self._cancel_goto()
             return [start, end]
@@ -6423,7 +6426,6 @@ class WalkAreaManager:
 @dataclass
 class Scene(MotionManager):
     name: str = 'untitled scene'
-#    game: InitVar[any] = None
 
     def __post_init__(self):
         self.game = None
@@ -8142,7 +8144,6 @@ class Camera:  # the view manager
             return  # already there
         # how far we can travel along the distance in one update
         d = speed / distance
-        angle = math.atan2(y, x)
 
         # how far we can travel in one update, broken down into the x-component
         self.goto_dx = x * d
@@ -12006,7 +12007,7 @@ class Game:
         """ An an Item to the modals, making sure it is in the game.items collection """
         modal_obj = get_object(self, modal)
         if not modal_obj:
-            log.error(f"Unable to add")
+            log.error(f"Unable to add {modal}")
             return
         if modal_obj.name not in self.modals:
             self.modals.append(modal_obj.name)
@@ -12605,7 +12606,7 @@ class Game:
             # use auto scaling for actor if available
             elif "actors" in scene.scales.keys() and not isinstance(obj, Item) and not isinstance(obj, Portal):
                 scale = scene.scales["actors"]
-        obj._relocate(scene, destination, scale=scale)
+        obj.immediate_relocate(scene, destination, scale=scale)
 
     @queue_method
     def allow_one_player_interaction(self, v=True):
@@ -12985,7 +12986,7 @@ if EDITOR_AVAILABLE:
                 self.game.player.relocate(new_scene)
 
             def refresh(selector):
-                objects = self.game.scenes.values()
+                # objects = self.game.scenes.values()
                 menu = selector["menu"]
                 menu.delete(0, "end")
                 scenes = [x.name for x in self.game.scenes.values()]
@@ -13416,7 +13417,7 @@ if EDITOR_AVAILABLE:
             actions.sort()
             if len(actions) > 0:
                 tk.Label(group, text="Action:").grid(column=0, row=row)
-                option = tk.OptionMenu(
+                tk.OptionMenu(
                     group, action, *actions, command=change_action).grid(column=1, row=row)
                 self.edit_motion_btn = tk.Button(
                     frame, text="Edit Motion", command=edit_motion_btn).grid(row=row, column=2)
@@ -13437,7 +13438,7 @@ if EDITOR_AVAILABLE:
             if len(actions) > 0:
                 tk.Label(group, text="Requested player action on stand:").grid(
                     column=0, row=row)
-                option = tk.OptionMenu(
+                tk.OptionMenu(
                     group, request_idle, *actions, command=change_idle).grid(column=1, row=row)
                 row += 1
 
@@ -13476,7 +13477,7 @@ if EDITOR_AVAILABLE:
             """
             #        group = self.app
 
-            frame = self  # self for new window, parent for one window
+            # frame = self  # self for new window, parent for one window
             self.create_navigator_widgets()
             self.create_editor_widgets()
 

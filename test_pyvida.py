@@ -1,8 +1,9 @@
 """
 pytest tests
 """
+from datetime import timedelta
+import math
 from pathlib import Path
-import pickle
 import pyglet
 import pytest
 import tempfile
@@ -17,8 +18,8 @@ from pyvida import (
     AchievementManager,
     Action,
     Actor,
+    distance,
     fit_to_screen,
-    get_resource,
     Emitter,
     Factory,
     float_colour,
@@ -29,12 +30,14 @@ from pyvida import (
     get_image_size,
     get_object,
     get_point,
+    get_resource,
     Item,
     line_seg_intersect,
     load_game_json,
     load_image,
     LOOP,
     MenuFactory,
+    milliseconds,
     Motion,
     MotionDelta,
     MotionManager,
@@ -45,6 +48,7 @@ from pyvida import (
     Portal,
     PyvidaSprite,
     Rect,
+    random_colour,
     save_game_json,
     Scene,
     Settings,
@@ -78,8 +82,10 @@ class TestUtils:
                                  [False, '', 'nonexistent.txt', 'nonexistent.txt'],
                                  [True, '', 'nonexistent.txt', 'nonexistent.txt'],
                                  [True, TEST_PATH, 'nonexistent.txt', 'nonexistent.txt'],
-                                 [True, TEST_PATH, 'data/actors/Adam/idle.png',Path(TEST_PATH, 'data/actors/Adam/idle.png').as_posix()],
-                                 [True, TEST_PATH, 'data/actors/Adam/idle.png',Path(TEST_PATH, 'data/actors/Adam/idle.png').as_posix()],
+                                 [True, TEST_PATH, 'data/actors/Adam/idle.png',
+                                  Path(TEST_PATH, 'data/actors/Adam/idle.png').as_posix()],
+                                 [True, TEST_PATH, 'data/actors/Adam/idle.png',
+                                  Path(TEST_PATH, 'data/actors/Adam/idle.png').as_posix()],
                              ]
                              )
     def test_get_best_file(self, use_game, working_dir, fname, expected):
@@ -92,20 +98,20 @@ class TestUtils:
         assert expected in f
 
     def test_get_function(self):
-        game = create_basic_scene((100,100), with_update=True)
+        game = create_basic_scene((100, 100), with_update=True)
         e = Emitter("spark")
         fn = get_function(game, "terminate_by_frame", e)
 
         assert fn is not None
 
     def test_get_point_point(self):
-        game = create_basic_scene((100,100), with_update=True)
+        game = create_basic_scene((100, 100), with_update=True)
         destination = (50, 50)
         x, y = get_point(game, destination, actor=None)
         assert x, y == (50, 50)
 
     def test_get_point_name(self):
-        game = create_basic_scene((100,100), with_update=True)
+        game = create_basic_scene((100, 100), with_update=True)
         game.logo._x = 20
         game.logo._y = 20
         destination = "logo"
@@ -114,7 +120,7 @@ class TestUtils:
         assert x, y == (20, 20)
 
     def test_get_point_obj(self):
-        game = create_basic_scene((100,100), with_update=True)
+        game = create_basic_scene((100, 100), with_update=True)
         game.logo._x = 20
         game.logo._y = 20
         x, y = get_point(game, game.logo, actor=None)
@@ -165,6 +171,29 @@ class TestUtils:
         result = line_seg_intersect((-1, -1), (1, 1), (-1, 1), (1, -1))
         assert result == (0, 0)
 
+    @pytest.mark.parametrize("start,end,expected",
+                             [
+                                 [(0, 0), (0, 0), 0.0],
+                                 [(0, 0), (1, 1), 1.414],
+                                 [(-1, -1), (0, 0), 1.414],
+                                 [(-1, -1), (1, 1), 2.828]
+                             ]
+                             )
+    def test_distance(self, start, end, expected):
+        result = distance(start, end)
+        x, y = end[0] - start[0], end[1] - start[1]
+        distance2 = math.hypot(x, y)
+        assert result == distance2
+        assert round(result, 3) == expected
+
+    def test_random_colour(self):
+        c = random_colour()
+        assert len(c) == 3
+
+    def test_milliseconds(self):
+        result = milliseconds(timedelta(days=1))
+        assert result == 86400000
+
 
 class TestAchievementManager:
     def test_register(self):
@@ -197,13 +226,13 @@ class TestLocale:
         mocker.patch('pyvida.get_safe_path', return_value=Path(TEST_PATH, "data/locale/*").as_posix())
         available = get_available_languages()
 
-        assert available == ["en-au",]
+        assert available == ["en-au", ]
 
 
 class TestFullscreen:
     @pytest.mark.parametrize("screen_size,game_resolution,expected_window_size,expected_scaling_factor",
                              [
-                                 [(100, 100), (100,100), (100, 100), 1.0],
+                                 [(100, 100), (100, 100), (100, 100), 1.0],
                                  [(100, 100), (200, 200), (100, 100), 0.5],
                                  [(100, 100), (50, 50), (100, 100), 2.0],
 
@@ -223,13 +252,17 @@ class TestFullscreen:
 
     @pytest.mark.parametrize("screen_size,game_resolution,window_size,scaling_factor,expected_displacement",
                              [
-                                 [(100, 100), (100, 100), (100, 100), 1.0, (0, 0)],  # square game on square window on square screen
-                                 [(160, 100), (100, 100), (100, 100), 1.0, (30, 0)],  # square game on square window on rectangular screen
-                                 [(100, 100), (50, 50), (100, 100), 2.0, (0, 0)],  # small square game on square window on square screen
+                                 [(100, 100), (100, 100), (100, 100), 1.0, (0, 0)],
+                                 # square game on square window on square screen
+                                 [(160, 100), (100, 100), (100, 100), 1.0, (30, 0)],
+                                 # square game on square window on rectangular screen
+                                 [(100, 100), (50, 50), (100, 100), 2.0, (0, 0)],
+                                 # small square game on square window on square screen
                                  [(3840, 2160), (1024, 768), (2880, 2160), 2.8125, (480, 0)],  # space tyrant on 4k
                              ]
                              )
-    def test_create_bars_and_scale(self, screen_size, game_resolution, window_size, scaling_factor, expected_displacement):
+    def test_create_bars_and_scale(self, screen_size, game_resolution, window_size, scaling_factor,
+                                   expected_displacement):
         # Fit game to requested window size
         game = Game()
         game.resolution = game_resolution  # the native size of the game graphics
@@ -280,7 +313,7 @@ class TestGame:
         game.schedule_exit(0.5)
 
         fname = "test_autosave"
-        tilesize = (50,50)
+        tilesize = (50, 50)
         with tempfile.TemporaryDirectory() as directory_override:
             game.immediate_autosave(None, tilesize, fname=fname, directory_override=directory_override)
 
@@ -289,7 +322,7 @@ class TestGame:
             savefile = Path(directory_override, f"{fname}.save")
             imgfile = Path(directory_override, f"{fname}.png")
 
-#            assert savefile.exists() is True
+            #            assert savefile.exists() is True
             assert imgfile.exists()
 
     def test_save_state(self):
@@ -319,7 +352,7 @@ class TestGame:
         assert game.result is True
 
     def test_reset_window(self):
-        res = [100,100]
+        res = [100, 100]
         game = Game()
         game.autoscale = False
         game.resolution = res
@@ -338,13 +371,13 @@ class TestGame:
         pass
 
     def test_save_game(self):
-        game = create_basic_scene((100,100), with_update=True)
+        game = create_basic_scene((100, 100), with_update=True)
         with tempfile.TemporaryDirectory() as tmpdirname:
             fname = Path(tmpdirname, "test.savegame")
-            #save_game(game, fname)
+            # save_game(game, fname)
 
     def test_save_game_json(self):
-        game = create_basic_scene((100,100), with_update=True)
+        game = create_basic_scene((100, 100), with_update=True)
         with tempfile.TemporaryDirectory() as tmpdirname:
             fname = Path("/home/luke/Projects/pyvida/saves", "test.json")
             save_game_json(game, fname)
@@ -459,8 +492,8 @@ class TestActor:
         a = FancyActor("love is a landmine")
         result = a.to_json(indent=4)
         b = FancyActor().from_json(result)
-        #assert "tenderness" in result
-        #assert "fancy" in result
+        # assert "tenderness" in result
+        # assert "fancy" in result
 
     def test_smart(self):
         game = Game(resolution=(100, 100))
@@ -490,7 +523,7 @@ class TestActor:
         assert list(a.actions.keys()) == ["idle"]
 
     def test_do_once(self, mocker):
-        game = create_basic_scene((400,700), with_update=True)
+        game = create_basic_scene((400, 700), with_update=True)
         game.scene.immediate_add(game.astronaut)
         spy = mocker.spy(game.astronaut, "immediate_do")
         spy_end = mocker.spy(game.astronaut, "on_animation_end_once")
@@ -504,11 +537,22 @@ class TestActor:
         assert game.astronaut.resource is not None
         spy_end.assert_called()
 
+    #def test_rank(self):
+
+
 
 class TestRect:
     def test_create(self):
         r = Rect()
         assert r.flat == (0.0, 0.0, 0.0, 0.0)
+
+        r.w = 10
+        r.h = 10
+        rp = r.random_point()
+        assert r._w == 10
+        assert r._h == 10
+        assert r.centre == (5,5)
+        assert 0 <= rp[0] <= 10
 
     def test_intersect(self):
         r = Rect(10, 10, 50, 50)
@@ -540,6 +584,15 @@ class TestRect:
         result = r.intersect((20, 20), (40, 40))
         assert result is True
 
+    def test_flat(self):
+        r = Rect(10, 10, 50, 50)
+        result = r.flat
+        assert result == (10, 10, 50, 50)
+
+    def test_flat_coords(self):
+        r = Rect(10, 10, 50, 50)
+        result = r.flat_coords
+        assert result == ((10, 10), (10, 60), (60, 10), (60, 60))
 
 class TestFactory:
     def test_create_object(self):
@@ -677,7 +730,7 @@ class TestText:
 class TestWalkareaManager:
     def test_immediate_add_waypoint(self):
         w = WalkAreaManager(Scene("test").name)
-        w.immediate_add_waypoint([5,6])
+        w.immediate_add_waypoint([5, 6])
 
 
 # higher level
@@ -734,8 +787,10 @@ class TestMenus:
     def test_usage_look(self, mocker):
         game = create_basic_scene()
         t = Text("hello", interact=MagicMock())
+
         def test_look(self, *args, **kwargs):
             pass
+
         t.testLook = test_look
         spy = mocker.spy(t, "testLook")
         t.load_assets()
@@ -745,8 +800,10 @@ class TestMenus:
         t.set_look(t.testLook)
         game.update()  # perform all the queued events
         game.on_mouse_release(5, 5, pyglet.window.mouse.RIGHT, None)
-        #assert t.allow_look is False
-        #spy.assert_called()
+        # assert t.allow_look is False
+        # spy.assert_called()
+
+
 #        game.run()
 
 
@@ -826,13 +883,47 @@ class TestMotionDelta:
         m.x = 10
         m.scale = 0.5
 
-        assert m.flat() == (10, None, None, None, 0.5, None, None)
+        assert m.flat == (10, None, None, None, 0.5, None, None)
+
+    def test_add(self):
+        m = MotionDelta(1, 1, 1, 1, 1, 1, 1)
+        n = MotionDelta(2, 2, 2, 2, 2, 2, 2)
+        o = m + n
+        assert o.flat == (3, 3, 3, 3, 3, 3, 3)
 
 
 class TestMotion:
     def test_deltas(self):
         m = Motion("right")
         assert m.default_mode == LOOP
+
+    def test_half_speed(self):
+        m = Motion("right")
+        m.add_delta(10, 10)
+        m.add_delta(10, 10)
+        m.add_delta(10, 10)
+        m.add_delta(10, 10)
+        m.half_speed()
+        assert len(m.deltas) == 8
+        assert m.deltas[0].flat == (5, 5, None, None, None, None, None)
+
+    def test_double_tempo(self):
+        m = Motion("right")
+        m.add_delta(10, 10)
+        m.add_delta(10, 10)
+        m.add_delta(10, 10)
+        m.add_delta(10, 10)
+        m.double_tempo()
+        assert len(m.deltas) == 2
+        assert m.deltas[0].flat == (20, 20, None, None, None, None, None)
+
+    def test_mirror(self):
+        m = Motion("right")
+        m.add_delta(10, 10)
+        m.add_delta(10, 10)
+        m.mirror()
+        assert len(m.deltas) == 2
+        assert m.deltas[0].flat == (-10, 10, None, None, None, None, None)
 
 
 class TestPathplanning:
@@ -846,9 +937,10 @@ class TestPathplanning:
 
     def test_calculate_goto(self):
         a = Actor("astronaut").smart(None, using=Path(TEST_PATH, "data/actors/astronaut").as_posix())
-        a._calculate_goto(destination=(1000,1000))
+        a._calculate_goto(destination=(1000, 1000))
 
-        #assert a.
+        # assert a.
+
     def test_goto_event(self):
         game = create_basic_scene(with_update=True)
         game.astronaut.relocate(destination=(50, 50))
