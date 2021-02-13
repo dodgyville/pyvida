@@ -1161,7 +1161,7 @@ def collide(rect, x, y):
                 or (y > rect[3] + rect[1]))
 
 
-def validgoto_point(game, scene, obj, destination):
+def valid_goto_point(game, scene, obj, destination):
     """
     Check if the target destination is a valid goto potin.
     :param game:
@@ -1712,7 +1712,7 @@ class AchievementManager:
 @dataclass
 class Storage(object):
     """ Per game data that the developer wants stored with the save game file"""
-    total_time_in_game: int
+    total_time_in_game: int  # seconds
     last_save_time: datetime
     last_load_time: datetime
     created: datetime
@@ -1723,8 +1723,7 @@ class Storage(object):
         self.last_save_time = datetime.now()
         self.last_load_time = datetime.now()
         self.created = datetime.now()
-
-        self.hint = None
+        self.hint = ''
 
 
 # If we use text reveal
@@ -3300,6 +3299,9 @@ class Actor(MotionManager):
 
     @queue_method
     def queue_deltas(self, deltas, block=True, next_action=None):
+        self.immediate_queue_deltas(deltas, block, next_action)
+
+    def immediate_queue_deltas(self, deltas, block=True, next_action=None):
         """ Fake an goto action using a custom list of deltas """
         if len(deltas) > 0:
             xs, ys = zip(*deltas)
@@ -4639,7 +4641,8 @@ class Actor(MotionManager):
             log.error("inventory get_object can't find requested object in game", obj)
         return obj.name in self.inventory
 
-    def immediate_gets(self, item, remove=True, collection="collection", scale=1.0):
+    def add_item_to_inventory_and_collection(self, item, remove=True, collection="collection", scale=1.0):
+        # update the inventory and visuals (eg collection, place in scene) without triggering an Actor.says event
         item = get_object(self.game, item)
         if item:
             log.info("Actor %s gets: %s" % (self.name, item.name))
@@ -4660,8 +4663,12 @@ class Actor(MotionManager):
 
     @queue_method
     def gets(self, item, remove=True, ok=-1, action="portrait", collection="collection", scale=1.0):
+        self.immediate_gets(item, remove, ok, action, collection, scale)
+
+    def immediate_gets(self, item, remove=True, ok=-1, action="portrait", collection="collection", scale=1.0):
+
         """ add item to inventory, remove from scene if remove == True """
-        item = self.immediate_gets(item, remove, collection, scale)
+        item = self.add_item_to_inventory_and_collection(item, remove, collection, scale)
         if item is None:
             return
         # with open('inventory.txt', 'a') as f:
@@ -4686,7 +4693,7 @@ class Actor(MotionManager):
             text = _("%s gets %s!") % (self.name, name)
 
         # Actor can only spawn events belonging to it.
-        items = self.creates_says(text, action=action, ok=ok)
+        items = self.create_says(text, action=action, ok=ok)
         if self.game:
             msgbox = items[0]
             item.load_assets(self.game)
@@ -4838,6 +4845,9 @@ class Actor(MotionManager):
 
     @queue_method
     def mirror(self, reverse=None):
+        self.immediate_mirror(reverse)
+
+    def immediate_mirror(self, reverse=None):
         """ mirror stand point (and perhaps other points) 
             and motions
             if reverse is not None, force a direction.
@@ -4850,6 +4860,20 @@ class Actor(MotionManager):
         self._mirrored = not self._mirrored
         for motion in self.motions.values():
             motion.mirror()
+
+
+    @queue_method
+    def update_parent(self, v):
+        self.immediate_update_parent(v)
+
+    def immediate_update_parent(self, v):
+        if v is None:
+            self.parent = ''
+        parent = get_object(self.game, v)
+        if parent:
+            self.parent = parent.name
+        else:
+            log.warning(f"{self.name} can find {v} to set as parent")
 
     @queue_method
     def speed(self, speed):
@@ -5291,7 +5315,7 @@ class Actor(MotionManager):
         #            print()
         def retracePath(c):
             path.insert(0, c)
-            if c.parent == None:
+            if c.parent is None:
                 return
             retracePath(c.parent)
 
@@ -5569,7 +5593,7 @@ class Portal(Actor):
     @property
     def portal_text(self):
         """ What to display when hovering over this link """
-        link = self.link
+        link = self.get_link()
         t = self.name if self.display_text is None else self.display_text
         t = self.fog_display_text(self.game.player)
         if self.game.settings.portal_exploration and link and link.scene:
@@ -5665,7 +5689,7 @@ class Portal(Actor):
 
     def exit_here(self, actor=None, block=True):
         """ exit the scene via the portal """
-        if actor == None:
+        if actor is None:
             actor = self.game.player
         log.warning("Actor {} exiting portal {}".format(actor.name, self.name))
         actor.goto((self.x + self.sx, self.y + self.sy), block=block, ignore=True)
@@ -5674,24 +5698,24 @@ class Portal(Actor):
 
     def relocate_here(self, actor=None):
         """ Relocate actor to this portal's out point """
-        if actor == None:
+        if actor is None:
             actor = self.game.player
         # moves player to scene
         actor.relocate(self.scene, (self.x + self.ox, self.y + self.oy))
 
     def relocate_link(self, actor=None):
         """ Relocate actor to this portal's link's out point """
-        if actor == None:
+        if actor is None:
             actor = self.game.player
-        link = get_object(self.game, self.link)
+        link = self.get_link()
         # moves player to scene
         actor.relocate(link.scene, (link.x + link.ox, link.y + link.oy))
 
     def enter_link(self, actor=None, block=True):
         """ exit the portal's link """
-        if actor == None:
+        if actor is None:
             actor = self.game.player
-        link = get_object(self.game, self.link)
+        link = self.get_link()
         # walk into scene
         actor.goto(
             (link.x + link.sx, link.y + link.sy), ignore=True, block=block)
@@ -5712,12 +5736,11 @@ class Portal(Actor):
 
     def travel(self, actor=None, block=True):
         """ default interact method for a portal, march player through portal and change scene """
-        if actor == None:
+        if actor is None:
             actor = self.game.player
-        if actor == None:
             log.warning("No actor available for this portal")
             return
-        link = get_object(self.game, self.link)
+        link = self.get_link()
 
         if DEBUG_NAMES:
             print(">>>portal>>> %s: %s" % (self.name, self.portal_text))
@@ -5727,13 +5750,15 @@ class Portal(Actor):
             if logging:
                 log.error("portal %s has no link" % self.name)
             return
-        if link.scene == None:
+        if link.scene is None:
             if logging:
                 log.error("Unable to travel through portal %s" % self.name)
         else:
             if logging:
                 log.info("Portal - actor %s goes from scene %s to %s" %
-                         (actor.name, self.scene.name, link.scene.name))
+                         (actor.name, self.get_scene().name, link.scene.name))
+        if "afoyer" in self.name:
+            import pdb; pdb.set_trace()
         self.exit_here(actor, block=block)
         self.relocate_link(actor)
         self.game.immediate_request_mouse_cursor(MOUSE_POINTER)  # reset mouse pointer
@@ -7226,6 +7251,9 @@ class Text(Item):
 
     @queue_method
     def text(self, text):
+        self.immediate_text(text)
+
+    def immediate_text(self, text):
         self.display_text = text
 
     @property
@@ -7343,6 +7371,9 @@ class Collection(Item, pyglet.event.EventDispatcher):
 
     @queue_method
     def empty(self):
+        self.immediate_empty()
+
+    def immediate_empty(self):
         self.objects = []
         self._sorted_objects = None
         self.index = 0
@@ -8972,11 +9003,17 @@ class Mixer:
 
     @queue_method
     def ambient_fadeout(self, seconds=2):
+        self.immediate_ambient_fadeout(seconds)
+
+    def immediate_ambient_fadeout(self, seconds=2):
         self.immediate_ambient_fade(0, seconds)
         self._ambient_volume_callback = self._ambient_stop_callback
 
     @queue_method
     def ambient_fadein(self, seconds=2):
+        self.immediate_ambient_fadein(seconds)
+
+    def immediate_ambient_fadein(self, seconds=2):
         self.immediate_ambient_fade(1, seconds)
         self._ambient_volume_callback = self._ambient_stop_callback
 
@@ -9627,7 +9664,7 @@ class Game:
         # with player object on occasion
         self._allow_one_player_interaction = False
 
-        self.playergoto_behaviour = GOTO
+        self.player_goto_behaviour = GOTO
 
         # force pyglet to draw every frame. Requires restart
         # this is on by default to allow Motions to sync with Sprites.
@@ -9886,6 +9923,9 @@ class Game:
     @queue_method
     def clock_schedule_interval(self, *args, **kwargs):
         """ schedule a repeating callback """
+        self.immediate_clock_schedule_interval(*args, **kwargs)
+
+    def immediate_clock_schedule_interval(self, *args, **kwargs):
         pyglet.clock.schedule_interval(*args, **kwargs)
 
     @queue_method
@@ -9904,6 +9944,9 @@ class Game:
 
     @queue_method
     def set_fps(self, v):
+        self.immediate_set_fps(v)
+
+    def immediate_set_fps(self, v):
         self.fps = v
 
     def set_headless_value(self, v):
@@ -9954,14 +9997,14 @@ class Game:
     def immediate_request_mouse_cursor(self, cursor):
         # don't show hourglass on a player's goto event
         interruptable_event = True
-        playergoto_event = False
+        player_goto_event = False
         if len(self.events) > 0:
             interruptable_event = False
             # events are: (fn, calling_obj, *args, **kwargs)
             event = self.events[0]
             if event[0] == "goto" and event[1] == self._player:
                 interruptable_event = True
-                playergoto_event = False  # True if we don't want strict hourglass when player is walking
+                player_goto_event = False  # True if we don't want strict hourglass when player is walking
             if event[0] == "set_mouse_cursor":  # don't allow hourglass to override our request
                 interruptable_event = True
             if len(self.modals) > 0:
@@ -9971,7 +10014,7 @@ class Game:
             interruptable_event = True
 
         # don't show hourglass on modal events
-        if (self.waiting and len(self.modals) == 0 and not playergoto_event) or not interruptable_event:
+        if (self.waiting and len(self.modals) == 0 and not player_goto_event) or not interruptable_event:
             cursor = MOUSE_HOURGLASS
         if self.mouse_cursor_lock is True:
             return
@@ -9998,7 +10041,7 @@ class Game:
     @property
     def get_engine(self):
         """ Information used internally by the engine that needs to be saved. """
-        watching = ["playergoto_behaviour", "menu_enter_filename", "menu_exit_filename"]
+        watching = ["player_goto_behaviour", "menu_enter_filename", "menu_exit_filename"]
         data = {key: self.__dict__[key] for key in watching}
         return data
 
@@ -10046,9 +10089,9 @@ class Game:
                 # says to go to object for look, do that too.
                 if (self.mouse_mode != MOUSE_LOOK or GOTO_LOOK) and (
                         obj.allow_interact or obj.allow_use or obj.allow_look):
-                    allowgoto_object = True if self.playergoto_behaviour in [GOTO, GOTO_OBJECTS] else False
+                    allowgoto_object = True if self.player_goto_behaviour in [GOTO, GOTO_OBJECTS] else False
                     if self.player and self.player.name in self.scene.objects and self.player != obj and allowgoto_object:
-                        if validgoto_point(self, self.scene, self.player, obj):
+                        if valid_goto_point(self, self.scene, self.player, obj):
                             self.player.goto(obj, block=True)
                             self.player.set_idle(obj)
                         else:  # can't walk there, so do next_action if available to finish any stored actions.
@@ -10626,8 +10669,8 @@ class Game:
 
         # no objects to interact with, so just go to the point
         if self.player and self.scene and self.player.scene == self.scene:
-            allowgoto_point = True if self.playergoto_behaviour in [GOTO, GOTO_EMPTY] else False
-            if allowgoto_point and validgoto_point(self, self.scene, self.player, (scene_x, scene_y)):
+            allow_goto_point = True if self.player_goto_behaviour in [GOTO, GOTO_EMPTY] else False
+            if allow_goto_point and valid_goto_point(self, self.scene, self.player, (scene_x, scene_y)):
                 self.player.goto((scene_x, scene_y))
                 self.player.set_idle()
                 return
@@ -11254,17 +11297,16 @@ class Game:
 
     def is_fastest_playthrough(self, remember=False):
         """ Call at game over time, store and return true if this is the fastest playthrough """
-        r = False
+        is_fastest = False
         td = datetime.now() - self.storage.last_load_time
         #        s = milliseconds(td)
-        new_time = milliseconds(self.storage.total_time_in_game + td)
-        if self.settings and self.settings.filename:
-            if self.settings.fastest_playthrough is None or new_time <= self.settings.fastest_playthrough:
-                if remember:
-                    self.settings.fastest_playthrough = new_time
-                    save_settings(self, self.settings.filename)
-                r = True
-        return r
+        new_time = self.storage.total_time_in_game + td.total_seconds()
+        if self.settings.fastest_playthrough is None or new_time <= self.settings.fastest_playthrough:
+            is_fastest = True
+        if self.settings and self.settings.filename and remember:
+            self.settings.fastest_playthrough = new_time
+            save_settings(self, self.settings.filename)
+        return is_fastest
 
     @queue_method
     def quit(self):
@@ -11460,8 +11502,6 @@ class Game:
         if function_name == "savepoint":
             human_readable_name = walkthrough[1]
         elif function_name == "interact":
-            button = pyglet.window.mouse.LEFT
-            modifiers = 0
             # check modals and menu first for text options
             actor_name = _(actor_name)
 
@@ -11469,9 +11509,7 @@ class Game:
             actor = get_object(self, actor_name)
             probably_an_ask_option = actor_name in self.modals or actor.name in self.modals if actor else False
             if len(self.modals) > 0 and not probably_an_ask_option:
-                import pdb; pdb.set_trace()
-                log.warning("interact with {} but modals haven't been cleared"
-                            .format(actor_name))
+                log.warning(f"interact with {actor_name} but modals {self.modals} haven't been cleared")
             for name in self.modals:
                 o = get_object(self, name)
                 if o.display_text == actor_name:
@@ -11601,8 +11639,7 @@ class Game:
     def _handle_events(self):
         """ Handle game events """
         safe_to_call_again = False  # is it safe to call _handle_events immediately after this?
-        waiting_for_user = True
-        #        log.info("There are %s events, game.waiting is %s, index is %s and current event is %s",len(self.events), self.waiting, self.event_index, self.event)
+        # log.info("There are %s events, game.waiting is %s, index is %s and current event is %s",len(self.events), self.waiting, self.event_index, self.event)
         if self.resizable and self._window.immediate_resize != self.immediate_resize:  # now allow our override
             print("enable resizeable")
             self._window.immediate_resize = self.immediate_resize  # now allow our override
@@ -11645,10 +11682,8 @@ class Game:
                         #    print("DEL", event)
 
                         del_events += 1
-                        len1 = len(self.events)
                         self.events.remove(event)
                         self.event_index -= 1
-                        len2 = len(self.events)
 
             if self.event_index < len(self.events):
                 # possibly start the current event
@@ -11771,11 +11806,8 @@ class Game:
 
         layer_objects = self.scene.layers if self.scene else []
         # update all the objects in the scene or the event queue.
-        events = self.events
-        pass
         items_list = [layer_objects, scene_objects, self.menu_items, modal_objects,
                       [self.camera.name], [self.mixer.name], [get_object(self, obj[1]) for obj in self.events], self._edit_menu]
-        events2 = self.events
         items_to_update = []
         for items in items_list:
             for item in items:  # _to_update:
@@ -12803,6 +12835,9 @@ class Game:
 
     @queue_method
     def set_mouse_mode(self, v):
+        self.immediate_set_mouse_mode(v)
+
+    def immediate_set_mouse_mode(self, v):
         self.mouse_mode = v
 
     @queue_method
@@ -12811,17 +12846,18 @@ class Game:
 
     @queue_method
     def set_mouse_cursor_lock(self, v):
+        # lock mouse cursor to existing shape
         self.immediate_set_mouse_cursor_lock(v)
 
     def immediate_set_mouse_cursor_lock(self, v):
         self.mouse_cursor_lock = v
 
     @queue_method
-    def set_playergoto_behaviour(self, v):
-        self.immediate_set_playergoto_behaviour(v)
+    def set_player_goto_behaviour(self, v):
+        self.immediate_set_player_goto_behaviour(v)
 
-    def immediate_set_playergoto_behaviour(self, v):
-        self.playergoto_behaviour = v
+    def immediate_set_player_goto_behaviour(self, v):
+        self.player_goto_behaviour = v
 
     @queue_method
     def set_headless(self, v):
@@ -13282,8 +13318,7 @@ if EDITOR_AVAILABLE:
             menu = [x for x in self.game.menu_items]
             menu.sort()
             if len(menu) > 0:
-                option = tk.OptionMenu(
-                    group, menu_item, *menu, command=edit_menu_item).grid(column=2, row=row)
+                tk.OptionMenu(group, menu_item, *menu, command=edit_menu_item).grid(column=2, row=row)
 
             row += 1
 

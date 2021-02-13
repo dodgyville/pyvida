@@ -1010,6 +1010,20 @@ class TestMotionManager:
         assert event[1:] == ('', ('jump',), {})
 
 
+class TestStorage():
+    def test_is_fastest_playthrough_blank(self):
+        g = Game()
+        result = g.is_fastest_playthrough()
+        assert result is True  # not enough info
+
+    def test_is_fastest_playthrough_not(self):
+        g = Game()
+        g.storage.total_time_in_game = 101
+        g.settings.fastest_playthrough = 100
+        result = g.is_fastest_playthrough()
+        assert result is False
+
+
 class TestPortal:
     def test_create(self):
         p = Portal()
