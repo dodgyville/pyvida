@@ -66,7 +66,7 @@ from PIL import Image
 import pyglet
 import pyglet.clock
 
-VERSION_SAVE = 5  # save/load version, only change on incompatible changes
+VERSION_SAVE = 6  # save/load version, only change on incompatible changes
 __version__ = "7.0.0"
 
 # major incompatibilities, backwards compat (can run same scripts), patch number
@@ -310,6 +310,7 @@ mixer = CONFIG["mixer"] if "mixer" in CONFIG else None
 if mixer == "pygame":
     try:
         import pygame
+
         mixer = "pygame"
     except ImportError:
         pygame = None
@@ -339,6 +340,12 @@ PYGAME19 = 0
 PYGAME19GL = 1
 PYGLET12 = 2
 BACKEND = PYGLET12
+
+# GFX SETTINGS
+GFX_LOW = 0
+GFX_MEDIUM = 1
+GFX_HIGH = 2
+GFX_ULTRA = 3
 
 # pyglet has (0,0) in bottom left, we want it in the bottom right
 COORDINATE_MODIFIER = -1
@@ -819,20 +826,22 @@ scene_path = []
 
 def scene_search(game, scene, target):  # are scenes connected via portals?
     global scene_path
-    if not scene or not scene.name:
+    scene_obj = get_object(game, scene)
+    target_obj = get_object(game, target)
+    if not scene_obj or not scene_obj.name:
         if logging:
             log.warning("Strange scene search %s" % scene_path)
         return False
-    scene_path.append(scene)
-    if scene.name.upper() == target:
-        return scene
-    for obj_name in scene.objects:
+    scene_path.append(scene_obj)
+    if scene_obj.name.upper() == target_obj.name.upper():
+        return scene_obj
+    for obj_name in scene_obj.objects:
         i = get_object(game, obj_name)
         if isinstance(i, Portal):  # if portal and has link, follow that portal
             link = get_object(game, i.link)
             if link and link.scene not in scene_path:
-                found_target = scene_search(game, link.scene, target)
-                if found_target != False:
+                found_target = scene_search(game, link.scene, target_obj)
+                if found_target:
                     return found_target
     scene_path.pop(-1)
     return False
@@ -1120,7 +1129,7 @@ def get_object(game, obj_name, case_insensitive=False):
                         result = obj
                         break
                     # some objects have children that may be spawning events (eg menumanager and walkarea)
-                    for special in ["walkarea",]:
+                    for special in ["walkarea", ]:
                         special_obj = getattr(obj, special, None)
                         if special_obj and obj_name == special_obj.name:
                             result = special_obj
@@ -1210,11 +1219,11 @@ def close_on_says(game, obj, player):
         Also kill any pyglet scheduled events for animated text on Text
     """
     # REMOVE ITEMS from obj.items instead
-    if not hasattr(obj, "tmp_creator"):
-        log.warning("%s has no tmp_creator in close_on_says. Might not be a problem in walkthrough_auto mode.",
+    if not obj.creator:
+        log.warning("%s has no creator in close_on_says. Might not be a problem in walkthrough_auto mode.",
                     obj.name)
         return
-    actor = get_object(game, obj.tmp_creator)
+    actor = get_object(game, obj.creator)
     try:
         for item in actor.tmp_modals:
             if item in game.modals:
@@ -1245,7 +1254,7 @@ def close_on_says(game, obj, player):
 
 def option_answer_callback(game, btn, player, *args):
     """ Called when the option is selected in on_asks """
-    creator = get_object(game, btn.tmp_creator)
+    creator = get_object(game, btn.creator)
     creator.busy -= 1  # no longer busy, so game can stop waiting
     if logging:
         log.info("%s has finished on_asks by selecting %s, so decrement %s.busy"
@@ -1704,7 +1713,7 @@ class AchievementManager:
 
 
 #            game.achievement.move((0,-game.achievement.h), block=True)
-#            game.player.says("Achievement unlocked: %s\n%s"%(
+#            game.get_player().says("Achievement unlocked: %s\n%s"%(
 #                a.name, a.description))
 
 
@@ -1765,6 +1774,7 @@ class Settings:
     lock_engine_fps = DEFAULT_ENGINE_FPS  # lock pyvida to forcing a draw at this rate (NONE to not lock)
     stereoscopic = False  # display game in stereoscopic (3D)
     hardware_accelerate = False
+    graphics = GFX_ULTRA
     backend = BACKEND
 
     silent_achievements = ALLOW_SILENT_ACHIEVEMENTS
@@ -1964,7 +1974,7 @@ class Motion(object):
             a.x /= 2
             a.y /= 2
             b = MotionDelta(*a.flat)
-            new_deltas.extend([a,b])
+            new_deltas.extend([a, b])
         self.deltas = new_deltas
 
     def double_tempo(self):
@@ -2415,8 +2425,8 @@ def crosshair(game, point, colour, absolute=False, txt=""):
     x, y = int(point[0]), int(game.resolution[1] - point[1])
 
     if not absolute and game.scene:
-        x += int(game.scene.x)
-        y -= int(game.scene.y)
+        x += int(game.get_scene().x)
+        y -= int(game.get_scene().y)
 
     # undo alpha for pyglet drawing, draw black
     pyglet.gl.glColor4f(0, 0, 0, 1.0)
@@ -2483,8 +2493,8 @@ def rectangle(game, rect, colour=(255, 255, 255, 255), fill=False, label=True, a
     gy = game.resolution[1] - y
 
     if not absolute and game.scene:
-        x += int(game.scene.x)
-        gy -= int(game.scene.y)
+        x += int(game.get_scene().x)
+        gy -= int(game.get_scene().y)
 
     p1 = (x, gy)
     p2 = (x + w, gy)
@@ -2606,6 +2616,7 @@ Classes
 
 class MotionManagerOld(metaclass=use_on_events):
     name = "MotionManagerOld"
+
     def on_motion(self, motion=None, mode=None, block=None, destructive=None, index=0):
         """ Clear all existing motions and do just one motion.
             mode = ONCE, LOOP (default), PINGPONG
@@ -2711,9 +2722,9 @@ class MotionManager:
 @dataclass
 class Actor(MotionManager):
     name: str = 'unknown actor'
-    interact: str = None # special queuing function for interacts
+    interact: str = None  # special queuing function for interacts
     display_text: str = None
-    look: str = None # override queuing function for look
+    look: str = None  # override queuing function for look
     drag: str = None
     actions: Dict[str, Action] = field(default_factory=dict)
     scene: str = None
@@ -2722,6 +2733,7 @@ class Actor(MotionManager):
     _x: float = 0.0
     _y: float = 0.0
     z: float = 1.0  # used for parallax
+    creator: str = None  # name of the object in charge of creating (and destroying) this object
 
     interact_key: any = None  # keyboard key assigned to this interact
     preupdate: str = None  # call before _update
@@ -2954,6 +2966,9 @@ class Actor(MotionManager):
         return action
 
     def get_scene(self):
+        if self.scene and type(self.scene) != str:
+            import pdb;
+            pdb.set_trace()
         s = self.game.scenes.get(
             self.scene, None) if self.scene and self.game else None
         return s
@@ -3434,8 +3449,9 @@ class Actor(MotionManager):
         """  Return the best idle for this actor
         """
         idle = self._idle
-        if self.scene and self.scene.default_idle:
-            idle = self.scene.default_idle
+        scene = self.get_scene()
+        if scene and scene.default_idle:
+            idle = scene.default_idle
         return idle
 
     @property
@@ -3522,7 +3538,7 @@ class Actor(MotionManager):
                     n, self.interact if self.interact else "none", self.name))
             script = self.interact
             try:
-                script(self.game, self, self.game.player)
+                script(self.game, self, self.game.get_player())
             except:
                 if self.game:
                     print("Last script: %s, this script: %s, last autosave: %s" % (
@@ -3543,10 +3559,10 @@ class Actor(MotionManager):
 
                 # allow exceptions to crash engine
                 if not self.game._catch_exceptions:
-                    script(self.game, self, self.game.player)
+                    script(self.game, self, self.game.get_player())
                 else:
                     try:
-                        script(self.game, self, self.game.player)
+                        script(self.game, self, self.game.get_player())
                     except:
                         log.error("Exception in %s" % script.__name__)
                         print("\nError running %s\n" % script.__name__)
@@ -3564,12 +3580,12 @@ class Actor(MotionManager):
                         log.warning("No interact script for %s (write a def %s(game, %s, player): function)" % (
                             self.name, basic, slugify(self.name)))
                 script = None  # self.interact_default
-                self._interact_default(self.game, self, self.game.player if self.game else None)
+                self._interact_default(self.game, self, self.game.get_player() if self.game else None)
 
         # do the signals for post_interact
         for receiver, sender in post_interact.receivers:
             if isinstance(self, sender):
-                receiver(self.game, self, self.game.player)
+                receiver(self.game, self, self.game.get_player())
 
     def trigger_use(self, actor, execute=True):
         # user actor on this actee
@@ -3621,14 +3637,14 @@ class Actor(MotionManager):
         if execute:
             for receiver, sender in post_use.receivers:
                 if isinstance(self, sender):
-                    receiver(self.game, self, self.game.player)
+                    receiver(self.game, self, self.game.get_player())
         return None
 
     def trigger_look(self):
         # do the signals for pre_look
         for receiver, sender in pre_look.receivers:
             if isinstance(self, sender):
-                receiver(self.game, self, self.game.player)
+                receiver(self.game, self, self.game.get_player())
 
         if logging:
             log.info("Player looks at %s" % self.name)
@@ -3638,7 +3654,7 @@ class Actor(MotionManager):
         if self.look:  # if user has supplied a look override
             script = get_memorable_function(self.game, self.look)
             if script:
-                script(self.game, self, self.game.player)
+                script(self.game, self, self.game.get_player())
             else:
                 log.error("no look script for %s found called %s" % (self.name, self.look))
         else:  # else, search several namespaces or use a default
@@ -3647,13 +3663,13 @@ class Actor(MotionManager):
             function_name = "def %s(game, %s, player):" % (
                 basic, slugify(self.name).lower())
             if script:
-                script(self.game, self, self.game.player)
+                script(self.game, self, self.game.get_player())
             else:
                 # warn if using default vida look
                 if logging:
                     log.warning(
                         "no look script for %s (write a %s function)" % (self.name, function_name))
-                self._look_default(self.game, self, self.game.player)
+                self._look_default(self.game, self, self.game.get_player())
 
     def _interact_default(self, game, actor, player):
         """ default queuing interact smethod """
@@ -3666,7 +3682,7 @@ class Actor(MotionManager):
                  _("Perhaps they need a good poking."),
                  _("They don't want to talk to me.")]
         if self.game and self.game.player:
-            self.game.player.says(choice(c))
+            self.game.get_player().says(choice(c))
 
     def _use_default(self, game, actor, actee):
         """ default queuing use method """
@@ -3676,7 +3692,7 @@ class Actor(MotionManager):
             _("It won't fit, trust me, I know."),
         ]
         if self.game.player:
-            self.game.player.says(choice(c))
+            self.game.get_player().says(choice(c))
 
     def _look_default(self, game, actor, player):
         """ default queuing look method """
@@ -3689,7 +3705,7 @@ class Actor(MotionManager):
                  _("I probably shouldn't stare."),
                  ]
         if self.game.player:
-            self.game.player.says(choice(c))
+            self.game.get_player().says(choice(c))
 
     def guess_clickable_area(self):
         """ guessing clickable only works if assets are loaded, not likely during smart load """
@@ -3966,8 +3982,8 @@ class Actor(MotionManager):
 
         # displace for camera
         if not absolute and self.game.scene:
-            x += self.game.scene.x * self.z
-            y -= self.game.scene.y * self.z
+            x += self.game.get_scene().x * self.z
+            y -= self.game.get_scene().y * self.z
             if self.game.camera:
                 x += self.game.camera._shake_dx
                 y += self.game.camera._shake_dy
@@ -4076,7 +4092,7 @@ class Actor(MotionManager):
                     return itertools.product([a, b])
 
                 px, py = self.x, self.y
-                wps = [w for w in self.game.scene.walkarea._waypoints if len(w) == 3]
+                wps = [w for w in self.game.get_scene().walkarea._waypoints if len(w) == 3]
                 # 1. Find nearest wp
                 # 2. check other wps to find if we form two angles less than 90 degrees, if so, use those wps.
                 # 3. use the (one or) two points to work out scale factor
@@ -4096,7 +4112,7 @@ class Actor(MotionManager):
                     angle_c = math.acos((a ** 2 + b ** 2 - c ** 2) / (2 * a * b))
                     angle_a = math.acos((b ** 2 + c ** 2 - a ** 2) / (2 * b * c))
                     angle_b = math.acos((c ** 2 + a ** 2 - b ** 2) / (2 * c * a))
-                    # self.game.scene.walkarea._editing = True
+                    # self.game.get_scene().walkarea._editing = True
                     if angle_a < math.pi / 2 and angle_b < math.pi / 2:  # player is "between" the two weigh points, so scale
                         total_distance = a + b
                         a_scale = nearest[-1]
@@ -4318,7 +4334,7 @@ class Actor(MotionManager):
 
             if self.game.player:
                 # use the player's text options
-                kwargs = self.game.player._get_text_details()
+                kwargs = self.game.get_player()._get_text_details()
             else:
                 # use the actor's text options
                 kwargs = self._get_text_details()
@@ -4351,7 +4367,7 @@ class Actor(MotionManager):
             opt.immediate_reclickable(
                 Rect(rx, ry, msgbox.w - (label.x + padding_x), rh))  # expand option to width of msgbox
             # store this Actor so the callback can modify it.
-            opt.tmp_creator = self.name
+            opt.creator = self.name
             # store the colour so we can undo it after hover
             opt.colour = kwargs["colour"]
             opt.question = statement
@@ -4376,7 +4392,7 @@ class Actor(MotionManager):
         label.z = 100
         #        self.busy += 1
         self.game.immediate_add(label)
-        self.game.scene.immediate_add(label.name)
+        self.game.get_scene().immediate_add(label.name)
         return label
 
     @queue_method
@@ -4422,8 +4438,9 @@ class Actor(MotionManager):
         """ Create a Text object using this actor's values """
         return Text(name, *args, **kwargs)
 
-    def create_says(self, text, action="portrait", font=None, size=None, using=None, position=None, align=LEFT, offset=None,
-              delay=0.01, step=3, ok=-1, interact=close_on_says, block_for_user=True, key=K_SPACE):
+    def create_says(self, text, action="portrait", font=None, size=None, using=None, position=None, align=LEFT,
+                    offset=None,
+                    delay=0.01, step=3, ok=-1, interact=close_on_says, block_for_user=True, key=K_SPACE):
         """
         if block_for_user is False, then DON'T make the game wait until processing next event
         """
@@ -4574,7 +4591,7 @@ class Actor(MotionManager):
 
         for obj in items:
             obj.interact = interact
-            obj.tmp_creator = self.name
+            obj.creator = self.name
             obj.tmp_text = text
             self.game.add_modal(obj)
         #        self.game.modals.extend([x.name for x in items])
@@ -4687,7 +4704,7 @@ class Actor(MotionManager):
             if self.game.walkthrough_auto and item.name not in self.game.walkthrough_inventorables:
                 self.game.walkthrough_inventorables.append(item.name)
 
-        if self.game and self == self.game.player:
+        if self.game and self.name == self.game.player:
             text = _("%s added to your inventory!") % name
         else:
             text = _("%s gets %s!") % (self.name, name)
@@ -4700,7 +4717,7 @@ class Actor(MotionManager):
             item.x = msgbox.x + (msgbox.w // 2) - item.w // 2  # - item._ax
             item.y = msgbox.y + (msgbox.h // 2) - item.h // 2  # - item._ay
             items.append(item)
-            item.tmp_creator = self.name
+            item.creator = self.name
             #            item.tmp_text = text
             self.game.add_modal(item)
             #        self.game.modals.extend([x.name for x in items])
@@ -4840,8 +4857,9 @@ class Actor(MotionManager):
         self.immediate_remove()
 
     def immediate_remove(self):
-        if self.scene:
-            self.scene.immediate_remove(self)
+        scene = self.get_scene()
+        if scene:
+            scene.immediate_remove(self)
 
     @queue_method
     def mirror(self, reverse=None):
@@ -4860,7 +4878,6 @@ class Actor(MotionManager):
         self._mirrored = not self._mirrored
         for motion in self.motions.values():
             motion.mirror()
-
 
     @queue_method
     def update_parent(self, v):
@@ -5173,8 +5190,9 @@ class Actor(MotionManager):
         if action and action._loaded is False and self.game and not self.game.headless:
             self.load_assets(self.game)
         if scene:
-            if self.scene:  # remove from current scene
-                self.scene.immediate_remove(self)
+            current_scene = self.get_scene()
+            if current_scene:  # remove from current scene
+                current_scene.immediate_remove(self)
             scene = get_object(self.game, scene)
             scene.immediate_add(self)
         if scale:
@@ -5364,12 +5382,13 @@ class Actor(MotionManager):
 
         #        available_points.extend([start, end]) #add the current start, end points (assume valid)
         solids = []
+        player = self.game.get_player()
         for o in scene.objects:
             obj = get_object(self.game, o)
             if not obj:
                 print("ERROR: Unable to find %s in scene even though it is recorded in scene." % o)
                 continue
-            if obj._allow_draw == True and obj != self.game.player and not isinstance(obj, Emitter):
+            if obj._allow_draw == True and obj is not player and not isinstance(obj, Emitter):
                 #                print("using solid",o.name,o.solid_area.flat2)
                 solids.append(obj.solid_area)
                 # add more waypoints based on the edges of the solid areas of objects in scene
@@ -5395,7 +5414,7 @@ class Actor(MotionManager):
         angle = math.degrees(raw_angle) + 90
         path_planning_actions = set(
             [action.name for action in self.actions.values() if action.available_for_pathplanning is True])
-        if len(path_planning_actions) >= 4: # assume four quadrants
+        if len(path_planning_actions) >= 4:  # assume four quadrants
             if angle < -45:
                 angle += 360
         else:  # assume only two hemispheres
@@ -5421,8 +5440,8 @@ class Actor(MotionManager):
             self._cancel_goto()
             return  # already there
 
-        #            game.player.immediate_do("right")
-        #            game.player.immediate_motion("right", destructive=True)
+        #            game.get_player().immediate_do("right")
+        #            game.get_player().immediate_motion("right", destructive=True)
 
         goto_action, goto_motion = self.getgoto_action_motion(x, y)
 
@@ -5505,7 +5524,7 @@ class Actor(MotionManager):
         """ Get a path to the destination and then start walking """
 
         # if in auto mode but not headless, force player to walk everywhere.
-        if self.game and self == self.game.player and self.game.walkthrough_auto == True and self.game.headless == False:
+        if self.game and self.name == self.game.player and self.game.walkthrough_auto is True and self.game.headless is False:
             block = True
 
         point = get_point(self.game, destination, self)
@@ -5691,48 +5710,60 @@ class Portal(Actor):
         """ exit the scene via the portal """
         if actor is None:
             actor = self.game.player
-        log.warning("Actor {} exiting portal {}".format(actor.name, self.name))
-        actor.goto((self.x + self.sx, self.y + self.sy), block=block, ignore=True)
-        self._pre_leave(self, actor)
-        actor.goto((self.x + self.ox, self.y + self.oy), block=True, ignore=True)
+
+        actor_obj = get_object(self.game, actor)
+
+        log.warning("Actor {} exiting portal {}".format(actor_obj.name, self.name))
+        actor_obj.goto((self.x + self.sx, self.y + self.sy), block=block, ignore=True)
+        self._pre_leave(self, actor_obj)
+        actor_obj.goto((self.x + self.ox, self.y + self.oy), block=True, ignore=True)
 
     def relocate_here(self, actor=None):
         """ Relocate actor to this portal's out point """
         if actor is None:
             actor = self.game.player
+
+        actor_obj = get_object(self.game, actor)
+
         # moves player to scene
-        actor.relocate(self.scene, (self.x + self.ox, self.y + self.oy))
+        actor_obj.relocate(self.scene, (self.x + self.ox, self.y + self.oy))
 
     def relocate_link(self, actor=None):
         """ Relocate actor to this portal's link's out point """
         if actor is None:
             actor = self.game.player
+        actor_obj = get_object(self.game, actor)
+
         link = self.get_link()
         # moves player to scene
-        actor.relocate(link.scene, (link.x + link.ox, link.y + link.oy))
+        actor_obj.relocate(link.scene, (link.x + link.ox, link.y + link.oy))
 
     def enter_link(self, actor=None, block=True):
         """ exit the portal's link """
         if actor is None:
             actor = self.game.player
+
+        actor_obj = get_object(self.game, actor)
         link = self.get_link()
         # walk into scene
-        actor.goto(
+        actor_obj.goto(
             (link.x + link.sx, link.y + link.sy), ignore=True, block=block)
-        self._post_arrive(link, actor)
+        self._post_arrive(link, actor_obj)
 
     def enter_here(self, actor=None, block=True):
         """ enter the scene from this portal """
         if actor == None:
             actor = self.game.player
+
+        actor_obj = get_object(self.game, actor)
         log.warning(
-            "Actor {} arriving via portal {}".format(actor.name, self.name))
+            "Actor {} arriving via portal {}".format(actor_obj.name, self.name))
         # moves player here
-        actor.relocate(self.scene, (self.x + self.ox, self.y + self.oy))
+        actor_obj.relocate(self.scene, (self.x + self.ox, self.y + self.oy))
         # walk into scene
-        actor.goto(
+        actor_obj.goto(
             (self.x + self.sx, self.y + self.sy), ignore=True, block=block)
-        self._post_arrive(self, actor)
+        self._post_arrive(self, actor_obj)
 
     def travel(self, actor=None, block=True):
         """ default interact method for a portal, march player through portal and change scene """
@@ -5741,12 +5772,13 @@ class Portal(Actor):
             log.warning("No actor available for this portal")
             return
         link = self.get_link()
+        actor_obj = get_object(self.game, actor)
 
         if DEBUG_NAMES:
             print(">>>portal>>> %s: %s" % (self.name, self.portal_text))
 
         if not link:
-            self.game.player.says("It doesn't look like that goes anywhere.")
+            self.game.get_player().says("It doesn't look like that goes anywhere.")
             if logging:
                 log.error("portal %s has no link" % self.name)
             return
@@ -5756,14 +5788,12 @@ class Portal(Actor):
         else:
             if logging:
                 log.info("Portal - actor %s goes from scene %s to %s" %
-                         (actor.name, self.get_scene().name, link.scene.name))
-        if "afoyer" in self.name:
-            import pdb; pdb.set_trace()
-        self.exit_here(actor, block=block)
-        self.relocate_link(actor)
+                         (actor_obj.name, self.get_scene().name, link.scene.name))
+        self.exit_here(actor_obj, block=block)
+        self.relocate_link(actor_obj)
         self.game.immediate_request_mouse_cursor(MOUSE_POINTER)  # reset mouse pointer
         self.game.camera.scene(link.scene)  # change the scene
-        self.enter_link(actor, block=block)
+        self.enter_link(actor_obj, block=block)
 
     #    def pyglet_draw(self, absolute=False, force=False, window=None):  # portal.draw
     #        super().pyglet_draw(absolute, force, window)  # actor.draw
@@ -5974,8 +6004,8 @@ class Emitter(Item):
             y = self.game.resolution[1] - y - self.ay - h
             # displace for camera
             if not absolute and self.game.scene:
-                x += self.game.scene.x * self.z
-                y -= self.game.scene.y * self.z
+                x += self.game.get_scene().x * self.z
+                y -= self.game.get_scene().y * self.z
                 if self.game.camera:
                     x += self.game.camera._shake_dx
                     y += self.game.camera._shake_dy
@@ -6486,10 +6516,11 @@ class WalkAreaManager:
                 crosshair(self.game, pt, colour)
 
             colour = (255, 96, 31, 255)
-            if self.scene:
-                for o in self.scene.objects:
+            scene = self.get_scene()
+            if scene:
+                for o in scene.objects:
                     o = get_object(self.game, o)
-                    if o._allow_draw == True and o != self.game.player and not isinstance(o, Emitter):
+                    if o._allow_draw is True and o != self.game.player and not isinstance(o, Emitter):
                         for pt in o.solid_area.waypoints:
                             if self.collide(*pt):
                                 crosshair(self.game, pt, colour)
@@ -6579,9 +6610,9 @@ class Scene(MotionManager):
         self.game = v
         if v:
             self.game.immediate_add(self.walkarea, replace=True)
-            #self.walkarea.game = v
+            # self.walkarea.game = v
 
-#    game = property(get_game, set_game)
+    #    game = property(get_game, set_game)
 
     def has(self, obj):
         obj = get_object(self.game, obj)
@@ -6774,7 +6805,7 @@ class Scene(MotionManager):
             objects = [objects]
         for obj in objects:
             obj = get_object(self.game, obj)
-            obj.scene = self
+            obj.scene = self.name
             if obj.name in self.objects:  # already on scene, don't resize
                 return
             if obj.name in self.scales.keys():
@@ -7811,23 +7842,24 @@ class Camera:  # the view manager
         self._zoom_steps = None
 
     def _update(self, dt, obj=None):  # camera.update
-        if self.game.scene:
-            self.game.scene.x = self.game.scene.x + self.goto_dx
-            self.game.scene.y = self.game.scene.y + self.goto_dy
+        scene = self.game.get_scene()
+        if scene:
+            scene.x = scene.x + self.goto_dx
+            scene.y = scene.y + self.goto_dy
             if len(self._motion) > 0:
                 x, y = self._motion[self._motion_index % len(self._motion)]
-                self.game.scene.x += x
-                self.game.scene.y += y
+                scene.x += x
+                scene.y += y
                 self._motion_index_index += 1
 
-            if self.game.scene.spin_speed != 0:  # rotate the scene
-                self.game.scene._rotate += self.game.scene.spin_speed
+            if scene.spin_speed != 0:  # rotate the scene
+                scene._rotate += scene.spin_speed
 
         if self.goto_x is not None:
             speed = self._speed
             target = Rect(self.goto_x, self.goto_y, int(
                 speed * 1.2), int(speed * 1.2)).move(-int(speed * 0.6), -int(speed * 0.6))
-            if target.collidepoint(self.game.scene.x, self.game.scene.y):
+            if target.collidepoint(scene.x, scene.y):
                 self.busy -= 1
                 if logging:
                     log.info("Camera %s has finished on_goto by arriving at point, so decrementing self.busy to %s." % (
@@ -7840,10 +7872,10 @@ class Camera:  # the view manager
             if self.overlay_counter > self.overlay_cycle:
                 self.overlay_counter = 0
                 self.overlay_tint = random_colour(minimum=200)
-                for item in self.game.scene.layers:
+                for item in scene.layers:
                     obj = get_object(self.game, item)
                     obj.immediate_tint(self.overlay_tint)
-                for obj_name in self.game.scene.objects:
+                for obj_name in scene.objects:
                     obj = get_object(self.game, obj_name)
                     obj.immediate_tint(self.overlay_tint)
 
@@ -7894,7 +7926,7 @@ class Camera:  # the view manager
         if len(self._transition) > 0:
             transition = self._transition.pop()
             scene = get_object(self.game, transition)
-            self.game.scene = scene
+            self.game.set_scene(scene)
 
     @queue_method
     def transition(self, scenes=None):
@@ -7956,7 +7988,7 @@ class Camera:  # the view manager
     def immediate_scene(self, scene, camera_point=None, allow_scene_music=True, from_save_game=False):
         """ change the current scene """
         #        if self.game.scene:  # unload background when not in use
-        #            self.game.scene._unload_layer()
+        #            self.game.get_scene()._unload_layer()
         scene, camera_point = self.pre_scene_change(scene, camera_point, from_save_game)
 
         current_scene = self.game.scene
@@ -7966,7 +7998,8 @@ class Camera:  # the view manager
                     "Can't change to non-existent scene, staying on current scene")
             scene = self.game.scene
         scene = get_object(self.game, scene)
-        self.game._scene = scene.name
+        self.game.scene = scene.name
+        log.info(f"game.camera.scene setting scene to {scene.name}")
         if DEBUG_NAMES:  # output what names the player sees
             global tmp_objects_first, tmp_objects_second
             for o in scene.objects:
@@ -8012,7 +8045,7 @@ class Camera:  # the view manager
             log.debug("changing scene to %s" % scene.name)
         if self.game._test_inventory_per_scene and self.game.player:
             print("\nChanging scene, running inventory tests")
-            self.game.test_inventory_against_objects(list(self.game.player.inventory), scene.objects,
+            self.game.test_inventory_against_objects(list(self.game.get_player().inventory), scene.objects,
                                                      execute=False)
 
         #        if scene.name == "aspaceship":
@@ -8035,14 +8068,14 @@ class Camera:  # the view manager
 
     @queue_method
     def player_scene(self):
-        """ Switch the current player scene. Useful because game.player.scene
+        """ Switch the current player scene. Useful because game.get_player().scene
         may change by the time the camera change scene event is called.
         :return:
         """
         self.immediate_player_scene()
 
     def immediate_player_scene(self):
-        self.immediate_scene(self.game.player.scene)
+        self.immediate_scene(self.game.get_player().scene)
 
     @queue_method
     def zoom(self, start, factor, steps=40, target=None, block=False):
@@ -8200,10 +8233,10 @@ class Camera:  # the view manager
         self.overlay_cycle = 0
         self.overlay_tint = None
         # TODO: this seems sloppy
-        for item in self.game.scene.layers:
+        for item in self.game.get_scene().layers:
             obj = get_object(self.game, item)
             obj.immediate_tint(self.overlay_tint)
-        for obj_name in self.game.scene.objects:
+        for obj_name in self.game.get_scene().objects:
             obj = get_object(self.game, obj_name)
             obj.immediate_tint(self.overlay_tint)
 
@@ -8256,7 +8289,7 @@ class Camera:  # the view manager
         self.immediate_relocate(position)
 
     def immediate_relocate(self, position):
-        self.game.scene.x, self.game.scene.y = position
+        self.game.get_scene().x, self.game.get_scene().y = position
 
     @queue_method
     def pan(self, left=False, right=False, top=False, bottom=False, percent_vertical=False, speed=None):
@@ -8264,13 +8297,13 @@ class Camera:  # the view manager
 
     def immediate_pan(self, left=False, right=False, top=False, bottom=False, percent_vertical=False, speed=None):
         """ Convenience method for panning camera to left, right, top and/or bottom of scene, left OR right OR Neither AND top OR bottom Or Neither """
-        x = 0 if left else self.game.scene.x
-        x = self.game.resolution[0] - self.game.scene.w if right else x
+        x = 0 if left else self.game.get_scene().x
+        x = self.game.resolution[0] - self.game.get_scene().w if right else x
 
-        y = 0 if top else self.game.scene.y
-        y = self.game.resolution[1] - self.game.scene.h if bottom else y
+        y = 0 if top else self.game.get_scene().y
+        y = self.game.resolution[1] - self.game.get_scene().h if bottom else y
 
-        y = self.game.resolution[1] - self.game.scene.h * percent_vertical if percent_vertical else y
+        y = self.game.resolution[1] - self.game.get_scene().h * percent_vertical if percent_vertical else y
         self.immediate_goto((x, y), speed)
 
     @queue_method
@@ -8280,7 +8313,7 @@ class Camera:  # the view manager
 
     def immediate_move(self, displacement, speed=None):
         self.immediate_goto(
-            (self.game.scene.x + displacement[0], self.game.scene.y + displacement[1]), speed)
+            (self.game.get_scene().x + displacement[0], self.game.get_scene().y + displacement[1]), speed)
 
     @queue_method
     def goto(self, destination, speed=None):  # camera.goto
@@ -8298,12 +8331,12 @@ class Camera:  # the view manager
         point = get_point(self.game, destination, self)
 
         if self.game.headless:  # skip pathplanning if in headless mode
-            self.game.scene.x, self.game.scene.y = point
+            self.game.get_scene().x, self.game.get_scene().y = point
             return
 
         self.goto_x, self.goto_y = destination
         x, y = self.goto_x - \
-               self.game.scene.x, self.goto_y - self.game.scene.y
+               self.game.get_scene().x, self.goto_y - self.game.get_scene().y
         distance = math.hypot(x, y)
         if distance == 0:
             if logging:
@@ -8331,7 +8364,7 @@ class PlayerPygletSFX:
         self.game = game
         self.loops = 0
         self._volume = 1
-        self._player = pyglet.media.Player()
+        self.media_player = pyglet.media.Player()
 
     def load(self, fname, volume):
         if logging:
@@ -8343,7 +8376,7 @@ class PlayerPygletSFX:
             log.warning("Unable to find %s" % fname)
 
         if self._sound:
-            self._player.pause()
+            self.media_player.pause()
         try:
             self._sound = pyglet.media.load(fname, streaming=False)
         except pyglet.media.sources.riff.WAVEFormatException:
@@ -8357,22 +8390,17 @@ class PlayerPygletSFX:
                 # XXX: Pyglet SFX doesn't actually loop indefinitely
                 # it queues the sound 12 times as a hack
                 loops = 12
-            # self._player.queue(self._sound)
-            # if self._player:
-            #    log.debug(f"delete player for {self}")
-            #    self._player.delete()
             log.debug(f"creating player for {self}")
-            # self._player = pyglet.media.Player()
-            self._player.volume = self._volume
-            self._player.queue(self._sound)
+            self.media_player.volume = self._volume
+            self.media_player.queue(self._sound)
             if loops == -1:
-                self._player.loop = True
+                self.media_player.loop = True
             elif loops > 0:
                 for i in range(0, loops):
-                    self._player.queue(self._sound)
+                    self.media_player.queue(self._sound)
             try:
                 log.debug(f"play on _player for {self}")
-                self._player.play()
+                self.media_player.play()
             except pyglet.media.exceptions.MediaException:
                 pass
             self.loops = loops
@@ -8383,30 +8411,30 @@ class PlayerPygletSFX:
         print("pyglet sound fadeout not done yet")
 
     def stop(self):
-        if self._player:
-            self._player.pause()
+        if self.media_player:
+            self.media_player.pause()
 
     def volume(self, v):
         if self._sound is None: return
         self._volume = v
-        if self._player:
-            self._player.volume = v
+        if self.media_player:
+            self.media_player.volume = v
 
 
 class PlayerPygletMusic:
     def __init__(self, game):
         self.game = game
         self._music = None
-        self._player = None
+        self.media_player = None
         self._volume = 1
 
     def pause(self):
-        if self._player:
-            self._player.pause()
+        if self.media_player:
+            self.media_player.pause()
 
     def stop(self):
-        if self._player:
-            self._player.pause()
+        if self.media_player:
+            self.media_player.pause()
 
     def load(self, fname, v=1):
         try:
@@ -8418,26 +8446,26 @@ class PlayerPygletMusic:
         #        pygame.mixer.music.stop() #reset counter
         if not self._music:
             return
-        if self._player:
-            self._player.delete()
-        self._player = pyglet.media.Player()
-        self._player.volume = self._volume
-        self._player.queue(self._music)
+        if self.media_player:
+            self.media_player.delete()
+        self.media_player = pyglet.media.Player()
+        self.media_player.volume = self._volume
+        self.media_player.queue(self._music)
         if start > 0:
-            self._player.seek(start)
+            self.media_player.seek(start)
         if loops == -1:
-            self._player.loop = True
+            self.media_player.loop = True
         elif loops > 0:
             for i in range(0, loops):
-                self._player.queue(self._music)
+                self.media_player.queue(self._music)
         try:
-            self._player.play()
+            self.media_player.play()
         except pyglet.media.exceptions.MediaException:
             pass
 
     def position(self):
         """ Note, this returns the number of seconds, for use with OGG. """
-        v = self._player.time if self._player else 0
+        v = self.media_player.time if self.media_player else 0
         return v
 
     def queue(self, fname):
@@ -8445,11 +8473,11 @@ class PlayerPygletMusic:
 
     def volume(self, v):
         self._volume = v
-        if self._player:
-            self._player.volume = v
+        if self.media_player:
+            self.media_player.volume = v
 
     def busy(self):
-        return self._player.playing if self._player and self._music else False
+        return self.media_player.playing if self.media_player and self._music else False
 
 
 class PlayerPygameSFX():
@@ -8652,9 +8680,10 @@ class Mixer:
 
     def immediate_publish_volumes(self):
         """ Use game.settings to set various volumes """
-        if self.game:
+        if self.game and "pytest" not in self.game.parser.prog:
             options = self.game.parser.parse_args()
             self._session_mute = True if options.mute == True else False
+
         v = self.game.settings.music_volume
         if self.game.settings.mute == True:
             v = 0
@@ -9022,7 +9051,7 @@ class Mixer:
         self.immediate_ambient_play(fname, description)
 
     def immediate_ambient_play(self, fname=None, description=None):
-        #        print("play ambient",fname,"(on scene %s)"%self.game.scene.name)
+        #        print("play ambient",fname,"(on scene %s)"%self.game.get_scene().name)
         self._ambient_filename = fname
         if fname:
             absfilename = get_safe_path(fname)
@@ -9308,9 +9337,12 @@ def save_settings(game, fname):
 def load_or_create_settings(game, fname, settings_cls=Settings):
     """ load the game settings (eg volume, accessibilty options) """
     existing = True
-    options = game.parser.parse_args()
-    if options.nuke and os.path.isfile(get_safe_path(fname)):  # nuke
-        os.remove(fname)
+
+    if "pytest" not in game.parser.prog:
+        options = game.parser.parse_args()
+        if options.nuke and os.path.isfile(get_safe_path(fname)):  # nuke
+            os.remove(fname)
+
     game.settings = settings_cls()  # setup default settings
     game.settings.filename = fname
     if not os.path.isfile(get_safe_path(fname)):  # settings file not available, create new object
@@ -9378,7 +9410,7 @@ def gamestats(game):
 
 def reset_mouse_cursor(game):
     if game.mouse_mode != MOUSE_LOOK:
-        game.immediate_request_mouse_cursor(MOUSE_POINTER) # reset mouse pointer
+        game.immediate_request_mouse_cursor(MOUSE_POINTER)  # reset mouse pointer
 
 
 def hard_quit(dt=0):
@@ -9405,12 +9437,12 @@ class Game:
     afps: int = DEFAULT_ACTOR_FPS
     section_name: Optional[str] = None
     default_actor_fps: int = 0
-    _player: Optional[str] = None  # used by get_player and set_player, name of object
+    player: Optional[str] = None  # used get_player and set_player, name of object
     actors: Dict[str, Actor] = field(default_factory=dict)
     items: Dict[str, Item] = field(default_factory=dict)
     scenes: Dict[str, Scene] = field(default_factory=dict)
 
-    _scene: Optional[str] = None  # name of scene object, use by get_scene and set_scene
+    scene: Optional[str] = None  # name of scene object, use get_scene and set_scene to get object
     menu_items: List[str] = field(default_factory=list)
     menus: List[any] = field(default_factory=list)  # a stack of menus
     modals: List[str] = field(default_factory=list)
@@ -9444,7 +9476,6 @@ class Game:
 
     _headless: bool = False  # no user input or graphics (use underscore)
     speed: float = 1  # speed at which to play game
-
 
     # messages
     # non-interactive system messages to display to user (eg sfx subtitles
@@ -9774,7 +9805,7 @@ class Game:
 
         # special object for onscreen messages
         obj = Text("_message object", colour=FONT_MESSAGE_COLOUR, font=FONT_MESSAGE,
-                                    size=FONT_MESSAGE_SIZE, offset=2)
+                   size=FONT_MESSAGE_SIZE, offset=2)
         self.immediate_add(obj, replace=True)
         obj.load_assets(self)
         self.message_object = obj.name
@@ -9822,14 +9853,14 @@ class Game:
     def set_player(self, player):
         if player is None:
             log.info("Setting player object to None apparently by request.")
-            self._player = player
+            self.player = player
             return
         player_obj = get_object(self, player)
         if isinstance(player, str):
-            self._player = player
+            self.player = player
         else:
             if player_obj:
-                self._player = player_obj.name
+                self.player = player_obj.name
             else:
                 log.error(f"Unable to find player object {player}")
 
@@ -9837,26 +9868,26 @@ class Game:
             player_obj.load_assets(self)
 
     def get_player(self):
-        return get_object(self, self._player)
+        return get_object(self, self.player)
 
-    player = property(get_player, set_player)
+    # player = property(get_player, set_player)
 
-    def get_scene(self):
-        return get_object(self, self._scene)
+    def get_scene(self) -> Scene:
+        return get_object(self, self.scene)
 
     def set_scene(self, v):
         if v is None:
             log.info("Setting current scene to None apparently by request.")
-            self._scene = v
+            self.scene = v
             return
         obj = get_object(self, v)
         if obj:
-            self._scene = obj.name
+            self.scene = obj.name
         else:
             log.error(f"Unable to set game.scene to {v}, object not available in game object")
-            self._scene = None
+            self.scene = None
 
-    scene = property(get_scene, set_scene)
+    # scene = property(get_scene, set_scene)
 
     def __getattr__(self, a):  # game.__getattr__
         """
@@ -10002,7 +10033,7 @@ class Game:
             interruptable_event = False
             # events are: (fn, calling_obj, *args, **kwargs)
             event = self.events[0]
-            if event[0] == "goto" and event[1] == self._player:
+            if event[0] == "goto" and event[1] == self.player:
                 interruptable_event = True
                 player_goto_event = False  # True if we don't want strict hourglass when player is walking
             if event[0] == "set_mouse_cursor":  # don't allow hourglass to override our request
@@ -10024,7 +10055,7 @@ class Game:
     def get_mouse_cursor(self):
         return self._mouse_cursor
 
-    #mouse_cursor = property(get_mouse_cursor, set_mouse_cursor)
+    # mouse_cursor = property(get_mouse_cursor, set_mouse_cursor)
 
     def cursor_hide(self):
         print("cursor_hide deprecated")
@@ -10053,7 +10084,8 @@ class Game:
     @property
     def get_player_info(self):
         """ Information required to put the player at the correct location in the game """
-        return {"scene": self.scene.name if self.scene else None, "player": self.player.name if self.player else None}
+        return {"scene": self.get_scene().name if self.get_scene() else None,
+                "player": self.get_player().name if self.get_player() else None}
 
     @property
     def time_in_game(self):
@@ -10069,16 +10101,17 @@ class Game:
         returns True if scene consumed event
         """
         #            scene_objects = copy.copy(self.scene.objects)
-        scene_objects = self.scene.objects_sorted
+        scene_objects = self.get_scene().objects_sorted
         #            scene_objects.reverse()
-        if (ALLOW_USE_ON_PLAYER and self.player) or \
-                (self._allow_one_player_interaction == True):  # add player object
+        player = self.get_player()
+        if (ALLOW_USE_ON_PLAYER and player) or \
+                (self._allow_one_player_interaction is True):  # add player object
             if self.player in scene_objects:
-                scene_objects.insert(0, self.player.name)  # prioritise player over other items
+                scene_objects.insert(0, player.name)  # prioritise player over other items
         for obj_name in scene_objects:
             obj = get_object(self, obj_name)
             if self.mouse_mode == MOUSE_USE and self._mouse_object == obj: continue  # can't use item on self
-            allow_player_use = (self.player and self.player == obj) and (
+            allow_player_use = (self.player and player == obj_name) and (
                     ALLOW_USE_ON_PLAYER or self._allow_one_player_interaction)
             allow_use = (obj.allow_draw and (
                     obj.allow_interact or obj.allow_use or obj.allow_look)) or allow_player_use
@@ -10087,15 +10120,16 @@ class Game:
             if obj.collide(scene_x, scene_y) and allow_use:
                 # if wanting to interact or use an object go to it. If engine
                 # says to go to object for look, do that too.
+                player = self.get_player()
                 if (self.mouse_mode != MOUSE_LOOK or GOTO_LOOK) and (
                         obj.allow_interact or obj.allow_use or obj.allow_look):
                     allowgoto_object = True if self.player_goto_behaviour in [GOTO, GOTO_OBJECTS] else False
-                    if self.player and self.player.name in self.scene.objects and self.player != obj and allowgoto_object:
-                        if valid_goto_point(self, self.scene, self.player, obj):
-                            self.player.goto(obj, block=True)
-                            self.player.set_idle(obj)
+                    if player and player.name in self.get_scene().objects and self.player != obj and allowgoto_object:
+                        if valid_goto_point(self, self.get_scene(), self.player, obj):
+                            player.goto(obj, block=True)
+                            player.set_idle(obj)
                         else:  # can't walk there, so do next_action if available to finish any stored actions.
-                            self.player.resolve_action()
+                            player.resolve_action()
                 if alt_button or self.mouse_mode == MOUSE_LOOK:
                     if obj.allow_look or allow_player_use:
                         user_trigger_look(self, obj)
@@ -10146,11 +10180,6 @@ class Game:
             if symbol == pyglet.window.key.F1:
                 self.editor = editor(self)
                 return
-                #            edit_object(self, list(self.scene.objects.values()), 0)
-                #            self.menu_from_factory("editor", MENU_EDITOR)
-            #            editor_pgui(self)
-            #           editor_thread = Thread(target=editor, args=(,))
-            #            editor_thread.start()
             if symbol == pyglet.window.key.F2:
                 print("edit_object_script(game, obj) will open the editor for an object")
                 if self.fullscreen and len(self.screens) <= 1:
@@ -10167,8 +10196,9 @@ class Game:
 
             if symbol == pyglet.window.key.F5:
                 print("Output interaction matrix for this scene")
-                for i in self.player.inventory.values():
-                    scene_objects = self.scene.objects_sorted
+                player = self.get_player()
+                for i in player.inventory.values():
+                    scene_objects = self.get_scene().objects_sorted
                     for obj_name in scene_objects:
                         obj = get_object(self, obj_name)
                         allow_use = (obj.allow_draw and (obj.allow_interact or obj.allow_use or obj.allow_look))
@@ -10189,7 +10219,8 @@ class Game:
 
             if symbol == pyglet.window.key.F10:
                 if self.motion_output is None:
-                    self.player.says("Recording motion")
+                    player = self.get_player()
+                    player.says("Recording motion")
                     print("x,y")
                     self.motion_output = self.mouse_position
                     self.motion_output_raw = []
@@ -10199,15 +10230,15 @@ class Game:
                     import pdb;
                     pdb.set_trace()
                     s = input('motion name? (no .motion)')
-                    self.player.says("Processed, saved, and turned off record motion")
+                    self.get_player().says("Processed, saved, and turned off record motion")
                     self.motion_output = None
                     self.motion_output_raw = []
 
             if symbol == pyglet.window.key.F11:
                 if self._record_walkthrough == False:
-                    self.player.says("Recording walkthrough")
+                    self.get_player().says("Recording walkthrough")
                 else:
-                    self.player.says("Turned off record walkthrough")
+                    self.get_player().says("Turned off record walkthrough")
                 self._record_walkthrough = not self._record_walkthrough
             if symbol == pyglet.window.key.F12:
                 self.event = None
@@ -10242,8 +10273,8 @@ class Game:
         if len(self.menu_items) > 0 and self.is_menu_modal:
             return  # menu is in modal mode so block other objects
 
-        if self.scene:  # check objects in scene
-            for obj_name in self.scene.objects:
+        if self.get_scene():  # check objects in scene
+            for obj_name in self.get_scene().objects:
                 obj = get_object(self, obj_name)
                 if obj and obj.interact_key == symbol:
                     obj.trigger_interact()  # XXX possible user_trigger_interact()
@@ -10294,8 +10325,8 @@ class Game:
                 window_y = self._mouse_rect.y + self._mouse_rect.h
 
         #        window_x, window_y = x, self.resolution[1] - y
-        if self.scene:
-            scene_x, scene_y = window_x - self.scene.x, window_y - self.scene.y
+        if self.get_scene():
+            scene_x, scene_y = window_x - self.get_scene().x, window_y - self.get_scene().y
         else:
             scene_x, scene_y = window_x, window_y
 
@@ -10325,11 +10356,6 @@ class Game:
                 else:
                     log.error("Unable to find mouse scroll function %s" % obj._mouse_scroll)
 
-    #            for obj_name in self.menu_items:
-    #                obj = get_object(self, obj_name)
-    #            scene_objects = self.scene.objects_sorted
-    #            for obj_name in scene_objects:
-
     def on_mouse_motion(self, raw_x, raw_y, dx, dy):
         """ Change mouse cursor depending on what the mouse is hovering over """
         (window_x, window_y), (scene_x, scene_y) = self.get_points_from_raw(raw_x, raw_y)
@@ -10348,7 +10374,7 @@ class Game:
             reset_mouse_cursor(self)
             return
 
-        if not self.scene or self.headless or self.walkthrough_auto:
+        if not self.get_scene() or self.headless or self.walkthrough_auto:
             return
         # check modals as first priority
         modal_collide = False
@@ -10414,12 +10440,12 @@ class Game:
                 return  # menu is in modal mode so block other objects
 
             #            scene_objects = copy.copy(self.scene.objects)
-            scene_objects = self.scene.objects_sorted
+            scene_objects = self.get_scene().objects_sorted
             #            scene_objects.reverse()
             if (ALLOW_USE_ON_PLAYER and self.player) or \
                     (self._allow_one_player_interaction is True):  # add player object
                 if self.player in scene_objects:
-                    scene_objects.insert(0, self.player.name)  # prioritise player over other items
+                    scene_objects.insert(0, self.player)  # prioritise player over other items
             for obj_name in scene_objects:
                 obj = get_object(self, obj_name)
                 if not obj.allow_draw:
@@ -10431,7 +10457,7 @@ class Game:
                            scene_x, scene_y, dx, dy, window_x, window_y)
                         return
                 # hover over player object if it meets the requirements
-                allow_player_hover = (self.player and self.player == obj) and \
+                allow_player_hover = (self.player and self.player == obj_name) and \
                                      ((ALLOW_USE_ON_PLAYER and self.mouse_mode == MOUSE_USE) or
                                       (self._allow_one_player_interaction is True))
 
@@ -10477,9 +10503,9 @@ class Game:
             return
 
         x, y = x / self._scale, y / self._scale  # if window is being scaled
-        if self.scene:
-            x -= self.scene.x  # displaced by camera
-            y += self.scene.y
+        if self.get_scene():
+            x -= self.get_scene().x  # displaced by camera
+            y += self.get_scene().y
 
         y = self.resolution[1] - y  # invert y-axis if needed
 
@@ -10492,8 +10518,8 @@ class Game:
                 self._editing.edit_nearest_point(x, y)
             return
 
-        if self.scene:
-            for obj_name in self.scene.objects:
+        if self.get_scene():
+            for obj_name in self.get_scene().objects:
                 obj = get_object(self, obj_name)
                 if not obj:
                     print("Unable to find", obj_name)
@@ -10509,7 +10535,7 @@ class Game:
         elif hat_x == -1 or hat_y == -1:
             self._object_index -= 1
         available_objects = []
-        for obj_name in self.scene.objects:
+        for obj_name in self.get_scene().objects:
             obj = get_object(self, obj_name)
             if (obj.allow_draw and (obj.allow_interact or obj.allow_use or obj.allow_look)):
                 available_objects.append(obj)
@@ -10561,15 +10587,17 @@ class Game:
             if (raw_x, raw_y, button) == self.last_mouse_release[:-1]:
                 """Same place, same button, double click shortcut"""
                 if time.perf_counter() - self.last_mouse_release[-1] < 0.3:
-                    if self.player and self.player.goto_x != None:
-                        fx, fy = self.player.goto_x, self.player.goto_y
-                        if len(self.player.goto_points) > 0:
-                            fx, fy = self.player.goto_points[-1]
-                        self.player._x, self.player._y = fx, fy
+                    player = self.get_player()
+
+                    if player and player.goto_x is not None:
+                        fx, fy = player.goto_x, player.goto_y
+                        if len(player.goto_points) > 0:
+                            fx, fy = player.goto_points[-1]
+                        player._x, player._y = fx, fy
                         #                        print("ON MOUSE RELEASE, JUMP TO POINT",fx,fy)
                         #                        self.player.goto_dx, self.player.goto_dy = 0, 0
-                        self.player.goto_deltas = []
-                        self.player.goto_points = []
+                        player.goto_deltas = []
+                        player.goto_points = []
                         return
         info_obj = get_object(self, self.info_object)
         info_obj.display_text = " "  # clear hover text
@@ -10586,7 +10614,7 @@ class Game:
 
         # we are editing something, so don't interact with objects
         if self.editor and self._selector:  # select an object
-            for obj_name in self.scene.objects:
+            for obj_name in self.get_scene().objects:
                 obj = get_object(self, obj_name)
                 if obj.collide(scene_x, scene_y):
                     self.editor.set_edit_object(obj)
@@ -10645,44 +10673,47 @@ class Game:
         if len(self.events) == 1:
             # if the only event is a goto for the player to a uninteresting point, clear it.
             if self.events[0][0].__name__ == "goto" and self.events[0][1][0] == self.player:
-                if self.player._finished_goto:
-                    finished_fn = get_function(self, self.player._finished_goto, self.player)
+                player = self.get_player()
+                if player._finished_goto:
+                    finished_fn = get_function(self, player._finished_goto, self.player)
                     if finished_fn:
                         finished_fn(self)
                     else:
                         print("there is a finished_goto fn but it can not be found")
                         import pdb;
                         pdb.set_trace()
-                self.player.busy -= 1
+                player.busy -= 1
                 if logging:
                     log.debug("%s has cancelled on_goto, decrementing "
-                              "self.player.busy to %s" % (self.player.name, self.player.busy))
-                self.player._cancel_goto()
+                              "player.busy to %s" % (player.name, player.busy))
+                player._cancel_goto()
                 potentially_do_idle = True
             else:
                 return
 
-        if self.scene:
+        if self.get_scene():
             alt_button = button & pyglet.window.mouse.RIGHT
             if self.interact_with_scene(scene_x, scene_y, alt_button):
                 return
 
         # no objects to interact with, so just go to the point
-        if self.player and self.scene and self.player.scene == self.scene:
+        player = self.get_player()
+
+        if player and self.scene and player.scene == self.scene:
             allow_goto_point = True if self.player_goto_behaviour in [GOTO, GOTO_EMPTY] else False
             if allow_goto_point and valid_goto_point(self, self.scene, self.player, (scene_x, scene_y)):
-                self.player.goto((scene_x, scene_y))
-                self.player.set_idle()
+                player.goto((scene_x, scene_y))
+                player.set_idle()
                 return
 
         if potentially_do_idle:
-            self.player.immediate_do(self.player.default_idle)
+            player.immediate_do(player.default_idle)
 
     def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
         if self._generator:
             return
 
-        if self.motion_output != None:  # output the delta from the last point.
+        if self.motion_output is not None:  # output the delta from the last point.
             #            ddx,ddy = self.mouse_position[0] - self.motion_output[0], self.mouse_position[1] - self.motion_output[1]
             print("%i,%i" % (dx, -dy))
             self.motion_output = self.mouse_position
@@ -10771,7 +10802,8 @@ class Game:
                                  dest="allow_exceptions", help="Switch off exception catching.")
         self.parser.add_argument("-f", "--fullscreen", action="store_true",
                                  dest="fullscreen", help="Toggle fullscreen mode", default=False)
-        self.parser.add_argument("-G", "--gamespeed", type=float, dest="speed", help="Set the speed of the game relative to its fps and clock")
+        self.parser.add_argument("-G", "--gamespeed", type=float, dest="speed",
+                                 help="Set the speed of the game relative to its fps and clock")
         self.parser.add_argument("-g", action="store_true", dest="infill_methods",
                                  help="Launch script editor when use script missing", default=False)
         self.parser.add_argument(
@@ -11037,7 +11069,7 @@ class Game:
             safe_dir = get_safe_path(getattr(self, dname), self.working_directory)
             safe_dir = Path(working_dir, safe_dir).as_posix()
             loaded += 1
-            if loaded%1000 == 0:
+            if loaded % 1000 == 0:
                 print(f"loaded {loaded} of {num_to_load}")
             if not os.path.exists(safe_dir):
                 continue  # skip directory if non-existent
@@ -11087,7 +11119,7 @@ class Game:
 
         player = get_object(self, player)
         if player:
-            self.player = player.name
+            self.player: str = player.name
 
         # menu sounds
         if os.path.isfile(get_safe_path("data/sfx/menu_enter.ogg")):
@@ -11397,9 +11429,9 @@ class Game:
                 self.walkthrough_auto = False
                 self._resident = []  # force refresh on scenes assets that may not have loaded during headless mode
                 if self.scene:
-                    self.scene.load_assets(self)
+                    self.get_scene().load_assets(self)
                 if self.player:
-                    self.player.load_assets(self)
+                    self.get_player().load_assets(self)
                 load_menu_assets(self)
 
                 # restart music and ambient sounds                
@@ -11463,11 +11495,6 @@ class Game:
                     os.path.join(self.save_directory, "%s.save" % self._walkthrough_target_name))
                 save_game(
                     self, walkthrough_target)
-            #            self.player.says(gettext("Let's play."))
-            #            self.camera.scene("lfloatmid")
-            #            self.load_state("igreenhouse", "initial")
-            #           self.player.relocate("igreenhouse")
-            #           self.camera.scene("igreenhouse")
             return
         # if this walkthrough has a human readable name, we might be wanting to
         # create an autosave here.
@@ -11531,9 +11558,10 @@ class Game:
             if self.scene and self.scene != obj.scene and obj.name not in self.modals and obj.name not in self.menu_items:
                 if self.output_walkthrough is False:
                     log.error("{} not in scene {}, it's on {}".format(
-                        actor_name, self.scene.name, obj.scene.name if obj.scene else "no scene"))
-            if self.player:
-                self.player.x, self.player.y = obj.x + obj.sx, obj.y + obj.sy
+                        actor_name, self.get_scene().name, obj.get_scene().name if obj.scene else "no scene"))
+            player = self.get_player()
+            if player:
+                player.x, player.y = obj.x + obj.sx, obj.y + obj.sy
             x, y = obj.clickable_area.centre
             # output text for a walkthrough if -w enabled
             if self.trunk_step and self.output_walkthrough:
@@ -11556,7 +11584,7 @@ class Game:
                                                                                                   ""] else obj.link.scene.name
                         print("Go to %s." % name)
                 elif obj:
-                    if hasattr(obj, "tmp_creator"):
+                    if obj.creator is not None:
                         print("%s \"%s\"" % (choice(verbs), name))
                     else:
                         txt = "%s %s." % (choice(verbs), name)
@@ -11587,12 +11615,13 @@ class Game:
             obj = get_object(self, actor_name, case_insensitive=True)
             if self.scene:
                 scene = scene_search(self, self.scene, obj.name.upper())
-                if scene != False:  # found a new scene
+                if scene:  # found a new scene
                     portals = scene.portals
                     portal = choice(portals) if len(portals) > 0 else None
+                    player = self.get_player()
                     if portal:
-                        self.player.immediate_relocate(destination=portal.stand_point)
-                    self.scene.immediate_remove(self.player)  # remove from current scene
+                        player.immediate_relocate(destination=portal.stand_point)
+                    self.get_scene().immediate_remove(self.player)  # remove from current scene
                     scene.immediate_add(self.player)  # add to next scene
                     if logging:
                         log.info("TEST SUITE: Player goes %s" %
@@ -11604,7 +11633,7 @@ class Game:
                     #                    if self.trunk_step and self.output_walkthrough: print("Unable to go to %s."%(actor_name))
                     if logging:
                         log.error(
-                            "Unable to get player from scene %s to scene %s" % (self.scene.name, obj.name))
+                            "Unable to get player from scene %s to scene %s" % (self.get_scene().name, obj.name))
             else:
                 if logging:
                     log.error("Going from no scene to scene %s" % obj.name)
@@ -11621,14 +11650,14 @@ class Game:
                     self._remember_interactable(obj.name)
 
         elif function_name == "location":
-            scene = get_object(self, actor_name)
-            if not scene:
+            # scene = get_object(self, actor_name)
+            if not actor_name:
                 log.error("Unable to find scene %s" % actor_name)
-            elif self.scene != scene:
+            elif self.scene != actor_name:
                 log.warning("Location check: Should be on scene {}, instead camera is on {}".format(
-                    scene.name, self.scene.name))
+                    actor_name, self.scene))
         elif function_name == "has":
-            if not self.player.has(actor_name):
+            if not self.get_player().has(actor_name):
                 log.warning("Player should have %s but it is not in player's inventory." % actor_name)
         else:
             print("UNABLE TO PROCESS %s" % function_name)
@@ -11692,7 +11721,8 @@ class Game:
 
                 event_caller = get_object(self, event[1])
                 if not event_caller:
-                    import pdb; pdb.set_trace()
+                    import pdb;
+                    pdb.set_trace()
 
                 if not event_caller:
                     log.error(f"No event caller found {event[1]}")
@@ -11707,7 +11737,7 @@ class Game:
                 profiling_start = datetime.now()
                 fn_name = event[0]
                 event_function = get_function(self, fn_name, event_caller)
-                #print(f"doing event {fn_name}")
+                # print(f"doing event {fn_name}")
                 if not event_function:
                     log.error(f"Unable to find {event_caller.name}.{fn_name}")
                 try:
@@ -11790,12 +11820,12 @@ class Game:
             self.immediate_mouse_motion(x, y, dx=0, dy=0)  # XXX dx, dy are zero
 
         #        dt = self.fps #time passed (in milliseconds)
-        if self.scene:
-            for obj_name in self.scene.objects:
+        if self.get_scene():
+            for obj_name in self.get_scene().objects:
                 obj = get_object(self, obj_name)
                 if obj:
                     scene_objects.append(obj)
-            self.scene._update(dt)
+            self.get_scene()._update(dt)
 
         modal_objects = []
         if self.modals:
@@ -11804,22 +11834,26 @@ class Game:
                 if obj:
                     modal_objects.append(obj)
 
-        layer_objects = self.scene.layers if self.scene else []
+        scene = self.get_scene()
+        layer_objects = scene.layers if scene else []
         # update all the objects in the scene or the event queue.
         items_list = [layer_objects, scene_objects, self.menu_items, modal_objects,
-                      [self.camera.name], [self.mixer.name], [get_object(self, obj[1]) for obj in self.events], self._edit_menu]
+                      [self.camera.name], [self.mixer.name], [obj[1] for obj in self.events], self._edit_menu]
         items_to_update = []
         for items in items_list:
-            for item in items:  # _to_update:
-                if isinstance(item, str):  # try to find object
-                    item = get_object(self, item)
+            for item_name in items:
+                # try to find object
+                item = get_object(self, item_name) if isinstance(item_name, str) else item_name
                 if item not in items_to_update:
                     if item is None:
-                        import pdb;pdb.set_trace()
+                        print(f"Unable to find {item_name}")
+                        import pdb;
+                        pdb.set_trace()
                     items_to_update.append(item)
         for item in items_to_update:
             if item is None:
-                log.error(f"Some item(s) at this point in {self.name} are None, which is odd. Current items {items_list}")
+                log.error(
+                    f"Some item(s) at this point in {self.name} are None, which is odd. Current items {items_list}")
                 continue
             item.game = self
             """
@@ -11868,13 +11902,14 @@ class Game:
     def pyglet_draw(self):  # game.draw
         """ Draw the scene """
         #        dt = pyglet.clock.tick()
-        if self.scene and self.scene._colour:
-            c = self.scene._colour
+        scene = self.get_scene()
+        if scene and scene._colour:
+            c = scene._colour
             c = c if len(c) == 4 else (c[0], c[1], c[2], 255)
             pyglet.gl.glClearColor(*c)
         self._window.clear()
 
-        if not self.scene:
+        if not scene:
             return
         if self.headless or self.walkthrough_auto:
             return
@@ -11883,8 +11918,8 @@ class Game:
         # undo alpha for pyglet drawing
         #       glPushMatrix() #start the scene draw
         popMatrix = False
-        apply_transform = self.scene._rotate or len(
-            self.scene.applied_motions) > 0 or self.scene._flip_vertical or self.scene._flip_horizontal
+        apply_transform = scene._rotate or len(
+            scene.applied_motions) > 0 or scene._flip_vertical or scene._flip_horizontal
         if apply_transform:
             # rotate scene before we add menu and modals
             # translate scene to middle
@@ -11892,20 +11927,20 @@ class Game:
             glPushMatrix();
             ww, hh = self.resolution
             glTranslatef(ww / 2, hh / 2, 0)
-            if self.scene._rotate:
-                glRotatef(-self.scene._rotate, 0.0, 0.0, 1.0)
+            if scene._rotate:
+                glRotatef(-scene._rotate, 0.0, 0.0, 1.0)
             # apply motions
             remove_motions = []
-            for motion in self.scene.applied_motions:
-                if motion.apply_to_scene(self.scene) == False:  # motion has finished
+            for motion in scene.applied_motions:
+                if motion.apply_to_scene(scene) is False:  # motion has finished
                     remove_motions.append(motion)
             for motion in remove_motions:
-                self.scene.applied_motions.remove(motion)
+                scene.applied_motions.remove(motion)
 
-            if self.scene._flip_vertical is True:
+            if scene._flip_vertical is True:
                 glScalef(1, -1, 1)
 
-            if self.scene._flip_horizontal is True:
+            if scene._flip_horizontal is True:
                 glScalef(-1, 1, 1)
 
             glTranslatef(-ww / 2, -hh / 2, 0)
@@ -11913,7 +11948,7 @@ class Game:
         pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0)
         # draw scene backgroundsgrounds (layers with z equal or less than 1.0)
         background_obj = None
-        for item in self.scene.layers:
+        for item in scene.layers:
             background_obj = get_object(self, item)
             background_obj.game = self
             if background_obj.z <= 1.0:
@@ -11921,16 +11956,16 @@ class Game:
             else:
                 break
 
-        if self.scene and self.settings and self.settings.high_contrast:
+        if scene and self.settings and self.settings.high_contrast:
             # get the composited background
             #            old_surface = pyglet.image.get_buffer_manager().get_color_buffer().get_image_data()
 
             # dim the entire background only if scene allows.
-            if getattr(self.scene, "_ignore_highcontrast", False) is False and self._contrast:
+            if getattr(scene, "_ignore_highcontrast", False) is False and self._contrast:
                 self._contrast.pyglet_draw(absolute=True)
 
                 # now brighten areas of interest that have no sprite
-                for obj_name in self.scene.objects:
+                for obj_name in scene.objects:
                     obj = get_object(self, obj_name)
                     if obj:
                         # draw a high contrast rectangle over the clickable area if a portal or obj has no image
@@ -11947,15 +11982,15 @@ class Game:
                                 subimage = pic.get_region(x, y, w, h)
                                 subimage.blit(x, y, 0)
 
-        if self.scene.walkarea:
-            if self.scene.walkarea._editing:
-                self.scene.walkarea.debug_pyglet_draw()
-            elif self.scene.walkarea._fill_colour is not None:
-                self.scene.walkarea.pyglet_draw()
+        if scene.walkarea:
+            if scene.walkarea._editing:
+                scene.walkarea.debug_pyglet_draw()
+            elif scene.walkarea._fill_colour is not None:
+                scene.walkarea.pyglet_draw()
 
         scene_objects = []
-        if self.scene:
-            for obj_name in self.scene.objects:
+        if scene:
+            for obj_name in scene.objects:
                 obj = get_object(self, obj_name)
                 if obj:
                     scene_objects.append(obj)
@@ -11976,7 +12011,7 @@ class Game:
         #            batch.draw()
 
         # draw scene foregrounds (layers with z greater than 1.0)    
-        for item in self.scene.layers:
+        for item in scene.layers:
             obj = get_object(self, item)
             if obj.z > 1.0:
                 obj.pyglet_draw(absolute=False)
@@ -12048,8 +12083,8 @@ class Game:
             x, y = self.mouse_position
             #            y = self.game.resolution[1] - y
             coords(self, "mouse", x, y, invert=False)
-            if self.scene.walkarea._editing is True:
-                self.scene.walkarea.debug_pyglet_draw()
+            if scene.walkarea._editing is True:
+                scene.walkarea.debug_pyglet_draw()
 
         if self.game.camera.overlay:
             self.game.camera.overlay.draw()
@@ -12260,24 +12295,25 @@ class Game:
         game = self
         if state == "":
             return
-        directory = directory_override if directory_override else self.scene.directory
+        directory = directory_override if directory_override else self.get_scene().directory
         sfname = os.path.join(directory, state)
         sfname = "%s.py" % sfname
         keys = []
-        for obj_name in game.scene.objects:
+        scene = game.get_scene()
+        for obj_name in scene.objects:
             obj = get_object(self, obj_name)
             if not isinstance(obj, Portal) and obj != game.player:
                 keys.append(obj_name)
 
         objects = '\", \"'.join(keys)
         has_emitter = False
-        for name in game.scene.objects:
+        for name in scene.objects:
             obj = get_object(self, name)
             if isinstance(obj, Emitter):
                 has_emitter = True
 
         if not os.path.isdir(os.path.dirname(sfname)):
-            game.player.says("Warning! %s does not exist" % sfname)
+            game.get_player().says("Warning! %s does not exist" % sfname)
             return
         with open(sfname, 'w') as f:
             f.write("# generated by ingame editor v0.2\n\n")
@@ -12291,24 +12327,24 @@ class Game:
             # remove old actors and items
             f.write('    scene.clean(["%s"])\n' % objects)
             f.write('    scene.camera((%s, %s))\n' %
-                    (game.scene.x, game.scene.y))
-            if game.scene._music_filename:
-                f.write('    scene.music("%s")\n' % game.scene._music_filename)
-            if game.scene._ambient_filename:
+                    (scene.x, scene.y))
+            if scene._music_filename:
+                f.write('    scene.music("%s")\n' % scene._music_filename)
+            if scene._ambient_filename:
                 f.write('    scene.ambient("%s")\n' %
-                        game.scene._ambient_filename)
-            if game.scene.default_idle:
+                        scene._ambient_filename)
+            if scene.default_idle:
                 f.write('    scene.default_idle = "%s"\n' %
-                        game.scene.default_idle)
-            if game.scene.walkarea:
-                f.write('    scene.walkarea.polygon(%s)\n' % game.scene.walkarea._polygon)
-                f.write('    scene.walkarea.waypoints(%s)\n' % game.scene.walkarea._waypoints)
-            for name in game.scene.objects:
+                        scene.default_idle)
+            if scene.walkarea:
+                f.write('    scene.walkarea.polygon(%s)\n' % scene.walkarea._polygon)
+                f.write('    scene.walkarea.waypoints(%s)\n' % scene.walkarea._waypoints)
+            for name in scene.objects:
                 obj = get_object(self, name)
                 slug = slugify(name).lower()
-                if obj._editing_save == False:
+                if obj._editing_save is False:
                     continue
-                if obj != game.player:
+                if obj != game.get_player():
                     txt = "items" if isinstance(obj, Item) else "actors"
                     txt = "items" if isinstance(obj, Portal) else txt
                     if isinstance(obj, Emitter):
@@ -12379,9 +12415,9 @@ class Game:
                     f.write('    #%s.reclickable(Rect(%s, %s, %s, %s))\n' %
                             (slug, r.x, r.y, r.w, r.h))
 
-                    if name not in self.scene.scales:
-                        self.scene.scales[name] = obj.scale
-                    for key, val in self.scene.scales.items():
+                    if name not in self.get_scene().scales:
+                        self.get_scene().scales[name] = obj.scale
+                    for key, val in self.get_scene().scales.items():
                         if key in self.actors:
                             val = self.actors[key]
                             f.write(
@@ -12787,7 +12823,7 @@ class Game:
 
     def immediate_add_to_scene(self, obj):
         # useful for queuing an add when there is no scene yet but will be by the time this runs
-        self.scene.immediate_add(obj)
+        self.get_scene().immediate_add(obj)
 
     @queue_method
     def remap_joystick(self):
@@ -13060,7 +13096,7 @@ def edit_object_script(game, obj):
                   "def use_%s_on_default(game, obj, %s):" % (slug, slug),
                   ]
     if not isinstance(obj, Portal) and game.player:
-        for i in list(game.player.inventory.keys()):
+        for i in list(game.get_player().inventory.keys()):
             slug2 = slugify(i).lower()
             search_fns.append("def %s_use_%s(game, %s, %s):" %
                               (slug, slug2, slug, slug2))
@@ -13102,7 +13138,7 @@ def editor_new_object(game, obj):
     obj.x, obj.y = (
         game.resolution[0] / 2, game.resolution[1] / 2)
     game.add(obj)
-    game.scene.add(obj)
+    game.get_scene().add(obj)
 
 
 if log: log.info("CHECKING FOR EDITOR")
@@ -13160,11 +13196,11 @@ if EDITOR_AVAILABLE:
         def __init__(self, game):
             threading.Thread.__init__(self)
             self.game = game
-            if len(self.game.scene.objects) > 0:
-                self.obj = get_object(game, self.game.scene.objects[0])
+            if len(self.game.get_scene().objects) > 0:
+                self.obj = get_object(game, self.game.get_scene().objects[0])
             else:
                 self.obj = None
-            #        self.obj = list(self.game.scene.objects.values())[0] if len(self.game.scene.objects.values())>0 else None
+            #        self.obj = list(self.game.get_scene().objects.values())[0] if len(self.game.get_scene().objects.values())>0 else None
             if self.obj:
                 self.obj.show_debug = True
             self.rows = 0
@@ -13204,7 +13240,7 @@ if EDITOR_AVAILABLE:
                 if len(objects) > 0:
                     self.game._editing = get_object(self.game, objects[self.index])
                     self.game._editing.show_debug = True
-                self.game.player.relocate(new_scene)
+                self.game.get_player().relocate(new_scene)
 
             def refresh(selector):
                 # objects = self.game.scenes.values()
@@ -13230,7 +13266,7 @@ if EDITOR_AVAILABLE:
             def _new_object(obj):
                 editor_new_object(self.game, obj)
 
-                self.app.objects = self.game.scene.objects
+                self.app.objects = self.game.get_scene().objects
                 self.set_edit_object(obj)
 
             def add_object():
@@ -13248,7 +13284,7 @@ if EDITOR_AVAILABLE:
                 obj.load_assets(self.game)
                 if obj.clickable_area.w == 0 and obj.clickable_area.h == 0:
                     obj.guess_clickable_area()
-                self.game.scene.immediate_add(obj)
+                self.game.get_scene().immediate_add(obj)
                 self.set_edit_object(obj)
 
             def new_actor():
@@ -13267,7 +13303,7 @@ if EDITOR_AVAILABLE:
                 d = SceneSelectDialog(self.game, "Exit Scene")
                 if not d:
                     return
-                name = "{}_to_{}".format(self.game.scene.name, d.result)
+                name = "{}_to_{}".format(self.game.get_scene().name, d.result)
                 _new_object(Portal(name))
                 self.obj.guess_link()
 
@@ -13325,9 +13361,9 @@ if EDITOR_AVAILABLE:
             def edit_camera():
                 self.game._editing = self.game.scene
                 self.game._editing_point_set = (
-                    self.game.scene.set_x, self.game.scene.set_y)
+                    self.game.get_scene().set_x, self.game.get_scene().set_y)
                 self.game._editing_point_get = (
-                    self.game.scene.get_x, self.game.scene.get_y)
+                    self.game.get_scene().get_x, self.game.get_scene().get_y)
 
             tk.Radiobutton(group, text="Camera", command=edit_camera,
                            indicatoron=0, value=1).grid(row=row, column=0)
@@ -13335,11 +13371,11 @@ if EDITOR_AVAILABLE:
             request_default_idle = tk.StringVar(group)
 
             def change_default_idle(*args, **kwargs):
-                self.game.scene.default_idle = request_default_idle.get()
+                self.game.get_scene().default_idle = request_default_idle.get()
 
             col = 1
             if self.game.player:
-                actions = list(self.game.player.actions.keys())
+                actions = list(self.game.get_player().actions.keys())
             else:
                 actions = []
             actions.sort()
@@ -13367,20 +13403,20 @@ if EDITOR_AVAILABLE:
             row += 1
 
             def save_state(*args, **kwargs):
-                for i in glob.glob("%s/*" % self.game.scene.directory):
+                for i in glob.glob("%s/*" % self.game.get_scene().directory):
                     print("f", i)
                 s = input('state name (eg tmp.py)>')
                 if s == "":
                     return
                 else:
                     state_name = os.path.splitext(os.path.basename(s))[0]
-                    print("save %s to %s" % (state_name, self.game.scene.directory))
+                    print("save %s to %s" % (state_name, self.game.get_scene().directory))
                     self.game._save_state(state_name)
                 return
                 # non-threadsafe
                 d = tkfiledialog.SaveFileDialog(self.app)
                 pattern, default, key = "*.py", "", None
-                fname = d.go(self.game.scene.directory, pattern, default, key)
+                fname = d.go(self.game.get_scene().directory, pattern, default, key)
                 if fname is None:
                     return
                 else:
@@ -13390,34 +13426,34 @@ if EDITOR_AVAILABLE:
             def load_state(*args, **kwargs):
                 d = tkfiledialog.LoadFileDialog(self.app)
                 pattern, default, key = "*.py", "", None
-                fname = d.go(self.game.scene.directory, pattern, default, key)
+                fname = d.go(self.game.get_scene().directory, pattern, default, key)
                 if fname is None:
                     return
                 else:
                     state_name = os.path.splitext(os.path.basename(fname))[0]
                     self.game.load_state(self.game.scene, state_name)
-                    self.game.scene.add(self.game.player)
+                    self.game.get_scene().add(self.game.player)
 
             def initial_state(*args, **kwargs):
                 if self.game.player:
-                    player_in_scene = self.game.player.name in self.game.scene.objects
+                    player_in_scene = self.game.get_player().name in self.game.get_scene().objects
                 else:
                     player_in_scene = None
                 self.game.load_state(self.game.scene, "initial")
-                if player_in_scene: self.game.scene.add(self.game.player)
+                if player_in_scene: self.game.get_scene().add(self.game.player)
 
             def save_layers(*args, **kwargs):
-                self.game.scene._save_layers()
+                self.game.get_scene()._save_layers()
 
             def edit_interact_scripts(*args, **kwargs):
-                for i in self.game.scene.objects:
+                for i in self.game.get_scene().objects:
                     obj = get_object(self.game, i)
                     if obj.allow_interact or obj.allow_look:
                         edit_object_script(self.game, obj)
 
             def edit_flip_scene(*args, **kwargs):
                 w = self.game.resolution[0]
-                for i in self.game.scene.objects:
+                for i in self.game.get_scene().objects:
                     obj = get_object(self.game, i)
                     if obj == self.game.player:
                         continue
@@ -13426,7 +13462,7 @@ if EDITOR_AVAILABLE:
                     obj._ax = - obj._ax
                     obj._tx = - obj._tx
                     obj._nx = - obj._nx
-                self.game.scene.walkarea.mirror(w)
+                self.game.get_scene().walkarea.mirror(w)
 
             def _edit_walkarea(scene):
                 scene.walkarea.immediate_toggle_editor()
@@ -13439,9 +13475,9 @@ if EDITOR_AVAILABLE:
                     scene.walkarea._edit_polygon_index = 1
 
             def reset_walkarea(*args, **kwargs):
-                if self.game.scene.walkarea is None:
-                    self.game.scene.walkarea = WalkAreaManager(self.game.scene.name)
-                self.game.scene.walkarea.reset_to_default()
+                if self.game.get_scene().walkarea is None:
+                    self.game.get_scene().walkarea = WalkAreaManager(self.game.get_scene().name)
+                self.game.get_scene().walkarea.reset_to_default()
 
             def edit_walkarea(*args, **kwargs):
                 _edit_walkarea(self.game.scene)
@@ -13462,12 +13498,12 @@ if EDITOR_AVAILABLE:
             row += 1
 
             def add_edge_point(*args, **kwargs):
-                if self.game.scene.walkarea:
-                    self.game.scene.walkarea.insert_edge_point()
+                if self.game.get_scene().walkarea:
+                    self.game.get_scene().walkarea.insert_edge_point()
 
             def add_way_point(*args, **kwargs):
-                if self.game.scene.walkarea:
-                    self.game.scene.walkarea.insert_way_point()
+                if self.game.get_scene().walkarea:
+                    self.game.get_scene().walkarea.insert_way_point()
 
             self.reset_walkarea_button = tk.Button(
                 group, text='reset walkarea', command=reset_walkarea).grid(column=1, row=row)
@@ -13483,7 +13519,7 @@ if EDITOR_AVAILABLE:
             row += 1
 
             def _navigate(delta):
-                objects = self.game.scene.objects + self.game.scene.layers
+                objects = self.game.get_scene().objects + self.game.get_scene().layers
                 num_objects = len(objects)
                 if num_objects == 0:
                     print("No objects in scene")
@@ -13651,7 +13687,7 @@ if EDITOR_AVAILABLE:
                 self.obj.idle_stand = request_idle.get()
 
             if self.game.player:
-                actions = [x.name for x in self.game.player.actions.values()]
+                actions = [x.name for x in self.game.get_player().actions.values()]
                 actions.sort()
             else:
                 actions = []
@@ -13670,8 +13706,8 @@ if EDITOR_AVAILABLE:
 
             def remove_btn():
                 self.obj.show_debug = False
-                self.game.scene.remove(self.obj)
-                objects = self.game.scene.objects
+                self.game.get_scene().remove(self.obj)
+                objects = self.game.get_scene().objects
                 if len(objects) > 0:
                     self.obj = get_object(self.game, objects[0])
 

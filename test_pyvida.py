@@ -283,9 +283,9 @@ class TestGame:
 
     def test_set_scene(self):
         game = create_basic_scene(resolution=[10, 10], with_update=True)
-        s = Scene("testscene")
-        game.scene = s
-        assert game.scene is None
+        s = Scene("test_set_scene")
+        game.set_scene(s)
+        assert game.scene == "test_set_scene"
 
     def test_screen(self):
         g = Game()
@@ -524,7 +524,7 @@ class TestActor:
 
     def test_do_once(self, mocker):
         game = create_basic_scene((400, 700), with_update=True)
-        game.scene.immediate_add(game.astronaut)
+        game.get_scene().immediate_add(game.astronaut)
         spy = mocker.spy(game.astronaut, "immediate_do")
         spy_end = mocker.spy(game.astronaut, "on_animation_end_once")
         game.astronaut.load_assets(game)
@@ -639,11 +639,11 @@ class TestScene:
 
         game.update()  # run events
 
-        logo = game.scene.get_object("logo")
+        logo = game.get_scene().get_object("logo")
         assert game.w == 1680
         assert not game.autoscale
-        assert game.scene == game.scenes["title"]
-        assert game.scene.layers[0] == "title_background"
+        assert game.scene == "title"
+        assert game.get_scene().layers[0] == "title_background"
         assert logo
 
     def test_scene_with_menu(self):
@@ -669,9 +669,9 @@ class TestScene:
 
         assert game.w == 1680
         assert not game.autoscale
-        assert game.scene == game.scenes["title"]
-        assert game.scene.layers[0] == "title_background"
-        assert game.scene.get_object("logo")
+        assert game.scene == "title"
+        assert game.get_scene().layers[0] == "title_background"
+        assert game.get_scene().get_object("logo")
 
 
 @dataclass_json
@@ -745,7 +745,7 @@ class TestMenus:
 
         game.update()  # run events
 
-        assert list(game.scene.objects) == ["logo"]
+        assert list(game.get_scene().objects) == ["logo"]
         assert list(game.menu_items) == ["hello"]
 
     def test_menu_factory(self):
@@ -818,7 +818,7 @@ class TestEvents:
         self.item = Item("test_item")
         self.game.add([self.scene, self.actor, self.msgbox, self.ok, self.item])
         self.scene.immediate_add(self.actor)
-        self.game.scene = self.scene
+        self.game.set_scene(self.scene)
 
     def test_relocate(self):
         # setup
