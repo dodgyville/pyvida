@@ -18,15 +18,6 @@ _________   _...._                  .----.     .----..--.\  ___ `'.
 GPL3
 """
 
-from argparse import ArgumentParser
-from collections import deque
-from collections.abc import Iterable
-from dataclasses import (
-    dataclass,
-    field,
-)
-from dataclasses_json import dataclass_json
-from datetime import datetime, timedelta
 import copy
 import gc
 import gettext as igettext
@@ -36,21 +27,29 @@ import importlib
 import itertools
 import json
 import math
-from math import sin
-from operator import itemgetter
-from operator import sub
 import os
-from os.path import expanduser
-from pathlib import Path
 import pickle
 import queue
-from random import choice, randint, uniform
 import struct
 import subprocess
 import sys
 import threading
 import time
 import traceback
+from argparse import ArgumentParser
+from collections import deque
+from collections.abc import Iterable
+from dataclasses import (
+    dataclass,
+    field,
+)
+from datetime import datetime, timedelta
+from math import sin
+from operator import itemgetter
+from operator import sub
+from os.path import expanduser
+from pathlib import Path
+from random import choice, randint, uniform
 from typing import (
     Dict,
     List,
@@ -60,11 +59,12 @@ from typing import (
 
 # 3rd party modules
 import euclid3 as eu
-from babel.numbers import format_decimal
-from fontTools.ttLib import TTFont
-from PIL import Image
 import pyglet
 import pyglet.clock
+from PIL import Image
+from babel.numbers import format_decimal
+from dataclasses_json import dataclass_json
+from fontTools.ttLib import TTFont
 
 VERSION_SAVE = 6  # save/load version, only change on incompatible changes
 __version__ = "7.0.0"
@@ -828,9 +828,9 @@ def scene_search(game, scene, target):  # are scenes connected via portals?
     global scene_path
     scene_obj = get_object(game, scene)
     target_obj = get_object(game, target)
-    if not scene_obj or not scene_obj.name:
+    if not scene_obj or not target_obj:
         if logging:
-            log.warning("Strange scene search %s" % scene_path)
+            log.warning(f"Strange scene search {scene} and target {target} with path {scene_path}")
         return False
     scene_path.append(scene_obj)
     if scene_obj.name.upper() == target_obj.name.upper():
@@ -1179,9 +1179,10 @@ def valid_goto_point(game, scene, obj, destination):
     :param destination:
     :return:
     """
+    scene_obj = get_object(game, scene)
     point = get_point(game, destination, obj)
-    if scene and scene.walkarea:
-        if not scene.walkarea.valid(*point):
+    if scene_obj and scene_obj.walkarea:
+        if not scene_obj.walkarea.valid(*point):
             log.info("Not a valid goto point for %s" % obj.name)
             return False
     return True
@@ -5371,7 +5372,7 @@ class Actor(MotionManager):
         goto_points = []
         if not self.game or not self.game.scene:
             return goto_points
-        scene = self.game.scene
+        scene = self.game.get_scene()
         if not scene.walkarea:
             return [start, end]
         walkarea = scene.walkarea
@@ -5388,7 +5389,7 @@ class Actor(MotionManager):
             if not obj:
                 print("ERROR: Unable to find %s in scene even though it is recorded in scene." % o)
                 continue
-            if obj._allow_draw == True and obj is not player and not isinstance(obj, Emitter):
+            if obj._allow_draw is True and obj is not player and not isinstance(obj, Emitter):
                 #                print("using solid",o.name,o.solid_area.flat2)
                 solids.append(obj.solid_area)
                 # add more waypoints based on the edges of the solid areas of objects in scene
@@ -7074,7 +7075,7 @@ class Label(pyglet.text.Label):
     pass
 
 
-from pyglet.text import decode_html, HTMLLabel, DocumentLabel
+from pyglet.text import decode_html, DocumentLabel
 
 
 class HTMLLabel(DocumentLabel):
@@ -7991,11 +7992,10 @@ class Camera:  # the view manager
         #            self.game.get_scene()._unload_layer()
         scene, camera_point = self.pre_scene_change(scene, camera_point, from_save_game)
 
-        current_scene = self.game.scene
         if scene is None:
             if logging:
                 log.error(
-                    "Can't change to non-existent scene, staying on current scene")
+                    f"Can't change to non-existent scene, staying on current scene {self.game.scene}")
             scene = self.game.scene
         scene = get_object(self.game, scene)
         self.game.scene = scene.name
@@ -8084,7 +8084,6 @@ class Camera:  # the view manager
     def immediate_zoom(self, start, factor, steps=40, target=None, block=False):
         glPushMatrix()
         self._zoom_start = start
-        zz = self._zoom_factor = factor
         ww, hh = self._zoom_target = target
         hh = self.game.resolution[1] - hh
         self._zoom_steps = steps
@@ -9279,14 +9278,9 @@ def load_game_json(game, fname, meta_only=False, keep=[], responsive=False):
         else:
             print(i, "not in game")
 
-    with open(fname, "rb") as f:
+    with open(fname, "r") as f:
+        data = f.read()
         # x = json.loads(data, object_hook=lambda d: SimpleNamespace(**d))
-        meta = pickle.load(f)
-        if meta_only is False:
-            player_info = pickle.load(f)
-            engine_info = pickle.load(f)
-            game.set_engine(engine_info)
-            game.storage = pickle.load(f)
 
 
 def load_menu_assets(game):
@@ -9397,13 +9391,11 @@ def gamestats(game):
     total_items = len(game.items) + len(game.actors) + len(game.scenes)
     total_frames_of_animation = 0
     for objects in [game.actors, game.items]:
-        objects_to_pickle = []
         for o in objects.values():  # test objects
             actor_frames = 0
             for action in o.actions.values():
                 total_frames_of_animation += action.num_of_frames
                 actor_frames += action.num_of_frames
-            #            print("%s has %i frames of animation in %i actions."%(o.name, actor_frames, len(o.actions)))
     print("Total objects: %i (%i scenes)" % (total_items, len(game.scenes)))
     print("Total frames of animation: %i" % (total_frames_of_animation))
 
@@ -9936,12 +9928,13 @@ class Game:
 
         self.save_directory = save_dir
         safe = get_safe_path(save_dir)
-        readonly = False
+        # readonly = False
         if not os.path.exists(safe):
             try:
                 os.makedirs(safe)
             except:
-                readonly = True
+                #                readonly = True
+                pass
 
         if logging:  # redirect log to file
             log_filename = get_safe_path(os.path.join(self.save_directory, 'pyvida5.log'))
@@ -10125,7 +10118,7 @@ class Game:
                         obj.allow_interact or obj.allow_use or obj.allow_look):
                     allowgoto_object = True if self.player_goto_behaviour in [GOTO, GOTO_OBJECTS] else False
                     if player and player.name in self.get_scene().objects and self.player != obj and allowgoto_object:
-                        if valid_goto_point(self, self.get_scene(), self.player, obj):
+                        if valid_goto_point(self, self.scene, self.player, obj):
                             player.goto(obj, block=True)
                             player.set_idle(obj)
                         else:  # can't walk there, so do next_action if available to finish any stored actions.
@@ -10227,10 +10220,8 @@ class Game:
                 else:
                     motion = Motion("tmp")
                     motion.add_deltas(self.motion_output_raw)
-                    import pdb;
-                    pdb.set_trace()
-                    s = input('motion name? (no .motion)')
-                    self.get_player().says("Processed, saved, and turned off record motion")
+                    # s = input('motion name? (no .motion)')
+                    self.get_player().says("Processed, saved, and turned off record motion. XXX Not saved.")
                     self.motion_output = None
                     self.motion_output_raw = []
 
@@ -10306,11 +10297,8 @@ class Game:
         # flip based on window height
         window_x, window_y = x, self._window.height - y
         """
-        y = raw_y - self._window_dy
 
         window_x = (raw_x - self._window_dx) / self._scale
-        #        window_y = (self._window.height - y)/self._scale
-        #        window_y = (self.resolution[1] - y)/self._scale
         window_y = (self._window.height - raw_y) / self._scale
 
         if self._mouse_rect:  # restrict mouse
@@ -10324,7 +10312,6 @@ class Game:
             elif window_y > self._mouse_rect.y + self._mouse_rect.h:
                 window_y = self._mouse_rect.y + self._mouse_rect.h
 
-        #        window_x, window_y = x, self.resolution[1] - y
         if self.get_scene():
             scene_x, scene_y = window_x - self.get_scene().x, window_y - self.get_scene().y
         else:
