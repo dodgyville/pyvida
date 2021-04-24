@@ -1146,3 +1146,25 @@ class TestPathplanning:
         solids = []
         clear = clear_path(polygon, start, end, solids)
         assert clear is True
+
+
+class TestMixer:
+    def test_json(self):
+        g = Game()
+        g.game = g
+        g.busy = True
+        result = g.to_json()
+        assert "actors" in result
+        assert '"busy": true' in result
+        assert '"game"' not in result
+        assert '"mixer"' not in result
+
+    def test_json_fn_safe(self):
+        a = Actor()
+        a.game = "Game"
+        def hello_world():
+            pass
+        a.interact = hello_world
+        result = a.to_json()
+        assert '"game": ' not in result
+        assert '"interact": "hello_world"' in result

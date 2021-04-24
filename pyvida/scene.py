@@ -28,24 +28,27 @@ if TYPE_CHECKING:
     from .game import Game
 
 
-@dataclass_json
 @dataclass
-class Scene(MotionManager):
+class Scene(SafeJSON, MotionManager):
     name: str = 'untitled scene'
+    objects: List[str] = field(default_factory=list)
+    layers: List[str] = field(default_factory=list)
+    busy: int = 0
+    _music_filename: Optional[str] = None
+    _ambient_filename: Optional[str] = None
+    _ambient_description: Optional[str] = None
+    _last_load_state: Optional[str] = None  # used by editor
+    display_text: Optional[str] = None  # used on portals if not None
+    description: Optional[str] = None  # text for blind users
+    default_idle: Optional[str] = None  # override player._idle for this scene
+    _x: float = 0.0
+    _y: float = 0.0
+    _w: float = 0.0
+    _h: float = 0.0
+    # game: Optional[Game] = None
 
     def __post_init__(self):
-        self.game = None
-        self.objects = []
-        self.layers = []
-        self.busy = 0
-        self._music_filename = None
-        self._ambient_filename = None
-        self._ambient_description = None
-        self._last_load_state = None  # used by editor
-
         # used by camera
-        self._x, self._y = 0.0, 0.0
-        self._w, self._h = 0, 0
         self.scale = 1.0  # TODO not implemented yet
         self.rotate_speed = 0
         self.spin_speed = 0
@@ -54,12 +57,7 @@ class Scene(MotionManager):
 
         self.auto_pan = True  # pan the camera based on player location
 
-        self.display_text = None  # used on portals if not None
-        self.description = None  # text for blind users
-        self.default_idle = None  # override player._idle for this scene
         self.scales = {}
-        #        self.scale_gradient = (600, 750) #what y value range to apply the scale_horizon_value to player?
-        #        self.scale_horizon_value = 1.0 #deactivated
 
         self.walkarea = WalkAreaManager(self.name)
         self.colour = None  # clear colour (0-255, 0-255, 0-255)

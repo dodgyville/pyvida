@@ -49,13 +49,12 @@ class Action:
     _x: float = 0.0  # is this action offset from the regular actor's x,y
     _y: float = 0.0
     displace_clickable: bool = False  # if action is displaced, also displace clickable_area
+    _image: str = None
+    _loaded: bool = False
+    manual_index: int = 0  # used by MANUAL mode to lock animation at a single frame
 
     # animation: any
 
-    def __post_init__(self):
-        self._image = None
-        self._loaded = False
-        self.manual_index = 0  # used by MANUAL mode to lock animation at a single frame
 
     @property
     def resource_name(self):

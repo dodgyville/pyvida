@@ -115,11 +115,25 @@ class HTMLLabel(DocumentLabel):
 
 
 class Text(Item):
+    name: str = ''
+    pos: any = None
+    display_text: str = None
+    colour: any = None
+    font: any = None
+    size: int = 0
+    wrap: int = 800
+    offset: any = None
+    interact: str = None
+    look: str = None
+    delay: int = 0
+    step: int = 2
+
+    _display_text: str = None
+    font_name: str = None
 
     def __init__(self, name, pos=(0, 0), display_text=None,
                  colour=(255, 255, 255, 255), font=None, size=DEFAULT_TEXT_SIZE, wrap=800,
-                 offset=None, interact=None, look=None, delay=0, step=2,
-                 game=None):
+                 offset=None, interact=None, look=None, delay=0, step=2):
         """
         font: the filepath to the font
         delay : How fast to display chunks of the text
@@ -131,13 +145,11 @@ class Text(Item):
         super().__init__(name, interact=interact, look=look)
 
         self._display_text = display_text if display_text else name
-        self._display_text = self._display_text
         self.x, self.y = pos
         self.step = step
         self.offset = offset
         self._height = None  # height of full text
         self._width = None  # width of full text
-        self.game = game
         self.delay = delay
         self._pyglet_animate_scheduled = False  # is a clock function scheduled
         self.align = LEFT  # LEFT x, CENTER around x, RIGHT x - self.w
@@ -159,20 +171,18 @@ class Text(Item):
         self.wrap = wrap
         #        self.create_label()
 
+        self._idle_colour = colour  # mimick menu "over" behaviour using this colour
+        self._over_colour = None  # mimick menu "over" behaviour using this colour
+        self._action_name = "idle"  # mimmick menu over and idle behaviour if over_colour is set
         wrap = self.wrap if self.wrap > 0 else 1  # don't allow 0 width labels
         tmp = Label(self._display_text,
-                    font_name=font_name,
-                    font_size=size,
+                    font_name=self.font_name,
+                    font_size=self.size,
                     multiline=True,
                     width=wrap,
                     anchor_x='left', anchor_y='top')
         h = self._height = tmp.content_height
         w = self._width = tmp.content_width
-
-        self._idle_colour = colour  # mimick menu "over" behaviour using this colour
-        self._over_colour = None  # mimick menu "over" behaviour using this colour
-        self._action_name = "idle"  # mimmick menu over and idle behaviour if over_colour is set
-
         self._clickable_area = Rect(
             0, 0, w, h)
 

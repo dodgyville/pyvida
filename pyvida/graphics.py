@@ -119,6 +119,8 @@ class Graphics:
         valid_obj = None
         for item_name in scenery_items:
             item = get_object(self, item_name)
+            if not item:
+                import pdb; pdb.set_trace()
             item.game = self
             if draw_test(item):
                 item.pyglet_draw(absolute=False)

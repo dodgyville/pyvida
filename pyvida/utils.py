@@ -20,6 +20,15 @@ from typing import (
     Optional,
     Tuple
 )
+import abc
+import json
+from typing import (Any, Callable, Dict, List, Optional, Tuple, Type, TypeVar,
+                    Union)
+
+from dataclasses_json.core import (Json, _ExtendedEncoder, _asdict,
+                                   _decode_dataclass)
+
+from dataclasses_json.api import DataClassJsonMixin
 
 # 3rd party
 from shapely.geometry import LineString
@@ -951,9 +960,6 @@ def get_function(game, basic, obj=None, warn_on_empty=True):
         basic_name = basic
 
     if obj:
-        if basic == "anlloyd_use_coconut_soup":
-            print("Hello0")
-
         fn = getattr(obj, basic_name, None)
         if fn and hasattr(fn, "__name__"):
             return fn
@@ -1260,3 +1266,79 @@ def neighbour_nodes(polygon, nodes, current, solids):
             if append_node is True and node not in return_nodes: return_nodes.append(node)
     #        print("so neighbour nodes for",current.x, current.y,"are",[(pt.x, pt.y) for pt in return_nodes])
     return return_nodes
+
+
+import json
+from datetime import datetime, timezone
+from decimal import Decimal
+from enum import Enum
+from typing import Any, Collection, Mapping, Union, get_type_hints
+from uuid import UUID
+
+from dataclasses_json.utils import (_get_type_cons,
+                                    _handle_undefined_parameters_safe,
+                                    _is_collection, _is_mapping, _is_new_type,
+                                    _is_optional, _isinstance_safe,
+                                    _issubclass_safe)
+
+from dataclasses_json.core import Json
+
+
+class ExtendedEncoder(_ExtendedEncoder):
+    def default(self, o) -> Json:
+        result: Json
+        if _isinstance_safe(o, Collection):
+            if _isinstance_safe(o, Mapping):
+                result = dict(o)
+            else:
+                result = list(o)
+        elif _isinstance_safe(o, datetime):
+            result = o.timestamp()
+        elif _isinstance_safe(o, UUID):
+            result = str(o)
+        elif _isinstance_safe(o, Enum):
+            result = o.value
+        elif _isinstance_safe(o, Decimal):
+            result = str(o)
+        elif callable(o):
+            print("found function", o)
+            log.warning(f"Found stored function {o.__name__} while jsonify, this should be a string instead of a funciton.")
+            result = o.__name__
+        else:
+            result = json.JSONEncoder.default(self, o)
+        return result
+
+
+class SafeJSON(DataClassJsonMixin):
+    def to_json(self,
+                *,
+                skipkeys: bool = False,
+                ensure_ascii: bool = True,
+                check_circular: bool = True,
+                allow_nan: bool = True,
+                indent: Optional[Union[int, str]] = None,
+                separators: Tuple[str, str] = None,
+                default: Callable = None,
+                sort_keys: bool = False,
+                **kw) -> str:
+        game = self.game
+        self.game = None
+
+        result = json.dumps(self.to_dict(encode_json=False),
+                          cls=ExtendedEncoder,
+                          skipkeys=skipkeys,
+                          ensure_ascii=ensure_ascii,
+                          check_circular=check_circular,
+                          allow_nan=allow_nan,
+                          indent=indent,
+                          separators=separators,
+                          default=default,
+                          sort_keys=sort_keys,
+                          **kw)
+
+        self.game = game
+        return result
+
+    def to_dict(self, encode_json=False) -> Dict[str, Json]:
+        result = _asdict(self, encode_json=encode_json)
+        return result

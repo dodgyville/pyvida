@@ -38,18 +38,14 @@ logger = logging.getLogger(LOGNAME)
 @dataclass_json
 @dataclass
 class Achievement:
-    slug: str
-    name: str
-    achievement_description: str
-    filename: str
-    date: Optional[datetime]
-    version: Optional[str]
+    slug: str = ''
+    name: str = ''
+    achievement_description: str = ''
+    filename: str = ''
+    date: Optional[datetime] = field(default_factory=datetime.now)
+    version: Optional[str]  = ''
 
-    def __init__(self, slug, name, achievement_description, filename):
-        self.slug = slug
-        self.name = name
-        self.achievement_description = achievement_description
-        self.filename = filename
+    def __post_init__(self):
         self.date = None
         self.version = None
 
@@ -63,10 +59,10 @@ class Achievement:
 class AchievementManager:
     """ Basic achievement system, hopefully to plug into Steam and other
     services one day """
-    achievements: dict
-    granted: dict
+    achievements: Dict[str, str] = field(default_factory=dict)
+    granted: Dict[str, str] = field(default_factory=dict)
 
-    def __init__(self):
+    def __post_init__(self):
         self.achievements = {}
         self.granted = {}
 

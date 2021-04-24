@@ -10,7 +10,7 @@ from dataclasses import (
 
 @dataclass_json
 @dataclass
-class MotionDelta(object):
+class MotionDelta:
     """ A motion delta ... not sure """
     x: float
     y: float

@@ -4,6 +4,7 @@ Game settings.
 from dataclasses_json import dataclass_json
 from dataclasses import (
     dataclass,
+    field
 )
 from datetime import datetime
 import logging
@@ -41,13 +42,13 @@ FAST = 2
 @dataclass
 class Storage(object):
     """ Per game data that the developer wants stored with the save game file"""
-    total_time_in_game: int  # seconds
-    last_save_time: datetime
-    last_load_time: datetime
-    created: datetime
-    hint: str
+    total_time_in_game: int = 0 # seconds
+    last_save_time: datetime = field(default_factory=datetime.now)
+    last_load_time: datetime = field(default_factory=datetime.now)
+    created: datetime = field(default_factory=datetime.now)
+    hint: str = ''
 
-    def __init__(self):
+    def __post_init__(self):
         self.total_time_in_game = 0  # playthrough time for this game
         self.last_save_time = datetime.now()
         self.last_load_time = datetime.now()

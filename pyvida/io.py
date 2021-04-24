@@ -41,24 +41,89 @@ def encode_for_json(o):
     if isinstance(o, (datetime,)):
         return o.isoformat()
 
+import json
+from collections.abc import Iterable
+from .motiondelta import MotionDelta
+
+def json_object(obj, depth=2):
+    from pyvida import Game
+    pad = " " * depth
+    if isinstance(obj, Game):
+        print(f"{pad}Game object found")
+        import pdb; pdb.set_trace()
+        return
+    if isinstance(obj, dict):
+        objs = obj.items()
+    elif hasattr(obj, "__dict__"):
+        objs = obj.__dict__.items()
+    elif isinstance(obj, Iterable) and not isinstance(obj, str):
+        objs = [(o, o) for o in obj]
+    else:
+        print(f"{pad}can't go lower than {type(obj)}")
+        try:
+            json.dumps(obj)
+        except:
+            name = getattr(obj, "name", getattr(obj, "__name__", type(obj)))
+            print(f"{pad} not a dataclass and also not dumps friendly {name}")
+        return
+
+    for k, v in objs:
+        #name = getattr(v, "name", getattr(v, "__name__", type(v)))
+        if hasattr(v, "to_json"):
+            try:
+                v.to_json()
+            except:
+                print(f"{pad}unable to jsonify {k} {type(v)}, going deeper")
+                if isinstance(v, MotionDelta):
+                    print(f"{pad}md keys: {v.__dict__.keys()}")
+                json_object(v, depth+1)
+        else: # try and do a final jsonify
+            json_object(v, depth + 1)
+
+
+def check_json_safe(game):
+    for k, v in game.__dict__.items():
+        if k == "game":
+            continue
+        print(f"jsonify game.{k}")
+        if hasattr(v, "to_json"):
+            try:
+                v.to_json()
+            except:
+                print(f" unable to jsonify game.{k}")
+                json_object(v)
+
 
 def save_game_json(game, fname):
-    logger.info("Saving game to %s" % fname)
+    logger.info("Save game to %s" % fname)
     # time since game created or loaded
     dt = datetime.now() - game.storage.last_load_time
     game.storage.total_time_in_game += dt.total_seconds()
     game.storage.last_save_time = game.storage.last_load_time = datetime.now()
     with open(fname, 'w') as f:
         # TODO: dump some metadata (eg date, title, etc) to a sister file
+        check_json_safe(game)
         f.write(game.to_json(indent=4))
 
 
-def save_game(*args, **kwargs):
-    logger.info("SAVE GAME DISABLED IN PYVIDA7 dev")
+def save_game(game, fname):
+    save_game_json(game, fname)
 
 
-def load_game(*args, **kwargs):
+def load_game(game, fname):
     logger.info("SAVE GAME DISABLED IN PYVIDA7 dev")
+    new_game = load_game_json(game, fname)
+
+    # keep the session-only stuff
+    new_game.window = game.window
+    new_game.mixer = game.mixer
+    for obj in new_game.items.values():
+        obj.game = game
+    for obj in new_game.actors.values():
+        obj.game = game
+    for obj in new_game.scenes.values():
+        obj.game = game
+    return new_game
 
 
 def load_game_json(game, fname, meta_only=False, keep=[], responsive=False):
@@ -74,8 +139,10 @@ def load_game_json(game, fname, meta_only=False, keep=[], responsive=False):
 
     with open(fname, "r") as f:
         data = f.read()
-        print(data)
         # x = json.loads(data, object_hook=lambda d: SimpleNamespace(**d))
+    from .game import Game
+    new_game = Game.from_json(data)
+    return new_game
 
 
 def load_menu_assets(game):

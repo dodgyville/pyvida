@@ -507,7 +507,7 @@ DEFAULT_FONT = os.path.join("data/fonts/", "vera.ttf")
 
 class MenuText(Text):
     #    def __init__(self, *args, **kwargs):
-    def __init__(self, name="Untitled Text", pos=(None, None), dimensions=(None, None), text="no text",
+    def __old_post_init__(self, name="Untitled Text", pos=(None, None), dimensions=(None, None), text="no text",
                  colour=MENU_COLOUR, size=26, wrap=2000, interact=None, spos=(None, None), hpos=(None, None), key=None,
                  font=DEFAULT_FONT, offset=2):
         sfont = "MENU_FONT" if "badaboom" in font else font
@@ -519,7 +519,7 @@ item = game.add(Text("{name}", {pos}, "{text}", size={ssize}, wrap={wrap}, inter
 item.immediate_key("{key}")
 item.set_over_colour(MENU_COLOUR_OVER)
 """.format(**locals()))
-        super().__init__(name, pos, text, colour, font, size, wrap, offset=4, interact=interact)
+        super().__post_init__()
 
         # old example game.add(MenuText(i[0], (280,80), (840,170), i[1], wrap=800, interact=i[2], spos=(x, y+dy*i[4]), hpos=(x, y+dy*i[4]+ody),key=i[3], font=MENU_FONT, size=38), False, MenuItem)
         # spos, hpos were for animation and no longer supported.

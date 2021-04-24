@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import importlib
 import time
 import traceback
@@ -7,6 +8,8 @@ from collections.abc import Iterable
 from datetime import timedelta
 from operator import itemgetter
 from random import choice
+from dataclasses_json import (DataClassJsonMixin, Undefined)
+from dataclasses_json.cfg import config
 
 # 3rd party
 from pyglet.gl import (
@@ -179,9 +182,9 @@ def user_trigger_look(game, obj):
             game.event_callback(game)
 
 
-@dataclass_json
+#@dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
-class Game(Graphics):
+class Game(SafeJSON, Graphics):
     """ Main pyvida game object """
     # the fields we want saved in the json savegame
     name: str = "Untitled Game"
@@ -232,6 +235,7 @@ class Game(Graphics):
     visited: List[str] = field(default_factory=list)  # list of scene names visited
 
     _headless: bool = False  # no user input or graphics (use underscore)
+    _modules: Dict[str, int] = field(default_factory=dict)
     speed: float = 1  # speed at which to play game
 
     # messages
@@ -253,7 +257,17 @@ class Game(Graphics):
     settings: Optional[Settings] = None
 
     window = None
-    mixer = None
+    #mixer: Optional[Mixer] = field(default=None, metadata=config(exclude=lambda x:True))
+    #game: Optional[Game] = field(default=None, metadata=config(exclude=lambda x:True))
+
+    def to_json(self, *args, **kwargs):
+        mixer = self.mixer
+        self.mixer = None
+
+        result = SafeJSON.to_json(self, *args, **kwargs)
+
+        self.mixer = mixer
+        return result
 
     def __post_init__(self):
         log.info("pyvida version %s %s %s" % (VERSION_MAJOR, VERSION_MINOR, VERSION_SAVE))
@@ -277,7 +291,8 @@ class Game(Graphics):
         self.window_dx = 0  # offset graphics on the window
         self.window_dy = 0
 
-        self.camera = Camera(self)  # the camera object
+        self.camera = Camera()  # the camera object
+        self.camera.game = self
 
         self.settings = Settings()  # game-wide settings
         # initialise sound
@@ -374,14 +389,13 @@ class Game(Graphics):
         self._edit_menu = []  # the items to draw on the second window
         self._edit_index = 0
         self._selector = False  # is the editor in selector mode?
-        self._modules = {}
         self._sys_paths = []  # file paths to dynamically loaded modules
         self._walkthrough = []
         self._walkthrough_hints = {}  # (event, hint) auto-compiled from "help" attr on walkthrough
-        self._walkthrough_index = 0  # our location in the walkthrough
-        self._walkthrough_target = 0  # our target
+        self.walkthrough_index = 0  # our location in the walkthrough
+        self.walkthrough_target = 0  # our target
         # if auto-creating a savefile for this walkthrough
-        self._walkthrough_target_name = None
+        self.walkthrough_target_name = None
         self._walkthrough_start_name = None  # fast load from a save file
         self.walkthrough_interactables = []  # all items and actors interacted on by the end of this walkthrough
         self.walkthrough_inventorables = []  # all items that were in the inventory at some point during the game
@@ -399,7 +413,7 @@ class Game(Graphics):
 
         # if set to true (via --B option), smart load will ignore quick load
         # files and rebuild them.
-        self._build = False
+        self.rebuild_quickload = False
 
         self.output_walkthrough = False
         self.trunk_step = False
@@ -580,6 +594,7 @@ class Game(Graphics):
         self.start_engine_lock()
 
         # the pyvida game scripting event loop, XXX: limited to actor fps
+        log.info("Scheduling frame update, should only do this once per game.")
         pyglet.clock.schedule_interval(self.update, 1 / self.default_actor_fps)
         self.window.on_draw = self.pyglet_draw
 
@@ -1741,10 +1756,25 @@ class Game(Graphics):
             x -= int(float(w) / 2)
         info_obj.x, info_obj.y = x, y
 
-    # game.smart
     @queue_method
     def smart(self, player=None, player_class=Actor, draw_progress_bar=None, refresh=False, only=None):
+        """ game.smart """
         self.immediate_smart(player, player_class, draw_progress_bar, refresh, only)
+
+    """
+    def immmediate_load(self, filename, keep=[]):
+        "" keep= actors/items to keep through quickload ""
+        if os.path.exists(filename):
+            load_game(self, filename, keep=keep)
+            return
+
+    def immmediate_save(self, filename):
+
+        # keep= actors/items to keep through quickload
+        if use_quick_load:  # save quick load file
+
+            self.save_game(use_quick_load)
+    """
 
     # game.smart
     def immediate_smart(self, player=None, player_class=Actor, draw_progress_bar=None, refresh=False, only=None,
@@ -1760,11 +1790,6 @@ class Game(Graphics):
             use_quick_load = use a save file if available and/or write one after loading.
             keep= actors/items to keep through quickload
         """
-        if use_quick_load:
-            if os.path.exists(use_quick_load):
-                load_game(self, use_quick_load, keep=keep)
-                return
-
         if draw_progress_bar:
             self._progress_bar_renderer = draw_progress_bar
             self._progress_bar_index = 0
@@ -1859,9 +1884,6 @@ class Game(Graphics):
         if os.path.isfile(get_safe_path("data/sfx/menu_enter.ogg")):
             self.menu_exit_filename = "data/sfx/menu_exit.ogg"
 
-        if use_quick_load:  # save quick load file
-            # use the on_save queuing method to allow all load_states to finish
-            self.save_game(use_quick_load)
 
     def check_modules(self):
         """ poll system to see if python files have changed """
@@ -1987,25 +2009,25 @@ class Game(Graphics):
                 if last_step:  # run through walkthrough to that step and do game load, then continue to second target
                     for i, x in enumerate(self._walkthrough):
                         if x[1] == last_step:
-                            self._walkthrough_index += 1
+                            self.walkthrough_index += 1
                             load_game(self, os.path.join("saves", "%s.save" % first_step))
                             first_step = last_step
                             log.info("Continuing to", first_step)
 
                 if first_step.isdigit():
                     # automatically run to <step> in walkthrough
-                    self._walkthrough_target = int(first_step)
+                    self.walkthrough_target = int(first_step)
                 else:  # use a label
                     for i, x in enumerate(self._walkthrough):
                         if x[0] == savepoint and x[1] == first_step:
                             self._walkthrough_start_name = x[1]
                             if not last_step:
-                                self._walkthrough_target = i + 1
+                                self.walkthrough_target = i + 1
                 if not last_step:
-                    self._walkthrough_target_name = self._walkthrough_start_name
+                    self.walkthrough_target_name = self._walkthrough_start_name
             if options.build:
                 log.info("fresh build")
-                self._build = True
+                self.rebuild_quickload = True
             if options.allow_editor:
                 print("enabled editor")
                 self._allow_editing = True
@@ -2123,10 +2145,10 @@ class Game(Graphics):
 
     def _process_walkthrough(self):
         """ Do a step in the walkthrough """
-        if len(self._walkthrough) == 0 or self._walkthrough_index >= len(
-                self._walkthrough) or self._walkthrough_target == 0:
+        if len(self._walkthrough) == 0 or self.walkthrough_index >= len(
+                self._walkthrough) or self.walkthrough_target == 0:
             return  # no walkthrough
-        walkthrough = self._walkthrough[self._walkthrough_index]
+        walkthrough = self._walkthrough[self.walkthrough_index]
         extras = {} if not isinstance(walkthrough[-1], dict) else walkthrough[-1]
         # extra options include:
         # "screenshot": True -- take a screenshot when screenflag flag enabled
@@ -2136,18 +2158,16 @@ class Game(Graphics):
         global benchmark_events
         t = datetime.now() - benchmark_events
         benchmark_events = datetime.now()
-        try:
-            function_name = walkthrough[0].__name__
-        except:
-            import pdb
-            pdb.set_trace()
+
+        function_name = walkthrough[0]
+
         if self.output_walkthrough is False and DEBUG_STDOUT is True:
             print("[step]", function_name, walkthrough[1:], t.seconds, "   [hint]",
                   self.storage.hint if self.storage else "(no storage)")
 
-        self._walkthrough_index += 1
+        self.walkthrough_index += 1
 
-        if self._walkthrough_index > self._walkthrough_target or self._walkthrough_index > len(self._walkthrough):
+        if self.walkthrough_index > self.walkthrough_target or self.walkthrough_index > len(self._walkthrough):
             if self.headless:
                 if self._test_inventory:
                     print("Test inventory. Walkthrough report:")
@@ -2222,9 +2242,9 @@ class Game(Graphics):
                     self.immediate_quit()
 
             log.info("FINISHED WALKTHROUGH")
-            if self._walkthrough_target_name:
+            if self.walkthrough_target_name:
                 walkthrough_target = get_safe_path(
-                    os.path.join(self.save_directory, "%s.save" % self._walkthrough_target_name))
+                    os.path.join(self.save_directory, "%s.save" % self.walkthrough_target_name))
                 save_game(
                     self, walkthrough_target)
             return
@@ -2257,7 +2277,7 @@ class Game(Graphics):
             d = self._imagereactor_directory
             if not os.path.isdir(d):
                 os.mkdir(d)
-            self.camera.immediate_screenshot(os.path.join(d, "image%0.5i.png" % self._walkthrough_index))
+            self.camera.immediate_screenshot(os.path.join(d, "image%0.5i.png" % self.walkthrough_index))
         if function_name == "savepoint":
             human_readable_name = walkthrough[1]
         elif function_name == "interact":
@@ -2281,7 +2301,7 @@ class Game(Graphics):
             obj = get_object(self, actor_name) if not obj else obj
             if not obj:
                 log.error("Unable to find %s in game" % actor_name)
-                self._walkthrough_target = 0
+                self.walkthrough_target = 0
                 self.walkthrough_auto = False
                 self.headless = False
                 return
@@ -2507,7 +2527,7 @@ class Game(Graphics):
                 self.modals) > 0) and self.get_mouse_cursor() == MOUSE_HOURGLASS:  # potentially reset the mouse
             reset_mouse_cursor(self)
 
-        if done_events == 0 and del_events == 0 and self._walkthrough_target >= self._walkthrough_index:
+        if done_events == 0 and del_events == 0 and self.walkthrough_target >= self.walkthrough_index:
             if not self._generator:  # don't process walkthrough if a generator is running (eg loading a save game)
                 self._process_walkthrough()
         return safe_to_call_again
@@ -2615,7 +2635,7 @@ class Game(Graphics):
                 pass
         #            print("\n\n\n\nENDING HANDLE EVENTS\n\n\n\n")
 
-        #        print("game update", self._headless, self._walkthrough_target>self._walkthrough_index, len(self.modals)>0, len(self.events))
+        #        print("game update", self._headless, self.walkthrough_target>self.walkthrough_index, len(self.modals)>0, len(self.events))
 
         if not self.headless:
             self.current_clock_tick = int(round(time.time() * 1000))
@@ -2627,7 +2647,7 @@ class Game(Graphics):
 
         # if waiting for user input, assume the event to trigger the modal is
         # in the walkthrough
-        if self.walkthrough_auto and self._walkthrough_target >= self._walkthrough_index and len(self.modals) > 0:
+        if self.walkthrough_auto and self.walkthrough_target >= self.walkthrough_index and len(self.modals) > 0:
             if not self._generator:  # don't process walkthrough if a generator is running (eg loading a save game)
                 self._process_walkthrough()
 
@@ -2993,7 +3013,8 @@ class Game(Graphics):
         self.immediate_load_game(fname)
 
     def immediate_load_game(self, fname):
-        load_game(self, fname)
+        new_game = load_game(self, fname)
+        self.__dict__.update(new_game.__dict__)
         if self.postload_callback:
             self.postload_callback(self)
 

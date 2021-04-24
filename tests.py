@@ -569,12 +569,12 @@ class WalkthroughTest(unittest.TestCase):
 
     def test_walkthrough(self):
 #        self._walkthrough = []
-        self._walkthrough_index = 0 #our location in the walkthrough
-        self._walkthrough_target = 0  #our target
+        self.walkthrough_index = 0 #our location in the walkthrough
+        self.walkthrough_target = 0  #our target
         self.assertEqual([x[0].__name__ for x in self.game._walkthrough], ['description', 'location', 'interact', 'interact'])
 
-        self.game._walkthrough_index = 0 #our location in the walkthrough
-        self.game._walkthrough_target = 4  #our target
+        self.game.walkthrough_index = 0 #our location in the walkthrough
+        self.game.walkthrough_target = 4  #our target
 
         self.game.update(0, single_event=True) #do the description step
         self.assertEqual(len(self.game.events), 0) #no events, so walkthrough could keep going

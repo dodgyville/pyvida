@@ -42,9 +42,9 @@ if TYPE_CHECKING:
 @dataclass_json
 @dataclass
 class Camera:  # the view manager
-    name: str
+    name: str = "Default Camera"
 
-    def __init__(self, game):
+    def __post_init__(self):
         #        self._x, self._y = game.resolution[0]/2, game.resolution[1]/2
         self.goto_x, self.goto_y = None, None
         self.goto_dx, self.goto_dy = 0, 0
@@ -66,7 +66,7 @@ class Camera:  # the view manager
         self._transition = []  # Just messing about, list of scenes to switch between for a rapid editing effect
 
         self.name = "Default Camera"
-        self.game = game
+        # self.game = game
         self.busy = 0
         self._ambient_sound = None
 

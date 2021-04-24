@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 import json
-from dataclasses_json import dataclass_json
+from dataclasses_json import DataClassJsonMixin
 from dataclasses import (
     dataclass,
     field
@@ -234,20 +234,20 @@ REMEMBER = 3  # remember where we were in the song when we last played it.
 KEEP_CURRENT = 4
 
 
-class MusicRule():
-    """ Container class for music rules, used by Mixer and Scenes """
-
-    def __init__(self, filename):
-        self.filename = filename
-        self.mode = FRESH_BUT_SHARE
-        self.remember = True  # resume playback at the point where playback was last stopped for this song
-        self.position = 0  # where in the song we are
-        self.pair = []  # songs to pair with
-
-
 @dataclass_json
 @dataclass
-class Mixer:
+class MusicRule():
+    """ Container class for music rules, used by Mixer and Scenes """
+    filename: str = ""
+    mode: int = FRESH_BUT_SHARE
+    remember: bool = True  # resume playback at the point where playback was last stopped for this song
+    position: int = 0  # where in the song we are
+    pair: List[str] = field(default_factory=list)  # songs to pair with
+
+
+# @dataclass_json
+@dataclass
+class Mixer(SafeJSON):
     name: str = "Default Mixer"
     busy: int = 0
     music_break: int = 200000  # fade the music out every x milliseconds
@@ -294,18 +294,19 @@ class Mixer:
         self._music_player = None
         self._ambient_player = None
 
-    def toJSON(self):
+    def to_json(self, *args, **kwargs):
         mixer1, sfx_mixers, mixer3 = self._music_player, self._sfx_players, self._ambient_player
         game = self.game
 
         self._music_player, self._sfx_players, self._ambient_player = None, None, None
         self.game = None
 
-        s = json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
+        result = super().to_json(*args, **kwargs)
+        # result = DataClassJsonMixin.to_json(self, *args, **kwargs)
 
         self._music_player, self._sfx_players, self._ambient_player = mixer1, sfx_mixers, mixer3
         self.game = game
-        return s
+        return result
 
     def initialise_players(self, game):
         self.game = game

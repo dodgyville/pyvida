@@ -31,6 +31,8 @@ from dataclasses import (
     dataclass,
     field,
 )
+from dataclasses_json import (DataClassJsonMixin, Undefined)
+
 from datetime import datetime, timedelta
 from math import sin
 from operator import itemgetter
@@ -174,9 +176,9 @@ def option_answer_callback(game, btn, player, *args):
             fn(game, btn, player)
 
 
-@dataclass_json
+#@dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
-class Actor(MotionManager):
+class Actor(SafeJSON, MotionManager):
     name: str = 'unknown actor'
     interact: str = None  # special queuing function for interacts
     display_text: str = None
@@ -240,7 +242,7 @@ class Actor(MotionManager):
     _shakex: float = 0.0
     _shakey: float = 0.0
     parent: str = None
-    chidren: List[str] = field(default_factory=list)  # used by reparent
+    children: List[str] = field(default_factory=list)  # used by reparent
     resource_name_override: str = None  # override actor name to use when accessing resource dict
 
     # when an actor stands at this actor's stand point, request an idle
@@ -306,15 +308,21 @@ class Actor(MotionManager):
     # engine backwards compatibility
     _engine_v1_scale: float = None
 
-    def __post_init__(self):
-        if self.interact and hasattr(self.interact, "__name__"):  # store only strings
-            self.interact = self.interact.__name__
-
+    """
+    def to_json(self, *args, **kwargs):
+        game = self.game
         self.game = None
+
+        result = super().to_json(*args, **kwargs)
+
+        self.game = game
+        return result
+    """
+
+    def __post_init__(self):
         self.editing = None  # what attribute of this Actor are we editing
         self._editing_save = True  # allow saving via the editor
         self._tk_edit = {}  # used by tk editor to update values in widgets
-
         self.set_editable()
 
     def suggest_smart_directory(self):
@@ -392,6 +400,9 @@ class Actor(MotionManager):
 
     def set_editable(self):
         """ Set which attributes are editable in the editor """
+        log.debug("turned off set_editble for jsonify")
+        self._editable = []
+        return
         self._editable = [  # (human readable, get variable names, set variable names, widget types)
             ("position", (self.get_x, self.get_y),
              (self.set_x, self.set_y), (int, int)),
@@ -1439,7 +1450,10 @@ class Actor(MotionManager):
         height = self.game.resolution[1] if not window else window.height
         width = self.game.resolution[0] if not window else window.width
 
-        y = height - y - self.ay - resource_height
+        try:
+            y = height - y - self.ay - resource_height
+        except TypeError:
+            import pdb; pdb.set_trace()
 
         # displace if the action requires it
         action = self.get_action()
@@ -1463,11 +1477,11 @@ class Actor(MotionManager):
         y += self._vy
         return x, y
 
-    def pyglet_draw_sprite(self, sprite, absolute=None, window=None):
+    def pyglet_draw_sprite(self, sprite, height, absolute=None, window=None):
         # called by pyglet_draw
         if sprite and self.allow_draw:
             glPushMatrix()
-            x, y = self.pyglet_draw_coords(absolute, window, sprite.height)
+            x, y = self.pyglet_draw_coords(absolute, window, height)
 
             # if action mode is manual (static), force the frame index to the manual frame
             action = self.get_action()
@@ -1478,10 +1492,10 @@ class Actor(MotionManager):
 
             #            if self.name == "lbrain": import pdb; pdb.set_trace()
             if self.rotate_speed:
-                glTranslatef((sprite.width / 2) + self.x, hh - self.y - sprite.height / 2,
+                glTranslatef((sprite.width / 2) + self.x, hh - self.y - height / 2,
                              0)  # move to middle of sprite
                 glRotatef(-self.rotate_speed, 0.0, 0.0, 1.0)
-                glTranslatef(-((sprite.width / 2) + self.x), -(hh - self.y - sprite.height / 2), 0)
+                glTranslatef(-((sprite.width / 2) + self.x), -(hh - self.y - height / 2), 0)
 
             if self._fx_sway != 0:
                 #                import pdb; pdb.set_trace()
@@ -1642,8 +1656,9 @@ class Actor(MotionManager):
             print(self.name, "has no game attribute")
             return
 
-        sprite = get_resource(self.resource_name)[-1]
-        self.pyglet_draw_sprite(sprite, absolute, window)
+        sprite = self.resource
+        height = self.h
+        self.pyglet_draw_sprite(sprite, height, absolute, window)
 
         if self.show_debug:
             self.debug_pyglet_draw(absolute=absolute)
@@ -1953,7 +1968,7 @@ class Actor(MotionManager):
         if ok == -1:  # use the game's default ok
             ok = self.game.default_ok
         if ok:
-            ok = self.game.add(Item(ok).smart(self.game, assets=True))
+            ok = self.game.add(Item(ok).smart(self.game, assets=True), replace=True)
             ok.load_assets(self.game)
 
         kwargs = self._get_text_details(font=font, size=size)
@@ -2002,7 +2017,7 @@ class Actor(MotionManager):
             portrait.actions[action.name] = action
             portrait.load_assets(self.game)
             portrait.immediate_do(action.name)
-            portrait = self.game.add(portrait)
+            portrait = self.game.add(portrait, replace=True)
             #            portrait_x, portrait_y = 5, 5 #top corner for portrait offset
             #           portrait_w, portrait_h = portrait.w, portrait.h
 
@@ -2022,7 +2037,6 @@ class Actor(MotionManager):
             kwargs["wrap"] = mw * 0.9
         kwargs["delay"] = delay
         kwargs["step"] = step
-        kwargs["game"] = self.game
         if "size" not in kwargs:
             kwargs["size"] = DEFAULT_TEXT_SIZE
         if self.game and self.game.settings:
@@ -2030,6 +2044,7 @@ class Actor(MotionManager):
         kwargs["display_text"] = text
         name = "_%s_text_obj" % self.name
         label = self.create_text(name, **kwargs)
+        label.game = self.game
         self.game.add(label, replace=True)
         label.load_assets(self.game)
 
@@ -2074,6 +2089,7 @@ class Actor(MotionManager):
         #        msgbox.goto_dy = -dy / df
         msgbox.busy += 1
 
+        # import pdb; pdb.set_trace()
         for obj in items:
             obj.interact = interact
             obj.creator = self.name
@@ -2502,8 +2518,8 @@ class Actor(MotionManager):
     def immediate_reparent(self, p):
         parent = get_object(self.game, p) if self.game else p
         self._set(["parent"], [parent.name if parent else p])
-        if parent and self.name not in parent.chidren:
-            parent.chidren.append(self.name)
+        if parent and self.name not in parent.children:
+            parent.children.append(self.name)
 
     @queue_method
     def severparent(self):
@@ -2515,8 +2531,8 @@ class Actor(MotionManager):
             parent = get_object(self.game, self.parent)
             self.x += parent.x
             self.y += parent.y
-            if self.name in parent.chidren:
-                parent.chidren.remove(self.name)
+            if self.name in parent.children:
+                parent.children.remove(self.name)
         self.immediate_reparent(None)
 
     @queue_method
@@ -2696,7 +2712,7 @@ class Actor(MotionManager):
             pt = get_point(self.game, destination, self)
             self.x, self.y = pt
         if self.game:  # potentially move child objects too
-            for c in self.chidren:
+            for c in self.children:
                 child = get_object(self.game, c)
                 if child and child.parent == self.name:
                     child.immediate_relocate(scene)
