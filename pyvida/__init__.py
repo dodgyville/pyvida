@@ -88,8 +88,6 @@ if DEBUG_NAMES:
 """
 GLOBALS (yuck)
 """
-_sound_resources = {}  # sound assets for the game, # PlayerPygameSFX
-
 
 """
 Testing utilities

@@ -13,6 +13,11 @@ from unittest.mock import MagicMock
 from dataclasses import dataclass
 from dataclasses_json import dataclass_json
 
+from pyvida.utils import (
+    clear_path,
+    Rect
+)
+
 from pyvida import (
     Achievement,
     AchievementManager,
@@ -1083,3 +1088,61 @@ class TestPortal:
 #            self.assertAlmostEqual(self.actor.y, 200+(i+1)*self.actor.goto_dy)
         self.assertEqual([x[0].__name__ for x in self.game.events],['on_goto', 'on_scene', 'on_pan', 'on_relocate', 'on_goto'])
 """
+
+
+class TestPathplanning:
+    def test_clear_path_clear_no_solids(self):
+        polygon = [(0, 0), (200, 0), (200, 200), (0, 200)]
+        start = (1,1)
+        end = (199, 199)
+        solids = []
+        clear = clear_path(polygon, start, end, solids)
+        assert clear is True
+
+    def test_clear_path_clear_solids(self):
+        polygon = [(0, 0), (200, 0), (200, 200), (0, 200)]
+        start = (1,1)
+        end = (199, 1)
+        solids = [Rect(10, 10, 1,1), Rect(50, 50, 1, 1)]
+        clear = clear_path(polygon, start, end, solids)
+        assert clear is True
+
+    def test_clear_path_no_clear_no_solids(self):
+        polygon = [(0, 0), (200, 0), (200, 200), (0, 200)]
+        start = (1,1)
+        end = (205, 1)
+        solids = []
+        clear = clear_path(polygon, start, end, solids)
+        assert clear is False
+
+    def test_clear_path_not_clear_solids(self):
+        polygon = [(0, 0), (200, 0), (200, 200), (0, 200)]
+        start = (1, 50)
+        end = (199, 50)
+        solids = [Rect(10, 10, 10,100), Rect(50, 50, 1, 1)]
+        clear = clear_path(polygon, start, end, solids)
+        assert clear is False
+
+    def test_clear_path_empty_polygon_solids(self):
+        polygon = []
+        start = (1, 50)
+        end = (199, 50)
+        solids = [Rect(10, 10, 10,100), Rect(50, 50, 1, 1)]
+        clear = clear_path(polygon, start, end, solids)
+        assert clear is False
+
+    def test_clear_path_empty_polygon_no_solids(self):
+        polygon = []
+        start = (1, 50)
+        end = (199, 50)
+        solids = []
+        clear = clear_path(polygon, start, end, solids)
+        assert clear is True
+
+    def test_clear_path_single_poly_point(self):
+        polygon = [(0, 0)]
+        start = (1, 50)
+        end = (199, 50)
+        solids = []
+        clear = clear_path(polygon, start, end, solids)
+        assert clear is True

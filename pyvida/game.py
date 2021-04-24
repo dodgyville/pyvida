@@ -1638,6 +1638,7 @@ class Game(Graphics):
 
     def immediate_menu_from_factory(self, menu, items):
         """ Create a menu from a factory """
+        log.debug(f"Immediate menu from factory {menu}: {items}")
         if menu not in self.menu_factories:
             log.error("Unable to find menu factory '{0}'".format(menu))
             return []
@@ -1660,6 +1661,8 @@ class Game(Graphics):
                 (fx + dx, y),
             ]
         for i, item in enumerate(items):
+            #if item[0] == "menu_new_game":
+            #    import pdb; pdb.set_trace()
             if item[0] in self.items.keys():
                 obj = get_object(self.game, item[0])
                 obj.interact = item[1]
@@ -1799,9 +1802,12 @@ class Game(Graphics):
                 continue  # skip directory if non-existent
             for name in os.listdir(safe_dir):
                 if only and name not in only:
+                    log.info(f"game.smart load is skipping {name} because it is not in the 'only' request")
                     continue  # only load specific objects
                 #                if draw_progress_bar:
                 #                    update_progress_bar(self.game, self)
+                elif only:
+                    log.info(f"game.smart load is especially loading {name} because it is in the 'only' request")
 
                 if logging:
                     log.debug("game.smart loading %s %s" %
@@ -1818,6 +1824,7 @@ class Game(Graphics):
                             "game.smart skipping %s, already an item with this name!" % name)
                 else:
                     if not refresh:  # create a new object
+                        log.info(f"Creating object {name}")
                         # create the player object
                         if type(player) == str and player == name:
                             a = player_class(name)
@@ -1826,6 +1833,7 @@ class Game(Graphics):
                             a = obj_cls(name)
                         self.immediate_add(a, replace=True)
                     else:  # if just refreshing, then use the existing object
+                        log.info(f"Refreshing object {name}")
                         a = self.actors.get(
                             name, self.items.get(name, self.scenes.get(name, None)))
                         if not a:

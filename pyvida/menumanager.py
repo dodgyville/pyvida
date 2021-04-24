@@ -21,9 +21,13 @@ if TYPE_CHECKING:
     from .game import Game
 
 
+_sound_resources = {}  # sound assets for the game, # PlayerPygameSFX
+
+
 @dataclass_json
 @dataclass
 class MenuManager:
+    """ Manager for menu objects """
     name: str = "Default Menu Manager"
     busy: int = 0
 

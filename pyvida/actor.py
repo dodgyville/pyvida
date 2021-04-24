@@ -1207,11 +1207,16 @@ class Actor(MotionManager):
             self.immediate_set_pathplanning_actions(action_names)
 
     @queue_method
-    def set_pathplanning_actions(self, action_names, speeds=[]):
+    def set_pathplanning_actions(self, action_names, speeds=None):
+        """ set_pathplanning_actions """
+        if speeds is None:
+            speeds = []
         self.immediate_set_pathplanning_actions(action_names, speeds)
 
-    def immediate_set_pathplanning_actions(self, action_names, speeds=[]):
-        # smart actions for pathplanning and which arcs they cover (in degrees)
+    def immediate_set_pathplanning_actions(self, action_names, speeds=None):
+        """ smart actions for pathplanning and which arcs they cover (in degrees) """
+        if speeds is None:
+            speeds = []
         pathplanning = {}
         if len(action_names) == 1:
             # print("WARNING: %s ONLY ONE ACTION %s USED FOR PATHPLANNING"%(self.name, action_names[0]))
@@ -1630,6 +1635,7 @@ class Actor(MotionManager):
             glPopMatrix();
 
     def pyglet_draw(self, absolute=False, force=False, window=None):  # actor.draw
+        """ pyglet_draw """
         if self.game and self.game.headless and not force:
             return
         if not self.game:
@@ -1676,16 +1682,20 @@ class Actor(MotionManager):
 
     @queue_method
     def remove_fog(self):
+        """ remove_fog """
         self.immediate_remove_fog()
 
     def immediate_remove_fog(self):
-        self._fog_display_text = None
+        """ immediate_remove_fog """
+        self._fog_display_text = ""
 
     @queue_method
     def refresh_assets(self, game):
+        """ refresh_assets """
         self.immediate_refresh_assets(game)
 
     def immediate_refresh_assets(self, game):
+        """ immediate_refresh_assets """
         self.unload_assets()
         self.load_assets(game)
 
@@ -1705,7 +1715,7 @@ class Actor(MotionManager):
             log.info("%s has finished on_animation_end_once, so decrement %s.busy to %i." % (
                 self.name, self.name, self.busy))
         self.immediate_do(self._next_action)
-        self._next_action = None
+        self._next_action = ""
 
     #    def self.immediate_animation_end_once_block(self):
     #        """ Identical to end animation once, except also remove block on game. """
@@ -1720,10 +1730,12 @@ class Actor(MotionManager):
 
     @queue_method
     def frame(self, index):
+        """ frame """
         self.immediate_frame(index)
 
     @queue_method
     def frames(self, num_frames):
+        """ frames """
         self.immediate_frames(num_frames)
 
     def immediate_frames(self, num_frames):
@@ -1738,11 +1750,13 @@ class Actor(MotionManager):
         self.immediate_random_frame()
 
     def immediate_random_frame(self):
+        """ immediate_random_frame """
         i = randint(0, len(self.resource._animation.frames))
         self.immediate_frame(i)
 
     @queue_method
     def asks(self, statement, *args, **kwargs):
+        """ asks """
         self.immediate_asks(statement, *args, **kwargs)
 
     def immediate_asks(self, statement, *args, **kwargs):
@@ -1768,6 +1782,8 @@ class Actor(MotionManager):
             tuples containing a text option to display and a function to call if the player selects this option.
 
         """
+        from .text import Text  # XXX probably circular, want to remove this import
+
         if logging:
             log.info("%s has started on_asks." % (self.name))
         name = self.display_text if self.display_text is not None else self.name
@@ -1845,6 +1861,7 @@ class Actor(MotionManager):
             self.game.modals.append(opt.name)
 
     def _continues(self, text, delay=0.01, step=3, size=13, duration=None):
+        """  _continues """
         kwargs = self._get_text_details()
 
         from .text import Text  # XXX probably circular, want to remove this import
@@ -2146,23 +2163,14 @@ class Actor(MotionManager):
                 log.error(f"Unable to remove {item.name} from missing scene {item.scene}")
         return item
 
-    @queue_method
-    def gets(self, item, remove=True, ok=-1, action="portrait", collection="collection", scale=1.0):
-        self.immediate_gets(item, remove, ok, action, collection, scale)
 
     def immediate_gets(self, item, remove=True, ok=-1, action="portrait", collection="collection", scale=1.0):
-
         """ add item to inventory, remove from scene if remove == True """
         item = self.add_item_to_inventory_and_collection(item, remove, collection, scale)
+
         if item is None:
-            return
-        # with open('inventory.txt', 'a') as f:
-        #    f.write('    "%s": _(""),\n'%item.name)
+            return None
 
-        #      name = self.display_text if self.display_text else self.name
-        #       item_name = item.display_text if item.display_text else item.name
-
-        #        name = item.display_text if item.display_text else item.name
         name = item.fog_display_text(None)
         self_name = self.fog_display_text(None)
 
@@ -2171,6 +2179,18 @@ class Actor(MotionManager):
                 print("%s adds %s to inventory." % (self_name, name))
             if self.game.walkthrough_auto and item.name not in self.game.walkthrough_inventorables:
                 self.game.walkthrough_inventorables.append(item.name)
+
+
+    @queue_method
+    def gets(self, item, remove=True, ok=-1, action="portrait", collection="collection", scale=1.0):
+        """ get item and display message """
+        item = self.immediate_gets(item, remove, ok, action, collection, scale)
+
+        if item is None:
+            return
+
+        name = item.fog_display_text(None)
+        self_name = self.fog_display_text(None)
 
         if self.game and self.name == self.game.player:
             text = _("%s added to your inventory!") % name
@@ -2714,51 +2734,6 @@ class Actor(MotionManager):
         self.goto_x, self.goto_y = None, None
         self.goto_dx, self.goto_dy = 0, 0
 
-    def dist_between(self, current, neighbour):
-        a = current[0] - neighbour[0]
-        b = current[1] - neighbour[1]
-        return math.sqrt(a ** 2 + b ** 2)
-
-    def clear_path(self, polygon, start, end, solids):
-        """ Is there a clear path between these two points """
-        clear_path = True
-        if polygon:  # test the walkarea
-            w0 = w1 = polygon[0]
-            for w2 in polygon[1:]:
-                if line_seg_intersect(end, start, w1, w2):
-                    clear_path = False
-                    return clear_path
-                w1 = w2
-            if line_seg_intersect(end, start, w2, w0):
-                clear_path = False
-        for rect in solids:  # test the solids
-            collide = rect.intersect(start, end)
-            if collide is True:
-                clear_path = False
-        return clear_path
-
-    def neighbour_nodes(self, polygon, nodes, current, solids):
-        """ only return nodes:
-        1. are not the current node
-        2. that nearly vertical of horizontal to current
-        3. that are inside the walkarea polygon
-        4. that none of the paths intersect a solid area.
-        5. that the vector made up of current and new node doesn't intersect walkarea
-        """
-        # run around the walkarea and test each segment
-        # if the line between source and target intersects with any segment of
-        # the walkarea, then disallow, since we want to stay inside the walkarea
-        return_nodes = []
-        max_nodes = 40  # only look at X nodes maximum
-        for node in nodes:
-            max_nodes -= 1
-            if max_nodes == 0: continue
-            if node.point != current.point:  # and (node[0] == current[0] or node[1] == current[1]):
-                append_node = self.clear_path(polygon, current.point, node.point, solids)
-                if append_node == True and node not in return_nodes: return_nodes.append(node)
-        #        print("so neighbour nodes for",current.x, current.y,"are",[(pt.x, pt.y) for pt in return_nodes])
-        return return_nodes
-
     def aStar(self, walkarea, nodes, start, destination, solids, ignore=False):
         # courtesy http://stackoverflow.com/questions/4159331/python-speed-up-an-a-star-pathfinding-algorithm
 
@@ -2793,7 +2768,7 @@ class Actor(MotionManager):
         #        print()
         for key in nodes:
             # add nodes that the key node can access to the key node's map.
-            graph[key] = self.neighbour_nodes(walkarea_polygon, nodes, key, solids)
+            graph[key] = neighbour_nodes(walkarea_polygon, nodes, key, solids)
             # graph[key] = [node for node in nodes if node != n] #nodes link to visible nodes
 
         #        print("So our node graph is",graph)

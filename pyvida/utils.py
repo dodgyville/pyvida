@@ -1210,3 +1210,53 @@ def fonts_smart(game, _pyglet_fonts):
                 if filename in _pyglet_fonts:
                     log.warning("OVERRIDING font %s with %s (%s)" % (filename, f, name))
                 _pyglet_fonts[filename] = name
+
+
+## path planning
+
+def dist_between(current, neighbour):
+    a = current[0] - neighbour[0]
+    b = current[1] - neighbour[1]
+    return math.sqrt(a ** 2 + b ** 2)
+
+
+def clear_path(polygon, start, end, solids):
+    """ Is there a clear path between these two points """
+    clear_path_exists = True
+    if polygon:  # test the walkarea
+        w2 = w0 = w1 = polygon[0]
+        for w2 in polygon[1:]:
+            if line_seg_intersect(end, start, w1, w2):
+                clear_path_exists = False
+                return clear_path_exists
+            w1 = w2
+        if line_seg_intersect(end, start, w2, w0):
+            clear_path_exists = False
+    for rect in solids:  # test the solids
+        collide = rect.intersect(start, end)
+        if collide is True:
+            clear_path_exists = False
+    return clear_path_exists
+
+
+def neighbour_nodes(polygon, nodes, current, solids):
+    """ only return nodes:
+    1. are not the current node
+    2. that are nearly vertical of horizontal to current
+    3. that are inside the walkarea polygon
+    4. that none of the paths intersect a solid area.
+    5. that the vector made up of current and new node doesn't intersect walkarea
+    """
+    # run around the walkarea and test each segment
+    # if the line between source and target intersects with any segment of
+    # the walkarea, then disallow, since we want to stay inside the walkarea
+    return_nodes = []
+    max_nodes = 40  # only look at X nodes maximum
+    for node in nodes:
+        max_nodes -= 1
+        if max_nodes == 0: continue
+        if node.point != current.point:  # and (node[0] == current[0] or node[1] == current[1]):
+            append_node = clear_path(polygon, current.point, node.point, solids)
+            if append_node is True and node not in return_nodes: return_nodes.append(node)
+    #        print("so neighbour nodes for",current.x, current.y,"are",[(pt.x, pt.y) for pt in return_nodes])
+    return return_nodes
