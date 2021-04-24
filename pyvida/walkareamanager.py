@@ -47,7 +47,7 @@ class WalkAreaManager:
         self._polygon_y = []
         self._fill_colour = None
 
-        self._editing = False
+        self.editing = False
         self._edit_polygon_index = -1
         self._edit_waypoint_index = -1
 
@@ -246,7 +246,7 @@ class WalkAreaManager:
 
     @queue_method
     def toggle_editor(self):
-        self._editing = not self._editing
+        self.editing = not self.editing
 
     @queue_method
     def reset_to_default(self):

@@ -224,8 +224,8 @@ class Actor(MotionManager):
     opacity_delta: float = 0.0
     opacity_target_block: bool = False  # is opacity change blocking other events
 
-    _flip_vertical: bool = False
-    _flip_horizontal: bool = False
+    flip_vertical: bool = False
+    flip_horizontal: bool = False
 
     _sx: float = 0.0
     _sy: float = 0.0  # stand point
@@ -249,7 +249,7 @@ class Actor(MotionManager):
     _over: str = "over"  # the default over action for this actor when in menu
 
     _scale: float = 1.0
-    _rotate: float = 0.0
+    rotate_speed: float = 0.0
     _mirrored: bool = False  # has actor been mirrored by on_mirror?
     _pyglet_animation_callback: str = None  # when an animation ends, this function will be called
 
@@ -311,7 +311,7 @@ class Actor(MotionManager):
             self.interact = self.interact.__name__
 
         self.game = None
-        self._editing = None  # what attribute of this Actor are we editing
+        self.editing = None  # what attribute of this Actor are we editing
         self._editing_save = True  # allow saving via the editor
         self._tk_edit = {}  # used by tk editor to update values in widgets
 
@@ -630,7 +630,7 @@ class Actor(MotionManager):
         pass
 
     def get_rotate(self):
-        return self._rotate
+        return self.rotate_speed
 
     def set_rotate(self, v):
         #        if self.resource:
@@ -638,7 +638,7 @@ class Actor(MotionManager):
         #        if self._clickable_area: self._clickable_area.scale = v
         #        if self._clickable_mask:
         #            self._clickable_mask.rotation = v
-        self._rotate = v
+        self.rotate_speed = v
 
     rotate = property(get_rotate, set_rotate)
 
@@ -1472,10 +1472,10 @@ class Actor(MotionManager):
             ww, hh = self.game.resolution
 
             #            if self.name == "lbrain": import pdb; pdb.set_trace()
-            if self._rotate:
+            if self.rotate_speed:
                 glTranslatef((sprite.width / 2) + self.x, hh - self.y - sprite.height / 2,
                              0)  # move to middle of sprite
-                glRotatef(-self._rotate, 0.0, 0.0, 1.0)
+                glRotatef(-self.rotate_speed, 0.0, 0.0, 1.0)
                 glTranslatef(-((sprite.width / 2) + self.x), -(hh - self.y - sprite.height / 2), 0)
 
             if self._fx_sway != 0:
@@ -1493,12 +1493,12 @@ class Actor(MotionManager):
             pyglet.gl.glTranslatef(self._scroll_dx, 0.0, 0.0)
             #            sprite.position = (int(x), int(y))
             original_scale = self.scale
-            if self._flip_horizontal:
+            if self.flip_horizontal:
                 glScalef(-1.0, 1.0, 1.0)
                 x = -x
                 x -= sprite.width
 
-            if self._flip_vertical:
+            if self.flip_vertical:
                 glScalef(1.0, -1.0, 1.0)
                 y = -y
                 y -= sprite.height
@@ -1574,7 +1574,7 @@ class Actor(MotionManager):
                     angle_c = math.acos((a ** 2 + b ** 2 - c ** 2) / (2 * a * b))
                     angle_a = math.acos((b ** 2 + c ** 2 - a ** 2) / (2 * b * c))
                     angle_b = math.acos((c ** 2 + a ** 2 - b ** 2) / (2 * c * a))
-                    # self.game.get_scene().walkarea._editing = True
+                    # self.game.get_scene().walkarea.editing = True
                     if angle_a < math.pi / 2 and angle_b < math.pi / 2:  # player is "between" the two weigh points, so scale
                         total_distance = a + b
                         a_scale = nearest[-1]
@@ -1623,9 +1623,9 @@ class Actor(MotionManager):
                     if not self._batch:
                         sprite.draw()
             #            pyglet.gl.glTranslatef(-self._scroll_dx, 0.0, 0.0)
-            #            if self._rotate:
+            #            if self.rotate_speed:
             #                glTranslatef((sprite.width/2)+self.x, hh-self.y-sprite.height/2, 0)
-            #                glRotatef(self._rotate, 0.0, 0.0, 1.0)
+            #                glRotatef(self.rotate_speed, 0.0, 0.0, 1.0)
             #                glTranslatef(-((sprite.width/2)+self.x), -(hh-self.y-sprite.height/2 ), 0)
             glPopMatrix();
 
@@ -2526,11 +2526,11 @@ class Actor(MotionManager):
 
     def immediate_flip(self, horizontal=None, vertical=None, anchor=True):
         """ Flip actor image """
-        if vertical != None: self._flip_vertical = vertical
+        if vertical != None: self.flip_vertical = vertical
         if horizontal != None:
-            if horizontal != self._flip_horizontal and anchor:  # flip anchor point too
+            if horizontal != self.flip_horizontal and anchor:  # flip anchor point too
                 self.ax = -self.ax
-            self._flip_horizontal = horizontal
+            self.flip_horizontal = horizontal
 
     def turn(self):
         """ Helper function for animating characters (similar to sway) """

@@ -1,58 +1,21 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
-from dataclasses_json import dataclass_json
-from dataclasses import (
-    dataclass,
-    field
-)
-import copy
-import gc
-import gettext as igettext
-import glob
-import imghdr
 import importlib
-import itertools
-import json
-import math
-import pickle
-import queue
-import struct
-import subprocess
-import sys
 import time
 import traceback
 from argparse import ArgumentParser
-from collections import deque
 from collections.abc import Iterable
-from dataclasses import (
-    dataclass,
-    field,
-)
-from datetime import datetime, timedelta
-from math import sin
+from datetime import timedelta
 from operator import itemgetter
-from operator import sub
-import os
-from os.path import expanduser
-from pathlib import Path
-from random import choice, randint, uniform
-from typing import (
-    Dict,
-    List,
-    Optional,
-    Tuple
-)
+from random import choice
 
 # 3rd party
 from pyglet.gl import (
-    glMultMatrixf,
     glPopMatrix,
     glPushMatrix,
     glRotatef,
     glScalef,
     glTranslatef,
 )
-from pyglet.gl.gl import c_float
 import pyglet.window.mouse
 
 
@@ -81,19 +44,10 @@ from .sprite import (
     _resources
 )
 
+from .graphics import Graphics, Window
 from .actor import Actor, Item
 from .scene import Scene
 from .utils import _
-
-
-class Window(pyglet.window.Window):
-    def __init__(self, *args, **kwargs):
-        super(Window, self).__init__(*args, **kwargs)
-
-    @queue_method
-    def draw(self):
-        #        print("WINDOW DRAW")
-        self.clear()
 
 
 def gamestats(game):
@@ -227,7 +181,8 @@ def user_trigger_look(game, obj):
 
 @dataclass_json
 @dataclass
-class Game:
+class Game(Graphics):
+    """ Main pyvida game object """
     # the fields we want saved in the json savegame
     name: str = "Untitled Game"
     version: str = "v1.0"
@@ -297,6 +252,9 @@ class Game:
     camera: Optional[Camera] = None
     settings: Optional[Settings] = None
 
+    window = None
+    mixer = None
+
     def __post_init__(self):
         log.info("pyvida version %s %s %s" % (VERSION_MAJOR, VERSION_MINOR, VERSION_SAVE))
         self.debug_collection = False
@@ -315,9 +273,9 @@ class Game:
 
         # this session's graphical settings, probably overwritten by settings and user values
         self.autoscale = DEFAULT_AUTOSCALE
-        self._window = None
-        self._window_dx = 0  # offset graphics on the window
-        self._window_dy = 0
+        self.window = None
+        self.window_dx = 0  # offset graphics on the window
+        self.window_dy = 0
 
         self.camera = Camera(self)  # the camera object
 
@@ -374,10 +332,8 @@ class Game:
         self.resizable = False
         self.nuke = False  # nuke platform dependent files such as game.settings
 
-        #        self._window.immediate_joybutton_release = self.immediate_joybutton_release
+        #        self.window.immediate_joybutton_release = self.immediate_joybutton_release
         self.last_mouse_release = None  # track for double clicks
-        self._pyglet_batches = []
-        self._gui_batch = pyglet.graphics.Batch()
 
         # event handling
         # If true, don't process any new events until the existing ones are no
@@ -450,16 +406,15 @@ class Game:
         self._create_from_walkthrough = False
         # engine will try and continue after encountering exception
         self._catch_exceptions = True
-        #        self._pyglet_gui_batch = pyglet.graphics.Batch()
 
         self._allow_editing = ENABLE_EDITOR
-        self._editing = None
+        self.editing = None
         self._editing_point_set = None  # the set fns to pump in new x,y coords
         self._editing_point_get = None  # the get fns to pump in new x,y coords
         self._editing_label = None  # what is the name of var(s) we're editing
 
-        self._window_editor = None
-        self._window_editor_objects = []
+        self.window_editor = None
+        self.window_editor_objects = []
         self._screen_size_override = None  # game.resolution for the game, this is the window size.
         self._preferred_screen_override = None  # which monitor to use
 
@@ -482,10 +437,10 @@ class Game:
         self.mouse_mode = MOUSE_INTERACT
         self._mouse_cursor = None
         # which image to use
-        self._joystick = None  # pyglet joystick
+        self.joystick = None  # pyglet joystick
         self._map_joystick = 0  # if 1 then map buttons instead of triggering them in on_joystick_button
         self._object_index = 0  # used by joystick and blind mode to select scene objects
-        self._mouse_object = None  # if using an Item or Actor as mouse image
+        self.mouse_object = None  # if using an Item or Actor as mouse image
         self._mouse_rect = None  # restrict mouse to area on screen
         self.hide_cursor = HIDE_MOUSE
         self.mouse_cursor_lock = False  # lock mouse to this shape until released
@@ -530,9 +485,9 @@ class Game:
         # we do this using a glScalef call which makes it invisible to the engine
         # except that mouse inputs will also need to be scaled, so store the
         # new scale factor
-        self._bars = []  # black bars in fullscreen, (pyglet image, location)
-        self._window_dx = 0  # displacement by fullscreen mode
-        self._window_dy = 0
+        self.bars = []  # black bars in fullscreen, (pyglet image, location)
+        self.window_dx = 0  # displacement by fullscreen mode
+        self.window_dy = 0
 
         if "lowmemory" in CONFIG and CONFIG["lowmemory"]:  # use override from game.conf
             self.low_memory = CONFIG["lowmemory"]
@@ -585,19 +540,19 @@ class Game:
                 nw, nh = int(nw), int(nh)
                 self._screen_size_override = (nw, nh)
                 log.info(f"Override resolution so setting _screen_size_override to {self._screen_size_override}")
-        self.reset_window(fullscreen, create=True)  # create self._window
+        self.reset_window(fullscreen, create=True)  # create self.window
 
-        self._window.on_key_press = self.on_key_press
-        self._window.on_mouse_motion = self.on_mouse_motion
-        self._window.on_mouse_press = self.on_mouse_press
-        self._window.on_mouse_release = self.on_mouse_release
-        self._window.on_mouse_drag = self.on_mouse_drag
-        self._window.on_mouse_scroll = self.on_mouse_scroll
+        self.window.on_key_press = self.on_key_press
+        self.window.on_mouse_motion = self.on_mouse_motion
+        self.window.on_mouse_press = self.on_mouse_press
+        self.window.on_mouse_release = self.on_mouse_release
+        self.window.on_mouse_drag = self.on_mouse_drag
+        self.window.on_mouse_scroll = self.on_mouse_scroll
 
         # setup high contrast mode
         # XXX this image is missing from pyvida, and is not resolution independent.
         contrast_item = Item("_contrast").smart(self, image="data/interface/contrast.png")
-        self._contrast = contrast_item
+        self.contrast = contrast_item
         contrast_item.load_assets(self)
 
         # setup on screen messages
@@ -614,7 +569,7 @@ class Game:
 
         # sadly this approach of directly blitting _contrast ignores transparency
         #        sheet = pyglet.image.SolidColorImagePattern(color=(255,255,255,200))
-        #        self._contrast = sheet.create_image(*self.game.resolution)
+        #        self.contrast = sheet.create_image(*self.game.resolution)
 
         # other non-window stuff
         self._mouse_cursor = MOUSE_POINTER
@@ -626,7 +581,7 @@ class Game:
 
         # the pyvida game scripting event loop, XXX: limited to actor fps
         pyglet.clock.schedule_interval(self.update, 1 / self.default_actor_fps)
-        self._window.on_draw = self.pyglet_draw
+        self.window.on_draw = self.pyglet_draw
 
     def start_engine_lock(self, fps=None):
         # Force game to draw at least at a certain fps (default is 30 fps)
@@ -644,7 +599,7 @@ class Game:
 
     def close(self):
         """ Close this window """
-        self._window.close()  # will free up pyglet memory
+        self.window.close()  # will free up pyglet memory
 
     def _loaded_resources(self):
         """ List of keys that have loaded resources """
@@ -804,32 +759,8 @@ class Game:
     def h(self):
         return self.resolution[1]
 
-    @property
-    def window_w(self):
-        return self._window.get_size()[0]
-
-    @property
-    def window_h(self):
-        return self._window.get_size()[1]
-
-    def pyglet_set_mouse_cursor(self, cursor):
-        if cursor not in self.mouse_cursors:
-            log.error(
-                "Unable to set mouse to %s, no cursor available" % cursor)
-            return
-        image = self.mouse_cursors[cursor]
-        if not image:
-            log.error("Unable to find mouse cursor for mouse mode %s" % cursor)
-            return
-        #        if self._joystick:
-        #            self._window.set_mouse_cursor(None)
-        #            return
-        cursor = pyglet.window.ImageMouseCursor(
-            image, image.width / 2, image.height / 2)
-        self._window.set_mouse_cursor(cursor)
-
     def immediate_request_mouse_cursor(self, cursor):
-        # don't show hourglass on a player's goto event
+        """ don't show hourglass on a player's goto event """
         interruptable_event = True
         player_goto_event = False
         if len(self.events) > 0:
@@ -880,7 +811,7 @@ class Game:
         return data
 
     def set_engine(self, data):
-        """ Restory information used internally by the engine that needs to be saved. """
+        """ Restore information used internally by the engine that needs to be saved. """
         for key, v in data.items():
             setattr(self, key, v)
 
@@ -892,12 +823,8 @@ class Game:
 
     @property
     def time_in_game(self):
+        """ How long has player spent in this game (specific game, not all time in this program) """
         return self.storage.total_time_in_game + (datetime.now() - self.storage.last_load_time)
-
-    @queue_method
-    def test_arrive_at_generated_scene(self, key):
-        arrive_at_generated_scene = get_function(self, "arrive_at_generated_scene")
-        arrive_at_generated_scene(self, key)
 
     def interact_with_scene(self, scene_x, scene_y, alt_button):
         """
@@ -913,7 +840,7 @@ class Game:
                 scene_objects.insert(0, player.name)  # prioritise player over other items
         for obj_name in scene_objects:
             obj = get_object(self, obj_name)
-            if self.mouse_mode == MOUSE_USE and self._mouse_object == obj: continue  # can't use item on self
+            if self.mouse_mode == MOUSE_USE and self.mouse_object == obj: continue  # can't use item on self
             allow_player_use = (self.player and player == obj_name) and (
                     ALLOW_USE_ON_PLAYER or self._allow_one_player_interaction)
             allow_use = (obj.allow_draw and (
@@ -940,9 +867,9 @@ class Game:
                 else:
                     # allow use if object allows use, or in special case where engine allows use on the player actor
                     allow_final_use = (obj.allow_use) or allow_player_use
-                    if self.mouse_mode == MOUSE_USE and self._mouse_object and allow_final_use:
-                        user_trigger_use(self, obj, self._mouse_object)
-                        self._mouse_object = None
+                    if self.mouse_mode == MOUSE_USE and self.mouse_object and allow_final_use:
+                        user_trigger_use(self, obj, self.mouse_object)
+                        self.mouse_object = None
                         self.mouse_mode = MOUSE_INTERACT
                         return True
                     elif obj.allow_interact:
@@ -956,16 +883,16 @@ class Game:
         global use_effect
         game = self
         player = self.player
-        if game.editor and game._editing:
+        if game.editor and game.editing:
             """ editor, editing a point, allow arrow keys """
             if symbol == pyglet.window.key.UP:
-                game._editing.y -= 1
+                game.editing.y -= 1
             if symbol == pyglet.window.key.DOWN:
-                game._editing.y += 1
+                game.editing.y += 1
             if symbol == pyglet.window.key.LEFT:
-                game._editing.x -= 1
+                game.editing.x -= 1
             if symbol == pyglet.window.key.RIGHT:
-                game._editing.x += 1
+                game.editing.x += 1
 
                 # process engine keys before game keys
 
@@ -977,7 +904,7 @@ class Game:
 
         allow_editor = CONFIG["editor"] or self._allow_editing
         if not allow_editor:
-            if symbol == pyglet.window.key.F7 and self._joystick:
+            if symbol == pyglet.window.key.F7 and self.joystick:
                 self._map_joystick = 1
         else:
             if symbol == pyglet.window.key.F1:
@@ -1012,7 +939,7 @@ class Game:
                         if allow_use and not fn and not isinstance(obj, Portal):
                             print("def %s(game, %s, %s):" % (fn_name, slug2, slug1))
 
-            if symbol == pyglet.window.key.F7 and self._joystick:
+            if symbol == pyglet.window.key.F7 and self.joystick:
                 self._map_joystick = 1  # start remap sequence
                 print("remap joystick buttons")
 
@@ -1098,18 +1025,18 @@ class Game:
         """
         x = raw_x / self._scale 
 #        x = raw_x
-        x = x - self._window_dx
+        x = x - self.window_dx
 
         y = raw_y / self._scale 
         #y = raw_y
-        y = y - self._window_dy
+        y = y - self.window_dy
 
         # flip based on window height
-        window_x, window_y = x, self._window.height - y
+        window_x, window_y = x, self.window.height - y
         """
 
-        window_x = (raw_x - self._window_dx) / self._scale
-        window_y = (self._window.height - raw_y) / self._scale
+        window_x = (raw_x - self.window_dx) / self._scale
+        window_y = (self.window.height - raw_y) / self._scale
 
         if self._mouse_rect:  # restrict mouse
             if window_x < self._mouse_rect.x:
@@ -1132,8 +1059,8 @@ class Game:
     def get_raw_from_point(self, x, y):
         """ Take a point from the in-engine coords and convert to raw mouse """
         ox, oy = x, y  # shift for fullscreen
-        ox += self._window_dx  # *self._scale
-        oy += self._window_dy  # *self._scale
+        ox += self.window_dx  # *self._scale
+        oy += self.window_dy  # *self._scale
 
         # if window is being scaled
         ox, oy = ox * self._scale, oy * self._scale
@@ -1310,9 +1237,9 @@ class Game:
         if self.headless: return
 
         # if editing walkarea, set the index to the nearest point
-        if self._editing:
-            if isinstance(self._editing, WalkAreaManager):
-                self._editing.edit_nearest_point(x, y)
+        if self.editing:
+            if isinstance(self.editing, WalkAreaManager):
+                self.editing.edit_nearest_point(x, y)
             return
 
         if self.get_scene():
@@ -1352,7 +1279,7 @@ class Game:
     def on_joybutton_release(self, joystick, button):
         if self._generator:
             return
-        if not self._joystick:
+        if not self.joystick:
             return
         modifiers = 0
         x, y = self.mouse_position_raw
@@ -1368,10 +1295,10 @@ class Game:
             self.immediate_mouse_release(x, y, pyglet.window.mouse.LEFT, modifiers)
         elif button == self.settings.joystick_look:
             self.immediate_mouse_release(x, y, pyglet.window.mouse.RIGHT, modifiers)
-        # print(self._joystick.__dict__)
+        # print(self.joystick.__dict__)
         # print(button, self.settings.joystick_interact, self.settings.joystick_look)
 
-    #        self._joystick.button[
+    #        self.joystick.button[
 
     def on_mouse_release(self, raw_x, raw_y, button, modifiers):
         """ Call the correct function depending on what the mouse has clicked on """
@@ -1418,7 +1345,7 @@ class Game:
                     self._selector = False  # turn off selector
                     return
 
-        if self._editing and self._editing_point_set:
+        if self.editing and self._editing_point_set:
             return
 
         if self.drag:
@@ -1426,8 +1353,8 @@ class Game:
             self.drag = None
 
         # if in use mode and player right-clicks, then cancel use mode
-        if button & pyglet.window.mouse.RIGHT and self.mouse_mode == MOUSE_USE and self._mouse_object:
-            self._mouse_object = None
+        if button & pyglet.window.mouse.RIGHT and self.mouse_mode == MOUSE_USE and self.mouse_object:
+            self.mouse_object = None
             self.mouse_mode = MOUSE_INTERACT
             return
 
@@ -1523,7 +1450,7 @@ class Game:
             obj.y -= dy
 
         # we are editing something so send through the new x,y in pyvida format
-        if self._editing and self._editing_point_set:
+        if self.editing and self._editing_point_set:
             # x,y = x, self.resolution[1] - y #invert for pyglet to pyvida
             if hasattr(self._editing_point_get, "__len__") and len(self._editing_point_get) == 2:
                 x, y = self._editing_point_get[0](), \
@@ -1532,26 +1459,26 @@ class Game:
                 y -= dy
                 self._editing_point_set[0](x)
                 self._editing_point_set[1](y)
-                if hasattr(self._editing, "_tk_edit") and self._editing_label in self._editing._tk_edit:
+                if hasattr(self.editing, "_tk_edit") and self._editing_label in self.editing._tk_edit:
                     try:
-                        self._editing._tk_edit[
+                        self.editing._tk_edit[
                             self._editing_label][0].delete(0, 100)
-                        self._editing._tk_edit[self._editing_label][0].insert(0, x)
+                        self.editing._tk_edit[self._editing_label][0].insert(0, x)
 
-                        self._editing._tk_edit[
+                        self.editing._tk_edit[
                             self._editing_label][1].delete(0, 100)
-                        self._editing._tk_edit[self._editing_label][1].insert(0, y)
+                        self.editing._tk_edit[self._editing_label][1].insert(0, y)
                     except RuntimeError:
                         print("thread clash")
                         pass
-            #                if self._editing_point_set[0] == self._editing.set_x: #set x, so use raw
+            #                if self._editing_point_set[0] == self.editing.set_x: #set x, so use raw
             #                else: #displace the point by the object's x,y so the point is relative to the obj
-            #                    self._editing_point_set[0](x - self._editing.x)
-            #                    self._editing_point_set[1](y - self._editing.y)
+            #                    self._editing_point_set[0](x - self.editing.x)
+            #                    self._editing_point_set[1](y - self.editing.y)
             elif type(self._editing_point_set) == str:  # editing a Rect
                 # calculate are we editing the x,y or the w,h
                 closest_distance = 10000.0
-                r = getattr(self._editing, self._editing_point_get, None)
+                r = getattr(self.editing, self._editing_point_get, None)
                 editing_index = None
                 y = self.h - y  # XXX this may need to use self.screen_h
                 # possible select new point
@@ -1562,7 +1489,7 @@ class Game:
                         closest_distance = dist
                 if editing_index == None:
                     return
-                r2 = getattr(self._editing, self._editing_point_set, None)
+                r2 = getattr(self.editing, self._editing_point_set, None)
                 if editing_index == 0:
                     r2.x += dx
                     r2.y -= dy
@@ -1570,8 +1497,8 @@ class Game:
                     r2._w += dx
                     r2._h -= dy
                 if self._editing_point_set == "_clickable_area":
-                    self._editing._clickable_mask = None  # clear mask
-                setattr(self._editing, self._editing_point_set, r2)
+                    self.editing._clickable_mask = None  # clear mask
+                setattr(self.editing, self._editing_point_set, r2)
 
             else:  # editing a point
                 self._editing_point_set(x)
@@ -1579,10 +1506,10 @@ class Game:
     @queue_method
     def resize(self, width, height):
         print("Resize window to ", width, " ", height)
-        # self._window.set_size(width, height)
+        # self.window.set_size(width, height)
         self._screen_size_override = (width, height)
         self.reset_window(self.fullscreen)
-        pyglet.window.Window.immediate_resize(self._window, width, height)
+        pyglet.window.Window.immediate_resize(self.window, width, height)
 
     def add_arguments(self):
         """ Add allowable commandline arguments """
@@ -2103,10 +2030,10 @@ class Game:
         if self.settings and not self.settings.disable_joystick:
             joysticks = pyglet.input.get_joysticks()
             if joysticks:
-                self._joystick = joysticks[0]
-                self._joystick.open()
-                self._joystick.push_handlers(self)
-                self._window.set_mouse_visible(False)
+                self.joystick = joysticks[0]
+                self.joystick.open()
+                self.joystick.push_handlers(self)
+                self.window.set_mouse_visible(False)
         #        if options.target_random_steps: # randomly do some options before
         #            self.target_random_steps = options.target_random_steps
         #            self.target_random_steps_counter = options.target_random_steps
@@ -2401,7 +2328,7 @@ class Game:
             if self.trunk_step and self.output_walkthrough:
                 print("Use %s on %s." % (obj_name, subject_name))
             user_trigger_use(self, subject, obj)
-            self._mouse_object = None
+            self.mouse_object = None
             self.mouse_mode = MOUSE_INTERACT
             self._remember_interactable(subject_name)
 
@@ -2466,9 +2393,9 @@ class Game:
         """ Handle game events """
         safe_to_call_again = False  # is it safe to call _handle_events immediately after this?
         # log.info("There are %s events, game.waiting is %s, index is %s and current event is %s",len(self.events), self.waiting, self.event_index, self.event)
-        if self.resizable and self._window.immediate_resize != self.immediate_resize:  # now allow our override
+        if self.resizable and self.window.immediate_resize != self.immediate_resize:  # now allow our override
             print("enable resizeable")
-            self._window.immediate_resize = self.immediate_resize  # now allow our override
+            self.window.immediate_resize = self.immediate_resize  # now allow our override
 
         if self.waiting_for_user:  # don't do anything until user clicks
             return safe_to_call_again
@@ -2602,11 +2529,11 @@ class Game:
             if self._generator_progress:
                 self._generator_progress(self)
 
-        if self._joystick:
-            # print(self._joystick.__dict__)
-            x = self.mouse_position_raw[0] + self._joystick.x * 40
-            y = self.mouse_position_raw[1] - self._joystick.y * 40
-            # print(x,y, self._joystick.x,  self.mouse_position_raw)
+        if self.joystick:
+            # print(self.joystick.__dict__)
+            x = self.mouse_position_raw[0] + self.joystick.x * 40
+            y = self.mouse_position_raw[1] - self.joystick.y * 40
+            # print(x,y, self.joystick.x,  self.mouse_position_raw)
 
             # stop joystick going off screen.
             if y < 0: y = 0
@@ -2696,241 +2623,15 @@ class Game:
             if not self._generator:  # don't process walkthrough if a generator is running (eg loading a save game)
                 self._process_walkthrough()
 
-    def pyglet_draw(self):  # game.draw
-        """ Draw the scene """
-        #        dt = pyglet.clock.tick()
-        scene = self.get_scene()
-        if scene and scene._colour:
-            c = scene._colour
-            c = c if len(c) == 4 else (c[0], c[1], c[2], 255)
-            pyglet.gl.glClearColor(*c)
-        self._window.clear()
-
-        if not scene:
-            return
-        if self.headless or self.walkthrough_auto:
-            return
-        #        print("GAME DRAW")
-
-        # undo alpha for pyglet drawing
-        #       glPushMatrix() #start the scene draw
-        popMatrix = False
-        apply_transform = scene._rotate or len(
-            scene.applied_motions) > 0 or scene._flip_vertical or scene._flip_horizontal
-        if apply_transform:
-            # rotate scene before we add menu and modals
-            # translate scene to middle
-            popMatrix = True
-            glPushMatrix();
-            ww, hh = self.resolution
-            glTranslatef(ww / 2, hh / 2, 0)
-            if scene._rotate:
-                glRotatef(-scene._rotate, 0.0, 0.0, 1.0)
-            # apply motions
-            remove_motions = []
-            for motion in scene.applied_motions:
-                if motion.apply_to_scene(scene) is False:  # motion has finished
-                    remove_motions.append(motion)
-            for motion in remove_motions:
-                scene.applied_motions.remove(motion)
-
-            if scene._flip_vertical is True:
-                glScalef(1, -1, 1)
-
-            if scene._flip_horizontal is True:
-                glScalef(-1, 1, 1)
-
-            glTranslatef(-ww / 2, -hh / 2, 0)
-
-        pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0)
-        # draw scene backgroundsgrounds (layers with z equal or less than 1.0)
-        background_obj = None
-        for item in scene.layers:
-            background_obj = get_object(self, item)
-            background_obj.game = self
-            if background_obj.z <= 1.0:
-                background_obj.pyglet_draw(absolute=False)
-            else:
-                break
-
-        if scene and self.settings and self.settings.high_contrast:
-            # get the composited background
-            #            old_surface = pyglet.image.get_buffer_manager().get_color_buffer().get_image_data()
-
-            # dim the entire background only if scene allows.
-            if getattr(scene, "_ignore_highcontrast", False) is False and self._contrast:
-                self._contrast.pyglet_draw(absolute=True)
-
-                # now brighten areas of interest that have no sprite
-                for obj_name in scene.objects:
-                    obj = get_object(self, obj_name)
-                    if obj:
-                        # draw a high contrast rectangle over the clickable area if a portal or obj has no image
-                        if not obj.resource or isinstance(obj, Portal):
-                            r = obj._clickable_area  # .inflate(10,10)
-                            if r.w == 0 or r.h == 0: continue  # empty obj or tiny
-                            if background_obj and background_obj.resource and background_obj.resource.image:
-                                pic = background_obj.resource.image.frames[
-                                    0].image  # XXX only uses one background layer
-                                x, y, w, h = int(obj.x + obj.ay + r.x), int(r.y), int(r.w), int(r.h)
-                                resY = self.resolution[1]
-                                y = int(resY - obj.y - obj.ay - r.y - r.h)
-                                x, y = max(0, x), max(0, y)
-                                subimage = pic.get_region(x, y, w, h)
-                                subimage.blit(x, y, 0)
-
-        if scene.walkarea:
-            if scene.walkarea._editing:
-                scene.walkarea.debug_pyglet_draw()
-            elif scene.walkarea._fill_colour is not None:
-                scene.walkarea.pyglet_draw()
-
-        scene_objects = []
-        if scene:
-            for obj_name in scene.objects:
-                obj = get_object(self, obj_name)
-                if obj:
-                    scene_objects.append(obj)
-        # - x.parent.y if x.parent else 0
-        try:
-            objects = sorted(scene_objects, key=lambda x: x.rank, reverse=False)
-            objects = sorted(objects, key=lambda x: x.z, reverse=False)
-        except AttributeError:
-            import pdb;
-            pdb.set_trace()
-        portals = []
-        for item in objects:
-            item.pyglet_draw(absolute=False)
-            if isinstance(item, Portal):
-                portals.append(item)
-
-        #        for batch in self._pyglet_batches: #if Actor._batch is set, it will be drawn here.
-        #            batch.draw()
-
-        # draw scene foregrounds (layers with z greater than 1.0)
-        for item in scene.layers:
-            obj = get_object(self, item)
-            if obj.z > 1.0:
-                obj.pyglet_draw(absolute=False)
-
-        if self.settings and self.settings.show_portals:
-            for item in portals:
-                if item._icon:
-                    i = "portal_active" if item.allow_interact or item.allow_look else "portal_inactive"
-                    item._icon.immediate_do(i)
-                    action = item._icon.get_action()
-                    if not action._loaded:
-                        item._icon.load_assets(self)
-                    item._icon.x, item._icon.y = item.clickable_area.centre
-                    item._icon.pyglet_draw()
-
-        if popMatrix is True:
-            glPopMatrix()  # finish the scene draw
-
-        for item_name in self.menu_items:
-            item = get_object(self, item_name)
-            item.game = self
-            item.pyglet_draw(absolute=True)
-
-        for name in self.modals:
-            modal = get_object(self, name)
-            if not modal:
-                log.error(f"game.update unable to find modal {name} in game.objects")
-                continue
-            modal.game = self
-            modal.pyglet_draw(absolute=True)
-
-        self._gui_batch.draw()
-
-        if self.message_object and len(self.messages) > 0:  # update message_object.
-            for message in self.messages:
-                m, t = message
-                if t < datetime.now() - timedelta(seconds=self.message_duration):
-                    self.messages.remove(message)  # remove out-of-date messages
-            txt = "\n".join([n[0] for n in self.messages]) if len(self.messages) > 0 else " "
-            message_obj = get_object(self, self.message_object)
-            if not message_obj:
-                log.error(f"Unable to find message object {self.message_object} in game objects")
-            else:
-                message_obj.display_text = txt
-                # place object
-                mx, my = self.message_position
-                mx = self.resolution[0] // 2 - self.message_object.w // 2 if mx == CENTER else mx
-                my = self.resolution[1] * 0.98 if my == BOTTOM else my
-                message_obj.x, message_obj.y = mx, my
-                message_obj.y -= message_obj.h * len(self.messages)
-
-                message_obj.pyglet_draw(absolute=True)
-            # self.message_object._update(dt)
-
-        # and hasattr(self._mouse_object, "pyglet_draw"):
-        if self._mouse_object:
-            self._mouse_object.x, self._mouse_object.y = self.mouse_position
-            #            self._mouse_object.x -= self._mouse_object._ax #cancel out anchor
-            #            self._mouse_object.y -= self._mouse_object._ay #cancel out anchor
-            #            self._mouse_object.x -= self._mouse_object.w//2
-            #            self._mouse_object.y -= self._mouse_object.h//2
-            self._mouse_object.pyglet_draw()
-
-        info_obj = get_object(self, self.info_object)
-        if info_obj and info_obj.display_text != "":
-            info_obj.pyglet_draw(absolute=False)
-
-        if self.editor:  # draw mouse coords at mouse pos
-            x, y = self.mouse_position
-            #            y = self.game.resolution[1] - y
-            coords(self, "mouse", x, y, invert=False)
-            if scene.walkarea._editing is True:
-                scene.walkarea.debug_pyglet_draw()
-
-        if self.game.camera.overlay:
-            self.game.camera.overlay.draw()
-
-        # draw black bars if required
-        for bar in self._bars:
-            image, location = bar
-            if image:
-                image.blit(*location)
-
-        if self._joystick:  # draw cursor for joystick
-            x, y = self.mouse_position
-            if (x, y) != (0, 0):
-                value = MOUSE_CURSORS_DICT[self.get_mouse_cursor()]
-                cursor_pwd = get_safe_path(os.path.join(self.directory_interface, value))
-                # TODO: move this outside the draw loop
-                cursor = Item("_joystick_cursor").smart(self.game, image=cursor_pwd)
-                cursor.load_assets(self.game)
-                cursor.x, cursor.y = x - cursor.w / 2, y - cursor.h / 2
-                cursor.scale = 1.0
-
-                cursor.pyglet_draw(absolute=True)
-            # image.blit(x-image.width,self.resolution[1]-y+image.height)
-
-        #        self.fps_clock.draw()
-        #        pyglet.graphics.draw(1, pyglet.gl.GL_POINTS,
-        #            ('v2i', (int(self.mouse_down[0]), int(self.resolution[1] - self.mouse_down[1])))
-        #        )
-
-        if self.directory_screencast:  # save to directory
-            now = round(time.time() * 100)  # max 100 fps
-            d = os.path.join(self.directory_screencast, "%s.png" % now)
-            pyglet.image.get_buffer_manager().get_color_buffer().save(d)
-
-    def pyglet_editor_draw(self):  # pyglet editor draw in own window
-        self._window_editor.clear()
-        for i in self._window_editor_objects:
-            obj = get_object(self, i)
-            obj.pyglet_draw(absolute=False, window=self._window_editor)
-
     def combined_update(self, dt):
         """ do the update and the draw in one """
         self.update(dt)
         self.pyglet_draw()
-        if self._window_editor:
+        if self.window_editor:
             self.pyglet_editor_draw()
-            self._window_editor.flip()
-        #   self._window.dispatch_event('on_draw')
-        self._window.flip()
+            self.window_editor.flip()
+        #   self.window.dispatch_event('on_draw')
+        self.window.flip()
 
     def immediate_remove(self, objects):  # game.remove
         """ Removes objects from the game's storage (it may still exist in other lists, etc) """
@@ -3428,7 +3129,7 @@ class Game:
             scale (float): scale graphics
         """
         sw, sh = w, h
-        window_w, window_h = self._window.get_size()  # actual size of window
+        window_w, window_h = self.window.get_size()  # actual size of window
 
         # take the game graphics and scale them up
         gw, gh = self.resolution  # game size
@@ -3436,8 +3137,8 @@ class Game:
         gh *= scale
 
         # offset the game graphics so they are centered on the window
-        self._window_dx = dx = (window_w - gw) / 2
-        self._window_dy = dy = (window_h - gh) / 2
+        self.window_dx = dx = (window_w - gw) / 2
+        self.window_dy = dy = (window_h - gh) / 2
 
         # reset scale
         if self.old_scale:
@@ -3542,7 +3243,7 @@ class Game:
                 log.info(
                     f"Because of _screen_size_override {self._screen_size_override}, ignoring width,height {width}x{height}")
             log.info(f"Creating window {sw}x{sh}")
-            self._window = Window(width=sw, height=sh, fullscreen=fullscreen, screen=self.screen,
+            self.window = Window(width=sw, height=sh, fullscreen=fullscreen, screen=self.screen,
                                   resizable=self.resizable)
             # import pdb; pdb.set_trace()
         self._scale = scale
@@ -3552,9 +3253,9 @@ class Game:
         """
         if fullscreen: # work out blackbars if needed
         else: # move back
-            self._bars = []
-            glTranslatef(-self._window_dx,-self._window_dy, 0) #move back to corner of window
-            self._window_dx, self._window_dy = 0, 0
+            self.bars = []
+            glTranslatef(-self.window_dx,-self.window_dy, 0) #move back to corner of window
+            self.window_dx, self.window_dy = 0, 0
         """
 
     @queue_method
@@ -3566,14 +3267,14 @@ class Game:
         #        glPopMatrix();
         #        glPushMatrix();
         if fullscreen is None:
-            fullscreen = not self._window.fullscreen
+            fullscreen = not self.window.fullscreen
         if self.settings:
             self.settings.fullscreen = fullscreen
             # XXX do we need to save settings here? Or should we even be doing this here?
             if self.settings.filename:
                 save_settings(self, self.settings.filename)
         if execute:
-            self._window.set_fullscreen(fullscreen)
+            self.window.set_fullscreen(fullscreen)
             self.reset_window(fullscreen)
 
     @queue_method

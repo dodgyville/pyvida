@@ -951,6 +951,9 @@ def get_function(game, basic, obj=None, warn_on_empty=True):
         basic_name = basic
 
     if obj:
+        if basic == "anlloyd_use_coconut_soup":
+            print("Hello0")
+
         fn = getattr(obj, basic_name, None)
         if fn and hasattr(fn, "__name__"):
             return fn
@@ -959,10 +962,17 @@ def get_function(game, basic, obj=None, warn_on_empty=True):
     # which module to search for functions, search main, then user defined, then pyvida last
     #module = "main" if android else "__main__"  # Android no longer supported :(
     module = "__main__"
-    extra_modules = game._modules if __name__ == "pyvida" and game else {}
+    extra_modules = game._modules if __name__ in ["pyvida", "pyvida.utils"] and game else {}
     modules = [module]
     modules.extend(extra_modules.keys())
-    modules.append("pyvida")
+    modules.extend([
+        "pyvida", "pyvida.emitter", "pyvida.portal", "pyvida.achievements", "pyvida.action", "pyvida.actor",
+        "pyvida.camera", "pyvida.constants", "pyvida.factory", "pyvida.game", "pyvida.graphics", "pyvida.io",
+        "pyvida.menufactory", "pyvida.menumanager", "pyvida.motion", "pyvida.motiondelta", "pyvida.motionmanager",
+        "pyvida.runner", "pyvida.scene", "pyvida.settings", "pyvida.sound", "pyvida.sprite", "pyvida.text",
+        "pyvida.utils", "pyvida.walkareamanager"
+    ])
+    # search each game module for the script
     for m in modules:
         if m not in sys.modules:
             continue

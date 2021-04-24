@@ -32,6 +32,7 @@ from .motionmanager import MotionManager
 if TYPE_CHECKING:
     from .game import Game
 
+
 def terminate_by_frame(_game, emitter, particle):
     """ If particle has lived longer than the emitter's frames then terminate """
     return particle.index >= emitter.frames
@@ -193,7 +194,7 @@ class Emitter(Item):
         p.action_index += 1
 
         test_terminate = get_function(self.game, self.test_terminate, self)
-        # import pdb; pdb.set_trace()
+
         if test_terminate(self.game, self, p):  # reset if needed
             #            print("RESET PARTICLE", self.frames, p.index)
             self.reset_particle(p)

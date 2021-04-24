@@ -40,7 +40,7 @@ class Portal(Actor):
     _oy: float = 0.0
     _allow_look: bool = False  # look and use are disabled by default for Portals
     _allow_use: bool = False  # look and use are disabled by default for Portals
-    _icon: any = None
+    icon: any = None
 
     def generate_icons(self):
         # create portal icon for settings.show_portals
@@ -48,8 +48,8 @@ class Portal(Actor):
         image1 = get_safe_path(os.path.join(DIRECTORY_INTERFACE, "portal_active.png"))
         image2 = get_safe_path(os.path.join(DIRECTORY_INTERFACE, "portal_inactive.png"))
         if os.path.isfile(image1) and os.path.isfile(image2):
-            self._icon = Item("%s_active" % self.name).smart(self.game, image=[image1, image2])
-            self.game.add(self._icon)
+            self.icon = Item("%s_active" % self.name).smart(self.game, image=[image1, image2])
+            self.game.add(self.icon)
 
     def smart(self, *args, **kwargs):  # portal.smart
         super().smart(*args, **kwargs)

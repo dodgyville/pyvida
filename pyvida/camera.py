@@ -90,7 +90,7 @@ class Camera:  # the view manager
                 self._motion_index_index += 1
 
             if scene.spin_speed != 0:  # rotate the scene
-                scene._rotate += scene.spin_speed
+                scene.rotate_speed += scene.spin_speed
 
         if self.goto_x is not None:
             speed = self._speed

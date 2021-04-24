@@ -266,11 +266,11 @@ class TestFullscreen:
         # Fit game to requested window size
         game = Game()
         game.resolution = game_resolution  # the native size of the game graphics
-        game._window = MagicMock()
-        game._window.get_size.return_value = screen_size
+        game.window = MagicMock()
+        game.window.get_size.return_value = screen_size
         game.create_bars_and_scale(screen_size[0], screen_size[0], scaling_factor)
-        assert game._window_dx == expected_displacement[0]  # displacement by fullscreen mode
-        assert game._window_dy == expected_displacement[1]  # displacement by fullscreen mode
+        assert game.window_dx == expected_displacement[0]  # displacement by fullscreen mode
+        assert game.window_dy == expected_displacement[1]  # displacement by fullscreen mode
 
 
 class TestGame:
@@ -356,8 +356,8 @@ class TestGame:
         game = Game()
         game.autoscale = False
         game.resolution = res
-        game._window = MagicMock()
-        game._window.get_size.return_value = res
+        game.window = MagicMock()
+        game.window.get_size.return_value = res
 
         game.reset_window(fullscreen=False, create=False)
 

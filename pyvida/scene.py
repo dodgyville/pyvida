@@ -47,10 +47,10 @@ class Scene(MotionManager):
         self._x, self._y = 0.0, 0.0
         self._w, self._h = 0, 0
         self.scale = 1.0  # TODO not implemented yet
-        self._rotate = 0
+        self.rotate_speed = 0
         self.spin_speed = 0
-        self._flip_vertical = False
-        self._flip_horizontal = False
+        self.flip_vertical = False
+        self.flip_horizontal = False
 
         self.auto_pan = True  # pan the camera based on player location
 
@@ -62,8 +62,8 @@ class Scene(MotionManager):
         #        self.scale_horizon_value = 1.0 #deactivated
 
         self.walkarea = WalkAreaManager(self.name)
-        self._colour = None  # clear colour (0-255, 0-255, 0-255)
-        self._ignore_highcontrast = False  # if True, then game._contrast will not be blitted on this scene.
+        self.colour = None  # clear colour (0-255, 0-255, 0-255)
+        self._ignore_highcontrast = False  # if True, then game.contrast will not be blitted on this scene.
 
         # self.walkareas = OldWalkAreaManager(self, game)  # pyvida4 compatability
 
@@ -491,7 +491,7 @@ class Scene(MotionManager):
     @queue_method
     def rotate(self, d=0):
         """ Rotate the scene around the window midpoint"""
-        self._rotate = d
+        self.rotate_speed = d
 
     @queue_method
     def spin(self, d=0):
@@ -501,9 +501,9 @@ class Scene(MotionManager):
     @queue_method
     def flip(self, horizontal=None, vertical=None):
         if vertical is not None:
-            self._flip_vertical = vertical
+            self.flip_vertical = vertical
         if horizontal is not None:
-            self._flip_horizontal = horizontal
+            self.flip_horizontal = horizontal
 
     @queue_method
     def music(self, filename):

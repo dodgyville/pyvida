@@ -223,16 +223,16 @@ if EDITOR_AVAILABLE:
 
             def change_scene(*args, **kwargs):
                 sname = args[0]
-                if self.game._editing and self.game._editing.show_debug:
-                    self.game._editing.show_debug = False
+                if self.game.editing and self.game.editing.show_debug:
+                    self.game.editing.show_debug = False
                 new_scene = get_object(self.game, sname)
                 self.app.objects = objects = new_scene.objects
                 self.game.camera.immediate_scene(new_scene)
                 # new_scene.load_assets(self.game)
                 self.index = 0
                 if len(objects) > 0:
-                    self.game._editing = get_object(self.game, objects[self.index])
-                    self.game._editing.show_debug = True
+                    self.game.editing = get_object(self.game, objects[self.index])
+                    self.game.editing.show_debug = True
                 self.game.get_player().relocate(new_scene)
 
             def refresh(selector):
@@ -352,7 +352,7 @@ if EDITOR_AVAILABLE:
             row += 1
 
             def edit_camera():
-                self.game._editing = self.game.scene
+                self.game.editing = self.game.scene
                 self.game._editing_point_set = (
                     self.game.get_scene().set_x, self.game.get_scene().set_y)
                 self.game._editing_point_get = (
@@ -383,10 +383,10 @@ if EDITOR_AVAILABLE:
             def close_editor(*args, **kwargs):
                 if self.obj:
                     self.obj.show_debug = False
-                if self.game._editing:
-                    obj = get_object(self.game, self.game._editing)
+                if self.game.editing:
+                    obj = get_object(self.game, self.game.editing)
                     obj.show_debug = False
-                    self.game._editing = None  # switch off editor
+                    self.game.editing = None  # switch off editor
                 self.game.editor = None
                 self.app.destroy()
 
@@ -459,8 +459,8 @@ if EDITOR_AVAILABLE:
 
             def _edit_walkarea(scene):
                 scene.walkarea.immediate_toggle_editor()
-                if scene.walkarea._editing:
-                    self.game._editing = scene.walkarea
+                if scene.walkarea.editing:
+                    self.game.editing = scene.walkarea
                     self.game._editing_point_set = (
                         scene.walkarea.set_pt_x, scene.walkarea.set_pt_y)
                     self.game._editing_point_get = (
@@ -563,8 +563,8 @@ if EDITOR_AVAILABLE:
                 self.app, text=obj.name, padx=5, pady=5)
             group.grid(padx=10, pady=10)
 
-            self._editing = tk.StringVar(self.app)
-            self._editing.set("Nothing")
+            self.editing = tk.StringVar(self.app)
+            self.editing.set("Nothing")
 
             self._editing_bool = {}
 
@@ -574,9 +574,9 @@ if EDITOR_AVAILABLE:
             def selected():
                 for editable in self.obj._editable:
                     # this is what we want to edit now.
-                    if self._editing.get() == editable[0]:
+                    if self.editing.get() == editable[0]:
                         label, get_attrs, set_attrs, types = editable
-                        self.game._editing = self.obj
+                        self.game.editing = self.obj
                         self.game._editing_point_set = set_attrs
                         self.game._editing_point_get = get_attrs
                         self.game._editing_label = label
@@ -609,14 +609,14 @@ if EDITOR_AVAILABLE:
             #            editing = self._editing_bool.get()[:-2]
             #            val = True if self._editing_bool.get()[-1:] == "t" else False
             #            print("Set %s to %s"%(editing, val))
-            #                    self.game._editing = self.obj
+            #                    self.game.editing = self.obj
             #                    self.game._editing_point_set = set_attrs
             #                    self.game._editing_point_get = get_attrs
 
             for i, editable in enumerate(obj._editable):
                 label, get_attrs, set_attrs, types = editable
                 btn = tk.Radiobutton(
-                    frame, text=label, variable=self._editing, value=label, indicatoron=0, command=selected)
+                    frame, text=label, variable=self.editing, value=label, indicatoron=0, command=selected)
                 btn.grid(row=row, column=0)
                 if type(types) == tuple:  # assume two ints
                     e1 = tk.Entry(frame)

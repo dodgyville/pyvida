@@ -18,61 +18,26 @@ _________   _...._                  .----.     .----..--.\  ___ `'.
 GPL3
 """
 
-import copy
-import gc
-import gettext as igettext
-import glob
-import imghdr
-import importlib
-import itertools
-import json
-import math
-import pickle
 import queue
-import struct
-import subprocess
-import sys
-import time
-import traceback
-from argparse import ArgumentParser
-from collections import deque
-from collections.abc import Iterable
-from dataclasses import (
-    dataclass,
-    field,
-)
-from datetime import datetime, timedelta
-from math import sin
-from operator import itemgetter
-from operator import sub
-import os
-from os.path import expanduser
-from pathlib import Path
-from random import choice, randint, uniform
-from typing import (
-    Dict,
-    List,
-    Optional,
-    Tuple
-)
-
-# 3rd party modules
-import euclid3 as eu
-import pyglet
-import pyglet.clock
-from PIL import Image
-from babel.numbers import format_decimal
-from dataclasses_json import dataclass_json
-from fontTools.ttLib import TTFont
 
 from .achievements import AchievementManager, Achievement
 from .action import Action
-from .actor import Actor, Item
+from .actor import (
+    Actor,
+    Item,
+    answer,
+    close_on_says
+)
 from .camera import Camera
 from .constants import *
 from .editor import *
 from .factory import Factory
-from .game import Game
+from .game import (
+    Game,
+    user_trigger_interact,
+    user_trigger_look,
+    user_trigger_use
+)
 from .io import *
 from .menufactory import MenuFactory
 from .menumanager import MenuManager
@@ -231,16 +196,16 @@ def get_best_directory(game, d_raw_name):
 #    return filehandle.read()
 
 
-def update_progress_bar(game, obj):
+def update_progress_bar(game: Game, obj):
     """ During smart loads the game may wish to have an onscreen progress bar,
     here it gets called """
     if game._progress_bar_renderer:
-        game._window.set_mouse_visible(False)
-        game._window.dispatch_events()
-        game._window.dispatch_event('on_draw')
+        game.window.set_mouse_visible(False)
+        game.window.dispatch_events()
+        game.window.dispatch_event('on_draw')
         game._progress_bar_renderer(game)
-        game._window.flip()
-        game._window.set_mouse_visible(True)
+        game.window.flip()
+        game.window.set_mouse_visible(True)
 
 
 """
