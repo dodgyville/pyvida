@@ -2216,6 +2216,9 @@ class Actor(SafeJSON, MotionManager):
         """ get item and display message """
         item = self.immediate_gets(item, remove, ok, action, collection, scale)
 
+        # TODO: pyvida7. I have a feat that the queue_methods are not executed, they are simply event queue wrappers.
+        # Ideally It should hit this set_trace
+        import pdb; pdb.set_trace()
         if item is None:
             return
 

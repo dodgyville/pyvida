@@ -368,11 +368,17 @@ class Emitter(Item):
 
     @queue_method
     def add_particles(self, num, speed_spawn_min=None, speed_spawn_max=None):
+        self.immediate_add_particles(num, speed_spawn_min, speed_spawn_max)
+
+    def immediate_add_particles(self, num, speed_spawn_min=None, speed_spawn_max=None):
         self._add_particles(num=num)
 
     @queue_method
     def limit_particles(self, num):
         """ restrict the number of particles to num through attrition """
+        self.immediate_limit_particles(num)
+
+    def immediate_limit_particles(self, num):
         for p in self.particles[num:]:
             p.terminate = True
 
