@@ -17,6 +17,9 @@ from pyvida.utils import (
     clear_path,
     Rect
 )
+from pyvida.settings import (
+    Storage
+)
 
 from pyvida import (
     Achievement,
@@ -1168,3 +1171,34 @@ class TestMixer:
         result = a.to_json()
         assert '"game": ' not in result
         assert '"interact": "hello_world"' in result
+
+
+class TestStorage:
+    def test_json(self):
+        g = Storage()
+        g.custom["to_be_kept"] = 5
+        g.to_be_dumped = 6
+        result = g.to_json()
+        assert "to_be_kept" in result
+        assert 'to_be_dumped' not in result
+
+    def test_from_json(self):
+        storage = '{"total_time_in_game": 0, "last_save_time": 1619312629.903894, "last_load_time": 1619312629.903896, "created": 1619312629.903896, "hint": "", "to_be_kept": 5}'
+        g = Storage()
+        result = g.from_json(storage)
+        assert "to_be_kept" in result.custom
+
+    def test_json_complex(self):
+        g = Storage()
+        g.custom["to_be_kept"] = {"arcade": [1,2,3,4, {"fire": "reflektor"}]}
+        g.to_be_dumped = 6
+        result = g.to_json()
+        assert "to_be_kept" in result
+        assert 'to_be_dumped' not in result
+
+    def test_from_json_complex(self):
+        storage = '{"total_time_in_game": 0, "last_save_time": 1619313127.571058, "last_load_time": 1619313127.57106, "created": 1619313127.57106, "hint": "", "to_be_kept": {"arcade": [1, 2, 3, 4, {"fire": "reflektor"}]}}'
+        g = Storage()
+        result = g.from_json(storage)
+        assert "to_be_kept" in result.custom
+        assert result.custom["to_be_kept"] == {"arcade": [1,2,3,4, {"fire": "reflektor"}]}

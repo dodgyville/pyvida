@@ -346,6 +346,10 @@ class Actor(SafeJSON, MotionManager):
         for action in self.actions.values():
             action.load_assets(game, skip_if_loaded=skip_if_loaded)
 
+        # if scripts aren't loaded, load
+        if self.module_name and self.module_name not in sys.modules:
+            self.load_scripts()
+
         return self.switch_asset(self.action)
 
     def switch_asset(self, action, **kwargs):
@@ -1256,7 +1260,18 @@ class Actor(SafeJSON, MotionManager):
             if len(action_names) == len(speeds):
                 action.speed = speeds[i]
 
-    def _load_scripts(self):
+    @property
+    def module_name(self):
+        """ Where in sys.modules this actor's scripts live """
+        module_name = None
+        if self._directory and self.name:
+            slug = slugify(self.name).lower()
+            raw_path = os.path.join(self._directory, "%s.py" % slug)
+            filepath = get_safe_path(raw_path)
+            module_name = os.path.splitext(os.path.basename(filepath))[0]
+        return module_name
+
+    def load_scripts(self):
         # potentially load some interact/use/look scripts for this actor but
         # only if editor is enabled (it interferes with game pickling)
         if self.game:  # and self.game._allow_editing:
@@ -1264,17 +1279,16 @@ class Actor(SafeJSON, MotionManager):
                 self._directory, "%s.py" % slugify(self.name).lower()))
             if os.path.isfile(filepath):
                 # add file directory to path so that import can find it
-                if os.path.dirname(filepath) not in self.game._sys_paths:
-                    self.game._sys_paths.append(
+                if os.path.dirname(filepath) not in self.game.sys_module_paths:
+                    self.game.sys_module_paths.append(
                         get_relative_path(os.path.dirname(filepath), self.game.working_directory))
                 if os.path.dirname(filepath) not in sys.path:
                     sys.path.append(os.path.dirname(filepath))
                 # add to the list of modules we are tracking
-                module_name = os.path.splitext(os.path.basename(filepath))[0]
-                self.game._modules[module_name] = 0
-                __import__(module_name)  # load now
+                self.game.script_modules[self.module_name] = 0
+                __import__(self.module_name)  # load now
                 # reload now to refresh existing references
-                self.game.reload_modules(modules=[module_name])
+                # self.game.reload_modules(modules=[module_name])
 
     @queue_method
     def swap_actions(self, actions, prefix=None, postfix=None, speeds=None, pathplanning=None):
@@ -1428,7 +1442,7 @@ class Actor(SafeJSON, MotionManager):
                 pass
             self.game = game #restore game object
         """
-        self._load_scripts()  # start watching the module for this actor
+        self.load_scripts()  # start watching the module for this actor
         return self
 
     def pyglet_draw_coords(self, absolute, window, resource_height):

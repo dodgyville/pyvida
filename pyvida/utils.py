@@ -406,9 +406,10 @@ def use_on_events(name, bases, dic):
 
 def queue_method(f):
     def new_f(calling_obj, *args, **kwargs):
+        if not calling_obj.game:
+            log.error(f"{calling_obj} has no game object")
+            import pdb;pdb.set_trace()
         calling_obj.game.queue_event(f, calling_obj, *args, **kwargs)
-        # f(caller, *args, **kwargs)
-
     return new_f
 
 # graphics handling
@@ -946,7 +947,7 @@ def get_object(game, obj_name, case_insensitive=False):
 def get_function(game, basic, obj=None, warn_on_empty=True):
     """
         Search memory for a function that matches this name
-        Also search any modules in game._modules (eg used when cProfile has
+        Also search any modules in game.script_modules (eg used when cProfile has
         taken control of __main__ )
         If obj provided then also search that object
     """
@@ -968,7 +969,7 @@ def get_function(game, basic, obj=None, warn_on_empty=True):
     # which module to search for functions, search main, then user defined, then pyvida last
     #module = "main" if android else "__main__"  # Android no longer supported :(
     module = "__main__"
-    extra_modules = game._modules if __name__ in ["pyvida", "pyvida.utils"] and game else {}
+    extra_modules = game.script_modules if __name__ in ["pyvida", "pyvida.utils"] and game else {}
     modules = [module]
     modules.extend(extra_modules.keys())
     modules.extend([

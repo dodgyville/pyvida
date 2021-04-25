@@ -235,7 +235,7 @@ class Game(SafeJSON, Graphics):
     visited: List[str] = field(default_factory=list)  # list of scene names visited
 
     _headless: bool = False  # no user input or graphics (use underscore)
-    _modules: Dict[str, int] = field(default_factory=dict)
+    script_modules: Dict[str, int] = field(default_factory=dict)
     speed: float = 1  # speed at which to play game
 
     # messages
@@ -248,7 +248,7 @@ class Game(SafeJSON, Graphics):
 
     info_object: Optional[str] = None
 
-    storage: Optional[Storage] = None
+    storage: Storage = field(default_factory=Storage)
 
     menu: Optional[MenuManager] = None
     menu_factories: Dict[str, MenuFactory] = field(default_factory=dict)
@@ -337,7 +337,7 @@ class Game(SafeJSON, Graphics):
         self.menu_enter_filename = None  # filename of sfx to play when entering hover over a menu
         self.menu_exit_filename = None  # sfx to play when exiting hover over a menu item
 
-        self.storage = Storage()
+        # self.storage = Storage()
 
         # window management
         self.old_scale = None
@@ -389,7 +389,7 @@ class Game(SafeJSON, Graphics):
         self._edit_menu = []  # the items to draw on the second window
         self._edit_index = 0
         self._selector = False  # is the editor in selector mode?
-        self._sys_paths = []  # file paths to dynamically loaded modules
+        self.sys_module_paths = []  # file paths to dynamically loaded modules
         self._walkthrough = []
         self._walkthrough_hints = {}  # (event, hint) auto-compiled from "help" attr on walkthrough
         self.walkthrough_index = 0  # our location in the walkthrough
@@ -1890,7 +1890,7 @@ class Game(SafeJSON, Graphics):
         modified = False
         #        if 'win32' in sys.platform: # don't allow on windows XXX why?
         #            return modified
-        for i in self._modules.keys():  # for modules we are watching
+        for i in self.script_modules.keys():  # for modules we are watching
             if not i in sys.modules:
                 log.error(
                     "Unable to reload module %s (not in sys.modules)" % i)
@@ -1902,39 +1902,39 @@ class Game(SafeJSON, Graphics):
             fname = "%s%s" % (fname, ext)
             ntime = os.stat(fname).st_mtime  # check the modified timestamp
             # if modified since last check, return True
-            if ntime > self._modules[i]:
-                self._modules[i] = ntime
+            if ntime > self.script_modules[i]:
+                self.script_modules[i] = ntime
                 modified = True
         return modified
 
     def set_modules(self, modules):
         """ when editor reloads modules, which modules are game related? """
         for i in modules:
-            self._modules[i] = 0
+            self.script_modules[i] = 0
         # if editor is available, watch code for changes
         if CONFIG["editor"] or self._allow_editing:
             self.check_modules()  # set initial timestamp record
 
     def reload_modules(self, modules=None):
         """
-        Reload all the interact/use/look functions from the tracked modules (game._modules)
+        Reload all the interact/use/look functions from the tracked modules (game.script_modules)
 
-        modules -- use the listed modules instead of game._modules
+        modules -- use the listed modules instead of game.script_modules
         """
-        if not self._allow_editing:  # only reload during edit mode as it disables save games
-            return
+        #if not self._allow_editing:  # only reload during edit mode as it disables pickling save games
+        #    return
         #        print("RELOAD MODULES")
         # clear signals so they reload
         for i in [post_interact, pre_interact, post_use, pre_use, pre_leave, post_arrive, post_look, pre_look]:
             i.receivers = []
-
+        log.info("reloading modules")
         # reload modules
         # which module to search for functions
         module = "main" if android else "__main__"
-        modules = modules if modules else self._modules.keys()
+        modules = modules if modules else self.script_modules.keys()
         if type(modules) != list:
             modules = [modules]
-        for i in self._modules.keys():
+        for i in self.script_modules.keys():
             try:
                 importlib.reload(sys.modules[i])
             except:
@@ -2534,15 +2534,7 @@ class Game(SafeJSON, Graphics):
 
     #        print("Done %s, deleted %s"%(done_events, del_events))
 
-    def update(self, dt=0, single_event=False):  # game.update
-        """ Run update on scene objects """
-        # print("GAME UPDATE", dt)
-
-        scene_objects = []
-        fn = get_function(self, "game_update")  # special update function game can use
-        if fn:
-            fn(self, dt, single_event)
-
+    def update_generator(self):
         if self._generator:
             try:
                 for i in range(1, 10):
@@ -2557,40 +2549,42 @@ class Game(SafeJSON, Graphics):
             if self._generator_progress:
                 self._generator_progress(self)
 
+
+    def update_joypad(self):
         if self.joystick:
-            # print(self.joystick.__dict__)
             x = self.mouse_position_raw[0] + self.joystick.x * 40
             y = self.mouse_position_raw[1] - self.joystick.y * 40
-            # print(x,y, self.joystick.x,  self.mouse_position_raw)
 
             # stop joystick going off screen.
             if y < 0: y = 0
             if x < 0: x = 0
-            if y > self.resolution[1] * self._scale: y = self.resolution[1] * self._scale
-            if x > self.resolution[0] * self._scale: x = self.resolution[0] * self._scale
+            if y > self.resolution[1] * self._scale:
+                y = self.resolution[1] * self._scale
+            if x > self.resolution[0] * self._scale:
+                x = self.resolution[0] * self._scale
 
             self.immediate_mouse_motion(x, y, dx=0, dy=0)  # XXX dx, dy are zero
 
-        #        dt = self.fps #time passed (in milliseconds)
+    def get_scene_objects_to_update(self, dt):
+        scene_objects = []
         if self.get_scene():
             for obj_name in self.get_scene().objects:
                 obj = get_object(self, obj_name)
                 if obj:
                     scene_objects.append(obj)
-            self.get_scene()._update(dt)
+            # self.get_scene()._update(dt)  # handled in update_items
+        return scene_objects
 
+    def get_modal_objects_to_update(self, dt):
         modal_objects = []
         if self.modals:
             for obj_name in self.modals:
                 obj = get_object(self, obj_name)
                 if obj:
                     modal_objects.append(obj)
+        return modal_objects
 
-        scene = self.get_scene()
-        layer_objects = scene.layers if scene else []
-        # update all the objects in the scene or the event queue.
-        items_list = [layer_objects, scene_objects, self.menu_items, modal_objects,
-                      [self.camera.name], [self.mixer.name], [obj[1] for obj in self.events], self._edit_menu]
+    def flatten_items_to_update(self, items_list):
         items_to_update = []
         for items in items_list:
             for item_name in items:
@@ -2602,19 +2596,15 @@ class Game(SafeJSON, Graphics):
                         import pdb;
                         pdb.set_trace()
                     items_to_update.append(item)
+        return items_to_update
+
+    def update_items(self, items_to_update, dt):
         for item in items_to_update:
             if item is None:
                 log.error(
                     f"Some item(s) at this point in {self.name} are None, which is odd. Current items {items_list}")
                 continue
             item.game = self
-            """
-            if item._update:
-                fn = get_function(self, item._update)
-                fn(item, dt)
-            else:
-                item._default_update(dt, obj=item)
-            """
 
             if hasattr(item, "preupdate") and item.preupdate:
                 fn = get_function(self, item.preupdate)
@@ -2626,23 +2616,40 @@ class Game(SafeJSON, Graphics):
             if hasattr(item, "_update") and item._update:
                 item._update(dt, obj=item)
 
+    def update(self, dt=0, single_event=False):  # game.update
+        """ Run update on scene objects """
+        # print("GAME UPDATE", dt)
+
+        fn = get_function(self, "game_update")  # special update function game can use
+        if fn:
+            fn(self, dt, single_event)
+
+        self.update_generator()
+        self.update_joypad()
+
+        scene_objects = self.get_scene_objects_to_update(dt)
+
+        modal_objects = self.get_modal_objects_to_update(dt)
+
+        scene = self.get_scene()
+        layer_objects = scene.layers if scene else []
+        # update all the objects in the scene or the event queue.
+        items_list = [layer_objects, scene_objects, self.menu_items, modal_objects,
+                      [self.camera.name], [self.mixer.name], [obj[1] for obj in self.events], self._edit_menu]
+        items_to_update = self.flatten_items_to_update(items_list)
+
+        self.update_items(items_to_update, dt)
+
         if single_event:
             self._handle_events()  # run the event handler only once
         else:
             # loop while there are events safe to process
-            #            print("\n\n\n\nSTARTING HANDLE EVENTS\n\n\n\n")
             while self._handle_events():
                 pass
-        #            print("\n\n\n\nENDING HANDLE EVENTS\n\n\n\n")
-
-        #        print("game update", self._headless, self.walkthrough_target>self.walkthrough_index, len(self.modals)>0, len(self.events))
 
         if not self.headless:
             self.current_clock_tick = int(round(time.time() * 1000))
             # only delay as much as needed
-        #            used_time = self.current_clock_tick - self.last_clock_tick #how much time did computation use of this loop
-        #            delay = self.time_delay - used_time  #how much pause do we need to limit frame rate?
-        #            if delay > 0: pygame.time.delay(int(delay))
         self.last_clock_tick = int(round(time.time() * 1000))
 
         # if waiting for user input, assume the event to trigger the modal is
@@ -3015,6 +3022,10 @@ class Game(SafeJSON, Graphics):
     def immediate_load_game(self, fname):
         new_game = load_game(self, fname)
         self.__dict__.update(new_game.__dict__)
+        self.get_scene().load_assets(self)
+        #self.reload_modules()  # I don't think we need to reload
+
+
         if self.postload_callback:
             self.postload_callback(self)
 

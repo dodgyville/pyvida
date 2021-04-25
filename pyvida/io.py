@@ -123,6 +123,8 @@ def load_game(game, fname):
         obj.game = game
     for obj in new_game.scenes.values():
         obj.game = game
+        if obj.walkarea:
+            obj.walkarea.game = game
     return new_game
 
 

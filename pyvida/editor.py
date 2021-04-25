@@ -44,16 +44,16 @@ def open_editor(game, filepath, track=True):
         Open a text editor to edit fname, used by the editor when editing
         scripts
 
-        track -- add to game._modules for tracking and reloading
+        track -- add to game.script_modules for tracking and reloading
     """
     editor = os.getenv('EDITOR', DEFAULT_TEXT_EDITOR)
 
     if track:
         # add to the list of modules we are tracking
         module_name = os.path.splitext(os.path.basename(filepath))[0]
-        if module_name not in game._modules and module_name != "__init__":
+        if module_name not in game.script_modules and module_name != "__init__":
             print("ADDING %s TO MODULES" % module_name)
-            game._modules[module_name] = 0
+            game.script_modules[module_name] = 0
             # add file directory to path so that import can find it
             if os.path.dirname(filepath) not in sys.path:
                 sys.path.append(os.path.dirname(filepath))
