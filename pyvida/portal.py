@@ -101,9 +101,9 @@ class Portal(Actor):
             if len(links) > 1:  # name format matches guess
                 #                guess_link = "%s_to_%s" % (links[1].lower(), links[0].lower())
                 guess_link = "%s%s%s" % (links[1], i, links[0])
-            if guess_link and guess_link in self.game.items:
-                self.link = self.game.items[
-                    guess_link].name if self.game.items[guess_link] else None
+            if guess_link and guess_link in self.game.portals:
+                potential_link = get_object(self.game, guess_link)
+                self.link = potential_link.name if potential_link else None
         if not guess_link:
             if logging:
                 logger.warning(

@@ -910,14 +910,22 @@ def get_object(game, obj_name, case_insensitive=False):
         scenes_lower = {k.lower(): v for k, v in game.scenes.items()}
         items_lower = {k.lower(): v for k, v in game.items.items()}
         actors_lower = {k.lower(): v for k, v in game.actors.items()}
+        collections_lower = {k.lower(): v for k, v in game.collections.items()}
+        portals_lower = {k.lower(): v for k, v in game.portals.items()}
     else:
         scenes_lower = game.scenes if game else {}
         items_lower = game.items if game else {}
         actors_lower = game.actors if game else {}
+        collections_lower = game.collections if game else {}
+        portals_lower = game.portals if game else {}
 
     result = None  # return object
     if obj_name in scenes_lower:  # a scene
         result = scenes_lower[obj_name]
+    elif obj_name in portals_lower:
+        result = portals_lower[obj_name]
+    elif obj_name in collections_lower:
+        result = collections_lower[obj_name]
     elif obj_name in items_lower:
         result = items_lower[obj_name]
     elif obj_name in actors_lower:
@@ -929,6 +937,8 @@ def get_object(game, obj_name, case_insensitive=False):
             game.items.values(),
             game.actors.values(),
             game.scenes.values(),
+            game.collections.values(),
+            game.portals.values(),
         ]:
             if not result:
                 for obj in objects:

@@ -198,6 +198,8 @@ class Game(SafeJSON, Graphics):
     actors: Dict[str, Actor] = field(default_factory=dict)
     items: Dict[str, Item] = field(default_factory=dict)
     scenes: Dict[str, Scene] = field(default_factory=dict)
+    collections: Dict[str, Collection] = field(default_factory=dict)
+    portals: Dict[str, Portal] = field(default_factory=dict)
 
     scene: Optional[str] = None  # name of scene object, use get_scene and set_scene to get object
     menu_items: List[str] = field(default_factory=list)
@@ -692,6 +694,10 @@ class Game(SafeJSON, Graphics):
                 return self.actors[s]
             elif s in self.items:
                 return self.items[s]
+            elif s in self.collections:
+                return self.collections[s]
+            elif s in self.portals:
+                return self.portals[s]
         raise AttributeError
 
     #        return self.__getattribute__(self, a)
@@ -1390,6 +1396,12 @@ class Game(SafeJSON, Graphics):
             return
 
         # if the event queue is busy, don't allow user interaction
+        try:
+            self.events[0][0].__name__
+        except IndexError:
+            pass
+        except AttributeError:
+            import pdb; pdb.set_trace()
         if len(self.events) == 0 or (
                 len(self.events) == 1 and self.events[0][0].__name__ == "goto" and self.events[0][1][
             0] == self.player):
@@ -1875,8 +1887,10 @@ class Game(SafeJSON, Graphics):
         for pname in portals:  # try and guess portal links
             if draw_progress_bar:
                 self._progress_bar_count += 1
-            self.items[pname].guess_link()
-            self.items[pname].auto_align()  # auto align portal text
+            obj = get_object(self, pname)
+            if obj:
+                obj.guess_link()
+                obj.auto_align()  # auto align portal text
 
         player = get_object(self, player)
         if player:
@@ -1888,6 +1902,8 @@ class Game(SafeJSON, Graphics):
         if os.path.isfile(get_safe_path("data/sfx/menu_enter.ogg")):
             self.menu_exit_filename = "data/sfx/menu_exit.ogg"
 
+    def get_object(self, obj_name):
+        return get_object(self, obj_name)
 
     def check_modules(self):
         """ poll system to see if python files have changed """
@@ -2723,8 +2739,10 @@ class Game(SafeJSON, Graphics):
             #                    obj._total_items = []
             elif isinstance(obj_obj, MenuFactory):
                 self.menu_factories[obj_obj.name] = obj_obj
+            elif isinstance(obj_obj, Collection):
+                self.collections[obj_obj.name] = obj_obj
             elif isinstance(obj_obj, Portal):
-                self.items[obj_obj.name] = obj_obj
+                self.portals[obj_obj.name] = obj_obj
             elif isinstance(obj_obj, Item):
                 self.items[obj_obj.name] = obj_obj
             elif isinstance(obj_obj, Actor):

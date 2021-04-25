@@ -1,7 +1,8 @@
 """
 Game settings.
 """
-from dataclasses_json import dataclass_json
+from marshmallow import fields
+from dataclasses_json import dataclass_json, config
 from dataclasses_json import Undefined, CatchAll
 from dataclasses import (
     dataclass,
@@ -38,15 +39,20 @@ SLOW = 0
 NORMAL = 1
 FAST = 2
 
+iso_datetime = config(
+            encoder=datetime.isoformat,
+            decoder=datetime.fromisoformat,
+            mm_field=fields.DateTime(format='iso')
+        )
 
 @dataclass_json(undefined=Undefined.INCLUDE)
 @dataclass
 class Storage:
     """ Per game data that the developer wants stored with the save game file"""
     total_time_in_game: int = 0 # seconds
-    last_save_time: datetime = field(default_factory=datetime.now)
-    last_load_time: datetime = field(default_factory=datetime.now)
-    created: datetime = field(default_factory=datetime.now)
+    last_save_time: datetime = field(default_factory=datetime.now, metadata=iso_datetime)
+    last_load_time: datetime = field(default_factory=datetime.now, metadata=iso_datetime)
+    created: datetime = field(default_factory=datetime.now, metadata=iso_datetime)
     hint: str = ''
     universe_seed: int = 0
     custom: CatchAll = field(default_factory=dict)  # specific to the game

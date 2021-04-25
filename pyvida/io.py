@@ -7,6 +7,7 @@ from datetime import datetime
 import logging
 import os
 import pickle
+from pathlib import Path
 
 from .constants import (
     LOGNAME
@@ -105,6 +106,13 @@ def save_game_json(game, fname):
         check_json_safe(game)
         result = game.to_json(indent=4)
         f.write(result)
+    fname = Path(fname)
+    metadata = {
+        "section_name": game.section_name,
+        "datetime": datetime.now().strftime("%a %x %X")
+    }
+    with open(fname.with_suffix(".meta"), "w") as f:
+        f.write(json.dumps(metadata))
 
 
 def save_game(game, fname):
@@ -125,6 +133,19 @@ def load_game(game, fname):
     for obj in new_game.scenes.values():
         obj.set_game(game)  # also takes care of walkareas
     return new_game
+
+def load_game_meta(fname):
+    fname = Path(fname)
+    """
+    metadata = {
+        "section_name": game.section_name,
+        "datetime": datetime.now()
+    }
+    """
+    with open(fname.with_suffix(".meta"), "r") as f:
+        data = f.read()
+        metadata = json.loads(data)
+    return metadata
 
 
 def load_game_json(game, fname, meta_only=False, keep=[], responsive=False):

@@ -230,8 +230,8 @@ class MotionManagerOld(metaclass=use_on_events):
         print(txt)
 
 
-class Collection(Item, pyglet.event.EventDispatcher):
-
+#class Collection(Item, pyglet.event.EventDispatcher):
+class Collection(Item):
     def __init__(self, name, callback, padding=(10, 10), dimensions=(300, 300), tile_size=(80, 80), limit=-1):
         super().__init__(name)
         self.objects = []
