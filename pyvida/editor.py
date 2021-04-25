@@ -468,8 +468,6 @@ if EDITOR_AVAILABLE:
                     scene.walkarea._edit_polygon_index = 1
 
             def reset_walkarea(*args, **kwargs):
-                if self.game.get_scene().walkarea is None:
-                    self.game.get_scene().walkarea = WalkAreaManager(self.game.get_scene().name)
                 self.game.get_scene().walkarea.reset_to_default()
 
             def edit_walkarea(*args, **kwargs):

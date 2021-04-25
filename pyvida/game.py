@@ -144,8 +144,7 @@ def user_trigger_interact(game, obj):
 
     if not game.editor:
         game.event_count += 1
-        if game.event_callback:
-            game.event_callback(game)
+        game.call_event_callback()
 
 
 # XXX It should be possible to track where a user is in relation to the walkthrough here
@@ -163,8 +162,7 @@ def user_trigger_use(game, subject, obj):
 
     if not game.editor:
         game.event_count += 1
-        if game.event_callback:
-            game.event_callback(game)
+        game.call_event_callback()
 
 
 def user_trigger_look(game, obj):
@@ -178,8 +176,7 @@ def user_trigger_look(game, obj):
 
     if not game.editor:
         game.event_count += 1
-        if game.event_callback:
-            game.event_callback(game)
+        game.call_event_callback()
 
 
 #@dataclass_json(undefined=Undefined.EXCLUDE)
@@ -230,6 +227,11 @@ class Game(SafeJSON, Graphics):
     event: any = None
     """
     event_index: int = 0
+    event_callback: Optional[str] = None  # call special function after each event of consequence
+
+    # _generator: any = None  # are we calling a generator while inside the run loop, block inputs
+    # _generator_callback: any = None
+    # _generator_progress: any = None
 
     selected_options: List[str] = field(default_factory=list)  # keep track of convo trees
     visited: List[str] = field(default_factory=list)  # list of scene names visited
@@ -250,10 +252,26 @@ class Game(SafeJSON, Graphics):
 
     storage: Storage = field(default_factory=Storage)
 
-    menu: Optional[MenuManager] = None
+    menu: MenuManager = field(default_factory=MenuManager)
     menu_factories: Dict[str, MenuFactory] = field(default_factory=dict)
 
-    camera: Optional[Camera] = None
+    # defaults, comes from settings probably
+    font_speech: Optional[str] = None
+    font_speech_size: int = DEFAULT_TEXT_SIZE
+    font_info: str = FONT_VERA
+    font_info_size: int = DEFAULT_TEXT_SIZE
+    font_info_colour: any = (255, 220, 0)  # off yellow
+    font_info_offset: int = 1
+    default_ok: str = "ok"  # used by on_says
+
+    modals: List[str] = field(default_factory=list)  # list of object names
+    menu_items: List[str] = field(default_factory=list) # current menu
+    menus: any = field(default_factory=list)  # a stack of menus
+
+    menu_enter_filename: Optional[str] = None  # filename of sfx to play when entering hover over a menu
+    menu_exit_filename: Optional[str] = None  # sfx to play when exiting hover over a menu item
+
+    camera: Camera = field(default_factory=Camera)
     settings: Optional[Settings] = None
 
     window = None
@@ -278,12 +296,8 @@ class Game(SafeJSON, Graphics):
         self.parser = ArgumentParser()
         self.add_arguments()
 
-        self.section_name = self.name  # for save files, what is this segment/section/part of the game called
         self.default_actor_fps = self.afps
         self.game = self
-        self._generator = None  # are we calling a generator while inside the run loop, block inputs
-        self._generator_callback = None
-        self._generator_progress = None
 
         # this session's graphical settings, probably overwritten by settings and user values
         self.autoscale = DEFAULT_AUTOSCALE
@@ -291,7 +305,6 @@ class Game(SafeJSON, Graphics):
         self.window_dx = 0  # offset graphics on the window
         self.window_dy = 0
 
-        self.camera = Camera()  # the camera object
         self.camera.game = self
 
         self.settings = Settings()  # game-wide settings
@@ -308,7 +321,6 @@ class Game(SafeJSON, Graphics):
 
         self.mixer = Mixer()  # the sound mixer object
         self.mixer.initialise_players(self)
-        self.menu = MenuManager()  # the menu manager object
         self.menu.game = self
 
         self.directory_portals = DIRECTORY_PORTALS
@@ -321,21 +333,6 @@ class Game(SafeJSON, Graphics):
         self.directory_sfx = DIRECTORY_SFX
         self.directory_screencast = None  # if not none, save screenshots
 
-        # defaults, comes from settings probably
-        self.font_speech = None
-        self.font_speech_size = None
-        self.font_info = FONT_VERA
-        self.font_info_size = 16
-        self.font_info_colour = (255, 220, 0)  # off yellow
-        self.font_info_offset = 1
-        self.default_ok = "ok"  # used by on_says
-
-        self.modals = []  # list of object names
-        self.menu_items = []
-        self.menus = []  # a stack of menus
-
-        self.menu_enter_filename = None  # filename of sfx to play when entering hover over a menu
-        self.menu_exit_filename = None  # sfx to play when exiting hover over a menu item
 
         # self.storage = Storage()
 
@@ -369,7 +366,7 @@ class Game(SafeJSON, Graphics):
         # some game logic)
         self.event_count = 0
         # function to call after each event (useful for some game logic)
-        self.event_callback = None
+        # self.event_callback = None
         self.postload_callback = None  # hook to call after game load
         self._last_script = None  # used to handle errors in scripts
         self._last_autosave = None  # use to handle errors in walkthroughs
@@ -621,6 +618,12 @@ class Game(SafeJSON, Graphics):
         for key, item in _resources.items():
             if item[-1] != None:
                 yield key, item
+
+    def call_event_callback(self):
+        """ call the game's custom event callback """
+        if self.event_callback:
+            fn = get_function(self, self.event_callback)
+            fn(self)
 
     def set_player(self, player):
         if player is None:
@@ -1101,9 +1104,9 @@ class Game(SafeJSON, Graphics):
         self.mouse_position_raw = raw_x, raw_y
         self.mouse_position = window_x, window_y
 
-        if self._generator:
-            self.immediate_request_mouse_cursor(MOUSE_HOURGLASS)
-            return
+        #if self._generator:
+        #    self.immediate_request_mouse_cursor(MOUSE_HOURGLASS)
+        #    return
 
         #        print(self.mouse_position_raw, self.mouse_position, self.resolution, self.w, self.h)
         if window_y < 0 or window_x < 0 or window_x > self.resolution[0] or window_y > self.resolution[
@@ -1238,8 +1241,8 @@ class Game(SafeJSON, Graphics):
         """ If the mouse is over an object with a down action, switch to that action """
         if self.editor:  # draw mouse coords at mouse pos
             print('    (%s, %s), ' % (x, self.resolution[1] - y))
-        if self._generator:
-            return
+        #if self._generator:
+        #    return
 
         x, y = x / self._scale, y / self._scale  # if window is being scaled
         if self.get_scene():
@@ -1292,8 +1295,8 @@ class Game(SafeJSON, Graphics):
             self.mouse_position_raw = self.get_raw_from_point(x, y)
 
     def on_joybutton_release(self, joystick, button):
-        if self._generator:
-            return
+        #if self._generator:
+        #    return
         if not self.joystick:
             return
         modifiers = 0
@@ -1317,8 +1320,8 @@ class Game(SafeJSON, Graphics):
 
     def on_mouse_release(self, raw_x, raw_y, button, modifiers):
         """ Call the correct function depending on what the mouse has clicked on """
-        if self._generator:
-            return
+        #if self._generator:
+        #    return
         if self.waiting_for_user:  # special function that allows easy story beats
             self.waiting_for_user = False
             return
@@ -1449,8 +1452,8 @@ class Game(SafeJSON, Graphics):
             player.immediate_do(player.default_idle)
 
     def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
-        if self._generator:
-            return
+        #if self._generator:
+        #    return
 
         if self.motion_output is not None:  # output the delta from the last point.
             #            ddx,ddy = self.mouse_position[0] - self.motion_output[0], self.mouse_position[1] - self.motion_output[1]
@@ -1597,6 +1600,7 @@ class Game(SafeJSON, Graphics):
 
     def walkthroughs(self, suites):
         """ use test suites to enable jumping forward """
+        log.info("setting walkthough suite")
         self._walkthrough = [
             i for sublist in suites for i in sublist]  # all tests, flattened in order
         for walkthrough in self._walkthrough:
@@ -2010,19 +2014,25 @@ class Game(SafeJSON, Graphics):
                     for i, x in enumerate(self._walkthrough):
                         if x[1] == last_step:
                             self.walkthrough_index += 1
-                            load_game(self, os.path.join("saves", "%s.save" % first_step))
+                            import pdb; pdb.set_trace()
+                            load_game(self, os.path.join("saves", "%s.savegame" % first_step))
                             first_step = last_step
                             log.info("Continuing to", first_step)
-
+                walkthrough_target = None
                 if first_step.isdigit():
                     # automatically run to <step> in walkthrough
-                    self.walkthrough_target = int(first_step)
+
+                    walkthrough_target = int(first_step)
                 else:  # use a label
                     for i, x in enumerate(self._walkthrough):
-                        if x[0] == savepoint and x[1] == first_step:
+                        if x[0] == "savepoint" and x[1] == first_step:
                             self._walkthrough_start_name = x[1]
                             if not last_step:
-                                self.walkthrough_target = i + 1
+                                walkthrough_target = i + 1
+                if walkthrough_target is None:
+                    log.error("Unable to find walkthrough end target")
+                else:
+                    self.walkthrough_target = walkthrough_target
                 if not last_step:
                     self.walkthrough_target_name = self._walkthrough_start_name
             if options.build:
@@ -2101,7 +2111,7 @@ class Game(SafeJSON, Graphics):
     def immediate_quit(self):
         if self.settings and self.settings.filename:
             log.info("SAVE SETTINGS")
-            td = datetime.now() - self.settings._current_session_start
+            td = datetime.now() - self.settings.current_session_start
             s = milliseconds(td)
             self.settings.total_time_played += s
             self.settings._last_session_end = datetime.now()
@@ -2145,6 +2155,8 @@ class Game(SafeJSON, Graphics):
 
     def _process_walkthrough(self):
         """ Do a step in the walkthrough """
+        if self.walkthrough_target > 0:
+            log.debug(f"process a walkthrough step {len(self._walkthrough)}, {self.walkthrough_index}, {self.walkthrough_target}")
         if len(self._walkthrough) == 0 or self.walkthrough_index >= len(
                 self._walkthrough) or self.walkthrough_target == 0:
             return  # no walkthrough
@@ -2244,9 +2256,8 @@ class Game(SafeJSON, Graphics):
             log.info("FINISHED WALKTHROUGH")
             if self.walkthrough_target_name:
                 walkthrough_target = get_safe_path(
-                    os.path.join(self.save_directory, "%s.save" % self.walkthrough_target_name))
-                save_game(
-                    self, walkthrough_target)
+                    os.path.join(self.save_directory, "%s.savegame" % self.walkthrough_target_name))
+                save_game(self, walkthrough_target)
             return
         # if this walkthrough has a human readable name, we might be wanting to
         # create an autosave here.
@@ -2414,7 +2425,7 @@ class Game(SafeJSON, Graphics):
         else:
             print("UNABLE TO PROCESS %s" % function_name)
         if human_readable_name:
-            fname = get_safe_path(os.path.join(self.save_directory, "{}.save".format(human_readable_name)))
+            fname = get_safe_path(os.path.join(self.save_directory, "{}.savegame".format(human_readable_name)))
             save_game(self, fname)
 
     def _handle_events(self):
@@ -2528,12 +2539,13 @@ class Game(SafeJSON, Graphics):
             reset_mouse_cursor(self)
 
         if done_events == 0 and del_events == 0 and self.walkthrough_target >= self.walkthrough_index:
-            if not self._generator:  # don't process walkthrough if a generator is running (eg loading a save game)
-                self._process_walkthrough()
+            #if not self._generator:  # don't process walkthrough if a generator is running (eg loading a save game)
+            self._process_walkthrough()
         return safe_to_call_again
 
     #        print("Done %s, deleted %s"%(done_events, del_events))
 
+    """
     def update_generator(self):
         if self._generator:
             try:
@@ -2548,7 +2560,7 @@ class Game(SafeJSON, Graphics):
 
             if self._generator_progress:
                 self._generator_progress(self)
-
+    """
 
     def update_joypad(self):
         if self.joystick:
@@ -2624,7 +2636,7 @@ class Game(SafeJSON, Graphics):
         if fn:
             fn(self, dt, single_event)
 
-        self.update_generator()
+        # self.update_generator()
         self.update_joypad()
 
         scene_objects = self.get_scene_objects_to_update(dt)
@@ -2655,8 +2667,8 @@ class Game(SafeJSON, Graphics):
         # if waiting for user input, assume the event to trigger the modal is
         # in the walkthrough
         if self.walkthrough_auto and self.walkthrough_target >= self.walkthrough_index and len(self.modals) > 0:
-            if not self._generator:  # don't process walkthrough if a generator is running (eg loading a save game)
-                self._process_walkthrough()
+            #if not self._generator:  # don't process walkthrough if a generator is running (eg loading a save game)
+            self._process_walkthrough()
 
     def combined_update(self, dt):
         """ do the update and the draw in one """
@@ -2717,6 +2729,11 @@ class Game(SafeJSON, Graphics):
                 self.items[obj_obj.name] = obj_obj
             elif isinstance(obj_obj, Actor):
                 self.actors[obj_obj.name] = obj_obj
+            elif isinstance(obj_obj, WalkAreaManager):
+                # all we want is to add the game object to the walkarea
+                pass
+            else:
+                logger.warning(f"Adding unknown object type {type(obj_obj)} to game.")
         return objects
 
     # game.add (not an event driven function)
@@ -3019,12 +3036,20 @@ class Game(SafeJSON, Graphics):
     def load_game(self, fname):
         self.immediate_load_game(fname)
 
+    def load_nonscene_assets(self):
+        """ load non-scene assets such as menu items and modals """
+        for obj_name in self.modals:
+            obj = get_object(self, obj_name)
+            if obj:
+                obj.load_assets(self)
+        load_menu_assets(self)
+
     def immediate_load_game(self, fname):
         new_game = load_game(self, fname)
         self.__dict__.update(new_game.__dict__)
-        self.get_scene().load_assets(self)
-        #self.reload_modules()  # I don't think we need to reload
 
+        self.get_scene().load_assets(self)
+        self.load_nonscene_assets()
 
         if self.postload_callback:
             self.postload_callback(self)
@@ -3098,7 +3123,7 @@ class Game(SafeJSON, Graphics):
         game = self
         fname = fname if fname else datetime.now().strftime("%Y%m%d_%H%M%S")
         directory = directory_override if directory_override else self.save_directory
-        save_game(game, get_safe_path(os.path.join(directory, "%s.save" % fname)))
+        save_game(game, get_safe_path(os.path.join(directory, "%s.savegame" % fname)))
         for i in exclude_from_screenshot:
             obj = get_object(game, i)
             obj.hide()

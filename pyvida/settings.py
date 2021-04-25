@@ -107,7 +107,7 @@ class Settings:
     joystick_look = 1  # index to joystick.buttons that corresponds to mouse right-click
 
     # some game play information
-    _current_session_start = None  # what date and time did the current session start
+    current_session_start = None  # what date and time did the current session start
     _last_session_end = None  # what time did the last session end
 
     total_time_played = 0  # total time playing this game in ms
@@ -116,6 +116,7 @@ class Settings:
 
     def __post_init__(self):
         self.achievements = AchievementManager()
+        self.current_session_start = datetime.now()
 
     def save_json(self, fname=None):
         """ Save settings to json file """

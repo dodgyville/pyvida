@@ -103,7 +103,8 @@ def save_game_json(game, fname):
     with open(fname, 'w') as f:
         # TODO: dump some metadata (eg date, title, etc) to a sister file
         check_json_safe(game)
-        f.write(game.to_json(indent=4))
+        result = game.to_json(indent=4)
+        f.write(result)
 
 
 def save_game(game, fname):
@@ -122,9 +123,7 @@ def load_game(game, fname):
     for obj in new_game.actors.values():
         obj.game = game
     for obj in new_game.scenes.values():
-        obj.game = game
-        if obj.walkarea:
-            obj.walkarea.game = game
+        obj.set_game(game)  # also takes care of walkareas
     return new_game
 
 
@@ -207,6 +206,6 @@ def load_or_create_settings(game, fname, settings_cls=Settings):
         existing = False
     else:
         game.settings = game.settings.load_json(fname)
-    game.settings._current_session_start = datetime.now()
+    # game.settings.current_session_start = datetime.now()
     game.mixer.immediate_publish_volumes()
     return existing

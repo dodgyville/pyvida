@@ -110,7 +110,7 @@ Utilities
 #        o.set_interact(fn)
 
 
-def _set_function(game, actors, slug=None, fn="interact", full=None):
+def _set_function_name(game, actors, slug=None, fn="interact", full=None):
     """ helper function for switching large batches of Actor interacts """
     if type(actors) != list:
         actors = [actors]
@@ -123,18 +123,18 @@ def _set_function(game, actors, slug=None, fn="interact", full=None):
         if full:
             fn_name = full  # all actors share the same fn
         if fn == "interact":
-            game.immediate_set_interact(i, get_function(game, fn_name))
+            game.immediate_set_interact(i, fn_name)
         else:
-            game.immediate_set_look(i, get_function(game, fn_name))
+            game.immediate_set_look(i, fn_name)
 
 
 def set_interacts(game, actors, slug=None, full=None):
     log.debug("set interacts %s %s %s" % (actors, slug, full))
-    return _set_function(game, actors, slug, "interact", full)
+    return _set_function_name(game, actors, slug, "interact", full)
 
 
 def set_looks(game, actors, slug=None, full=None):
-    return _set_function(game, actors, slug, "look", full)
+    return _set_function_name(game, actors, slug, "look", full)
 
 
 def get_available_languages():
@@ -146,9 +146,6 @@ def get_available_languages():
     if default_language.upper() not in [x.upper() for x in languages]:
         languages.append(default_language)  # the default
     return languages
-
-
-
 
 def get_best_directory(game, d_raw_name):
     """ First using the selected language, test for mod high contrast, game high 

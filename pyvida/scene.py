@@ -45,25 +45,18 @@ class Scene(SafeJSON, MotionManager):
     _y: float = 0.0
     _w: float = 0.0
     _h: float = 0.0
+    scale: float = 0
     # game: Optional[Game] = None
+    rotate_speed: int = 0
+    spin_speed: int = 0
+    flip_vertical: bool = False
+    flip_horizontal: bool = False
+    auto_pan: bool = True  # pan the camera based on player location
 
-    def __post_init__(self):
-        # used by camera
-        self.scale = 1.0  # TODO not implemented yet
-        self.rotate_speed = 0
-        self.spin_speed = 0
-        self.flip_vertical = False
-        self.flip_horizontal = False
-
-        self.auto_pan = True  # pan the camera based on player location
-
-        self.scales = {}
-
-        self.walkarea = WalkAreaManager(self.name)
-        self.colour = None  # clear colour (0-255, 0-255, 0-255)
-        self._ignore_highcontrast = False  # if True, then game.contrast will not be blitted on this scene.
-
-        # self.walkareas = OldWalkAreaManager(self, game)  # pyvida4 compatability
+    scales: any = field(default_factory=dict)
+    walkarea: WalkAreaManager = field(default_factory=WalkAreaManager)
+    colour: any = None  # clear colour (0-255, 0-255, 0-255)
+    _ignore_highcontrast: bool = False  # if True, then game.contrast will not be blitted on this scene.
 
     def get_x(self):  # scene.x
         return self._x
@@ -103,8 +96,9 @@ class Scene(SafeJSON, MotionManager):
     def set_game(self, v):
         self.game = v
         if v:
+            self.walkarea.scene = self.name
+            self.walkarea.name = f"{self.name}_walkarea"
             self.game.immediate_add(self.walkarea, replace=True)
-            # self.walkarea.game = v
 
     #    game = property(get_game, set_game)
 

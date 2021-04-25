@@ -210,13 +210,13 @@ class Actor(SafeJSON, MotionManager):
     goto_x: Optional[float] = None
     goto_y: Optional[float] = None
 
-    goto_deltas: List[tuple] = field(default_factory=list)  # list of steps to get to or pass over goto_x, goto_y
+    goto_deltas: List[List] = field(default_factory=list)  # list of steps to get to or pass over goto_x, goto_y
     goto_deltas_index: int = 0
     goto_deltas_average_speed: float = 0.0
     goto_destination_test = True  # during goto, test if over destination point
     goto_dx: float = 0.0
     goto_dy: float = 0.0
-    goto_points: List[tuple] = field(default_factory=list)  # list of points Actor is walking through
+    goto_points: List[List] = field(default_factory=list)  # list of points Actor is walking through
     goto_block: bool = False  # is this a*star multi-step process blocking?
     _use_astar: bool = False
 
@@ -404,7 +404,7 @@ class Actor(SafeJSON, MotionManager):
 
     def set_editable(self):
         """ Set which attributes are editable in the editor """
-        log.debug("turned off set_editble for jsonify")
+        # log.debug("turned off set_editble for jsonify")
         self._editable = []
         return
         self._editable = [  # (human readable, get variable names, set variable names, widget types)
@@ -1954,7 +1954,7 @@ class Actor(SafeJSON, MotionManager):
 
     def create_says(self, text, action="portrait", font=None, size=None, using=None, position=None, align=LEFT,
                     offset=None,
-                    delay=0.01, step=3, ok=-1, interact=close_on_says, block_for_user=True, key=K_SPACE):
+                    delay=0.01, step=3, ok=-1, interact="close_on_says", block_for_user=True, key=K_SPACE):
         """
         if block_for_user is False, then DON'T make the game wait until processing next event
         """
@@ -2787,7 +2787,7 @@ class Actor(SafeJSON, MotionManager):
 
         # don't test for inside walkarea if ignoring walkarea
         walkarea_polygon = None if ignore else walkarea._polygon
-        direct = self.clear_path(walkarea_polygon, start, destination, solids)
+        direct = clear_path(walkarea_polygon, start, destination, solids)
         if direct:  # don't astar, just go direct
             return [current, end]
 
