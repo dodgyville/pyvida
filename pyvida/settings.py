@@ -58,7 +58,7 @@ class Storage:
     custom: CatchAll = field(default_factory=dict)  # specific to the game
 
 
-@dataclass_json
+@dataclass_json(undefined=Undefined.INCLUDE)
 @dataclass
 class Settings:
     """ game settings saveable by user """
@@ -119,6 +119,8 @@ class Settings:
     total_time_played = 0  # total time playing this game in ms
     fastest_playthrough = None
     filename = None
+
+    custom: CatchAll = field(default_factory=dict)  # specific to the game
 
     def __post_init__(self):
         self.achievements = AchievementManager()

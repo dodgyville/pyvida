@@ -186,6 +186,9 @@ class Text(Item):
         self._clickable_area = Rect(
             0, 0, w, h)
 
+    def __post_init__(self):
+        self.game = None
+
     @property
     def resource_offset(self):
         return get_resource(self.resource_name, subkey="offset")[-1]

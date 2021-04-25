@@ -83,10 +83,11 @@ def json_object(obj, depth=2):
 
 
 def check_json_safe(game):
+    print("check json safe on game object")
     for k, v in game.__dict__.items():
         if k == "game":
             continue
-        print(f"jsonify game.{k}")
+        #print(f"jsonify game.{k}")
         if hasattr(v, "to_json"):
             try:
                 v.to_json()
@@ -103,7 +104,7 @@ def save_game_json(game, fname):
     game.storage.last_save_time = game.storage.last_load_time = datetime.now()
     with open(fname, 'w') as f:
         # TODO: dump some metadata (eg date, title, etc) to a sister file
-        check_json_safe(game)
+        # check_json_safe(game)
         result = game.to_json(indent=4)
         f.write(result)
     fname = Path(fname)
@@ -129,6 +130,10 @@ def load_game(game, fname):
     for obj in new_game.items.values():
         obj.game = game
     for obj in new_game.actors.values():
+        obj.game = game
+    for obj in new_game.collections.values():
+        obj.game = game
+    for obj in new_game.portals.values():
         obj.game = game
     for obj in new_game.scenes.values():
         obj.set_game(game)  # also takes care of walkareas

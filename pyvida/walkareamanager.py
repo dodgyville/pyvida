@@ -263,16 +263,25 @@ class WalkAreaManager(SafeJSON):
     @queue_method
     def lock(self):
         """ Lock the walkarea so the player can't walk """
+        self.immediate_lock()
+
+    def immediate_lock(self):
         self._state = LOCKED
 
     @queue_method
     def unlock(self):
         """ Activate the walkarea """
+        self.immediate_unlock()
+
+    def immediate_unlock(self):
         self._state = UNLOCKED
 
     @queue_method
     def freeroam(self):
         """ Make the whole screen a walkarea """
+        self.immediate_freeroam()
+
+    def immediate_freeroam(self):
         self._state = FREEROAM
 
     def collide(self, x, y, ignore=False):

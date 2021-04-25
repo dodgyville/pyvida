@@ -25,6 +25,7 @@ import pyglet.window.mouse
 from .io import *
 from .achievements import *
 from .runner import *
+from .collection import Collection
 from .constants import *
 from .utils import *
 from .emitter import Emitter
@@ -1396,15 +1397,8 @@ class Game(SafeJSON, Graphics):
             return
 
         # if the event queue is busy, don't allow user interaction
-        try:
-            self.events[0][0].__name__
-        except IndexError:
-            pass
-        except AttributeError:
-            import pdb; pdb.set_trace()
         if len(self.events) == 0 or (
-                len(self.events) == 1 and self.events[0][0].__name__ == "goto" and self.events[0][1][
-            0] == self.player):
+                len(self.events) == 1 and self.events[0][0] == "goto" and self.events[0][1][0] == self.player):
             pass
         else:
             return
@@ -1426,7 +1420,7 @@ class Game(SafeJSON, Graphics):
         potentially_do_idle = False
         if len(self.events) == 1:
             # if the only event is a goto for the player to a uninteresting point, clear it.
-            if self.events[0][0].__name__ == "goto" and self.events[0][1][0] == self.player:
+            if self.events[0][0] == "goto" and self.events[0][1][0] == self.player:
                 player = self.get_player()
                 if player._finished_goto:
                     finished_fn = get_function(self, player._finished_goto, self.player)
@@ -1875,8 +1869,9 @@ class Game(SafeJSON, Graphics):
                         self.immediate_add(a, replace=True)
                     else:  # if just refreshing, then use the existing object
                         log.info(f"Refreshing object {name}")
-                        a = self.actors.get(
-                            name, self.items.get(name, self.scenes.get(name, None)))
+                        a = get_object(self, name)
+                        #a = self.actors.get(
+                        #    name, self.items.get(name, self.scenes.get(name, None)))
                         if not a:
                             import pdb
                             pdb.set_trace()
@@ -2708,6 +2703,10 @@ class Game(SafeJSON, Graphics):
                 self.items.pop(name)
             elif name in self.scenes.keys():
                 self.scenes.pop(name)
+            elif name in self.collections.keys():
+                self.collections.pop(name)
+            elif name in self.portals.keys():
+                self.portals.pop(name)
 
     def remove(self, objects):  # game.remove (not an event driven function)
         return self.immediate_remove(objects)
@@ -2717,17 +2716,30 @@ class Game(SafeJSON, Graphics):
             objects, Iterable) else objects
 
         for obj in objects_iterable:
-            # check if it is an existing object
-            obj_obj = get_object(self, obj)
+            # check if it is an existing object (can't use get_object because it is not added yet
+            obj_obj = obj
+            #obj_obj = get_object(self, obj)
+            #if not obj_obj:
+            #    log.warning(f"Unable to find {obj} for immediate_add.")
+            #    continue
 
-            if obj in self.actors.values() or obj in self.items.values() or obj in self.scenes.values():
+            if obj in self.actors.values() or obj in self.items.values() or obj in self.scenes.values() or obj in self.collections.values() or obj in self.portals.values():
                 if not replace:
                     continue
                 elif logging:
                     log.info("replacing %s" % obj.name)
-            if not obj_obj:
-                log.warning(f"Unable to find {obj} for immediate_add.")
-                continue
+
+            obj_name = obj_obj.name
+            if obj_name in self.actors:
+                del self.actors[obj_name]
+            if obj_name in self.items:
+                del self.items[obj_name]
+            if obj_name in self.scenes:
+                del self.scenes[obj_name]
+            if obj_name in self.collections:
+                del self.collections[obj_name]
+            if obj_name in self.portals:
+                del self.portals[obj_name]
 
             obj_obj.game = self
 

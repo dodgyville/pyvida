@@ -1283,7 +1283,8 @@ import json
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
-from typing import Any, Collection, Mapping, Union, get_type_hints
+from typing import Any, Mapping, Union, get_type_hints
+from typing import Collection as TypeCollection
 from uuid import UUID
 
 from dataclasses_json.utils import (_get_type_cons,
@@ -1298,7 +1299,7 @@ from dataclasses_json.core import Json
 class ExtendedEncoder(_ExtendedEncoder):
     def default(self, o) -> Json:
         result: Json
-        if _isinstance_safe(o, Collection):
+        if _isinstance_safe(o, TypeCollection):
             if _isinstance_safe(o, Mapping):
                 result = dict(o)
             else:
