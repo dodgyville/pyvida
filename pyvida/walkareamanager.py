@@ -130,7 +130,11 @@ class WalkAreaManager(SafeJSON):
     def get_scene(self):
         return get_object(self.game, self.scene)
 
-    def edit_nearest_point(self, x, y):
+    def edit_nearest_point(self, x, y):  # pragma: no cover
+        """
+        Used by editor
+        """
+
         self._edit_waypoint_index = -1
         self._edit_polygon_index = -1
 
@@ -203,9 +207,9 @@ class WalkAreaManager(SafeJSON):
     def get_random_point(self):
         """ return a random point from within the polygon """
 
-    def insert_edge_point(self):
+    def insert_edge_point(self):  # pragma: no cover
         """ Add a new point after the current index
-        :return:
+            Used by editor
         """
         if len(self._polygon) == 0:
             self.immediate_reset_to_default()
@@ -218,9 +222,9 @@ class WalkAreaManager(SafeJSON):
                         + self._polygon[self._edit_polygon_index + 1:]
         self._update_walkarea()
 
-    def insert_way_point(self):
+    def insert_way_point(self):  # pragma: no cover
         """ Add a new way point after the current index.
-        :return:
+            Used by editor
         """
         if len(self._polygon) == 0:
             self.immediate_reset_to_default()
@@ -288,7 +292,7 @@ class WalkAreaManager(SafeJSON):
         """ Returns True if the point x,y collides with the polygon """
         if self._state == LOCKED:  # always outside walkarea
             return False
-        elif self._state == FREEROAM or ignore == True:  # always inside walkarea
+        elif self._state == FREEROAM or ignore is True:  # always inside walkarea
             return True
         c = False
         i = 0

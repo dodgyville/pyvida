@@ -227,6 +227,53 @@ class TestAchievementManager:
         assert len(manager.achievements) == 1
         assert isinstance(manager.achievements[slug], Achievement) is True
 
+    def test_grant(self):
+        # setup
+        manager = AchievementManager()
+        manager.register(None, "hello", "Hello", "Achievement #1", "hello.png")
+        manager.register(None, "world", "World", "Achievement #2", "world.png")
+
+        # execute
+        result1 = manager.grant(None, "hello")
+        result2 = manager.grant(None, "world")
+        result3 = manager.grant(None, "hello")
+
+        # verify
+        assert result1 is True
+        assert result2 is True
+        assert result3 is False  # already have it
+
+    def test_has(self):
+        # setup
+        manager = AchievementManager()
+        slug = "hello"
+        name = "Hello"
+        achievement_description = "Hello World"
+        filename = "hello.png"
+        manager.register(None, slug, name, achievement_description, filename)
+        manager.grant(None, "hello")
+
+        # execute
+        result = manager.has("hello")
+
+        # verify
+        assert result is True
+
+    def test_grant(self):
+        manager = AchievementManager()
+        manager.register(None, "hello", "Hello", "Achievement #1", "hello.png")
+        manager.register(None, "world", "World", "Achievement #2", "world.png")
+        game = Game()
+        achievement = Item("achievement")
+        game.immediate_add(achievement)
+        game.settings.silent_achievements = False
+
+        # execute
+        manager.present(game, "hello")
+
+        # verifiy
+        assert len(game.events) > 0
+
 
 class TestLocale:
     def test_get_available_languages(self, mocker):
@@ -738,7 +785,122 @@ class TestText:
 class TestWalkareaManager:
     def test_immediate_add_waypoint(self):
         w = WalkAreaManager(Scene("test").name)
-        w.immediate_add_waypoint([5, 6])
+
+        # execute
+        w.immediate_add_waypoint([2, 3])
+
+        # verify
+        assert len(w._waypoints) == 1
+
+    def test_collide_inside(self):
+        w = WalkAreaManager()
+        w.immediate_polygon([
+            [0, 0], [100, 0], [100, 100], [0, 100]
+        ])
+
+        # Execute
+        result = w.collide(50, 50)
+
+        # verify
+        assert result is True
+
+    def test_collide_outside(self):
+        w = WalkAreaManager()
+        w.immediate_polygon([
+            [0, 0], [100, 0], [100, 100], [0, 100]
+        ])
+
+        # Execute
+        result = w.collide(150, 50)
+
+        # verify
+        assert result is False
+
+    def test_valid_unsafe_empty(self):
+        """
+         1. no polygon
+         2. not no scene objects
+         """
+        w = WalkAreaManager()
+
+        # Execute
+        result = w.valid(50, 50)
+
+        # verify
+        assert result is False  # no polygon
+
+    def test_valid_safe(self):
+        """
+         1. inside polygon
+         2. not inside scene's objects' solid area
+         """
+        w = WalkAreaManager()
+        w.immediate_polygon([
+            [0, 0], [100, 0], [100, 100], [0, 100]
+        ])
+        g = Game()
+        s = Scene()
+        s.walkarea = w
+        s.set_game(g)
+        o = Actor()
+        o.immediate_resolid(Rect(0, 0, 30, 30))
+        g.immediate_add([s, o])
+        s.immediate_add(o)
+
+        # Execute
+        result = w.valid(50, 50)
+
+        # verify
+        assert result is True
+
+    def test_valid_unsafe_polygon(self):
+        """
+         1. outside polygon
+         2. not inside scene's objects' solid area
+         """
+        w = WalkAreaManager()
+        w.immediate_polygon([
+            [0,0], [100, 0], [100, 100], [0, 100]
+        ])
+        g = Game()
+        s = Scene()
+        s.walkarea = w
+        s.set_game(g)
+        o = Actor()
+        o.immediate_resolid(Rect(0, 0, 30, 30))
+        g.immediate_add([s, o])
+        s.immediate_add(o)
+
+        # Execute
+        result = w.valid(-10, -10)
+
+        # verify
+        assert result is False
+
+    def test_valid_unsafe_solid(self):
+        """
+         1. inside polygon
+         2. but inside scene's objects' solid area
+         """
+        w = WalkAreaManager()
+        w.immediate_polygon([
+            [0,0], [100, 0], [100, 100], [0, 100]
+        ])
+        g = Game()
+        s = Scene()
+        s.walkarea = w
+        s.set_game(g)
+        o = Actor()
+        o.immediate_resolid(Rect(0, 0, 30, 30))
+        g.immediate_add([s, o])
+        s.immediate_add(o)
+
+        # Execute
+        result = w.valid(15, 15)
+
+        # verify
+        assert result is False
+
 
 
 # higher level
@@ -1202,3 +1364,5 @@ class TestStorage:
         result = g.from_json(storage)
         assert "to_be_kept" in result.custom
         assert result.custom["to_be_kept"] == {"arcade": [1,2,3,4, {"fire": "reflektor"}]}
+
+

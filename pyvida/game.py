@@ -619,7 +619,7 @@ class Game(SafeJSON, Graphics):
     def _loaded_resources(self):
         """ List of keys that have loaded resources """
         for key, item in _resources.items():
-            if item[-1] != None:
+            if item[-1] is not None:
                 yield key, item
 
     def call_event_callback(self):

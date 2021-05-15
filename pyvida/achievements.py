@@ -89,9 +89,10 @@ class AchievementManager:
         if slug not in self.achievements: return False  # achievement doesn't exist
         new_achievement = copy.copy(self.achievements[slug])
         new_achievement.date = datetime.now()
-        new_achievement.version = game.version
+        new_achievement.version = game.version if game else "1.0.0"
         self.granted[slug] = new_achievement
-        game.settings.save_json()
+        if game and game.settings:
+            game.settings.save_json()
         return True
 
     def present(self, game, slug):
