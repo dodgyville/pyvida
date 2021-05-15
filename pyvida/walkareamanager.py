@@ -60,7 +60,7 @@ class WalkAreaManager(SafeJSON):
         self._edit_polygon_index = -1
         self._edit_waypoint_index = -1
 
-    def _set_point(self, x=None, y=None, z=None):
+    def _set_point(self, x=None, y=None, z=None):  # pragma: no cover
         i = -1
         pts = None
         a = "_polygon"
@@ -88,7 +88,7 @@ class WalkAreaManager(SafeJSON):
             setattr(self, a, updated)
             self._update_walkarea()
 
-    def _get_point(self, x=False, y=False, z=False):
+    def _get_point(self, x=False, y=False, z=False):  # pragma: no cover
         i = -1
         pts = []
         if self._edit_polygon_index >= 0:
@@ -180,14 +180,11 @@ class WalkAreaManager(SafeJSON):
         self._polygon_waypoints = polyinset
 
     def mirror(self, w):
-        """ Flip walkarea using w(idth) of screen)
-            XXX does not flip waypoints yet
         """
-        np = []
-        for p in self._polygon:
-            np.append((w - p[0], p[1]))
-        #        self._waypoints = []
-        self._polygon = np
+        Flip walkarea using w(idth) of screen)
+        """
+        self._polygon = [(w-x[0], x[1]) for x in self._polygon]
+        self._waypoints = [(w-x[0], x[1]) for x in self._waypoints]
         self._update_walkarea()
 
     def _update_walkarea(self):
@@ -198,14 +195,13 @@ class WalkAreaManager(SafeJSON):
 
     @queue_method
     def polygon(self, points):
+        """ Set polygon """
         self.immediate_polygon(points)
 
     def immediate_polygon(self, points):
+        """ Set polygon immediately """
         self._polygon = points
         self._update_walkarea()
-
-    def get_random_point(self):
-        """ return a random point from within the polygon """
 
     def insert_edge_point(self):  # pragma: no cover
         """ Add a new point after the current index
@@ -337,7 +333,7 @@ class WalkAreaManager(SafeJSON):
             colours = list(float_colour(self._fill_colour)) * self._polygon_count
             polygon(self.game, pts, colours, fill=True)
 
-        if debug is True:
+        if debug is True:  # pragma: no cover
             colour = (24, 169, 181, 255)
             colours = list(float_colour(colour)) * self._polygon_count
             polygon(self.game, pts, colours)
@@ -358,8 +354,10 @@ class WalkAreaManager(SafeJSON):
                             if self.collide(*pt):
                                 crosshair(self.game, pt, colour)
 
-    def pyglet_draw(self):  # walkareamanager.draw
+    def pyglet_draw(self):
+        """ walkareamanager.draw """
         self._pyglet_draw()
 
     def debug_pyglet_draw(self):
+        """ walkareamanager debug draw """
         self._pyglet_draw(debug=True)

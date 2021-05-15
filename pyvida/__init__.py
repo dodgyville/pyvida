@@ -148,6 +148,7 @@ def get_available_languages():
         languages.append(default_language)  # the default
     return languages
 
+
 def get_best_directory(game, d_raw_name):
     """ First using the selected language, test for mod high contrast, game high 
         contrast, a mod directory, the game directory or the pyvida directory and 
@@ -184,13 +185,6 @@ def get_best_directory(game, d_raw_name):
                 return safe_dir
     return None
 
-#    import webbrowser
-#    webbrowser.open("file.txt")
-#    x = os.spawnlp(os.P_WAIT,editor,editor,filehandle.name)
-#    if x != 0:
-#        print("ERROR")
-#    return filehandle.read()
-
 
 def update_progress_bar(game: Game, obj):
     """ During smart loads the game may wish to have an onscreen progress bar,
@@ -202,12 +196,6 @@ def update_progress_bar(game: Game, obj):
         game._progress_bar_renderer(game)
         game.window.flip()
         game.window.set_mouse_visible(True)
-
-
-"""
-Classes
-"""
-
 
 
 """
@@ -229,15 +217,6 @@ class MotionManagerOld(metaclass=use_on_events):
     @queue_method
     def decorator_test(self, txt="this is a test of a decorator replacement for metaclass", ringo=False):
         print(txt)
-
-"""
-Factories 
-"""
-
-"""
-Game class
-"""
-
 
 """
 Porting older game to pyglet pyvdida.

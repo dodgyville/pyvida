@@ -458,7 +458,8 @@ def load_image(fname):
     return im
 
 
-def crosshair(game, point, colour, absolute=False, txt=""):
+def crosshair(game, point, colour, absolute=False, txt=""):  # pragma: no cover
+    """ Used by editor """
     fcolour = float_colour(colour)
 
     # y is inverted for pyglet
@@ -490,7 +491,8 @@ def crosshair(game, point, colour, absolute=False, txt=""):
     return point
 
 
-def coords(game, txt, x, y, invert=True):
+def coords(game, txt, x, y, invert=True):  # pragma: no cover
+    """ show coords on screen, used by editor """
     pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0)  # undo alpha for pyglet drawing
     if invert is True:
         y = game.resolution[1] - y
@@ -511,8 +513,9 @@ def coords(game, txt, x, y, invert=True):
 #   pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0)  # undo alpha for pyglet drawing
 
 
-def polygon(game, points, colors=None, fill=False):
+def polygon(game, points, colors=None, fill=False):  # pragma: no cover
     """
+    Used be editor
     @param points: A list formatted like [x1, y1, x2, y2...]
     @param colors: A list formatted like [r1, g1, b1, a1, r2, g2, b2 a2...]
     """
@@ -523,7 +526,8 @@ def polygon(game, points, colors=None, fill=False):
         pyglet.graphics.draw(len(points) // 2, style, ('v2f', points), ('c4f', colors))
 
 
-def rectangle(game, rect, colour=(255, 255, 255, 255), fill=False, label=True, absolute=False):
+def rectangle(game, rect, colour=(255, 255, 255, 255), fill=False, label=True, absolute=False):  # pragma: no cover
+    """ used by editor """
     fcolour = float_colour(colour)
     pyglet.gl.glColor4f(*fcolour)
     x, y = int(rect.x), int(rect.y)

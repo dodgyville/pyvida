@@ -860,7 +860,7 @@ class TestWalkareaManager:
          """
         w = WalkAreaManager()
         w.immediate_polygon([
-            [0,0], [100, 0], [100, 100], [0, 100]
+            [0, 0], [100, 0], [100, 100], [0, 100]
         ])
         g = Game()
         s = Scene()
@@ -884,7 +884,7 @@ class TestWalkareaManager:
          """
         w = WalkAreaManager()
         w.immediate_polygon([
-            [0,0], [100, 0], [100, 100], [0, 100]
+            [0, 0], [100, 0], [100, 100], [0, 100]
         ])
         g = Game()
         s = Scene()
@@ -901,6 +901,23 @@ class TestWalkareaManager:
         # verify
         assert result is False
 
+    def test_mirror(self):
+        w = WalkAreaManager()
+        w.immediate_polygon([
+            [0, 0], [100, 0], [100, 100], [0, 100]
+        ])
+        w.immediate_waypoints([
+            [10, 10],
+            [20, 10],
+            [30, 10],
+        ])
+
+        # execute
+        w.mirror(1000)
+
+        # verify
+        assert w._polygon == [(1000, 0), (900, 0), (900, 100), (1000, 100)]
+        assert w._waypoints == [(990, 10), (980, 10), (970, 10)]
 
 
 # higher level
