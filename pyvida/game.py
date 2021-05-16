@@ -2137,7 +2137,7 @@ class Game(SafeJSON, Graphics):
         hard_quit()
 
     def queue_event(self, event, caller, *args, **kwargs):
-        if caller == self:
+        if isinstance(caller, Game):
             caller_name = "__game__"
         else:
             caller_name = caller.name

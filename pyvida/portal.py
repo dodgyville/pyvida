@@ -79,18 +79,19 @@ class Portal(Actor):
     def portal_text(self):
         """ What to display when hovering over this link """
         link = self.get_link()
+        link_scene = link.get_scene() if link else None
         t = self.name if self.display_text is None else self.display_text
         t = self.fog_display_text(self.game.player)
         if self.game.settings.portal_exploration and link and link.scene:
-            if link.scene.name not in self.game.visited:
+            if link_scene.name not in self.game.visited:
                 t = _("To the unknown.")
             else:
                 # use the link's display text if available, or the scene display text if available, else the scene name
                 if link.display_text not in [None, ""]:  # override scene display text
                     t = link.display_text
                 else:
-                    t = _("To %s") % (link.scene.name) if link.scene.display_text in [
-                        None, ""] else _("To %s") % (link.scene.display_text)
+                    t = _("To %s") % link_scene.name if link_scene.display_text in [
+                        None, ""] else _("To %s") % (link_scene.display_text)
         if not self.game.settings.show_portal_text:
             t = ""
         return t
@@ -179,7 +180,7 @@ class Portal(Actor):
 
         actor_obj = get_object(self.game, actor)
 
-        logger.warning("Actor {} exiting portal {}".format(actor_obj.name, self.name))
+        logger.info("Actor {} exiting portal {}".format(actor_obj.name, self.name))
         actor_obj.goto((self.x + self.sx, self.y + self.sy), block=block, ignore=True)
         self._pre_leave(self, actor_obj)
         actor_obj.goto((self.x + self.ox, self.y + self.oy), block=True, ignore=True)
@@ -235,9 +236,10 @@ class Portal(Actor):
         """ default interact method for a portal, march player through portal and change scene """
         if actor is None:
             actor = self.game.player
-            logger.warning("No actor available for this portal")
-            return
+            logger.warning("No actor available for this portal, using player")
+
         link = self.get_link()
+        link_scene = link.get_scene() if link else None
         actor_obj = get_object(self.game, actor)
 
         if DEBUG_NAMES:
@@ -254,7 +256,7 @@ class Portal(Actor):
         else:
             if logging:
                 logger.info("Portal - actor %s goes from scene %s to %s" %
-                         (actor_obj.name, self.get_scene().name, link.scene.name))
+                         (actor_obj.name, self.get_scene().name, link_scene.name))
         self.exit_here(actor_obj, block=block)
         self.relocate_link(actor_obj)
         self.game.immediate_request_mouse_cursor(MOUSE_POINTER)  # reset mouse pointer

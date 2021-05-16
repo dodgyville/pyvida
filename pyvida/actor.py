@@ -2360,7 +2360,7 @@ class Actor(SafeJSON, MotionManager):
         self._next_action = next_action if next_action else self.default_idle
         do_event = self.scene or (self.game and self.name in self.game.modals) or (
                 self.game and self.name in self.game.menu_items)
-        result = True
+
         if (self.game and self.game.headless is True) or not do_event:  # if headless or not on screen, jump to end
             self.busy += 1
             self.on_animation_end_once()

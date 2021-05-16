@@ -111,7 +111,7 @@ def save_game_json(game, fname):
         "section_name": game.section_name,
         "datetime": datetime.now().strftime("%a %x %X")
     }
-    with open(fname.with_suffix(".meta"), "w") as f:
+    with open(fname.with_suffix(".savemeta"), "w") as f:
         f.write(json.dumps(metadata))
 
 
@@ -126,6 +126,14 @@ def load_game(game, fname):
     # keep the session-only stuff
     new_game.window = game.window
     new_game.mixer = game.mixer
+
+    # use the current settings (may have changed since last save)
+    new_game.settings = game.settings
+
+    # turn off any walkthrough or headless modes that may have been saved in the file
+    new_game.walkthrough_auto = False  # switch off walkthrough
+    new_game.headless = False
+
     for obj in new_game.items.values():
         obj.game = game
     for obj in new_game.actors.values():
@@ -149,7 +157,7 @@ def load_game_meta(fname):
         "datetime": datetime.now()
     }
     """
-    with open(fname.with_suffix(".meta"), "r") as f:
+    with open(fname.with_suffix(".savemeta"), "r") as f:
         data = f.read()
         metadata = json.loads(data)
     return metadata

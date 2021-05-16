@@ -8,6 +8,7 @@ from dataclasses import (
     dataclass,
     field
 )
+from typing import Optional
 from datetime import datetime
 import logging
 
@@ -118,7 +119,7 @@ class Settings:
 
     total_time_played = 0  # total time playing this game in ms
     fastest_playthrough = None
-    filename = None
+    filename: Optional[str] = None
 
     custom: CatchAll = field(default_factory=dict)  # specific to the game
 
