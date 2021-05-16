@@ -118,11 +118,9 @@ class Motion(object):
         delta_index = index if index else self.index
         d = self.deltas[delta_index % num_deltas]
         dx, dy, z, r, scale, frame_index, alpha = d.flat
-        pyglet.gl.glScalef(scale, scale, 1)
-        #        import pdb; pdb.set_trace()
         if index is None:
             self.index += 1
-        return True
+        return scale
 
     def half_speed(self):
         """
@@ -157,7 +155,7 @@ class Motion(object):
             new_deltas.append(a)
         self.deltas = new_deltas
 
-    def print(self):
+    def print(self):  # pragma: no cover
         print("x,y,z,r,scale,f,alpha")
         for i in self.deltas:
             print(str(i)[1:-1])

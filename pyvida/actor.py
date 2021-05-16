@@ -218,7 +218,7 @@ class Actor(SafeJSON, MotionManager):
     goto_dy: float = 0.0
     goto_points: List[List] = field(default_factory=list)  # list of points Actor is walking through
     goto_block: bool = False  # is this a*star multi-step process blocking?
-    _use_astar: bool = False
+    use_astar: bool = False  # use astar search for path planning (object avoidance, etc)
 
     opacity: float = 255.0
 
@@ -1536,7 +1536,7 @@ class Actor(SafeJSON, MotionManager):
                 y = -y
                 y -= sprite.height
 
-            if self._use_astar and self.game.scene:  # scale based on waypoints
+            if self.use_astar and self.game.scene:  # scale based on waypoints
                 distances = []
                 total_distances = 0
 
@@ -2193,8 +2193,7 @@ class Actor(SafeJSON, MotionManager):
                 log.error(f"Unable to remove {item.name} from missing scene {item.scene}")
         return item
 
-
-    def immediate_gets(self, item, remove=True, ok=-1, action="portrait", collection="collection", scale=1.0):
+    def immediate_add_to_inventory(self, item, remove=True, ok=-1, action="portrait", collection="collection", scale=1.0):
         """ add item to inventory, remove from scene if remove == True """
         item = self.add_item_to_inventory_and_collection(item, remove, collection, scale)
 
@@ -2209,16 +2208,17 @@ class Actor(SafeJSON, MotionManager):
                 print("%s adds %s to inventory." % (self_name, name))
             if self.game.walkthrough_auto and item.name not in self.game.walkthrough_inventorables:
                 self.game.walkthrough_inventorables.append(item.name)
-
+        return item
 
     @queue_method
     def gets(self, item, remove=True, ok=-1, action="portrait", collection="collection", scale=1.0):
         """ get item and display message """
-        item = self.immediate_gets(item, remove, ok, action, collection, scale)
+        self.immediate_gets(item, remove, ok, action, collection, scale)
 
-        # TODO: pyvida7. I have a feat that the queue_methods are not executed, they are simply event queue wrappers.
-        # Ideally It should hit this set_trace
-        import pdb; pdb.set_trace()
+    def immediate_gets(self, item, remove=True, ok=-1, action="portrait", collection="collection", scale=1.0):
+        """ get item and display message """
+        item = self.immediate_add_to_inventory(item, remove, ok, action, collection, scale)
+
         if item is None:
             return
 
@@ -3018,7 +3018,7 @@ class Actor(SafeJSON, MotionManager):
 
         start = (self.x, self.y)
         #        print("calculating way points between",start, point)
-        if self._use_astar:
+        if self.use_astar:
             path = self._calculate_path(start, point, ignore=ignore)[1:]
             if len(path) == 0:
                 print("no astar found so cancelling")

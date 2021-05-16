@@ -39,7 +39,8 @@ from .portal import Portal
 from .scene import Scene
 from .walkareamanager import WalkAreaManager
 
-def open_editor(game, filepath, track=True):
+
+def open_editor(game, filepath, track=True):  # pragma: no cover
     """
         Open a text editor to edit fname, used by the editor when editing
         scripts
@@ -66,10 +67,10 @@ def open_editor(game, filepath, track=True):
         subprocess.call(('xdg-open', filepath))
 
 
-
 # pyqt4 editor
 
-def edit_object_script(game, obj):
+
+def edit_object_script(game, obj):  # pragma: no cover
     """ Create and/or open a script for editing """
     directory = obj._directory
     fname = os.path.join(directory, "%s.py" % slugify(obj.name).lower())
@@ -101,7 +102,7 @@ def edit_object_script(game, obj):
     __import__(module_name)
 
 
-def edit_action_motion(game, obj, action):
+def edit_action_motion(game, obj, action):  # pragma: no cover
     directory = obj._directory
     fname = os.path.join(directory, "%s.motion" % slugify(action.name).lower())
     if not os.path.isfile(fname):  # create a new module for this actor
@@ -112,7 +113,7 @@ def edit_action_motion(game, obj, action):
     open_editor(game, fname, track=False)
 
 
-def set_edit_object(game, obj, old_obj):
+def set_edit_object(game, obj, old_obj):  # pragma: no cover
     obj = get_object(game, obj)
     old_obj = get_object(game, old_obj)
     if old_obj:
@@ -122,7 +123,7 @@ def set_edit_object(game, obj, old_obj):
     obj.show_debug = True
 
 
-def editor_new_object(game, obj):
+def editor_new_object(game, obj):  # pragma: no cover
     d = os.path.join(get_smart_directory(game, obj), obj.name)
     if not os.path.exists(d):
         os.makedirs(d)
@@ -134,8 +135,10 @@ def editor_new_object(game, obj):
     game.get_scene().add(obj)
 
 
-if log: log.info("CHECKING FOR EDITOR")
-if EDITOR_AVAILABLE:
+if log:
+    log.info("CHECKING FOR EDITOR")
+
+if EDITOR_AVAILABLE:  # pragma: no cover
     if log: log.info("EDITOR AVAILABLE")
 
 
@@ -735,7 +738,8 @@ if EDITOR_AVAILABLE:
             self.app.mainloop()
 
 
-def editor(game):
+def editor(game):  # pragma: no cover
+    """ Create the editor app """
     if not EDITOR_AVAILABLE:
         return None
     app = MyTkApp(game)

@@ -250,10 +250,9 @@ class Graphics:
             # apply motions
             remove_motions = []
             for motion_name in scene.applied_motions:
-
                 motion = scene.motions[motion_name]
-                if motion.apply_to_scene(scene) is False:  # motion has finished
-                    remove_motions.append(motion_name)
+                scale = motion.apply_to_scene(scene)
+                pyglet.gl.glScalef(scale, scale, 1)
 
             for motion_name in remove_motions:
                 scene.applied_motions.remove(motion_name)

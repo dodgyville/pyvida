@@ -1112,6 +1112,18 @@ class TestMotion:
         assert len(m.deltas) == 2
         assert m.deltas[0].flat == (-10, 10, None, None, None, None, None)
 
+    def test_apply_to_scene(self):
+        m = Motion("right")
+        m.add_delta(10, 10, scale=5)
+        m.add_delta(10, 10, scale=5)
+
+        scene = Scene()
+        scale = m.apply_to_scene(scene)
+
+        assert scale == 5
+
+
+
 
 class TestPathplanning:
     def test_getgoto_action_motion(self):

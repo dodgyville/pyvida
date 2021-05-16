@@ -412,6 +412,17 @@ def queue_method(f):
         calling_obj.game.queue_event(f, calling_obj, *args, **kwargs)
     return new_f
 
+
+def queue_function(f):
+    def new_f(game_obj, *args, **kwargs):
+        if not game_obj:
+            log.error(f"no game object")
+        # functions are not called by anyone but fake being called by game
+        # they also must pass in game as their first arg
+        game_obj.queue_event(f, game_obj, game_obj, *args, **kwargs)
+    return new_f
+
+
 # graphics handling
 # get PNG image size info without loading into video memory
 # courtesy Fred the Fantastic - http://stackoverflow.com/questions/8032642/how-to-obtain-image-size-using-standard-python-class-without-using-external-lib

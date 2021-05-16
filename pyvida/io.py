@@ -139,6 +139,7 @@ def load_game(game, fname):
         obj.set_game(game)  # also takes care of walkareas
     return new_game
 
+
 def load_game_meta(fname):
     fname = Path(fname)
     """

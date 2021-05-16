@@ -2519,6 +2519,7 @@ class Game(SafeJSON, Graphics):
                 except:
                     print("Last script: %s, this script: %s, last autosave: %s" % (
                         self._last_script, fn_name, self._last_autosave))
+                    import pdb; pdb.set_trace()
                     raise
 
                 if self.profile_scripts:

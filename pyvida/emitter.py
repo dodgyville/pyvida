@@ -343,7 +343,8 @@ class Emitter(Item):
         return uniform(self.size_spawn_min, self.size_spawn_max)
 
     def _add_particles(self, num=1, terminate=False, speed_spawn_min=None, speed_spawn_max=None):
-        print(f"adding {num} particles to {self.name}")
+        if logging:
+            log.debug(f"adding {num} particles to {self.name}")
         if speed_spawn_min:  # update new spawn values
             self.speed_spawn_min = speed_spawn_min
         if speed_spawn_max:
