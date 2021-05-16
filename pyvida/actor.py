@@ -106,7 +106,7 @@ def option_mouse_motion(game, btn, player, *args, **kwargs2):
 
 def close_on_says(game, obj, player):
     """ Default close an actor's msgbox and associated items
-        Also kill any pyglet scheduled events for animated text on Text
+        Also kill any pyglet scheduled events for animated text on Label
     """
     # REMOVE ITEMS from obj.items instead
     if not obj.creator:
@@ -180,27 +180,27 @@ def option_answer_callback(game, btn, player, *args):
 @dataclass
 class Actor(SafeJSON, MotionManager):
     name: str = 'unknown actor'
-    interact: str = None  # special queuing function for interacts
-    display_text: str = None
-    look: str = None  # override queuing function for look
-    drag: str = None
+    interact: Optional[str] = None  # special queuing function for interacts
+    display_text: Optional[str] = None
+    look: Optional[str] = None  # override queuing function for look
+    drag: Optional[str] = None
     actions: Dict[str, Action] = field(default_factory=dict)
-    scene: str = None
-    action: str = None
-    _next_action: str = None
+    scene: Optional[str] = None
+    action: Optional[str] = None
+    _next_action: Optional[str] = None
     _x: float = 0.0
     _y: float = 0.0
     z: float = 1.0  # used for parallax
-    creator: str = None  # name of the object in charge of creating (and destroying) this object
+    creator: Optional[str] = None  # name of the object in charge of creating (and destroying) this object
 
-    interact_key: any = None  # keyboard key assigned to this interact
-    preupdate: str = None  # call before _update
-    _finished_goto: str = None  # override function when goto has finished
+    interact_key: Optional[any] = None  # keyboard key assigned to this interact
+    preupdate: Optional[str] = None  # call before _update
+    _finished_goto: Optional[str] = None  # override function when goto has finished
     # allow drag if not None, function will be called when item is released
     # after being dragged
-    mouse_motion_callback: str = None  # called when mouse is hovering over object
+    mouse_motion_callback: Optional[str] = None  # called when mouse is hovering over object
     # called when mouse is not hovering over object
-    _mouse_none: str = None
+    _mouse_none: Optional[str] = None
     scroll: Tuple[float, float] = (0.0, 0.0)  # scrolling speeds (x,y) for texture
     _scroll_dx: float = 0.0  # when scrolling, what is our displacement?
     _scroll_dy: float = 0.0
@@ -222,7 +222,7 @@ class Actor(SafeJSON, MotionManager):
 
     opacity: float = 255.0
 
-    opacity_target: float = None
+    opacity_target: Optional[float] = None
     opacity_delta: float = 0.0
     opacity_target_block: bool = False  # is opacity change blocking other events
 
@@ -241,29 +241,29 @@ class Actor(SafeJSON, MotionManager):
     _vy: float = 0.0  # temporary visual displacement (used by motions)
     _shakex: float = 0.0
     _shakey: float = 0.0
-    parent: str = None
+    parent: Optional[str] = None
     children: List[str] = field(default_factory=list)  # used by reparent
-    resource_name_override: str = None  # override actor name to use when accessing resource dict
+    resource_name_override: Optional[str] = None  # override actor name to use when accessing resource dict
 
     # when an actor stands at this actor's stand point, request an idle
-    idle_stand: str = None
+    idle_stand: Optional[str] = None
     _idle: str = "idle"  # the default idle action for this actor
     _over: str = "over"  # the default over action for this actor when in menu
 
     _scale: float = 1.0
     rotate_speed: float = 0.0
     _mirrored: bool = False  # has actor been mirrored by on_mirror?
-    _pyglet_animation_callback: str = None  # when an animation ends, this function will be called
+    _pyglet_animation_callback: Optional[str] = None  # when an animation ends, this function will be called
 
     # can override name for game.info display text
     display_text_align: int = LEFT
     # if the player hasn't met this Actor use these "fog of war" variables.
-    _fog_display_text: str = None
-    description: str = None  # text for blind users
+    _fog_display_text: Optional[str] = None
+    description: Optional[str] = None  # text for vision impaired users
 
-    font_speech: str = None  # use default font if None (from game), else filename key for _pyglet_fonts
-    font_speech_size: float = None  # use default font size (from game)
-    font_colour: any = None  # use default
+    font_speech: Optional[str] = None  # use default font if None (from game), else filename key for _pyglet_fonts
+    font_speech_size: Optional[float] = None  # use default font size (from game)
+    font_colour: Optional[any] = None  # use default
     portrait_offset_x: float = 0.0
     portrait_offset_y: float = 0.0
 
@@ -271,7 +271,7 @@ class Actor(SafeJSON, MotionManager):
     # always used for x,y and also w,h if clickable_mask if one is
     # available
     _clickable_area: Rect = Rect(0, 0, 0, 0)
-    _clickable_mask: any = None
+    _clickable_mask: Optional[any] = None
     # override clickable to make it cover all the screen
     _clickable_fullscreen: bool = False
 
@@ -286,27 +286,27 @@ class Actor(SafeJSON, MotionManager):
     show_debug: bool = False
 
     # called when item is selected in a collection
-    _collection_select: str = None
+    _collection_select: str = ''
     uses: Dict[str, str] = field(default_factory=dict)  # override use functions (actor is key name)
     facts: List[str] = field(default_factory=list)
     _met: List[str] = field(default_factory=list)  # list of Actors this actor has interacted with
     inventory: List[str] = field(default_factory=list)
 
-    _directory: str = None  # directory this is smart loaded from (if any)
+    _directory: str = ''  # directory this is smart loaded from (if any)
     _images: List[str] = field(default_factory=list)  # image filenames that the actions are based on
     # don't process any more events for this actor until busy is False,
     # will block all events if game.immediate_wait()
     busy: int = 0
-    _batch: any = None
+    _batch: Optional[any] = None
 
     # sepcial visual effects
-    _tint: any = None
+    _tint: Optional[any] = None
     _fx_sway: float = 0.0  # sway speed
     _fx_sway_angle: float = 0.0  # in degrees
     _fx_sway_index = 0  # TODO: there is no limit to how high this might go
 
     # engine backwards compatibility
-    _engine_v1_scale: float = None
+    _engine_v1_scale: Optional[float] = None
 
     """
     def to_json(self, *args, **kwargs):
@@ -725,8 +725,8 @@ class Actor(SafeJSON, MotionManager):
         """ 0 - 255 """
         self.opacity = v
 
-        from .text import Text  # XXX probably circular, want to remove this import
-        if isinstance(self, Text) and self.resource:
+        from .text import Label  # XXX probably circular, want to remove this import
+        if isinstance(self, Label) and self.resource:
             new_colour = (self.resource.color[0], self.resource.color[1], self.resource.color[2], int(self.opacity))
             self.resource.color = new_colour
         elif self.resource:
@@ -913,7 +913,10 @@ class Actor(SafeJSON, MotionManager):
         # apply motions
         remove_motions = []
         for motion_name in self.applied_motions:
-            motion = self.motions[motion_name]
+            try:
+                motion = self.motions[motion_name]
+            except:
+                import pdb; pdb.set_trace()
             if motion.apply_to_actor(self) is False:  # motion has finished
                 remove_motions.append(motion_name)
         for motion_name in remove_motions:
@@ -997,21 +1000,23 @@ class Actor(SafeJSON, MotionManager):
     # return collide(self._image().get_rect().move(self.x, self.y), x, y)
 
     def trigger_interact(self):
+        """
+        trigger interact
+        """
         if self.interact:  # if user has supplied an interact override
-            if type(self.interact) in [str]:
-                interact = get_memorable_function(self.game, self.interact)
-                if interact:
-                    self.interact = interact
-                else:
+            interact = self.interact
+            if type(interact) in [str]:
+                interact = get_memorable_function(self.game, interact)
+                if not interact:
                     if logging:
-                        log.error("Unable to find interact fn %s" %
-                                  self.interact)
+                        log.error("Unable to find interact fn %s"  % self.interact)
                     return
-            n = self.interact.__name__ if self.interact else "self.interact is None"
+            n = interact.__name__ if interact else "interact is empty"
             if logging:
                 log.debug("Player interact (%s (%s)) with %s" % (
                     n, self.interact if self.interact else "none", self.name))
-            script = self.interact
+
+            script = interact
             try:
                 script(self.game, self, self.game.get_player())
             except:
@@ -1434,7 +1439,7 @@ class Actor(SafeJSON, MotionManager):
         """ XXX per actor quickload disabled in favour single game quickload, which I'm testing at the moment
         #save fast load info for this actor (rebuild using --B option)
         filepath = os.path.join(myd, "%s.smart"%slugify(self.name).lower())
-        if self.__class__ in [Item, Actor, Text, Portal]: #store fast smart load values for generic game objects only
+        if self.__class__ in [Item, Actor, Label, Portal]: #store fast smart load values for generic game objects only
             try:
                 with open(filepath, "wb") as f:
                     pickle.dump(self, f)
@@ -1811,7 +1816,7 @@ class Actor(SafeJSON, MotionManager):
             tuples containing a text option to display and a function to call if the player selects this option.
 
         """
-        from .text import Text  # XXX probably circular, want to remove this import
+        from .text import Label  # XXX probably circular, want to remove this import
 
         if logging:
             log.info("%s has started on_asks." % (self.name))
@@ -1831,7 +1836,7 @@ class Actor(SafeJSON, MotionManager):
                 log.error("No arguments sent to %s on_ask, skipping" % (self.name))
             return
         for item in items:
-            if isinstance(item, Text):
+            if isinstance(item, Label):
                 label = item
             item.collide_mode = COLLIDE_NEVER
         # add the options
@@ -1863,7 +1868,7 @@ class Actor(SafeJSON, MotionManager):
                 kwargs["colour"] = rgb2gray((r * .667, g * .667, b * .667))  # rgb2gray((r / 2, g / 2, b / 2))
             #            def over_option
             #            kwargs["over"] = over_option
-            opt = Text("option{}".format(i), display_text=text, **kwargs)
+            opt = Label("option{}".format(i), display_text=text, **kwargs)
             if i in keys.keys():
                 opt.immediate_key(keys[i])
             # if self.game and not self.game.headless:
@@ -1893,8 +1898,8 @@ class Actor(SafeJSON, MotionManager):
         """  _continues """
         kwargs = self._get_text_details()
 
-        from .text import Text  # XXX probably circular, want to remove this import
-        label = Text(text, delay=delay, step=step, size=size, **kwargs)
+        from .text import Label  # XXX probably circular, want to remove this import
+        label = Label(text, delay=delay, step=step, size=size, **kwargs)
         label.game = self.game
         label.immediate_usage(True, True, False, False, False)
         #        label.fullscreen(True)
@@ -1912,8 +1917,8 @@ class Actor(SafeJSON, MotionManager):
         """
         kwargs = self._get_text_details()
 
-        from .text import Text  # XXX probably circular, want to remove this import
-        label = Text(text, delay=delay, step=step, **kwargs)
+        from .text import Label  # XXX probably circular, want to remove this import
+        label = Label(text, delay=delay, step=step, **kwargs)
         label.game = self.game
         label.fullscreen(True)
         label.x, label.y = self.x + self.tx, self.y - self.ty
@@ -1947,10 +1952,10 @@ class Actor(SafeJSON, MotionManager):
             items[0].trigger_interact()  # auto-close the on_says
 
     def create_text(self, name, *args, **kwargs):
-        """ Create a Text object using this actor's values """
+        """ Create a Label object using this actor's values """
 
-        from .text import Text  # XXX probably circular, want to remove this import
-        return Text(name, *args, **kwargs)
+        from .text import Label  # XXX probably circular, want to remove this import
+        return Label(name, *args, **kwargs)
 
     def create_says(self, text, action="portrait", font=None, size=None, using=None, position=None, align=LEFT,
                     offset=None,
@@ -1966,7 +1971,7 @@ class Actor(SafeJSON, MotionManager):
         if self.game:
             info_obj = get_object(self.game, self.game.info_object)
             if info_obj:  # clear info object
-                info_obj.display_text = " "
+                info_obj.set_text(" ")
 
         high_contrast = "%s_highcontrast" % ("msgbox" if not using else using)
         myd = os.path.join(self.game.directory_items, high_contrast)

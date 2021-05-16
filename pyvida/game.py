@@ -38,7 +38,7 @@ from .camera import Camera
 from .portal import Portal
 from .scene import Scene
 from .walkareamanager import WalkAreaManager
-from .text import _pyglet_fonts, Text  # XXX need to rework _pyglet_fonts global
+from .text import _pyglet_fonts, Label  # XXX need to rework _pyglet_fonts global
 from .sound import *
 from .settings import Settings, Storage
 from .sprite import (
@@ -201,6 +201,7 @@ class Game(SafeJSON, Graphics):
     scenes: Dict[str, Scene] = field(default_factory=dict)
     collections: Dict[str, Collection] = field(default_factory=dict)
     portals: Dict[str, Portal] = field(default_factory=dict)
+    texts: Dict[str, Label] = field(default_factory=dict)
 
     scene: Optional[str] = None  # name of scene object, use get_scene and set_scene to get object
     menu_items: List[str] = field(default_factory=list)
@@ -221,7 +222,7 @@ class Game(SafeJSON, Graphics):
     busy: int = 0  # game is never busy but might be checked by generic functions
     waiting_for_user: bool = False  # used by wait_for_user queing funct
 
-    skip_key: any = None  # if in a cutscene and allowing players to skip
+    skip_key: Optional[any] = None  # if in a cutscene and allowing players to skip
     # skip_callback: str
     skipping: bool = False
 
@@ -575,7 +576,7 @@ class Game(SafeJSON, Graphics):
         self.message_position = (CENTER, BOTTOM)  # position of message queue
 
         # special object for onscreen messages
-        obj = Text("_message object", colour=FONT_MESSAGE_COLOUR, font=FONT_MESSAGE,
+        obj = Label("_message object", colour=FONT_MESSAGE_COLOUR, font=FONT_MESSAGE,
                    size=FONT_MESSAGE_SIZE, offset=2)
         self.immediate_add(obj, replace=True)
         obj.load_assets(self)
@@ -695,6 +696,8 @@ class Game(SafeJSON, Graphics):
                 return self.actors[s]
             elif s in self.items:
                 return self.items[s]
+            elif s in self.texts:
+                return self.texts[s]
             elif s in self.collections:
                 return self.collections[s]
             elif s in self.portals:
@@ -1119,7 +1122,7 @@ class Game(SafeJSON, Graphics):
         if window_y < 0 or window_x < 0 or window_x > self.resolution[0] or window_y > self.resolution[
             1]:  # mouse is outside game window
             info_obj = get_object(self, self.info_object)
-            info_obj.display_text = " "  # clear info
+            info_obj.set_text(" ")  # clear info
             reset_mouse_cursor(self)
             return
 
@@ -1160,9 +1163,9 @@ class Game(SafeJSON, Graphics):
                         self.immediate_request_mouse_cursor(MOUSE_CROSSHAIR)
 
                     allow_over = obj.actions or hasattr(obj,
-                                                        "_over_colour")  # an Actor or a Text with menu behaviour
+                                                        "_over_colour")  # an Actor or a Label with menu behaviour
                     over_in_actions = obj._over in obj.actions or hasattr(obj,
-                                                                          "_over_colour")  # an Actor or a Text with menu behaviour
+                                                                          "_over_colour")  # an Actor or a Label with menu behaviour
                     if allow_over and over_in_actions and (obj.allow_interact or obj.allow_use or obj.allow_look):
                         if obj.action != obj._over:
                             self.menu.immediate_play_enter_sfx()  # play sound if available
@@ -1174,7 +1177,7 @@ class Game(SafeJSON, Graphics):
                     menu_collide = True
                 else:  # unhover over menu item
                     allow_over = obj.actions or hasattr(obj,
-                                                        "_over_colour")  # an Actor or a Text with menu behaviour
+                                                        "_over_colour")  # an Actor or a Label with menu behaviour
                     action_name = obj.action if obj.action else getattr(obj, "_action_name", "")
                     if allow_over and action_name == obj._over and (
                             obj.allow_interact or obj.allow_use or obj.allow_look):
@@ -1240,7 +1243,7 @@ class Game(SafeJSON, Graphics):
         # Not over any thing of importance
         info_obj = get_object(self, self.info_object)
         if info_obj:
-            info_obj.display_text = " "  # clear info
+            info_obj.set_text(" ")  # clear info
         if self.mouse_mode != MOUSE_LOOK:
             self.immediate_request_mouse_cursor(MOUSE_POINTER)  # reset mouse pointer
 
@@ -1349,7 +1352,7 @@ class Game(SafeJSON, Graphics):
                         player.goto_points = []
                         return
         info_obj = get_object(self, self.info_object)
-        info_obj.display_text = " "  # clear hover text
+        info_obj.set_text(" ")  # clear hover text
 
         self.last_mouse_release = (raw_x, raw_y, button, time.perf_counter())
 
@@ -1622,12 +1625,12 @@ class Game(SafeJSON, Graphics):
                 self._walkthrough_hints[str(key)] = extras["help"]
 
     def create_info_object(self, text=" ", name="_info_text"):
-        """ Create a Text object for the info object """
+        """ Create a Label object for the info object """
         colour = self.font_info_colour
         font = self.font_info
         size = self.font_info_size
         offset = self.font_info_offset
-        obj = Text(
+        obj = Label(
             name, display_text=text, font=font, colour=colour, size=size, offset=offset)
         obj.load_assets(self)  # XXX loads even in headless mode?
         return obj
@@ -1692,7 +1695,7 @@ class Game(SafeJSON, Graphics):
                 obj = get_object(self.game, item[0])
                 obj.interact = item[1]
             else:
-                obj = Text(item[0], font=factory.font, colour=factory.colour,
+                obj = Label(item[0], font=factory.font, colour=factory.colour,
                            size=factory.size, offset=factory.offset)
                 obj.game = self
                 obj.interact = item[1]  # set callback
@@ -1756,7 +1759,7 @@ class Game(SafeJSON, Graphics):
             Set that here.
         """
         info_obj = get_object(self, self.info_object)
-        info_obj.display_text = _(text)
+        info_obj.set_text(_(text))
         if text and len(text) == 0:
             return
         w = info_obj.w
@@ -2626,7 +2629,7 @@ class Game(SafeJSON, Graphics):
         for item in items_to_update:
             if item is None:
                 log.error(
-                    f"Some item(s) at this point in {self.name} are None, which is odd. Current items {items_list}")
+                    f"Some item(s) at this point in {self.name} are None, which is odd. Current items {items_to_update}")
                 continue
             item.game = self
 
@@ -2702,6 +2705,8 @@ class Game(SafeJSON, Graphics):
                 self.actors.pop(name)
             elif name in self.items.keys():
                 self.items.pop(name)
+            elif name in self.texts.keys():
+                self.texts.pop(name)
             elif name in self.scenes.keys():
                 self.scenes.pop(name)
             elif name in self.collections.keys():
@@ -2724,7 +2729,7 @@ class Game(SafeJSON, Graphics):
             #    log.warning(f"Unable to find {obj} for immediate_add.")
             #    continue
 
-            if obj in self.actors.values() or obj in self.items.values() or obj in self.scenes.values() or obj in self.collections.values() or obj in self.portals.values():
+            if obj in self.actors.values() or obj in self.items.values() or obj in self.scenes.values() or obj in self.collections.values() or obj in self.portals.values() or obj in self.texts.values():
                 if not replace:
                     continue
                 elif logging:
@@ -2741,6 +2746,8 @@ class Game(SafeJSON, Graphics):
                 del self.collections[obj_name]
             if obj_name in self.portals:
                 del self.portals[obj_name]
+            if obj_name in self.texts:
+                del self.texts[obj_name]
 
             obj_obj.game = self
 
@@ -2754,6 +2761,8 @@ class Game(SafeJSON, Graphics):
                 self.menu_factories[obj_obj.name] = obj_obj
             elif isinstance(obj_obj, Collection):
                 self.collections[obj_obj.name] = obj_obj
+            elif isinstance(obj_obj, Label):
+                self.texts[obj_obj.name] = obj_obj
             elif isinstance(obj_obj, Portal):
                 self.portals[obj_obj.name] = obj_obj
             elif isinstance(obj_obj, Item):

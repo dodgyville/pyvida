@@ -103,7 +103,6 @@ def save_game_json(game, fname):
     game.storage.total_time_in_game += dt.total_seconds()
     game.storage.last_save_time = game.storage.last_load_time = datetime.now()
     with open(fname, 'w') as f:
-        # TODO: dump some metadata (eg date, title, etc) to a sister file
         # check_json_safe(game)
         result = game.to_json(indent=4)
         f.write(result)
@@ -134,6 +133,8 @@ def load_game(game, fname):
     for obj in new_game.collections.values():
         obj.game = game
     for obj in new_game.portals.values():
+        obj.game = game
+    for obj in new_game.texts.values():
         obj.game = game
     for obj in new_game.scenes.values():
         obj.set_game(game)  # also takes care of walkareas

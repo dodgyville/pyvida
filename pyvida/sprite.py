@@ -16,7 +16,7 @@ _resources = {}  # graphical assets for the game, #w,h, Sprite|None
 # resources
 
 
-def set_resource(key, w=False, h=False, resource: Optional[bool] = False, subkey=None):
+def set_resource(key, w=False, h=False, resource: Optional[bool|any] = False, subkey=None):
     """ If w|h|resource != False, update the value in _resources[key] """
     """ resource is a pyglet Animation or a Label """
     if subkey:

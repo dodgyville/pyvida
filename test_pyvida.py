@@ -60,7 +60,7 @@ from pyvida import (
     save_game_json,
     Scene,
     Settings,
-    Text,
+    Label,
     WalkAreaManager
 )
 
@@ -764,7 +764,7 @@ class TestSettings:
 
 class TestText:
     def test_basic(self):
-        t = Text("hello world")
+        t = Label("hello world")
         t.load_assets()
         resource = get_resource(t.resource_name)
 
@@ -773,7 +773,7 @@ class TestText:
         assert resource[1] == 39
 
     def test_create_missing_font(self):
-        t = Text("hello world", font="nonexisting font")
+        t = Label("hello world", font="nonexisting font")
         t.load_assets()
         resource = get_resource(t.resource_name)
 
@@ -925,7 +925,7 @@ class TestWalkareaManager:
 class TestMenus:
     def test_basic(self):
         game = create_basic_scene()
-        t = Text("hello")
+        t = Label("hello")
         t.load_assets()
         game.add(t)
         game.set_menu("hello")
@@ -953,7 +953,7 @@ class TestMenus:
 
     def test_usage_draw(self):
         game = create_basic_scene()
-        t = Text("hello")
+        t = Label("hello")
         t.load_assets()
         game.add(t)
         game.set_menu("hello")
@@ -963,7 +963,7 @@ class TestMenus:
 
     def test_usage_update(self):
         game = create_basic_scene()
-        t = Text("hello")
+        t = Label("hello")
         t.load_assets()
         game.add(t)
         game.set_menu("hello")
@@ -973,7 +973,7 @@ class TestMenus:
 
     def test_usage_look(self, mocker):
         game = create_basic_scene()
-        t = Text("hello", interact=MagicMock())
+        t = Label("hello", interact=MagicMock())
 
         def test_look(self, *args, **kwargs):
             pass

@@ -7,6 +7,7 @@ from dataclasses import (
 )
 import logging
 import os
+from typing import Optional
 
 from .constants import (
     DEBUG_NAMES,
@@ -35,12 +36,12 @@ logger = logging.getLogger(LOGNAME)
 @dataclass
 class Portal(Actor):
     """ An object to link two scenes """
-    link: str = None  # the connecting Portal
+    link: Optional[str] = None  # the connecting Portal
     _ox: float = 0.0  # out point for this portal
     _oy: float = 0.0
     _allow_look: bool = False  # look and use are disabled by default for Portals
     _allow_use: bool = False  # look and use are disabled by default for Portals
-    icon: any = None
+    icon: Optional[any] = None
 
     def generate_icons(self):
         # create portal icon for settings.show_portals

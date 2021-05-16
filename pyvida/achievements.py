@@ -26,7 +26,7 @@ from .constants import (
     FONT_ACHIEVEMENT_SIZE,
     ONCE,
 )
-from .text import Text
+from .text import Label
 from .utils import (
     get_safe_path,
     _
@@ -103,7 +103,7 @@ class AchievementManager:
             game.achievement.relocate(game.scene, (120, game.resolution[1]))
             game.achievement.z = 3
 
-            text = Text("achievement_text", pos=(130, 240), display_text=_(a.name), colour=FONT_ACHIEVEMENT_COLOUR,
+            text = Label("achievement_text", pos=(130, 240), display_text=_(a.name), colour=FONT_ACHIEVEMENT_COLOUR,
                         font=FONT_ACHIEVEMENT, size=FONT_ACHIEVEMENT_SIZE)
             game.add(text, replace=True)
             text._ay = -200
@@ -112,7 +112,7 @@ class AchievementManager:
             text.relocate(game.scene)
             text.load_assets(game)
 
-            #            text = Text("achievement_text2", pos=(130,260), display_text=a.description, colour=FONT_ACHIEVEMENT_COLOUR2, font=FONT_ACHIEVEMENT, size=FONT_ACHIEVEMENT_SIZE)
+            #            text = Label("achievement_text2", pos=(130,260), display_text=a.description, colour=FONT_ACHIEVEMENT_COLOUR2, font=FONT_ACHIEVEMENT, size=FONT_ACHIEVEMENT_SIZE)
             #            game.add(text, replace=True)
             #            text._ay = 200
             #            text.reparent("achievement")
@@ -120,7 +120,7 @@ class AchievementManager:
 
             game.achievement.relocate(game.scene)
             game.mixer.sfx_play("data/sfx/achievement.ogg", "achievement")
-            game.achievement.display_text = _(a.achievement_description)
+            game.achievement.set_text(_(a.achievement_description))
             game.achievement.retext((0, -FONT_ACHIEVEMENT_SIZE * 3))
             game.achievement.motion("popup", mode=ONCE, block=True)
             # TODO: replace with bounce Motion

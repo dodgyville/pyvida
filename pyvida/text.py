@@ -58,7 +58,7 @@ if TYPE_CHECKING:
 _pyglet_fonts = {DEFAULT_MENU_FONT: "bitstream vera sans"}
 
 
-class Label(pyglet.text.Label):
+class PygletLabel(pyglet.text.Label):
     pass
 
 
@@ -113,69 +113,42 @@ class HTMLLabel(DocumentLabel):
     :type: str
     ''')
 
-
-class Text(Item):
+@dataclass
+class Label(Item):
     name: str = ''
-    pos: any = None
+    pos: any = (0, 0)
     display_text: str = None
-    colour: any = None
-    font: any = None
-    size: int = 0
+    colour: any = (255, 255, 255, 255)
+    font: any = None  # the filepath to the font
+    font_name: str = "Times New Roman"
+    size: int = DEFAULT_TEXT_SIZE
     wrap: int = 800
     offset: any = None
     interact: str = None
     look: str = None
-    delay: int = 0
-    step: int = 2
+    align: int = LEFT
+    delay: int = 0  # How fast to display chunks of the text
+    step: int = 2  # How many characters to advance during delayed display
+    _height: int = 0
+    _width: int = 0
 
-    _display_text: str = None
-    font_name: str = None
+    format_text: str = ''  # function for formatting text for display
 
-    def __init__(self, name, pos=(0, 0), display_text=None,
-                 colour=(255, 255, 255, 255), font=None, size=DEFAULT_TEXT_SIZE, wrap=800,
-                 offset=None, interact=None, look=None, delay=0, step=2):
-        """
-        font: the filepath to the font
-        delay : How fast to display chunks of the text
-        step : How many characters to advance during delayed display
+    # _display_text: str = None
+    _pyglet_animate_scheduled: bool = False  # is a clock function scheduled
 
-        TODO: rework Text so it creates resources in Actions (eg idle and over)
-        """
-        self.format_text = None  # function for formatting text for display
-        super().__init__(name, interact=interact, look=look)
+    _idle_colour: any = None  # mimick menu "over" behaviour using this colour
+    _over_colour: any = None  # mimick menu "over" behaviour using this colour
+    _action_name: str = "idle"  # mimmick menu over and idle behaviour if over_colour is set
 
-        self._display_text = display_text if display_text else name
-        self.x, self.y = pos
-        self.step = step
-        self.offset = offset
-        self._height = None  # height of full text
-        self._width = None  # width of full text
-        self.delay = delay
-        self._pyglet_animate_scheduled = False  # is a clock function scheduled
-        self.align = LEFT  # LEFT x, CENTER around x, RIGHT x - self.w
+    def __post_init__(self):
+        self.game = None
+        self.x, self.y = self.pos
+        self.display_text = self.display_text if self.display_text else self.name
 
-        if len(colour) == 3:
-            # add an alpha value if needed
-            colour = (colour[0], colour[1], colour[2], 255)
-
-        font_name = "Times New Roman"  # "Arial"
-        if font:
-            if font not in _pyglet_fonts:
-                log.error(
-                    "Unable to find %s in _pyglet_fonts, use game.add_font" % font)
-            else:
-                font_name = _pyglet_fonts[font]
-        self.colour = colour
-        self.size = size
-        self.font_name = font_name
-        self.wrap = wrap
-        #        self.create_label()
-
-        self._idle_colour = colour  # mimick menu "over" behaviour using this colour
-        self._over_colour = None  # mimick menu "over" behaviour using this colour
-        self._action_name = "idle"  # mimmick menu over and idle behaviour if over_colour is set
         wrap = self.wrap if self.wrap > 0 else 1  # don't allow 0 width labels
-        tmp = Label(self._display_text,
+
+        tmp = PygletLabel(self.display_text,
                     font_name=self.font_name,
                     font_size=self.size,
                     multiline=True,
@@ -186,8 +159,18 @@ class Text(Item):
         self._clickable_area = Rect(
             0, 0, w, h)
 
-    def __post_init__(self):
-        self.game = None
+        if self.colour and len(self.colour) == 3:
+            # add an alpha value if needed
+            self.colour = (self.colour[0], self.colour[1], self.colour[2], 255)
+
+        self._idle_colour = self.colour
+
+        if self.font:
+            if self.font not in _pyglet_fonts:
+                log.error(
+                    "Unable to find %s in _pyglet_fonts, use game.add_font" % self.font)
+            else:
+                self.font_name = _pyglet_fonts[self.font]
 
     @property
     def resource_offset(self):
@@ -222,8 +205,8 @@ class Text(Item):
             c = (c[0], c[1], c[2], 255)
 
         if self.game and self.game.headless is True:
-            self._text_index = len(self._display_text)
-            self._animated_text = self._display_text[:self._text_index]
+            self._text_index = len(self.display_text)
+            self._animated_text = self.display_text[:self._text_index]
             return
 
         # animate the text
@@ -232,11 +215,11 @@ class Text(Item):
             pyglet.clock.schedule_interval(self._animate_text, self.delay)
             self._pyglet_animate_scheduled = True
         else:
-            self._text_index = len(self._display_text)
+            self._text_index = len(self.display_text)
 
-        self._animated_text = self._display_text[:self._text_index]
+        self._animated_text = self.display_text[:self._text_index]
         wrap = self.wrap if self.wrap > 0 else 1  # don't allow 0 width labels
-        label = Label(self._animated_text,
+        label = PygletLabel(self._animated_text,
                       font_name=self.font_name,
                       font_size=self.size,
                       color=c,
@@ -251,7 +234,7 @@ class Text(Item):
         set_resource(self.resource_name, w=label.content_width, h=label.content_height, resource=label)
 
         if self.offset:
-            label_offset = Label(self._animated_text,
+            label_offset = PygletLabel(self._animated_text,
                                  font_name=self.font_name,
                                  font_size=self.size,
                                  color=(0, 0, 0, 255),
@@ -261,12 +244,12 @@ class Text(Item):
                                  anchor_x='left', anchor_y='top')
             set_resource(self.resource_name, resource=label_offset, subkey="offset")
 
-    def get_display_text(self):
-        return self._display_text
+    def get_text(self):
+        return self.display_text
 
-    def set_display_text(self, v):
+    def set_text(self, v):
         if v is None: return
-        self._display_text = v
+        self.display_text = v
         # if there are special display requirements for this text, format it here
         if self.format_text:
             fn = get_function(self.game, self.format_text, self)
@@ -278,15 +261,14 @@ class Text(Item):
 
         if self.resource_offset:
             self.resource_offset.text = text
-
-    display_text = property(get_display_text, set_display_text)
+    #text = property(get_text, set_text)
 
     @queue_method
-    def text(self, text):
+    def update_text(self, text):
         self.immediate_text(text)
 
-    def immediate_text(self, text):
-        self.display_text = text
+    def immediate_update_text(self, text):
+        self.set_text(text)
 
     @property
     def w(self):
@@ -304,7 +286,7 @@ class Text(Item):
         self._pyglet_animate_scheduled = False
         pyglet.clock.unschedule(self._animate_text)
 
-    def _update(self, dt, obj=None):  # Text.update
+    def _update(self, dt, obj=None):  # Label.update
         if self.allow_update is False:
             return
         animated = getattr(self, "_pyglet_animate_scheduled", False)  # getattr for backwards compat
@@ -332,12 +314,12 @@ class Text(Item):
 
         if not self.resource:
             log.warning(
-                "Unable to draw Text %s as resource is not loaded" % self.name)
+                "Unable to draw Label %s as resource is not loaded" % self.name)
             return
 
         if not self.game:
             log.warning(
-                "Unable to draw Text %s without a self.game object" % self.name)
+                "Unable to draw Label %s without a self.game object" % self.name)
             return
 
         x, y = self.pyglet_draw_coords(absolute, None, 0)  # self.resource.content_height)

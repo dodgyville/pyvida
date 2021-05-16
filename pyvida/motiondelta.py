@@ -1,6 +1,7 @@
 """
 Pyvida MotionDelta class
 """
+from typing import Optional
 
 from dataclasses_json import dataclass_json
 from dataclasses import (
@@ -12,13 +13,13 @@ from dataclasses import (
 @dataclass
 class MotionDelta:
     """ A motion delta ... not sure """
-    x: float
-    y: float
-    z: float
-    r: float
-    scale: float
-    f: int
-    alpha: float  # should be 0-255 but not sure if it is
+    x: Optional[float] = None
+    y: Optional[float] = None
+    z: Optional[float] = None
+    r: Optional[float] = None
+    scale: Optional[float] = None
+    f: Optional[int] = None
+    alpha: Optional[float] = None # should be 0-255 but not sure if it is
 
     def __init__(self, x=None, y=None, z=None, r=None, scale=None, f=None, alpha=None):
         self.x = x

@@ -102,7 +102,7 @@ class Graphics:
             if not message_obj:
                 log.error(f"Unable to find message object {self.message_object} in game objects")
             else:
-                message_obj.display_text = txt
+                message_obj.set_text(txt)
                 # place object
                 mx, my = self.message_position
                 mx = self.resolution[0] // 2 - self.message_object.w // 2 if mx == CENTER else mx
@@ -298,6 +298,7 @@ class Graphics:
                 scene.walkarea.debug_pyglet_draw()
 
     def draw_info_object_item(self):
+        """ draw info text on screen """
         info_obj = get_object(self, self.info_object)
         if info_obj and info_obj.display_text != "":
             info_obj.pyglet_draw(absolute=False)
