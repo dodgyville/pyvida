@@ -314,7 +314,7 @@ class Mixer(SafeJSON):
         self._sfx_player_index = getattr(self, "_sfx_player_index", 0)
         if mixer == "pygame":
             log.debug("INITIALISE PLAYERS")
-            log.debug("PYGAME MIXER REPORTS", pygame.mixer.get_init())
+            log.debug(f"PYGAME MIXER REPORTS {pygame.mixer.get_init()}")
             self._music_player = PlayerPygameMusic(game)
             self._sfx_players = deque([PlayerPygameSFX(game) for _ in range(4)])  # four sounds at most
             self._ambient_player = PlayerPygameSFX(game)

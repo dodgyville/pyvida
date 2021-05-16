@@ -1,3 +1,5 @@
+dataclasses>=0.1; python_version<"3.7"
+dataclasses-json>=0.2.9
 euclid3
 pyglet==1.5.16
 babel
