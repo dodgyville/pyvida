@@ -134,7 +134,7 @@ class Emitter(Item):
         # reload the actions but without the mask
         self.immediate_smart_actions(game, exclude=["mask"])
         self._clickable_mask = load_image(
-            os.path.join(self._directory, "mask.png"))
+            os.path.join(self.directory, "mask.png"))
         self.immediate_reset()
         game.add(self, replace=True)
         return self

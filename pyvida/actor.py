@@ -292,7 +292,7 @@ class Actor(SafeJSON, MotionManager):
     _met: List[str] = field(default_factory=list)  # list of Actors this actor has interacted with
     inventory: List[str] = field(default_factory=list)
 
-    _directory: str = ''  # directory this is smart loaded from (if any)
+    relative_directory: str = ''  # RELATIVE directory this is smart loaded from (if any)
     _images: List[str] = field(default_factory=list)  # image filenames that the actions are based on
     # don't process any more events for this actor until busy is False,
     # will block all events if game.immediate_wait()
@@ -521,7 +521,11 @@ class Actor(SafeJSON, MotionManager):
 
     @property
     def directory(self):
-        return self._directory
+        best_directory = Path(self.relative_directory)
+        if not best_directory.is_absolute():  # try and composite an absolute directory
+            if self.game and self.game.working_directory:
+                best_directory = Path(self.game.working_directory / best_directory)
+        return best_directory.as_posix()
 
     def get_ax(self):
         return self._ax * self._scale
@@ -1272,9 +1276,9 @@ class Actor(SafeJSON, MotionManager):
     def module_name(self):
         """ Where in sys.modules this actor's scripts live """
         module_name = None
-        if self._directory and self.name:
+        if self.relative_directory and self.name:
             slug = slugify(self.name).lower()
-            raw_path = os.path.join(self._directory, "%s.py" % slug)
+            raw_path = os.path.join(self.relative_directory, "%s.py" % slug)
             filepath = get_safe_path(raw_path)
             module_name = os.path.splitext(os.path.basename(filepath))[0]
         return module_name
@@ -1283,8 +1287,11 @@ class Actor(SafeJSON, MotionManager):
         # potentially load some interact/use/look scripts for this actor but
         # only if editor is enabled (it interferes with game pickling)
         if self.game:  # and self.game._allow_editing:
-            filepath = get_safe_path(os.path.join(
-                self._directory, "%s.py" % slugify(self.name).lower()))
+            filepath = get_safe_path(
+                Path(
+                    self.directory, "%s.py" % slugify(self.name).lower()
+                )
+            ).as_posix()
             if os.path.isfile(filepath):
                 # add file directory to path so that import can find it
                 if os.path.dirname(filepath) not in self.game.sys_module_paths:
@@ -1387,7 +1394,11 @@ class Actor(SafeJSON, MotionManager):
                 myd = os.path.join(d, name)
                 absd = get_safe_path(myd)
 
-        self._directory = myd
+        try:
+            self.relative_directory = Path(myd).relative_to(game.working_directory if game else '').as_posix()
+        except ValueError:
+            self.relative_directory = myd
+            log.warning(f"{self.name} is not stored relative to game, may not load from savegame ({myd})")
 
         if image:
             images = image if type(image) == list else [image]

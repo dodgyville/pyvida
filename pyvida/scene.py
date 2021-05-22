@@ -344,7 +344,7 @@ class Scene(SafeJSON, MotionManager):
 
             # backwards compat change for v1 emitters, don't erase them if base name is in objs
             if self.game and isinstance(obj, Emitter):
-                emitter_name = os.path.split(obj._directory)[-1]
+                emitter_name = os.path.split(obj.directory)[-1]
                 if emitter_name in objs:
                     continue
 

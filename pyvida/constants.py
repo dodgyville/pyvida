@@ -14,7 +14,7 @@ except ImportError:
     logging = None
 
 VERSION_SAVE = 6  # save/load version, only change on incompatible changes
-__version__ = "7.0.1"
+__version__ = "7.0.3"
 LOGNAME = "pyvida7"
 
 # major incompatibilities, backwards compat (can run same scripts), patch number

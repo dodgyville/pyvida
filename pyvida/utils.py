@@ -61,7 +61,7 @@ else:
 
 def get_safe_path(relative, override_working_dir=None):
     """ return a path safe for mac bundles and other situations """
-    if os.path.isabs(relative):  # return a relative path unchanged
+    if os.path.isabs(relative):  # return an absolute path unchanged
         return relative
 
     safe = os.path.join(override_working_dir if override_working_dir else working_dir, relative)

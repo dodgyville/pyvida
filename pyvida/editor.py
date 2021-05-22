@@ -72,7 +72,7 @@ def open_editor(game, filepath, track=True):  # pragma: no cover
 
 def edit_object_script(game, obj):  # pragma: no cover
     """ Create and/or open a script for editing """
-    directory = obj._directory
+    directory = obj.directory
     fname = os.path.join(directory, "%s.py" % slugify(obj.name).lower())
     if not os.path.isfile(fname):  # create a new module for this actor
         with open(fname, "w") as f:
@@ -103,7 +103,7 @@ def edit_object_script(game, obj):  # pragma: no cover
 
 
 def edit_action_motion(game, obj, action):  # pragma: no cover
-    directory = obj._directory
+    directory = obj.directory
     fname = os.path.join(directory, "%s.motion" % slugify(action.name).lower())
     if not os.path.isfile(fname):  # create a new module for this actor
         with open(fname, "w") as f:
