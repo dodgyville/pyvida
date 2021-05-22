@@ -29,6 +29,7 @@ PORT = 8000 + randint(0, 100)
 ENABLE_EDITOR = False  # default for editor. Caution: This starts module reloads which ruins pickles
 ENABLE_PROFILING = False  # allow profiling
 ENABLE_LOGGING = True  # enable debug logging
+ENABLE_SET_TRACE = True  # if enabled, then will breakpoint on exceptions
 DEFAULT_TEXT_EDITOR = "gedit"
 
 DEBUG_ASTAR = False
@@ -247,16 +248,29 @@ K_LESS = pyglet.window.key.LESS
 K_GREATER = pyglet.window.key.GREATER
 K_ENTER = pyglet.window.key.ENTER
 K_SPACE = pyglet.window.key.SPACE
-K_0 = pyglet.window.key.NUM_0
-K_1 = pyglet.window.key.NUM_1
-K_2 = pyglet.window.key.NUM_2
-K_3 = pyglet.window.key.NUM_3
-K_4 = pyglet.window.key.NUM_4
-K_5 = pyglet.window.key.NUM_5
-K_6 = pyglet.window.key.NUM_6
-K_7 = pyglet.window.key.NUM_7
-K_8 = pyglet.window.key.NUM_8
-K_9 = pyglet.window.key.NUM_9
+K_0 = pyglet.window.key._0
+K_1 = pyglet.window.key._1
+K_2 = pyglet.window.key._2
+K_3 = pyglet.window.key._3
+K_4 = pyglet.window.key._4
+K_5 = pyglet.window.key._5
+K_6 = pyglet.window.key._6
+K_7 = pyglet.window.key._7
+K_8 = pyglet.window.key._8
+K_9 = pyglet.window.key._9
+
+# numpad
+K_NUM_0 = pyglet.window.key.NUM_0
+K_NUM_1 = pyglet.window.key.NUM_1
+K_NUM_2 = pyglet.window.key.NUM_2
+K_NUM_3 = pyglet.window.key.NUM_3
+K_NUM_4 = pyglet.window.key.NUM_4
+K_NUM_5 = pyglet.window.key.NUM_5
+K_NUM_6 = pyglet.window.key.NUM_6
+K_NUM_7 = pyglet.window.key.NUM_7
+K_NUM_8 = pyglet.window.key.NUM_8
+K_NUM_9 = pyglet.window.key.NUM_9
+
 
 K_LEFT = pyglet.window.key.LEFT
 K_RIGHT = pyglet.window.key.RIGHT

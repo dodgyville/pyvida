@@ -39,7 +39,7 @@ class Collection(Item):
     objects: List[str] = field(default_factory=list)
     # _sorted_objects: List[str] = field(default_factory=list)
     sort_by: int = ALPHABETICAL
-    reverse_sort:bool = False
+    reverse_sort: bool = False
     index: int = 0  # where in the index to start showing
     limit: int = -1  # number of items to display at once, -1 is infinite
     selected: any = None

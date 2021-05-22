@@ -150,14 +150,17 @@ def load_game(game, fname):
 
 
 def load_game_meta(fname):
-    fname = Path(fname)
     """
     metadata = {
         "section_name": game.section_name,
         "datetime": datetime.now()
     }
     """
-    with open(fname.with_suffix(".savemeta"), "r") as f:
+    fname = Path(fname)
+    fname = fname.with_suffix(".savemeta")
+    if not fname.exists():
+        return None
+    with open(fname, "r") as f:
         data = f.read()
         metadata = json.loads(data)
     return metadata

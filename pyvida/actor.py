@@ -193,7 +193,7 @@ class Actor(SafeJSON, MotionManager):
     z: float = 1.0  # used for parallax
     creator: Optional[str] = None  # name of the object in charge of creating (and destroying) this object
 
-    interact_key: Optional[any] = None  # keyboard key assigned to this interact
+    interact_keys: Optional[any] = field(default_factory=list)  # keyboard key assigned to this interact
     preupdate: Optional[str] = None  # call before _update
     _finished_goto: Optional[str] = None  # override function when goto has finished
     # allow drag if not None, function will be called when item is released
@@ -1003,40 +1003,41 @@ class Actor(SafeJSON, MotionManager):
         """
         trigger interact
         """
+        script_fn = None
         if self.interact:  # if user has supplied an interact override
-            interact = self.interact
-            if type(interact) in [str]:
-                interact = get_memorable_function(self.game, interact)
-                if not interact:
+            if type(self.interact) in [str]:
+                script_fn = get_memorable_function(self.game, self.interact)
+                if not script_fn:
                     if logging:
                         log.error("Unable to find interact fn %s"  % self.interact)
                     return
-            n = interact.__name__ if interact else "interact is empty"
+            else:
+                log.warning(f"Not a script name (won't save well): {self.interact}")
+                if ENABLE_SET_TRACE and self.interact.__name__ != "option_answer_callback":
+                    import pdb; pdb.set_trace()
+                script_fn = self.interact
             if logging:
+                n = script_fn.__name__ if script_fn else "interact is empty"
                 log.debug("Player interact (%s (%s)) with %s" % (
                     n, self.interact if self.interact else "none", self.name))
-
-            script = interact
             try:
-                script(self.game, self, self.game.get_player())
+                script_fn(self.game, self, self.game.get_player())
             except:
                 if self.game:
                     print("Last script: %s, this script: %s, last autosave: %s" % (
-                        self.game._last_script, script.__name__, self.game._last_autosave))
-                log.error("Exception in %s" % script.__name__)
-                print("\nError running %s\n" % script.__name__)
+                        self.game._last_script, script_fn.__name__, self.game._last_autosave))
+                log.error("Exception in %s" % script_fn.__name__)
+                print("\nError running %s\n" % script_fn.__name__)
                 if traceback:
                     traceback.print_exc(file=sys.stdout)
                 print("\n\n")
+                if ENABLE_SET_TRACE:
+                    import pdb; pdb.set_trace()
 
         else:  # else, search several namespaces or use a default
             basic = "interact_%s" % slugify(self.name)
             script = get_memorable_function(self.game, basic)
             if script:
-                #                if self.game.edit_scripts:
-                #                    edit_script(self.game, self, basic, script, mode="interact")
-                #                    return
-
                 # allow exceptions to crash engine
                 if not self.game._catch_exceptions:
                     script(self.game, self, self.game.get_player())
@@ -1049,6 +1050,8 @@ class Actor(SafeJSON, MotionManager):
                         if traceback:
                             traceback.print_exc(file=sys.stdout)
                         print("\n\n")
+                        if ENABLE_SET_TRACE:
+                            import pdb; pdb.set_trace()
 
                 if logging:
                     log.info("Player interact (%s) with %s" %
@@ -1825,12 +1828,19 @@ class Actor(SafeJSON, MotionManager):
             print("%s says \"%s\"" % (name, statement))
         if logging:
             log.info("on_ask before _says: %s.busy = %i" % (self.name, self.busy))
-        kwargs["key"] = None  # deactivate on_says keyboard shortcut close
+        kwargs["keys"] = []  # deactivate on_says keyboard shortcut close
         items = self.create_says(statement, **kwargs)
         if logging:
             log.info("on_ask after _says: %s.busy = %i" % (self.name, self.busy))
         label = None
-        keys = {0: K_1, 1: K_2, 2: K_3, 3: K_4, 4: K_5, 5: K_6}  # Map upto 6 options to keys
+        keys = {
+            0: [K_1, K_NUM_1],
+            1: [K_2, K_NUM_2],
+            2: [K_3, K_NUM_3],
+            3: [K_4, K_NUM_4],
+            4: [K_5, K_NUM_5],
+            5: [K_6, K_NUM_6],
+        }  # Map upto 6 options to keys
         if len(args) == 0:
             if logging:
                 log.error("No arguments sent to %s on_ask, skipping" % (self.name))
@@ -1870,7 +1880,7 @@ class Actor(SafeJSON, MotionManager):
             #            kwargs["over"] = over_option
             opt = Label("option{}".format(i), display_text=text, **kwargs)
             if i in keys.keys():
-                opt.immediate_key(keys[i])
+                opt.immediate_keyboard(keys[i])
             # if self.game and not self.game.headless:
             opt.load_assets(self.game)
             padding_x = 10
@@ -1959,7 +1969,7 @@ class Actor(SafeJSON, MotionManager):
 
     def create_says(self, text, action="portrait", font=None, size=None, using=None, position=None, align=LEFT,
                     offset=None,
-                    delay=0.01, step=3, ok=-1, interact="close_on_says", block_for_user=True, key=K_SPACE):
+                    delay=0.01, step=3, ok=-1, interact="close_on_says", block_for_user=True, keys=[K_SPACE]):
         """
         if block_for_user is False, then DON'T make the game wait until processing next event
         """
@@ -2070,8 +2080,8 @@ class Actor(SafeJSON, MotionManager):
         #        label.game = self.game
         label.fullscreen(True)
         label.x, label.y = x + dx, y + dy
-        if key:
-            label.immediate_key(key)
+        if keys:
+            label.immediate_keyboard(keys)
 
         if align == CENTER_HORIZONTAL_TOO:
             label.x += (msgbox.w // 2 - label.w // 2)
@@ -3041,12 +3051,15 @@ class Actor(SafeJSON, MotionManager):
         self._calculate_goto(goto_point, block)
 
     @queue_method
-    def key(self, key=None):
-        self.immediate_key(key)
+    def keyboard(self, key=None):
+        """ a key or list of keys that trigger an interact """
+        self.immediate_keyboard(key)
 
-    def immediate_key(self, key=None):
+    def immediate_keyboard(self, key=None):
         # set interact_key
-        self.interact_key = key
+        if key is None:
+            key = []
+        self.interact_keys = key
 
 
 @dataclass_json

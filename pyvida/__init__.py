@@ -256,7 +256,7 @@ DEFAULT_FONT = os.path.join("data/fonts/", "vera.ttf")
 class MenuText(Label):
     #    def __init__(self, *args, **kwargs):
     def __old_post_init__(self, name="Untitled Label", pos=(None, None), dimensions=(None, None), text="no text",
-                 colour=MENU_COLOUR, size=26, wrap=2000, interact=None, spos=(None, None), hpos=(None, None), key=None,
+                 colour=MENU_COLOUR, size=26, wrap=2000, interact=None, spos=(None, None), hpos=(None, None), keys=None,
                  font=DEFAULT_FONT, offset=2):
         sfont = "MENU_FONT" if "badaboom" in font else font
         ssize = "MENU_SIZE" if size in [34, 35, 36, 38] else size
@@ -264,7 +264,7 @@ class MenuText(Label):
         # print("Try instead:")
         print("""
 item = game.add(Label("{name}", {pos}, "{text}", size={ssize}, wrap={wrap}, interact={interact}, font="{sfont}", colour={colour}, offset=2), replace=True)
-item.immediate_key("{key}")
+item.immediate_keyboard("{key}")
 item.set_over_colour(MENU_COLOUR_OVER)
 """.format(**locals()))
         super().__post_init__()
@@ -280,7 +280,7 @@ item.set_over_colour(MENU_COLOUR_OVER)
 #            offset=None, interact=None, look=None, delay=0, step=2,
 #            game=None):
 # item = Label(i[0], (280,80), i[1], interact=i[2], wrap=800, font=MENU_FONT, size=38, game)
-# item.immediate_key(i[3])
+# item.immediate_keyboard(i[3])
 # game.add(item)
 
 
@@ -322,7 +322,7 @@ class SubmenuSelect(object):
                 #             hpos=(hx, hy), font=self.font), False, MenuItem)
                 item = game.add(Label("submenu_%s" % i, (280, sy), i, size=26, wrap=800, interact=select_item,
                                      font=DEFAULT_MENU_FONT, colour=(42, 127, 255), offset=2), replace=True)
-                item.immediate_key("None")
+                item.immediate_keyboard([])
                 item.set_over_colour(MENU_COLOUR_OVER)
 
                 sy += MENU_Y_DISPLACEMENT
@@ -344,7 +344,7 @@ class SubmenuSelect(object):
             item = game.add(Label("submenu_%s" % exit_item, (280, sy), exit_item, size=26, wrap=800,
                                  interact=submenu_return, font=DEFAULT_MENU_FONT, colour=(42, 127, 255), offset=2),
                             replace=True)
-            item.immediate_key("None")
+            item.immediate_keyboard([])
             item.set_over_colour(MENU_COLOUR_OVER)
 
             self.menu_items.append(item)

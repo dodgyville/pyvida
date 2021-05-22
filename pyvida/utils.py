@@ -1141,9 +1141,6 @@ def load_defaults(game, obj, name, filename):
                 if logging: log.error("Error loading %s.defaults file." % name)
                 defaults = {}
         for key, val in defaults.items():
-            if key == "interact_key":
-                key = "_interact_key"
-                val = eval(val)  # XXX not great
             if key == "fx":  # apply special FX to actor (using defaults)
                 if "sway" in val:
                     obj.immediate_sway()

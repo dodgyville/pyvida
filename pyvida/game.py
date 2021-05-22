@@ -204,10 +204,9 @@ class Game(SafeJSON, Graphics):
     texts: Dict[str, Label] = field(default_factory=dict)
 
     scene: Optional[str] = None  # name of scene object, use get_scene and set_scene to get object
-    menu_items: List[str] = field(default_factory=list)
-    menus: List[any] = field(default_factory=list)  # a stack of menus
-    modals: List[str] = field(default_factory=list)
-    is_menu_modal: bool = False  # is this menu blocking game events
+    #menu_items: List[str] = field(default_factory=list)
+    #menus: List[any] = field(default_factory=list)  # a stack of menus
+    #modals: List[str] = field(default_factory=list)
     directory_portals: Optional[str] = None
     directory_items: Optional[str] = None
     directory_scenes: Optional[str] = None
@@ -271,6 +270,7 @@ class Game(SafeJSON, Graphics):
     modals: List[str] = field(default_factory=list)  # list of object names
     menu_items: List[str] = field(default_factory=list) # current menu
     menus: any = field(default_factory=list)  # a stack of menus
+    is_menu_modal: bool = False  # is this menu blocking game events
 
     menu_enter_filename: Optional[str] = None  # filename of sfx to play when entering hover over a menu
     menu_exit_filename: Optional[str] = None  # sfx to play when exiting hover over a menu item
@@ -1011,7 +1011,7 @@ class Game(SafeJSON, Graphics):
         # check menu items for key matches
         for name in self.modals:
             obj = get_object(self, name)
-            if obj and obj.allow_interact and obj.interact_key == symbol:
+            if obj and obj.allow_interact and symbol in obj.interact_keys:
                 user_trigger_interact(self, obj)
                 return
 
@@ -1022,7 +1022,7 @@ class Game(SafeJSON, Graphics):
         # try menu events
         for obj_name in self.menu_items:
             obj = get_object(self, obj_name)
-            if obj and obj.allow_interact and obj.interact_key == symbol:
+            if obj and obj.allow_interact and symbol in obj.interact_keys:
                 user_trigger_interact(self, obj)
                 return
 
@@ -1032,7 +1032,7 @@ class Game(SafeJSON, Graphics):
         if self.get_scene():  # check objects in scene
             for obj_name in self.get_scene().objects:
                 obj = get_object(self, obj_name)
-                if obj and obj.interact_key == symbol:
+                if obj and symbol in obj.interact_keys:
                     obj.trigger_interact()  # XXX possible user_trigger_interact()
 
     def get_info_position(self, obj):
@@ -1704,8 +1704,8 @@ class Game(SafeJSON, Graphics):
             obj.load_assets(self)
             obj.guess_clickable_area()
             for k, v in kwargs.items():
-                if k == "key":
-                    obj.immediate_key(v)  # set _interact_key
+                if k == "keys":
+                    obj.immediate_keyboard(v)  # set _interact_key
                 else:
                     setattr(obj, k, v)
                 # if "text" in kwargs.keys(): obj.update_text() #force update on MenuText
@@ -1962,6 +1962,10 @@ class Game(SafeJSON, Graphics):
                 if traceback:
                     traceback.print_exc(file=sys.stdout)
                 print("\n\n")
+                if ENABLE_SET_TRACE:
+                    import pdb;
+                    pdb.set_trace()
+
             # update main namespace with new functions
             for fn in dir(sys.modules[i]):
                 new_fn = getattr(sys.modules[i], fn)
@@ -2778,7 +2782,8 @@ class Game(SafeJSON, Graphics):
 
     # game.add (not an event driven function)
     def add(self, objects, replace=False):
-        return self.immediate_add(objects, replace=replace)
+        result = self.immediate_add(objects, replace=replace)
+        return result
 
     def _load_mouse_cursors(self):
         """ called by Game after display initialised to load mouse cursor images """
