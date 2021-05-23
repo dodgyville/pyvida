@@ -120,7 +120,7 @@ class AchievementManager:
 
             game.achievement.relocate(game.scene)
             game.mixer.sfx_play("data/sfx/achievement.ogg", "achievement")
-            game.achievement.set_text(_(a.achievement_description))
+            game.achievement.display_text = _(a.achievement_description)
             game.achievement.retext((0, -FONT_ACHIEVEMENT_SIZE * 3))
             game.achievement.motion("popup", mode=ONCE, block=True)
             # TODO: replace with bounce Motion

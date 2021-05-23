@@ -1017,7 +1017,9 @@ class Actor(SafeJSON, MotionManager):
                     return
             else:
                 log.warning(f"Not a script name (won't save well): {self.interact}")
-                if ENABLE_SET_TRACE and self.interact.__name__  not in ["option_answer_callback", "new_game_fn"]:
+                if ENABLE_SET_TRACE and (
+                        self.interact.__name__  not in ["option_answer_callback", "new_game_fn"] and "debug" not in self.interact.__name__
+                    ):
                     import pdb; pdb.set_trace()
                 script_fn = self.interact
             if logging:
