@@ -14,7 +14,7 @@ except ImportError:
     logging = None
 
 VERSION_SAVE = 6  # save/load version, only change on incompatible changes
-__version__ = "7.0.3"
+__version__ = "7.0.4"
 LOGNAME = "pyvida7"
 
 # major incompatibilities, backwards compat (can run same scripts), patch number
@@ -29,7 +29,8 @@ PORT = 8000 + randint(0, 100)
 ENABLE_EDITOR = False  # default for editor. Caution: This starts module reloads which ruins pickles
 ENABLE_PROFILING = False  # allow profiling
 ENABLE_LOGGING = True  # enable debug logging
-ENABLE_SET_TRACE = False  # if enabled, then will breakpoint on exceptions
+ENABLE_SET_TRACE = True  # if enabled, then will breakpoint on exceptions
+ENABLE_DEBUG_SAVES = True  # show debug saves in save/load screens
 DEFAULT_TEXT_EDITOR = "gedit"
 
 DEBUG_ASTAR = False

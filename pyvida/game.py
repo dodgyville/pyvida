@@ -51,7 +51,11 @@ from .sprite import (
 from .graphics import Graphics, Window
 from .actor import Actor, Item
 from .scene import Scene
-from .utils import _
+from .utils import (
+    _,
+    transport_player,
+    scene_search
+)
 
 
 def gamestats(game):
@@ -81,34 +85,6 @@ def hard_quit(dt=0):
 
 
 LOCK_UPDATES_TO_DRAWS = False  # deprecated
-
-
-scene_path = []
-
-
-def scene_search(game, scene, target):
-    """ Find a path that connects scenes via portals """
-    global scene_path
-    scene_obj = get_object(game, scene)
-    target_obj = get_object(game, target)
-    if not scene_obj or not target_obj:
-        if logging:
-            log.warning(f"Strange scene search {scene} and target {target} with path {scene_path}")
-        return False
-    scene_path.append(scene_obj)
-    if scene_obj.name.upper() == target_obj.name.upper():
-        return scene_obj
-    for obj_name in scene_obj.objects:
-        i = get_object(game, obj_name)
-        if isinstance(i, Portal):  # if portal and has link, follow that portal
-            link = get_object(game, i.link)
-            if link and link.scene not in scene_path:
-                found_target = scene_search(game, link.scene, target_obj)
-                if found_target:
-                    return found_target
-    scene_path.pop(-1)
-    return False
-
 
 
 """
@@ -2393,31 +2369,15 @@ class Game(SafeJSON, Graphics):
             # expand the goto request into a sequence of portal requests
             global scene_path
             scene_path = []
-            obj = get_object(self, actor_name, case_insensitive=True)
+            # obj = get_object(self, actor_name, case_insensitive=True)
             if self.scene:
-                scene = scene_search(self, self.scene, obj.name.upper())
-                if scene:  # found a new scene
-                    portals = scene.portals
-                    portal = choice(portals) if len(portals) > 0 else None
-                    player = self.get_player()
-                    if portal:
-                        player.immediate_relocate(destination=portal.stand_point)
-                    self.get_scene().immediate_remove(self.player)  # remove from current scene
-                    scene.immediate_add(self.player)  # add to next scene
-                    if logging:
-                        log.info("TEST SUITE: Player goes %s" %
-                                 ([x.name for x in scene_path]))
-                    name = scene.display_text if scene.display_text not in [None, ""] else scene.name
-                    if self.trunk_step and self.output_walkthrough: print("Go to %s." % (name))
-                    self.camera.scene(scene)
-                else:
-                    #                    if self.trunk_step and self.output_walkthrough: print("Unable to go to %s."%(actor_name))
-                    if logging:
-                        log.error(
-                            "Unable to get player from scene %s to scene %s" % (self.get_scene().name, obj.name))
+                connected = transport_player(self, self.scene, actor_name)
+                if not connected and logging:
+                    import pdb; pdb.set_trace()
+                    log.error("Unable to move player via portals from scene %s to scene %s" % (self.scene, actor_name))
             else:
                 if logging:
-                    log.error("Going from no scene to scene %s" % obj.name)
+                    log.error("Going from no scene to scene %s" % actor_name)
         elif function_name == "description":
             if self.trunk_step and self.output_walkthrough:
                 print(actor_name)
@@ -2443,8 +2403,12 @@ class Game(SafeJSON, Graphics):
         else:
             print("UNABLE TO PROCESS %s" % function_name)
         if human_readable_name:
-            fname = get_safe_path(os.path.join(self.save_directory, "{}.savegame".format(human_readable_name)))
-            save_game(self, fname)
+            savefile = Path(os.path.join(self.save_directory, human_readable_name))
+            fname = get_safe_path(savefile.with_suffix(".savegame"))
+            save_game(self, fname, human_readable_name)
+            if ENABLE_DEBUG_SAVES:
+                self.camera.immediate_screenshot(savefile.with_suffix(".png"))
+
 
     def _handle_events(self):
         """ Handle game events """

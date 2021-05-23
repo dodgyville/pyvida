@@ -38,9 +38,26 @@ def restore_object(game, obj):
         obj.set_editable()
 
 
+def restore_object_json(game, obj):
+    """ Call after restoring an object from json """
+    for child in obj.__dict__.values():
+        if hasattr(child, "game"):
+            child.game = game
+    obj.game = game
+    if hasattr(obj, "_actions"):  # refresh asset tracking
+        for a in obj.actions.values():
+            if a._loaded:
+                a._loaded = False
+    if hasattr(obj, "create_label"):
+        obj.create_label()
+    if hasattr(obj, "set_editable"):
+        obj.set_editable()
+
+
 def encode_for_json(o):
     if isinstance(o, (datetime,)):
         return o.isoformat()
+
 
 import json
 from collections.abc import Iterable
@@ -96,7 +113,7 @@ def check_json_safe(game):
                 json_object(v)
 
 
-def save_game_json(game, fname):
+def save_game_json(game, fname, title=None):
     logger.info("Save game to %s" % fname)
     # time since game created or loaded
     dt = datetime.now() - game.storage.last_load_time
@@ -108,15 +125,15 @@ def save_game_json(game, fname):
         f.write(result)
     fname = Path(fname)
     metadata = {
-        "section_name": game.section_name,
+        "section_name": title if title else game.section_name,
         "datetime": datetime.now().strftime("%a %x %X")
     }
     with open(fname.with_suffix(".savemeta"), "w") as f:
         f.write(json.dumps(metadata))
 
 
-def save_game(game, fname):
-    save_game_json(game, fname)
+def save_game(game, fname, title=None):
+    save_game_json(game, fname, title)
 
 
 def load_game(game, fname):
@@ -135,16 +152,17 @@ def load_game(game, fname):
     new_game.headless = False
 
     for obj in new_game.items.values():
-        obj.game = game
+        restore_object_json(game, obj)
     for obj in new_game.actors.values():
-        obj.game = game
+        restore_object_json(game, obj)
     for obj in new_game.collections.values():
-        obj.game = game
+        restore_object_json(game, obj)
     for obj in new_game.portals.values():
-        obj.game = game
+        restore_object_json(game, obj)
     for obj in new_game.texts.values():
-        obj.game = game
+        restore_object_json(game, obj)
     for obj in new_game.scenes.values():
+        restore_object_json(game, obj)
         obj.set_game(game)  # also takes care of walkareas
     return new_game
 

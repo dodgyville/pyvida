@@ -1,6 +1,6 @@
 import os
 import math
-from random import randint
+from random import randint, choice
 import gettext as igettext
 from pathlib import Path
 import sys
@@ -1249,6 +1249,95 @@ def fonts_smart(game, _pyglet_fonts):
                 if filename in _pyglet_fonts:
                     log.warning("OVERRIDING font %s with %s (%s)" % (filename, f, name))
                 _pyglet_fonts[filename] = name
+
+
+# scene portal planning (used by test runner)
+scene_path = []
+
+
+from collections import deque
+
+# a sample graph
+
+def BFS(start, end, graph_of_scenes):
+    """ Method to determine if a pair of vertices are connected using BFS
+    courtesy https://stackoverflow.com/Questions/713508/find-the-paths-between-two-given-nodes
+
+    Args:
+      start, end: vertices for the traversal.
+      graph_of_scenes = {'A': ['B', 'C','E'],
+       'B': ['A','C', 'D'],
+       'C': ['D'],
+       'D': ['C'],
+       'E': ['F','D'],
+       'F': ['C']}
+
+
+
+    Returns:
+      [start, v1, v2, ... end]
+    """
+    path = []
+    q = deque()
+    q.append(start)
+    while len(q):
+      tmp_vertex = q.popleft()
+      if tmp_vertex not in path:
+        path.append(tmp_vertex)
+
+      if tmp_vertex == end:
+        return path
+
+      for vertex in graph_of_scenes[tmp_vertex]:
+        if vertex not in path:
+          q.append(vertex)
+
+
+def scene_search(game, start_scene, target_scene):
+    """ Returns True if start and target are connected scenes via portals """
+    graph_of_scenes = {}
+    for portal in game.portals.values():
+        if portal.scene not in graph_of_scenes:
+            graph_of_scenes[portal.scene] = []
+        if not portal.get_link():
+            log.warning(f"Not a standard portal {portal.name}, has no link ({portal.link}).")
+            #import pdb; pdb.set_trace()
+            continue
+        link_scene = portal.get_link().scene
+        if link_scene not in graph_of_scenes[portal.scene]:
+            graph_of_scenes[portal.scene].append(link_scene)
+
+    return BFS(start_scene, target_scene, graph_of_scenes) is not None
+
+
+def transport_player(game, origin_scene, destination_scene):
+    """
+    Move the player to a different scene, checking that it is connected via portals.
+    Used by walkthough testrunner
+
+    Returns True if player was moved
+    """
+    connected = scene_search(game, origin_scene, destination_scene)
+    if connected:  # found a new scene
+        scene = get_object(game, destination_scene)
+        portals = scene.portals
+        portal = choice(portals) if len(portals) > 0 else None
+        player = game.get_player()
+        if portal:
+            player.immediate_relocate(destination=portal.stand_point)
+        game.get_scene().immediate_remove(game.player)  # remove from current scene
+        scene.immediate_add(game.player)  # add to next scene
+        if logging:
+            log.info("TEST SUITE: Player goes %s" %
+                     ([x.name for x in scene_path]))
+        name = scene.display_text if scene.display_text not in [None, ""] else scene.name
+        if game.trunk_step and game.output_walkthrough:
+            log.debug("Go to %s." % name)
+        game.camera.scene(destination_scene)
+    elif ENABLE_SET_TRACE:
+        log.error(f"Walkthrough runner unable to connect {origin_scene} to {destination_scene}")
+        import pdb; pdb.set_trace()
+    return connected
 
 
 ## path planning

@@ -15,6 +15,7 @@ from dataclasses_json import dataclass_json
 
 from pyvida.utils import (
     clear_path,
+    scene_search,
     Rect
 )
 from pyvida.settings import (
@@ -762,6 +763,118 @@ class TestSettings:
         assert result.magpie == "daniel"
 
 
+class TestWalkthrough:
+    def test_scene_search_simple(self):
+        game = Game()
+        s1 = Scene("scene1")
+        s2 = Scene("scene2")
+        s3 = Scene("scene3")
+        game.add([s1, s2, s3])
+
+        p1 = Portal("scene1_to_scene2")
+        p2 = Portal("scene2_to_scene1")
+        p3 = Portal("scene2_to_scene3")
+        p4 = Portal("scene3_to_scene2")
+        game.add([p1, p2, p3, p4])
+
+        s1.immediate_add(p1)
+        s2.immediate_add([p2, p3])
+        s3.immediate_add([p4])
+
+        p1.guess_link()
+        p2.guess_link()
+        p3.guess_link()
+        p4.guess_link()
+
+        found_path = scene_search(game, "scene1", "scene3")
+
+        assert found_path == ['scene1', 'scene2', 'scene3']
+
+    def test_scene_search_looped(self):
+        game = Game()
+        s1 = Scene("scene1")
+        s2 = Scene("scene2")
+        s3 = Scene("scene3")
+        game.add([s1, s2, s3])
+
+        p1 = Portal("scene1_to_scene2")
+        p2 = Portal("scene2_to_scene1")
+        p3 = Portal("scene2_to_scene3")
+        p4 = Portal("scene3_to_scene2")
+        p5 = Portal("scene3_to_scene1")
+        p6 = Portal("scene1_to_scene3")
+        game.add([p1, p2, p3, p4, p5, p6])
+
+        s1.immediate_add([p1, p6])
+        s2.immediate_add([p2, p3])
+        s3.immediate_add([p4, p5])
+
+        p1.guess_link()
+        p2.guess_link()
+        p3.guess_link()
+        p4.guess_link()
+        p5.guess_link()
+        p6.guess_link()
+
+        found_path = scene_search(game, "scene1", "scene3")
+
+        assert found_path == ['scene1', 'scene2', 'scene3']
+
+    def test_scene_search_first_path_deadend(self):
+        game = Game()
+        s1 = Scene("scene1")
+        s2 = Scene("scene2")
+        s3 = Scene("scene3")
+        game.add([s1, s2, s3])
+
+        p1 = Portal("scene1_to_scene2")
+        p2 = Portal("scene2_to_scene1")
+        p5 = Portal("scene3_to_scene1")
+        p6 = Portal("scene1_to_scene3")
+        game.add([p1, p2, p5, p6])
+
+        s1.immediate_add([p1, p6])
+        s2.immediate_add([p2])
+        s3.immediate_add([p5])
+
+        p1.guess_link()
+        p2.guess_link()
+        p5.guess_link()
+        p6.guess_link()
+
+        found_path = scene_search(game, "scene1", "scene3")
+
+        assert found_path == ['scene1', 'scene3']
+
+    def test_scene_search_nopath(self):
+        game = Game()
+        s1 = Scene("scene1")
+        s2 = Scene("scene2")
+        s3 = Scene("scene3")
+        s4 = Scene("scene4")
+        game.add([s1, s2, s3, s4])
+
+        p1 = Portal("scene1_to_scene2")
+        p2 = Portal("scene2_to_scene1")
+        p3 = Portal("scene3_to_scene4")
+        p4 = Portal("scene4_to_scene3")
+        game.add([p1, p2, p3, p4])
+
+        s1.immediate_add([p1])
+        s2.immediate_add([p2])
+        s3.immediate_add([p3])
+        s4.immediate_add([p4])
+
+        p1.guess_link()
+        p2.guess_link()
+        p3.guess_link()
+        p4.guess_link()
+
+        found_path = scene_search(game, "scene1", "scene3")
+
+        assert found_path is None
+
+
 class TestText:
     def test_basic(self):
         t = Label("hello world")
@@ -1158,6 +1271,8 @@ class TestPathplanning:
 
         # TODO: This is not actually testing it
         assert len(a.goto_deltas) == 9
+
+
 
 
 class TestMotionManager:
