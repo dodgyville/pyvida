@@ -38,7 +38,7 @@ class Factory:
 
         return obj
 
-    def create(self, objects=None, num_of_objects=None, start=0, share_resource=True):
+    def create(self, objects=None, num_of_objects=None, start=0, share_resource=True, root_name=None):
         """
            objects : use the names in objects as the names of the new objects
            num_of_objects : create a number of objects using the template's name as the base name
@@ -47,12 +47,15 @@ class Factory:
             objects = []
         new_objects = []
         original = get_object(self.game, self.template)
+
+        root_name = root_name if root_name else original.name
+
         if len(objects) > 0:  # TODO: custom names no implemented yet
             pass
         elif num_of_objects:
             self.clone_count = start
             for i in range(0, num_of_objects):
-                name = "{}{}".format(original.name, i + self.clone_count)
+                name = "{}{}".format(root_name, i + self.clone_count)
                 new_objects.append(self.create_object(name, share_resource=share_resource))
         # self.clone_count += num_of_objects # if Factory is called again, add to clones don't replace
         return new_objects

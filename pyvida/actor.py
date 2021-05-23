@@ -249,6 +249,16 @@ class Actor(SafeJSON, MotionManager):
     idle_stand: Optional[str] = None
     _idle: str = "idle"  # the default idle action for this actor
     _over: str = "over"  # the default over action for this actor when in menu
+    idles: List[str] = field(default_factory=list)  # a list of idle actions available for this actor (used to twitch, etc)
+    non_idles: List[str] = field(default_factory=list)  # a list of non-idle actions available for this actor (used to twitch, etc)
+
+    # when actor is used as a special class such as twitching between idle and non-idle effects
+    effect_shortest_wait: float = 6.0  # wait at least 6 seconds
+    effect_longest_wait: float = 20.0  # wait at most 20 seconds
+    effect_countdown: float = 0  # time until the next effect triggers (updated by actor.update)
+    effect_next_action: Optional[str] = None  # next action to do
+    effect_on: bool = False
+    effect_queued: bool = False  # is this effect queued (perhaps don't allow another effect yet)
 
     _scale: float = 1.0
     rotate_speed: float = 0.0
@@ -757,6 +767,48 @@ class Actor(SafeJSON, MotionManager):
     def h(self):
         return get_resource(self.resource_name)[1]
 
+    # effect details (eg using Actor as a twitch object)
+    @queue_method
+    def set_effect_times(self, shortest, longest):  # in seconds
+        """ set the effect times """
+        self.immediate_set_effect_times(shortest, longest)
+
+    def immediate_set_effect_times(self, shortest, longest):
+        """ set the effect times """
+        self.effect_shortest_wait = shortest
+        self.effect_longest_wait = longest
+
+    def prepare_effect(self):
+        """ Set the effect countdown (used for special actors like twitching) """
+        t = uniform(
+            self.effect_shortest_wait,
+            self.effect_longest_wait
+        )
+        self.effect_countdown = t
+
+    @queue_method
+    def set_idles(self, idles):
+        self.immediate_set_idles(idles)
+
+    def immediate_set_idles(self, idles):
+        self.idles = idles
+
+    @queue_method
+    def turn_effect_on(self):
+        self.immediate_turn_effect_on()
+
+    def immediate_turn_effect_on(self):
+        self.effect_on = True
+        self.prepare_effect()
+
+    @queue_method
+    def turn_effect_off(self):
+        self.immediate_turn_effect_off()
+
+    def immediate_turn_effect_off(self):
+        self.effect_on = False
+        self.effect_countdown = 0.0
+
     def fog_display_text(self, actor):
         """ Use this everywhere for getting the correct name of an Actor
             eg name = game.mistriss.fog_display_text(game.player)
@@ -827,6 +879,11 @@ class Actor(SafeJSON, MotionManager):
     def _update(self, dt, obj=None):  # actor._update, use obj to override self
         if self.allow_update is False:
             return
+
+        # update the internal countdown for any effects on this actor (eg twitching)
+        if self.effect_countdown > 0 and self.effect_on:
+            self.effect_countdown -= dt
+
         self._vx, self._vy = 0, 0
         self._scroll_dx += self.scroll[0]
         if self.w and self._scroll_dx < -self.w:

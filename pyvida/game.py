@@ -2373,8 +2373,8 @@ class Game(SafeJSON, Graphics):
             if self.scene:
                 connected = transport_player(self, self.scene, actor_name)
                 if not connected and logging:
-                    import pdb; pdb.set_trace()
                     log.error("Unable to move player via portals from scene %s to scene %s" % (self.scene, actor_name))
+                    import pdb; pdb.set_trace()
             else:
                 if logging:
                     log.error("Going from no scene to scene %s" % actor_name)

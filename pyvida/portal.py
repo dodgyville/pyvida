@@ -42,6 +42,7 @@ class Portal(Actor):
     _allow_look: bool = False  # look and use are disabled by default for Portals
     _allow_use: bool = False  # look and use are disabled by default for Portals
     icon: Optional[any] = None
+    deliberate_deadend: bool = False
 
     def generate_icons(self):
         # create portal icon for settings.show_portals

@@ -1299,8 +1299,8 @@ def scene_search(game, start_scene, target_scene):
     for portal in game.portals.values():
         if portal.scene not in graph_of_scenes:
             graph_of_scenes[portal.scene] = []
-        if not portal.get_link():
-            log.warning(f"Not a standard portal {portal.name}, has no link ({portal.link}).")
+        if not portal.get_link() and not portal.deliberate_deadend:
+            log.warning(f"Not a standard portal {portal.name}, has no link ({portal.link}). Perhaps set deliberate_deadend = True.")
             #import pdb; pdb.set_trace()
             continue
         link_scene = portal.get_link().scene
