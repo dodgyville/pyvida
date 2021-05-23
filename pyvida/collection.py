@@ -193,6 +193,9 @@ class Collection(Item):
                 cb = self.callback
             else:
                 cb = get_function(game, self.callback)
+            if not cb:
+                logger.error(f"Unable to find collection callback ({self.callback})")
+                import pdb; pdb.set_trace()
             cb(self.game, self, self.game.player)
 
     # collection.draw, by default uses screen values

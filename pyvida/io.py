@@ -164,6 +164,9 @@ def load_game(game, fname):
     for obj in new_game.scenes.values():
         restore_object_json(game, obj)
         obj.set_game(game)  # also takes care of walkareas
+
+    if game.get_player():
+        game.get_player().load_assets(game)
     return new_game
 
 

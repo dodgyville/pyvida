@@ -387,6 +387,7 @@ class Game(SafeJSON, Graphics):
         self._help_index = 0  # this tracks the walkthrough as the player plays
         self.walkthrough_auto = False  # play the game automatically, emulating player input.
         self.exit_step = False  # exit when walkthrough reaches end
+        self.walkthrough_quick = False  # skip savepoints
 
         # if set to true (via --B option), smart load will ignore quick load
         # files and rebuild them.
@@ -1558,7 +1559,8 @@ class Game(SafeJSON, Graphics):
                                  default=False)
         self.parser.add_argument("-p", "--profile", action="store_true",
                                  dest="profiling", help="Record player movements for testing", default=False)
-
+        self.parser.add_argument("-Q", "--quick", dest="quick",
+                                 help="When doing the test runner, ignore all savepoints except last")
         self.parser.add_argument("-R", "--random", dest="target_random_steps", nargs='+',
                                  help="Randomly deviate [x] steps from walkthrough to stress test robustness of scripting")
         self.parser.add_argument("-r", "--resolution", dest="resolution",
@@ -1999,6 +2001,8 @@ class Game(SafeJSON, Graphics):
             if options.language_code:
                 set_language(options.language_code if options.language_code != "default" else None)
 
+            if options.quick:
+                self.walkthrough_quick = True
             if options.target_step:
                 log.info("AUTO WALKTHROUGH")
                 self.walkthrough_auto = True  # auto advance
@@ -2402,7 +2406,9 @@ class Game(SafeJSON, Graphics):
                 log.warning("Player should have %s but it is not in player's inventory." % actor_name)
         else:
             print("UNABLE TO PROCESS %s" % function_name)
-        if human_readable_name:
+
+        # walkthough end saves itself further up, this is strictly for savepoints mid-walkthrough
+        if human_readable_name and not self.walkthrough_quick:
             savefile = Path(os.path.join(self.save_directory, human_readable_name))
             fname = get_safe_path(savefile.with_suffix(".savegame"))
             save_game(self, fname, human_readable_name)

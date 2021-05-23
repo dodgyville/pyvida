@@ -52,6 +52,9 @@ class MotionManager:
                 game, owner=self.name, filename=motion_file)
             self.motions[motion_name] = motion
 
+    def immediate_clear_motions(self):
+        self.applied_motions = []
+
     def immediate_do_motion(self, motion, mode=None, block=None, destructive=None, index=0):
         """ immediately start doing this motion """
         motion_obj = self.motions[motion] if motion in self.motions else None
@@ -78,7 +81,7 @@ class MotionManager:
                 motion_obj.apply_full_motion_to_actor(self)
                 return None  # don't add the motion as it has been fully applied.
         else:
-            logger.error("Unable to find motion for actor %s" % self.name)
+            logger.error(f"Unable to find motion ({motion}) for actor ({self.name})")
         return motion_obj
 
     def immediate_motion(self, motion=None, mode=None, block=None, destructive=None, index=0):
