@@ -127,7 +127,7 @@ class Label(Item):
     interact: str = ''
     look: str = ''
     align: int = LEFT
-    delay: int = 0  # How fast to display chunks of the text
+    delay: float = 0.0  # How fast to display chunks of the text
     step: int = 2  # How many characters to advance during delayed display
     _height: int = 0
     _width: int = 0

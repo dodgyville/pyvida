@@ -174,6 +174,7 @@ class Game(SafeJSON, Graphics):
     player: Optional[str] = None  # used get_player and set_player, name of object
     actors: Dict[str, Actor] = field(default_factory=dict)
     items: Dict[str, Item] = field(default_factory=dict)
+    emitters: Dict[str, Emitter] = field(default_factory=dict)
     scenes: Dict[str, Scene] = field(default_factory=dict)
     collections: Dict[str, Collection] = field(default_factory=dict)
     portals: Dict[str, Portal] = field(default_factory=dict)
@@ -681,6 +682,8 @@ class Game(SafeJSON, Graphics):
                 return self.collections[s]
             elif s in self.portals:
                 return self.portals[s]
+            elif s in self.emitters:
+                return self.emitters[s]
         raise AttributeError
 
     #        return self.__getattribute__(self, a)
@@ -1548,7 +1551,7 @@ class Game(SafeJSON, Graphics):
                                  default=False)
         self.parser.add_argument("-p", "--profile", action="store_true",
                                  dest="profiling", help="Record player movements for testing", default=False)
-        self.parser.add_argument("-Q", "--quick", dest="quick",
+        self.parser.add_argument("-Q", "--quick", action="store_true", dest="quick",
                                  help="When doing the test runner, ignore all savepoints except last")
         self.parser.add_argument("-R", "--random", dest="target_random_steps", nargs='+',
                                  help="Randomly deviate [x] steps from walkthrough to stress test robustness of scripting")
@@ -2679,6 +2682,8 @@ class Game(SafeJSON, Graphics):
                 self.collections.pop(name)
             elif name in self.portals.keys():
                 self.portals.pop(name)
+            elif name in self.emitters.keys():
+                self.emitters.pop(name)
 
     def remove(self, objects):  # game.remove (not an event driven function)
         return self.immediate_remove(objects)
@@ -2695,7 +2700,13 @@ class Game(SafeJSON, Graphics):
             #    log.warning(f"Unable to find {obj} for immediate_add.")
             #    continue
 
-            if obj in self.actors.values() or obj in self.items.values() or obj in self.scenes.values() or obj in self.collections.values() or obj in self.portals.values() or obj in self.texts.values():
+            if obj in self.actors.values() or \
+                    obj in self.items.values() or \
+                    obj in self.scenes.values() or \
+                    obj in self.collections.values() or \
+                    obj in self.portals.values() or \
+                    obj in self.texts.values() or \
+                    obj in self.emitters.values():
                 if not replace:
                     continue
                 elif logging:
@@ -2714,6 +2725,8 @@ class Game(SafeJSON, Graphics):
                 del self.portals[obj_name]
             if obj_name in self.texts:
                 del self.texts[obj_name]
+            if obj_name in self.emitters:
+                del self.emitters[obj_name]
 
             obj_obj.game = self
 
@@ -2731,6 +2744,8 @@ class Game(SafeJSON, Graphics):
                 self.texts[obj_obj.name] = obj_obj
             elif isinstance(obj_obj, Portal):
                 self.portals[obj_obj.name] = obj_obj
+            elif isinstance(obj_obj, Emitter):
+                self.emitters[obj_obj.name] = obj_obj
             elif isinstance(obj_obj, Item):
                 self.items[obj_obj.name] = obj_obj
             elif isinstance(obj_obj, Actor):

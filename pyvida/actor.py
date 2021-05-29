@@ -1977,9 +1977,12 @@ class Actor(SafeJSON, MotionManager):
     def _continues(self, text, delay=0.01, step=3, size=13, duration=None):
         """  _continues """
         kwargs = self._get_text_details()
+        kwargs["size"] = size
+        kwargs["step"] = step
+        kwargs["delay"] = delay
 
         from .text import Label  # XXX probably circular, want to remove this import
-        label = Label(text, delay=delay, step=step, size=size, **kwargs)
+        label = Label(text, **kwargs)
         label.game = self.game
         label.immediate_usage(True, True, False, False, False)
         #        label.fullscreen(True)
