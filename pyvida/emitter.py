@@ -59,43 +59,41 @@ class Particle:
     terminate: bool = False  # don't renew this particle if True
 
 
+@dataclass_json
+@dataclass
 class Emitter(Item):
+    """ Emits particles """
+    """ This object's solid_mask|solid_area is used for spawning
+        direction: what is the angle of the emitter
+        fov: what is the arc of the emitter's 'nozzle'?
+    """
+
     #    def __init__(self, name, *args, **kwargs):
+    number: int = 10
+    frames: int = 10
+    direction: float = 0.0
+    fov: float = 0.0  # field of view (how wide is the nozzle?)
+    speed: float = 1.0
+    acceleration: Tuple[float, float] = (0, 0)  # in the x,y directions
+    size_start: float = 1.0
+    size_end: float = 1.0
+    alpha_start: int = 255
+    alpha_end: int = 0
+    alpha_delta: float = 0
+    random_index: bool = True
+    random_age: bool = True
+    size_spawn_min: float = 1.0
+    size_spawn_max: float = 1.0
+    speed_spawn_min: float = 1.0
+    speed_spawn_max: float = 1.0
+    random_motion_index: bool = True
+    test_terminate: str = "terminate_by_frame"
+    behaviour: int = BEHAVIOUR_CYCLE
+    particles: List[Particle] = field(default_factory=list)
 
-    def __init__(self, name, number=10, frames=10, direction=0, fov=0, speed=1,
-                 acceleration=(0, 0), size_start=1, size_end=1, alpha_start=255,
-                 alpha_end=0, random_index=True, random_age=True, size_spawn_min=1.0, size_spawn_max=1.0,
-                 speed_spawn_min=1.0, speed_spawn_max=1.0, random_motion_index=True,
-                 test_terminate=terminate_by_frame, behaviour=BEHAVIOUR_CYCLE):
-        """ This object's solid_mask|solid_area is used for spawning
-            direction: what is the angle of the emitter
-            fov: what is the arc of the emitter's 'nozzle'?
-        """
-        super(Emitter, self).__init__(name)
-        self.name = name
-        self.number = number
-        self.frames = frames
-        self.direction = direction
-        self.fov = fov  # field of view (how wide is the nozzle?)
-        self.speed = speed
-        self.acceleration = acceleration  # in the x,y directions
-        self.size_start = size_start
-        self.size_end = size_end
-        self.alpha_start, self.alpha_end = alpha_start, alpha_end
-        self.alpha_delta = (alpha_end - alpha_start) / frames
-
-        self.random_index = random_index  # should each particle start mid-action (eg a different frame)
-        self.random_age = random_age  # should each particle start mid-life?
-        self.random_motion_index = random_motion_index  # should each particle start mid-motion?
-        self.size_spawn_min, self.size_spawn_max = size_spawn_min, size_spawn_max
-        self.speed_spawn_min, self.speed_spawn_max = speed_spawn_min, speed_spawn_max
-        self.particles = []
-        self.behaviour = behaviour
-        #        self.persist = False # particles are added to the scene and remain.
-        self._editable.append(
-            ("emitter area", "solid_area", "_solid_area", Rect), )
-        # self._solid_area = Rect(0,0,0,0) #used for the spawn area
-        self.test_terminate = test_terminate
+    def __post_init__(self):
+        self.alpha_delta = (self.alpha_end - self.alpha_start) / self.frames
+        self._editable =  (("emitter area", "solid_area", "_solid_area", Rect), )
 
     @property
     def summary(self):
