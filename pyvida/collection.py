@@ -196,7 +196,7 @@ class Collection(Item):
 
     # collection.draw, by default uses screen values
     def pyglet_draw(self, absolute=True):
-        if self.game and self.game.headless:
+        if self.game and self.game.is_headless():
             return
         if not self.resource: return
 

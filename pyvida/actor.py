@@ -386,7 +386,7 @@ class Actor(SafeJSON, MotionManager):
 
         sprite_callback = get_function(self.game, self._pyglet_animation_callback, obj=self)
 
-        if self.game and self.game.headless:
+        if self.game and self.game.is_headless():
             sprite_callback()
             return
 
@@ -406,7 +406,7 @@ class Actor(SafeJSON, MotionManager):
         sprite.on_animation_end = sprite_callback  # this is a pyglet event handler, not a pyvida queuing method
 
         # jump to end
-        if self.game and self.game.headless and isinstance(sprite.image, pyglet.image.Animation):
+        if self.game and self.game.is_headless() and isinstance(sprite.image, pyglet.image.Animation):
             sprite._frame_index = len(sprite.image.frames)
 
         set_resource(self.resource_name, w=sprite.width, h=sprite.height, resource=sprite)
@@ -855,7 +855,7 @@ class Actor(SafeJSON, MotionManager):
         else:
             destination = self.x, self.y
 
-        if self.game.headless:
+        if self.game.is_headless():
             self.immediate_goto(destination, block=block, next_action=next_action)
             return
 
@@ -1742,7 +1742,7 @@ class Actor(SafeJSON, MotionManager):
 
     def pyglet_draw(self, absolute=False, force=False, window=None):  # actor.draw
         """ pyglet_draw """
-        if self.game and self.game.headless and not force:
+        if self.game and self.game.is_headless() and not force:
             return
         if not self.game:
             print(self.name, "has no game attribute")
@@ -1951,7 +1951,7 @@ class Actor(SafeJSON, MotionManager):
             opt = Label("option{}".format(i), display_text=text, **kwargs)
             if i in keys.keys():
                 opt.immediate_keyboard(keys[i])
-            # if self.game and not self.game.headless:
+            # if self.game and not self.game.is_headless():
             opt.load_assets(self.game)
             padding_x = 10
             opt.x, opt.y = label.x + padding_x, label.y + label.h + i * opt.h + 5
@@ -2017,7 +2017,7 @@ class Actor(SafeJSON, MotionManager):
         self.game.immediate_add(label)
         if not duration:
             self.game.modals.append(label.name)
-            if self.game.headless:  # headless mode skips sound and visuals
+            if self.game.is_headless():  # headless mode skips sound and visuals
                 label.trigger_interact()  # auto-close the on_says
         else:
             log.error("on_continues clearing after duration not complete yet")
@@ -2441,7 +2441,7 @@ class Actor(SafeJSON, MotionManager):
         do_event = self.scene or (self.game and self.name in self.game.modals) or (
                 self.game and self.name in self.game.menu_items)
 
-        if (self.game and self.game.headless is True) or not do_event:  # if headless or not on screen, jump to end
+        if (self.game and self.game.is_headless() is True) or not do_event:  # if headless or not on screen, jump to end
             self.busy += 1
             self.on_animation_end_once()
             return
@@ -2563,7 +2563,7 @@ class Actor(SafeJSON, MotionManager):
                 log.info("%s has finished on_idle, so decrement %s.busy to %i." % (
                     self.name, self.name, self.busy))
 
-        if self.game and not self.game.headless:
+        if self.game and not self.game.is_headless():
             pyglet.clock.schedule_once(finish_idle, seconds, datetime.now())
         else:
             finish_idle(0, datetime.now())
@@ -2716,7 +2716,7 @@ class Actor(SafeJSON, MotionManager):
             log.debug("%s fade to %i" % (self.name, target))
         if action:
             self.immediate_do(action)
-        if self.game.headless:  # headless mode skips sound and visuals
+        if self.game.is_headless():  # headless mode skips sound and visuals
             self.immediate_set_alpha(target)
             return
         if target == self.get_alpha():  # already there.
@@ -2796,7 +2796,7 @@ class Actor(SafeJSON, MotionManager):
         destination can be a point, an Actor, or CENTER (to center on screen).
         """
         action = self.get_action()
-        if action and action._loaded is False and self.game and not self.game.headless:
+        if action and action._loaded is False and self.game and not self.game.is_headless():
             self.load_assets(self.game)
         if scene:
             current_scene = self.get_scene()
@@ -3089,14 +3089,14 @@ class Actor(SafeJSON, MotionManager):
         """ Get a path to the destination and then start walking """
 
         # if in auto mode but not headless, force player to walk everywhere.
-        if self.game and self.name == self.game.player and self.game.walkthrough_auto is True and self.game.headless is False:
+        if self.game and self.name == self.game.player and self.game.walkthrough_auto is True and self.game.is_headless() is False:
             block = True
 
         point = get_point(self.game, destination, self)
         if next_action:
             self._next_action = next_action
 
-        if self.game and self.game.headless:  # skip pathplanning if in headless mode
+        if self.game and self.game.is_headless():  # skip pathplanning if in headless mode
             log.info("%s jumps to point." % self.name)
             self.x, self.y = point
             return

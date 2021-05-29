@@ -219,7 +219,7 @@ class MenuManager:
             sfx = _sound_resources[key] = SFX_Class(self.game)
             sfx.load(get_safe_path(key), self.game.settings.sfx_volume)
         if self.game:
-            if self.game.headless or (self.game.settings and self.game.settings.mute):
+            if self.game.is_headless() or (self.game.settings and self.game.settings.mute):
                 return
             if self.game.mixer and self.game.mixer._force_mute or self.game.mixer._session_mute:
                 return

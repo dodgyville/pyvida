@@ -207,14 +207,14 @@ class Emitter(Item):
 
     def _update(self, dt, obj=None):  # emitter.update
         Item._update(self, dt, obj=obj)
-        if self.game and self.game.headless:
+        if self.game and self.game.is_headless():
             return
         for i, p in enumerate(self.particles):
             self._update_particle(dt, p)
 
     def pyglet_draw(self, absolute=False, force=False):  # emitter.draw
         #        if self.resource and self._allow_draw: return
-        if self.game and self.game.headless and not force:
+        if self.game and self.game.is_headless() and not force:
             return
 
         action = self.get_action()
@@ -281,7 +281,7 @@ class Emitter(Item):
         self.behaviour = BEHAVIOUR_FIRE
         for p in self.particles:
             p.terminate = True
-            if self.game and self.game.headless:
+            if self.game and self.game.is_headless():
                 self.particles.remove(p)
 
     @queue_method

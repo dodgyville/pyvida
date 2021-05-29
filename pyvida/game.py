@@ -471,7 +471,7 @@ class Game(SafeJSON, Graphics):
                     print("No steam api connection")
 
     def init_graphics(self, override_resolution=None):
-        """ Complete all the pyglet and pygame initialisation """
+        """ Complete all the pyglet and pygame and editor initialisation """
         fonts_smart(self, _pyglet_fonts)  # load fonts
 
         # scale the game if the screen is too small
@@ -744,19 +744,6 @@ class Game(SafeJSON, Graphics):
 
     def immediate_set_fps(self, v):
         self.fps = v
-
-    def set_headless_value(self, v):
-        if v != self._headless:
-            if v is True:  # speed up
-                self.immediate_publish_fps(400, 400)
-            else:  # normal speed
-                self.immediate_publish_fps(self.fps, self.default_actor_fps)
-        self._headless = v
-
-    def get_headless_value(self):
-        return self._headless
-
-    headless = property(get_headless_value, set_headless_value)
 
     @property
     def w(self):
@@ -1105,7 +1092,7 @@ class Game(SafeJSON, Graphics):
             reset_mouse_cursor(self)
             return
 
-        if not self.get_scene() or self.headless or self.walkthrough_auto:
+        if not self.get_scene() or self.is_headless() or self.walkthrough_auto:
             return
         # check modals as first priority
         modal_collide = False
@@ -1241,7 +1228,7 @@ class Game(SafeJSON, Graphics):
         y = self.resolution[1] - y  # invert y-axis if needed
 
         self.mouse_down = (x, y)
-        if self.headless: return
+        if self.is_headless(): return
 
         # if editing walkarea, set the index to the nearest point
         if self.editing:
@@ -1341,7 +1328,7 @@ class Game(SafeJSON, Graphics):
             1]:  # mouse is outside game window
             return
 
-        if self.headless or self.walkthrough_auto: return
+        if self.is_headless() or self.walkthrough_auto: return
 
         # we are editing something, so don't interact with objects
         if self.editor and self._selector:  # select an object
@@ -2050,9 +2037,9 @@ class Game(SafeJSON, Graphics):
                 self._test_inventory = True
             if options.test_inventory_per_scene:
                 self._test_inventory_per_scene = True
-            if options.imagereactor == True:
+            if options.imagereactor:
                 """ save a screenshot as requested by walkthrough """
-                if self.headless is True:
+                if self.is_headless() is True:
                     print("WARNING, ART REACTOR CAN'T RUN IN HEADLESS MODE")
                 d = "imagereactor %s" % datetime.now()
                 self._imagereactor_directory = os.path.join(self.save_directory, d)
@@ -2180,7 +2167,7 @@ class Game(SafeJSON, Graphics):
         self.walkthrough_index += 1
 
         if self.walkthrough_index > self.walkthrough_target or self.walkthrough_index > len(self._walkthrough):
-            if self.headless:
+            if self.is_headless():
                 if self._test_inventory:
                     print("Test inventory. Walkthrough report:")
                     print("Inventoried items: %s" % self.walkthrough_inventorables)
@@ -2189,7 +2176,7 @@ class Game(SafeJSON, Graphics):
                         self.test_inventory_against_objects(self.walkthrough_inventorables,
                                                             self.walkthrough_interactables, execute=True)
 
-                self.headless = False
+                self.immediate_set_headless(False)
                 self.walkthrough_auto = False
                 self._resident = []  # force refresh on scenes assets that may not have loaded during headless mode
                 if self.scene:
@@ -2283,7 +2270,7 @@ class Game(SafeJSON, Graphics):
 
         if options.imagereactor == True and "screenshot" in extras:
             """ save a screenshot as requested by walkthrough """
-            if self.headless is True:
+            if self.is_headless() is True:
                 print("WARNING, ART REACTOR CAN'T RUN IN HEADLESS MODE")
             d = self._imagereactor_directory
             if not os.path.isdir(d):
@@ -2314,7 +2301,7 @@ class Game(SafeJSON, Graphics):
                 log.error("Unable to find %s in game" % actor_name)
                 self.walkthrough_target = 0
                 self.walkthrough_auto = False
-                self.headless = False
+                self.immediate_set_headless( False)
                 return
             # if not in same scene as camera, and not in modals or menu, log
             # the error
@@ -2653,7 +2640,7 @@ class Game(SafeJSON, Graphics):
             while self._handle_events():
                 pass
 
-        if not self.headless:
+        if not self.is_headless():
             self.current_clock_tick = int(round(time.time() * 1000))
             # only delay as much as needed
         self.last_clock_tick = int(round(time.time() * 1000))
@@ -3032,15 +3019,15 @@ class Game(SafeJSON, Graphics):
                           (sfname, scene.name))
             scene._last_state = get_relative_path(sfname, self.game.data_directory)
             #            execfile("somefile.py", global_vars, local_vars)
-            current_headless = self.headless
+            current_headless = self.is_headless()
             if not current_headless:
-                self.set_headless_value(True)
+                self.set_headless(True)
             with open(sfname) as f:
                 data = f.read()
                 code = compile(data, sfname, 'exec')
                 exec(code, variables)
             if not current_headless:  # restore non-headless
-                self.set_headless_value(False)
+                self.set_headless(False)
             variables['load_state'](self, scene)
         self._last_load_state = state
         return scene
@@ -3182,7 +3169,7 @@ class Game(SafeJSON, Graphics):
 
     def immediate_pause(self, duration):
         """ pause the game for duration seconds """
-        if self.headless:
+        if self.is_headless():
             return
         self.busy += 1
         self.immediate_wait()
@@ -3395,7 +3382,7 @@ class Game(SafeJSON, Graphics):
             callback(d, game)
 
         if callback:
-            if not duration or self.headless:
+            if not duration or self.is_headless():
                 splash_finish(0, self)
             else:
                 pyglet.clock.schedule_once(splash_finish, duration, self)
@@ -3483,7 +3470,19 @@ class Game(SafeJSON, Graphics):
         self.immediate_set_headless(v)
 
     def immediate_set_headless(self, v):
-        self.headless = v
+        self.set_headless_value( v)
+
+    def set_headless_value(self, v):
+        if v != self._headless:
+            if v is True:  # speed up
+                self.immediate_publish_fps(400, 400)
+            else:  # normal speed
+                self.immediate_publish_fps(self.fps, self.default_actor_fps)
+        self._headless = v
+
+    def is_headless(self):
+        return self._headless
+
 
     @queue_method
     def set_menu(self, *args, clear=True):

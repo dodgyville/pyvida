@@ -71,13 +71,13 @@ class MotionManager:
                 motion_obj.index = index
             if destructive is not None:
                 motion_obj.destructive = destructive
-            if block is True and self.game.headless is False:
+            if block is True and self.game.is_headless() is False:
                 self.busy += 1
                 self.game.immediate_wait()  # make game wait
                 if logging:
                     logger.debug("%s has started motion %s, so incrementing self.busy to %s." % (
                         self.name, motion_obj.name, self.busy))
-            if self.game.headless is True and mode == ONCE:
+            if self.game.is_headless() is True and mode == ONCE:
                 motion_obj.apply_full_motion_to_actor(self)
                 return None  # don't add the motion as it has been fully applied.
         else:

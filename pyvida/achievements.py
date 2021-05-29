@@ -97,7 +97,7 @@ class AchievementManager:
 
     def present(self, game, slug):
         a = self.achievements[slug]
-        if game.headless is True: return
+        if game.is_headless() is True: return
         if not game.settings.silent_achievements:
             game.achievement.load_assets(game)
             game.achievement.relocate(game.scene, (120, game.resolution[1]))

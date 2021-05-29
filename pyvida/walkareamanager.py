@@ -51,7 +51,7 @@ class WalkAreaManager(SafeJSON):
     _polygon_count: int = 0
     _polygon_x: any = field(default_factory=list)
     _polygon_y: any = field(default_factory=list)
-    _fill_colour: any = None
+    _fill_colour: Optional[any] = None
 
     busy: int = 0
 

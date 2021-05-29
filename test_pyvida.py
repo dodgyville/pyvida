@@ -1373,7 +1373,7 @@ class TestPortal:
         self.portal1.sx, self.portal1.sy = 0,0
         self.portal1.ox, self.portal1.oy = -100,0
 
-        self.game.headless = False
+        self.game.set_headless_value( False
         self.game.player = self.actor
         self.game.add([self.scene, self.actor, self.portal1, self.portal2])
         self.scene.immediate_add([self.actor, self.portal1])

@@ -7,7 +7,7 @@ from dataclasses import (
 import logging
 import os
 from typing import (
-    List,
+    List, Optional
 )
 
 
@@ -34,7 +34,7 @@ class Motion(object):
         Perfect for setting up repetitive background motions.
     """
     name: str = ''
-    owner: str = None
+    owner: str = ''
     motion_filename: str = None
     deltas: List[MotionDelta] = field(default_factory=list)
     default_mode: int = LOOP
@@ -189,7 +189,7 @@ class Motion(object):
             self.average_dx /= len(self.deltas)
             self.average_dy /= len(self.deltas)
 
-    def smart(self, game, owner=None, filename=None):  # motion.smart
+    def smart(self, game, owner='', filename=None):  # motion.smart
         if game:
             owner_obj = get_object(game, owner)
             self.owner = owner_obj.name if owner_obj else self.owner

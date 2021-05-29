@@ -151,7 +151,7 @@ class Action:
         quickload = os.path.abspath(get_best_file(game, fname + ".quickload"))
         full_load = True
         resource = False  # don't update resource
-        if game.headless:  # only load defaults
+        if game.is_headless():  # only load defaults
             if os.path.isfile(quickload):  # read w,h without loading full image
                 try:
                     with open(quickload, "r") as f:

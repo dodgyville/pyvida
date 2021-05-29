@@ -317,7 +317,7 @@ class Graphics:
 
         scene = self.get_scene()
 
-        if not scene or self.headless or self.walkthrough_auto:
+        if not scene or self.is_headless() or self.walkthrough_auto:
             return
 
         pop_matrix = self.start_draw_transform()

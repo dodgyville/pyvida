@@ -376,7 +376,7 @@ class Mixer(SafeJSON):
 
     def immediate_music_pop(self, volume=None):
         """ Stop the current track and if there is music stashed, pop it and start playing it """
-        if self.game and self.game.headless:
+        if self.game and self.game.is_headless():
             return
         if self._music_filename:  # currently playing music
             if self._music_stash:  # there is a file on the stash
@@ -425,7 +425,7 @@ class Mixer(SafeJSON):
 
             if os.path.exists(absfilename):  # new music
                 log.info("Loading music file %s" % absfilename)
-                if self.game and not self.game.headless:
+                if self.game and not self.game.is_headless():
                     self._music_player.load(absfilename)
                 self._music_filename = fname
                 #                print("SETTING CURRENT MUSIC FILENAME TO", fname)
@@ -440,7 +440,7 @@ class Mixer(SafeJSON):
             print("NO MUSIC FILE", fname)
             return
         #        print("PLAY: SESSION MUTE", self._session_mute)
-        if self._force_mute or self._session_mute or self.game.headless:
+        if self._force_mute or self._session_mute or self.game.is_headless():
             return
         if volume is not None: self.immediate_music_volume(volume)
 
@@ -491,7 +491,7 @@ class Mixer(SafeJSON):
         self.immediate_music_stop()
 
     def immediate_music_stop(self):
-        if self.game and not self.game.headless:
+        if self.game and not self.game.is_headless():
             self._music_player.pause()
 
     @queue_method
@@ -499,7 +499,7 @@ class Mixer(SafeJSON):
         self.immediate_music_restart()
 
     def immediate_music_restart(self):
-        if self.game and not self.game.headless:
+        if self.game and not self.game.is_headless():
             self._music_player.play()
 
     @queue_method
@@ -511,7 +511,7 @@ class Mixer(SafeJSON):
         new_volume = self._music_volume = val
         # scale by the master volume from settings
         new_volume *= self.game.settings.music_volume if self.game and self.game.settings else 1
-        if self.game and not self.game.headless:
+        if self.game and not self.game.is_headless():
             self._music_player.volume(new_volume)
         log.debug("Setting music volume to %f" % new_volume)
 
@@ -524,7 +524,7 @@ class Mixer(SafeJSON):
         val = val if val else 1  # reset
         new_volume = self._sfx_volume = val
         new_volume *= self.game.settings.sfx_volume if self.game and self.game.settings else 1
-        if self.game and not self.game.headless:
+        if self.game and not self.game.is_headless():
             for sfx_player in self._sfx_players:
                 sfx_player.volume(new_volume)
 
@@ -543,7 +543,7 @@ class Mixer(SafeJSON):
 
     def _sfx_stop_callback(self):
         """ callback used by fadeout to stop sfx """
-        if self.game and not self.game.headless:
+        if self.game and not self.game.is_headless():
             self.immediate_sfx_stop()
 
     @queue_method
@@ -560,7 +560,7 @@ class Mixer(SafeJSON):
 
         if self._sfx_volume_target is not None:  # fade the volume up or down
             v = self._sfx_volume + self._sfx_volume_step
-            if self.game.headless or self.game.walkthrough_auto:
+            if self.game.is_headless() or self.game.walkthrough_auto:
                 v = self._sfx_volume_target
             finish = False
             if self._sfx_volume_step < 0 and v <= self._sfx_volume_target:
@@ -579,7 +579,7 @@ class Mixer(SafeJSON):
 
         if self._ambient_volume_target is not None:  # fade the ambient up or down
             v = self._ambient_volume + self._ambient_volume_step
-            if self.game.headless or self.game.walkthrough_auto: v = self._ambient_volume_target
+            if self.game.is_headless() or self.game.walkthrough_auto: v = self._ambient_volume_target
             finish = False
             if self._ambient_volume_step < 0 and v <= self._ambient_volume_target:
                 finish = True
@@ -597,7 +597,7 @@ class Mixer(SafeJSON):
 
         if self._music_volume_target is not None:  # fade the volume up or down
             v = self._music_volume + self._music_volume_step
-            if self.game.headless or self.game.walkthrough_auto: v = self._music_volume_target
+            if self.game.is_headless() or self.game.walkthrough_auto: v = self._music_volume_target
             finish = False
             if self._music_volume_step < 0 and v <= self._music_volume_target:
                 finish = True
@@ -632,12 +632,12 @@ class Mixer(SafeJSON):
             absfilename = get_safe_path(fname)
             if os.path.exists(absfilename):
                 log.info("Loading sfx file %s" % absfilename)
-                if self.game and not self.game.headless:
+                if self.game and not self.game.is_headless():
                     sfx_player.load(absfilename, self.game.settings.sfx_volume)
             else:
                 log.warning("SFX file %s missing." % absfilename)
                 return
-        if self.game.settings.mute or self.game.headless or self._force_mute or self._session_mute:
+        if self.game.settings.mute or self.game.is_headless() or self._force_mute or self._session_mute:
             return
         if self.game.settings and self.game.settings.sfx_subtitles and description:
             d = "<sound effect: %s>" % description
@@ -650,7 +650,7 @@ class Mixer(SafeJSON):
         self.immediate_sfx_stop(sfx)
 
     def immediate_sfx_stop(self, sfx=None):
-        if self.game and not self.game.headless:
+        if self.game and not self.game.is_headless():
             for sfx_player in self._sfx_players:
                 sfx_player.stop()
 
@@ -673,7 +673,7 @@ class Mixer(SafeJSON):
         self.immediate_ambient_stop()
 
     def immediate_ambient_stop(self):
-        if self.game and not self.game.headless:
+        if self.game and not self.game.is_headless():
             self._ambient_player.stop()
 
     @queue_method
@@ -722,12 +722,12 @@ class Mixer(SafeJSON):
             absfilename = get_safe_path(fname)
             if os.path.exists(absfilename):
                 log.info("Loading ambient file %s" % absfilename)
-                if self.game and not self.game.headless:
+                if self.game and not self.game.is_headless():
                     self._ambient_player.load(absfilename, self.game.settings.ambient_volume)
             else:
                 log.warning("Ambient file %s missing." % absfilename)
                 return
-        if (self.game.settings and self.game.settings.mute) or self.game.headless:
+        if (self.game.settings and self.game.settings.mute) or self.game.is_headless():
             return
         if self._force_mute or self._session_mute:
             return

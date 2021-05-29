@@ -137,7 +137,7 @@ def save_game(game, fname, title=None):
 
 
 def load_game(game, fname):
-    logger.info("SAVE GAME DISABLED IN PYVIDA7 dev")
+    """ Do not call direct, use game.immediate_load_game"""
     new_game = load_game_json(game, fname)
 
     # keep the session-only stuff
@@ -149,7 +149,7 @@ def load_game(game, fname):
 
     # turn off any walkthrough or headless modes that may have been saved in the file
     new_game.walkthrough_auto = False  # switch off walkthrough
-    new_game.headless = False
+    new_game._headless = False  # set this directly to avoid rescheduling update clock
 
     for obj in new_game.items.values():
         restore_object_json(game, obj)
@@ -165,11 +165,15 @@ def load_game(game, fname):
         restore_object_json(game, obj)
         obj.set_game(game)  # also takes care of walkareas
 
+    for obj in new_game.menu_factories.values():
+        restore_object(game, obj)
+
     restore_object(game, new_game.menu)  # MenuManager
     restore_object(game, new_game.camera)  # MenuManager
 
     if new_game.get_player():
         new_game.get_player().load_assets(game)
+    new_game.game = game  # keep reference to original game
     return new_game
 
 
@@ -192,6 +196,7 @@ def load_game_meta(fname):
 
 def load_game_json(game, fname, meta_only=False, keep=[], responsive=False):
     """ A generator function, call and set """
+    """ Do not call direct, use game.immediate_load_game"""
     global _pyglet_fonts
     keep_scene_objects = []
     for i in keep:

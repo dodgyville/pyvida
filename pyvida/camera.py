@@ -183,7 +183,7 @@ class Camera:  # the view manager
         """
         if self.overlay_fx == FX_DISCO:  # remove disco effect
             self.immediate_disco_off()
-        if not self.game.headless:
+        if not self.game.is_headless():
             pyglet.gl.glClearColor(0, 0, 0, 255)  # reset clear colour to black
         if type(scene) in [str]:
             if scene in self.game.scenes:
@@ -269,7 +269,7 @@ class Camera:  # the view manager
         # unload assets from older scenes
         KEEP_SCENES_RESIDENT = 10
         unload = self.game._resident[:-KEEP_SCENES_RESIDENT]  # unload older scenes
-        if len(unload) > 0 and not self.game.headless:
+        if len(unload) > 0 and not self.game.is_headless():
             for unload_scene in unload:
                 s = get_object(self.game, unload_scene)
                 logger.debug("Unload scene %s" % (unload_scene))
@@ -399,7 +399,7 @@ class Camera:  # the view manager
         """
         colour can only be black|white
         """
-        if self.game.headless:  # headless mode skips sound and visuals
+        if self.game.is_headless():  # headless mode skips sound and visuals
             return
         adjust_duration = seconds / self.game.speed if self.game else seconds
         print(f"set fade out to {adjust_duration} instead of {seconds} because {self.game.speed}")
@@ -423,7 +423,7 @@ class Camera:  # the view manager
         self.immediate_fade_in(seconds, colour, block)
 
     def immediate_fade_in(self, seconds=3, colour="black", block=False):
-        if self.game.headless:  # headless mode skips sound and visuals
+        if self.game.is_headless():  # headless mode skips sound and visuals
             return
 
         adjust_duration = seconds / self.game.speed if self.game else seconds
@@ -480,7 +480,7 @@ class Camera:  # the view manager
         self.immediate_off(colour)
 
     def immediate_off(self, colour="black"):
-        if self.game.headless:  # headless mode skips sound and visuals
+        if self.game.is_headless():  # headless mode skips sound and visuals
             return
         d = pyglet.resource.get_script_home()
         if colour == "black":
@@ -565,7 +565,7 @@ class Camera:  # the view manager
 
         point = get_point(self.game, destination, self)
 
-        if self.game.headless:  # skip pathplanning if in headless mode
+        if self.game.is_headless():  # skip pathplanning if in headless mode
             self.game.get_scene().x, self.game.get_scene().y = point
             return
 

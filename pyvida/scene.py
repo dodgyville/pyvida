@@ -55,7 +55,7 @@ class Scene(SafeJSON, MotionManager):
 
     scales: any = field(default_factory=dict)
     walkarea: WalkAreaManager = field(default_factory=WalkAreaManager)
-    colour: any = None  # clear colour (0-255, 0-255, 0-255)
+    colour: Optional[any] = None  # clear colour (0-255, 0-255, 0-255)
     _ignore_highcontrast: bool = False  # if True, then game.contrast will not be blitted on this scene.
 
     def get_x(self):  # scene.x
@@ -386,7 +386,7 @@ class Scene(SafeJSON, MotionManager):
         if fname:
             for i in self.layers:
                 obj = get_object(self.game, i)
-                # if self.game and not self.game.headless:
+                # if self.game and not self.game.is_headless():
                 obj.load_assets(self.game)
                 # self.immediate_add(obj)
             log.debug("Set background for scene %s to %s" % (self.name, fname))
@@ -406,16 +406,16 @@ class Scene(SafeJSON, MotionManager):
             obj = get_object(self.game, obj_name)
 
             if fx == FX_FADE_OUT:
-                if self.game.headless:  # headless mode skips sound and visuals
+                if self.game.is_headless():  # headless mode skips sound and visuals
                     obj.immediate_set_alpha(0)
                     continue
                 obj.opacity_target = 0
             else:
-                if self.game.headless:  # headless mode skips sound and visuals
+                if self.game.is_headless():  # headless mode skips sound and visuals
                     obj.immediate_set_alpha(255)
                     continue
                 obj.opacity_target = 255
-            if not self.game.headless:
+            if not self.game.is_headless():
                 obj.opacity_delta = (obj.opacity_target - obj.opacity) / (self.game.fps * seconds)
 
     @queue_method

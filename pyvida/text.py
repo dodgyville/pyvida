@@ -204,7 +204,7 @@ class Label(Item):
         if len(c) == 3:
             c = (c[0], c[1], c[2], 255)
 
-        if self.game and self.game.headless is True:
+        if self.game and self.game.is_headless() is True:
             self._text_index = len(self.display_text)
             self._animated_text = self.display_text[:self._text_index]
             return
@@ -306,7 +306,7 @@ class Label(Item):
             self.resource_offset.text = self._animated_text
 
     def pyglet_draw(self, absolute=False, force=False, window=None):  # text.draw
-        if self.game and self.game.headless:
+        if self.game and self.game.is_headless():
             return
 
         if not self.allow_draw:
