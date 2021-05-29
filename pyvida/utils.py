@@ -103,7 +103,7 @@ def get_smart_directory(game, obj):
     """
     # if frozen: #inside a mac bundle
     #    d = os.path.join(working_dir, d)
-    d = get_safe_path(obj.suggest_smart_directory(), game.working_directory if game else '')
+    d = get_safe_path(obj.suggest_smart_directory(), game.data_directory if game else '')
     return d
 
 
@@ -150,7 +150,7 @@ def get_best_file(game, f_raw):
         else:
             directories = [d]
     for directory in directories:
-        test_f = get_safe_path(os.path.join(directory, f_name), game.working_directory if game else None)
+        test_f = get_safe_path(os.path.join(directory, f_name), game.data_directory if game else None)
         if os.path.exists(test_f):
             return test_f
     return f_raw  # use default
@@ -196,7 +196,11 @@ def redirect_log(log, fname):
         handler = logging.StreamHandler(stream=sys.stdout)
         handler.setLevel(logging.ERROR)
         log.addHandler(handler)
-
+    log.info("Global variable working_dir set to %s" % working_dir)
+    log.info("Global variable script_filename set to %s" % script_filename)
+    log.info("Frozen is %s" % frozen)
+    log.info(frozen_msg)
+    log.info("Default mixer: %s" % mixer)
 
 # config stuff
 APP_DIR = "."
@@ -312,9 +316,9 @@ if logging:
         log_level = logging.INFO
     log = create_log("pyvida", log_level)
     log.warning("MONTAGE IMPORT ONLY DOES A SINGLE STRIP")
-    log.info("Global variable working_dir set to %s" % working_dir)
-    log.info("Global variable script_filename set to %s" % script_filename)
-    log.info("Frozen is %s" % frozen)
+    log.info("log: Global variable working_dir set to %s" % working_dir)
+    log.info("log: Global variable script_filename set to %s" % script_filename)
+    log.info("log: Frozen is %s" % frozen)
     log.info(frozen_msg)
     log.info("Default mixer:", mixer)
 
@@ -1241,7 +1245,7 @@ def fonts_smart(game, _pyglet_fonts):
     font_files = []
     for d_raw in font_dirs:
         for t in ['data/fonts/*.otf', 'data/fonts/*.ttf']:
-            for f in glob.glob(get_safe_path(os.path.join(d_raw, t), game.working_directory)):
+            for f in glob.glob(get_safe_path(os.path.join(d_raw, t), game.data_directory)):
                 font_files.append(f)
                 font = TTFont(f)
                 name, family = shortName(font)

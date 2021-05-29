@@ -236,7 +236,7 @@ class Scene(SafeJSON, MotionManager):
 
     def _load_layers(self, game, wildcard=None, cls=Item):
         sdir = os.path.join(game.directory_scenes, self.name)
-        absdir = get_safe_path(sdir, game.working_directory)
+        absdir = get_safe_path(sdir, game.data_directory)
         wildcard = wildcard if wildcard else os.path.join(absdir, "*.png")
         self.layers = []  # clear old layers
         layers = []

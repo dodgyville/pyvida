@@ -119,13 +119,13 @@ class Label(Item):
     pos: any = (0, 0)
     display_text: str = None
     colour: any = (255, 255, 255, 255)
-    font: any = None  # the filepath to the font
+    font: str = ''  # the filepath to the font
     font_name: str = "Times New Roman"
     size: int = DEFAULT_TEXT_SIZE
     wrap: int = 800
-    offset: any = None
-    interact: str = None
-    look: str = None
+    offset: int = 0
+    interact: str = ''
+    look: str = ''
     align: int = LEFT
     delay: int = 0  # How fast to display chunks of the text
     step: int = 2  # How many characters to advance during delayed display
@@ -137,8 +137,8 @@ class Label(Item):
     # _display_text: str = None
     _pyglet_animate_scheduled: bool = False  # is a clock function scheduled
 
-    _idle_colour: any = None  # mimick menu "over" behaviour using this colour
-    _over_colour: any = None  # mimick menu "over" behaviour using this colour
+    _idle_colour: Optional[any] = None  # mimick menu "over" behaviour using this colour
+    _over_colour: Optional[tuple] = None  # mimick menu "over" behaviour using this colour
     _action_name: str = "idle"  # mimmick menu over and idle behaviour if over_colour is set
 
     def __post_init__(self):
@@ -165,7 +165,7 @@ class Label(Item):
 
         self._idle_colour = self.colour
 
-        if self.font:
+        if self.font and self.font != '':
             if self.font not in _pyglet_fonts:
                 log.error(
                     "Unable to find %s in _pyglet_fonts, use game.add_font" % self.font)
@@ -233,7 +233,7 @@ class Label(Item):
 
         set_resource(self.resource_name, w=label.content_width, h=label.content_height, resource=label)
 
-        if self.offset:
+        if self.offset and self.offset != 0:
             label_offset = PygletLabel(self._animated_text,
                                  font_name=self.font_name,
                                  font_size=self.size,

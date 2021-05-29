@@ -459,7 +459,7 @@ class Mixer(SafeJSON):
             return
         self.busy += 1
         if logging:
-            log.info("%s has started on_music_fade, so increment %s.busy to %i." % (
+            log.debug("%s has started on_music_fade, so increment %s.busy to %i." % (
                 self.name, self.name, self.busy))
 
     @queue_method
@@ -513,7 +513,7 @@ class Mixer(SafeJSON):
         new_volume *= self.game.settings.music_volume if self.game and self.game.settings else 1
         if self.game and not self.game.headless:
             self._music_player.volume(new_volume)
-        log.info("Setting music volume to %f" % new_volume)
+        log.debug("Setting music volume to %f" % new_volume)
 
     @queue_method
     def sfx_volume(self, val=None):
@@ -538,7 +538,7 @@ class Mixer(SafeJSON):
         self._sfx_volume_step = ((val - self._sfx_volume) / fps) / duration
         self.busy += 1
         if logging:
-            log.info("%s has started on_sfx_fade, so increment %s.busy to %i." % (
+            log.debug("%s has started on_sfx_fade, so increment %s.busy to %i." % (
                 self.name, self.name, self.busy))
 
     def _sfx_stop_callback(self):
@@ -687,7 +687,7 @@ class Mixer(SafeJSON):
         self._ambient_volume_step = ((val - self._ambient_volume) / fps) / duration
         self.busy += 1
         if logging:
-            log.info("%s has started on_ambient_fade, so increment %s.busy to %i." % (
+            log.debug("%s has started on_ambient_fade, so increment %s.busy to %i." % (
                 self.name, self.name, self.busy))
 
     def _ambient_stop_callback(self):

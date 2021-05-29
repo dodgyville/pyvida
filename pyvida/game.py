@@ -183,8 +183,8 @@ class Game(SafeJSON, Graphics):
     #menu_items: List[str] = field(default_factory=list)
     #menus: List[any] = field(default_factory=list)  # a stack of menus
     #modals: List[str] = field(default_factory=list)
-    directory_portals: Optional[str] = None
-    directory_items: Optional[str] = None
+    directory_portals: Optional[str] = None  # relative
+    directory_items: Optional[str] = None  # relative
     directory_scenes: Optional[str] = None
     directory_actors: Optional[str] = None
     directory_emitters: Optional[str] = None
@@ -192,6 +192,7 @@ class Game(SafeJSON, Graphics):
     directory_music: Optional[str] = None
     directory_sfx: Optional[str] = None
     directory_screencast: Optional[str] = None
+    base_directory: str = None  # per session absolute directory for the current game
 
     waiting: bool = False
     busy: int = 0  # game is never busy but might be checked by generic functions
@@ -267,11 +268,12 @@ class Game(SafeJSON, Graphics):
         self.mixer = mixer
         return result
 
-    def __post_init__(self):
+    def init_variables(self):
         log.info("pyvida version %s %s %s" % (VERSION_MAJOR, VERSION_MINOR, VERSION_SAVE))
         self.debug_collection = False
         self.writeable_directory = self.save_directory
-        self.working_directory = working_dir
+        self.data_directory = working_dir
+        self.base_directory = os.getcwd()
         self.setup_saves()
         self.parser = ArgumentParser()
         self.add_arguments()
@@ -468,7 +470,7 @@ class Game(SafeJSON, Graphics):
                 except:
                     print("No steam api connection")
 
-    def init(self, override_resolution=None):
+    def init_graphics(self, override_resolution=None):
         """ Complete all the pyglet and pygame initialisation """
         fonts_smart(self, _pyglet_fonts)  # load fonts
 
@@ -707,7 +709,7 @@ class Game(SafeJSON, Graphics):
                 pass
 
         if logging:  # redirect log to file
-            log_filename = get_safe_path(os.path.join(self.save_directory, 'pyvida5.log'))
+            log_filename = get_safe_path(os.path.join(self.save_directory, 'pyvida7.log'))
             print("log going to %s" % log_filename)
             redirect_log(log, log_filename)
 
@@ -1797,7 +1799,7 @@ class Game(SafeJSON, Graphics):
         num_to_load = 0
         for obj_cls in [Actor, Item, Emitter, Portal, Scene]:
             dname = "directory_%ss" % obj_cls.__name__.lower()
-            safe_dir = get_safe_path(getattr(self, dname), self.working_directory)
+            safe_dir = get_safe_path(getattr(self, dname), self.data_directory)
             if not os.path.exists(safe_dir):
                 continue  # skip directory if non-existent
             for name in os.listdir(safe_dir):
@@ -1809,7 +1811,7 @@ class Game(SafeJSON, Graphics):
         for obj_cls in [Actor, Item, Emitter, Portal, Scene]:
             dname = "directory_%ss" % obj_cls.__name__.lower()
             #            dname = get_smart_directory(self, obj)
-            safe_dir = get_safe_path(getattr(self, dname), self.working_directory)
+            safe_dir = get_safe_path(getattr(self, dname), self.data_directory)
             safe_dir = Path(working_dir, safe_dir).as_posix()
             loaded += 1
             if loaded % 1000 == 0:
@@ -1818,7 +1820,7 @@ class Game(SafeJSON, Graphics):
                 continue  # skip directory if non-existent
             for name in os.listdir(safe_dir):
                 if only and name not in only:
-                    log.info(f"game.smart load is skipping {name} because it is not in the 'only' request")
+                    log.debug(f"game.smart load is skipping {name} because it is not in the 'only' request")
                     continue  # only load specific objects
                 #                if draw_progress_bar:
                 #                    update_progress_bar(self.game, self)
@@ -2440,7 +2442,7 @@ class Game(SafeJSON, Graphics):
                     none_busy = False
             if none_busy is True:
                 if logging:
-                    log.info(
+                    log.debug(
                         "Game has no busy events, so setting game.waiting to False.")
                 # no prior events are busy, so stop waiting
                 self.waiting = False
@@ -2635,8 +2637,11 @@ class Game(SafeJSON, Graphics):
         scene = self.get_scene()
         layer_objects = scene.layers if scene else []
         # update all the objects in the scene or the event queue.
-        items_list = [layer_objects, scene_objects, self.menu_items, modal_objects,
+        try:
+            items_list = [layer_objects, scene_objects, self.menu_items, modal_objects,
                       [self.camera.name], [self.mixer.name], [obj[1] for obj in self.events], self._edit_menu]
+        except:
+            import pdb; pdb.set_trace()
         items_to_update = self.flatten_items_to_update(items_list)
 
         self.update_items(items_to_update, dt)
@@ -3015,7 +3020,7 @@ class Game(SafeJSON, Graphics):
                 return
         sfname = os.path.join(
             self.directory_scenes, os.path.join(scene.name, state))
-        sfname = get_safe_path("%s.py" % sfname, self.working_directory)
+        sfname = get_safe_path("%s.py" % sfname, self.data_directory)
         variables = {}
         if not os.path.exists(sfname):
             if logging:
@@ -3025,7 +3030,7 @@ class Game(SafeJSON, Graphics):
             if logging:
                 log.debug("load state: load %s for scene %s" %
                           (sfname, scene.name))
-            scene._last_state = get_relative_path(sfname, self.game.working_directory)
+            scene._last_state = get_relative_path(sfname, self.game.data_directory)
             #            execfile("somefile.py", global_vars, local_vars)
             current_headless = self.headless
             if not current_headless:
@@ -3182,7 +3187,7 @@ class Game(SafeJSON, Graphics):
         self.busy += 1
         self.immediate_wait()
         if logging:
-            log.info("game has started on_pause, so increment game.busy to %i." % (self.busy))
+            log.debug("game has started on_pause, so increment game.busy to %i." % (self.busy))
 
         def pause_finish(d, game):
             self.busy -= 1

@@ -75,7 +75,7 @@ class MotionManager:
                 self.busy += 1
                 self.game.immediate_wait()  # make game wait
                 if logging:
-                    logger.info("%s has started motion %s, so incrementing self.busy to %s." % (
+                    logger.debug("%s has started motion %s, so incrementing self.busy to %s." % (
                         self.name, motion_obj.name, self.busy))
             if self.game.headless is True and mode == ONCE:
                 motion_obj.apply_full_motion_to_actor(self)

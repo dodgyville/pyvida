@@ -42,16 +42,15 @@ class Collection(Item):
     reverse_sort: bool = False
     index: int = 0  # where in the index to start showing
     limit: int = -1  # number of items to display at once, -1 is infinite
-    selected: any = None
+    selected: Optional[any] = None
     mouse_motion_callback: str = "_mouse_motion_collection"
-    _mouse_scroll: any = None
+    _mouse_scroll: str = ''
     mx: int = 0
     my: int = 0  # in pyglet format
-    callback: Optional[str] = None
-    padding: any = None
-    dimensions: any = None
-    tile_size: any = None
-    # , name, callback, padding=(10, 10), dimensions=(300, 300), tile_size=(80, 80), limit=-1
+    callback: str = ''
+    padding: any = (0, 0)
+    dimensions: any = (300, 300)
+    tile_size: any = (80, 80)
 
     def __post_init__(self):
         self._sorted_objects = None
@@ -156,12 +155,12 @@ class Collection(Item):
             if hasattr(i, "_cr") and collide(i._cr, mx, my):
                 if logging:
                     logger.debug("On %s in collection %s" % (i.name, self.name))
-                self.selected = i
+                self.selected = obj_name
                 return i
         if logging:
             logger.debug(
                 "On collection %s, but no object at that point" % (self.name))
-        self.selected = None
+        self.selected = ''
         return None
 
     def _mouse_motion_collection(self, game, collection, player, scene_x, scene_y, dx, dy, window_x, window_y):
@@ -187,12 +186,9 @@ class Collection(Item):
         # does this object have a special inventory function?
         if obj and obj._collection_select:
             obj._collection_select(self.game, obj, self)
-        self.selected = obj
+        self.selected = obj.name if obj else ''
         if self.callback:
-            if callable(self.callback):
-                cb = self.callback
-            else:
-                cb = get_function(game, self.callback)
+            cb = get_function(game, self.callback)
             if not cb:
                 logger.error(f"Unable to find collection callback ({self.callback})")
                 import pdb; pdb.set_trace()

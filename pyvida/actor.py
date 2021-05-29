@@ -533,8 +533,8 @@ class Actor(SafeJSON, MotionManager):
     def directory(self):
         best_directory = Path(self.relative_directory)
         if not best_directory.is_absolute():  # try and composite an absolute directory
-            if self.game and self.game.working_directory:
-                best_directory = Path(self.game.working_directory / best_directory)
+            if self.game and self.game.data_directory:
+                best_directory = Path(self.game.data_directory / best_directory)
         return best_directory.as_posix()
 
     def get_ax(self):
@@ -1278,7 +1278,7 @@ class Actor(SafeJSON, MotionManager):
             if action_name in exclude:
                 continue
             try:
-                relname = get_relative_path(action_file, game.working_directory if game else '')
+                relname = get_relative_path(action_file, game.data_directory if game else '')
             except ValueError:  # if relpath fails due to cx_Freeze expecting different mounts
                 relname = action_file
 
@@ -1355,7 +1355,7 @@ class Actor(SafeJSON, MotionManager):
                 # add file directory to path so that import can find it
                 if os.path.dirname(filepath) not in self.game.sys_module_paths:
                     self.game.sys_module_paths.append(
-                        get_relative_path(os.path.dirname(filepath), self.game.working_directory))
+                        get_relative_path(os.path.dirname(filepath), self.game.data_directory))
                 if os.path.dirname(filepath) not in sys.path:
                     sys.path.append(os.path.dirname(filepath))
                 # add to the list of modules we are tracking
@@ -1427,7 +1427,7 @@ class Actor(SafeJSON, MotionManager):
                 log.info(
                     "actor.smart - using %s for smart load instead of real name %s" % (using, self.name))
             name = os.path.basename(using)
-            d = get_safe_path(os.path.dirname(using), game.working_directory if game else None)
+            d = get_safe_path(os.path.dirname(using), game.data_directory if game else None)
         else:
             name = self.name
             d = get_smart_directory(game, self)
@@ -1443,7 +1443,7 @@ class Actor(SafeJSON, MotionManager):
             this_dir, this_filename = os.path.split(script_filename)  # script_filename is absolute location of pyvida
             log.debug("Unable to find %s, falling back to %s" %
                       (myd, this_dir))
-            myd = os.path.join(this_dir, get_relative_path(d, game.working_directory if game else ''), name)
+            myd = os.path.join(this_dir, get_relative_path(d, game.data_directory if game else ''), name)
             absd = get_safe_path(myd)
         if not os.path.isdir(absd) and not image:  # fallback to deprecated menu default if item
             log.warning(
@@ -1454,7 +1454,7 @@ class Actor(SafeJSON, MotionManager):
                 absd = get_safe_path(myd)
 
         try:
-            self.relative_directory = Path(myd).relative_to(game.working_directory if game else '').as_posix()
+            self.relative_directory = Path(myd).relative_to(game.data_directory if game else '').as_posix()
         except ValueError:
             self.relative_directory = myd
             log.warning(f"{self.name} is not stored relative to game, may not load from savegame ({myd})")
@@ -1471,7 +1471,7 @@ class Actor(SafeJSON, MotionManager):
                 f.close()
 
         try:
-            self._images = [get_relative_path(x, game.working_directory if game else '') for x in
+            self._images = [get_relative_path(x, game.data_directory if game else '') for x in
                             images]  # make storage relative
         except ValueError:  # cx_Freeze on windows on different mounts may confuse relpath.
             self._images = images
@@ -2167,7 +2167,7 @@ class Actor(SafeJSON, MotionManager):
         # make the game wait until the user closes the modal
         self.busy += 1
         if logging:
-            log.info("%s has started on_says (%s), so increment self.busy to %s." % (
+            log.debug("%s has started on_says (%s), so increment self.busy to %s." % (
                 self.name, text, self.busy))
         if block_for_user is True:
             self.game.immediate_wait()
@@ -2452,7 +2452,7 @@ class Actor(SafeJSON, MotionManager):
             self.game.immediate_wait()
         if result:
             if logging:
-                log.info("%s has started on_do_once, so increment %s.busy to %i." % (
+                log.debug("%s has started on_do_once, so increment %s.busy to %i." % (
                     self.name, self.name, self.busy))
             self.busy += 1
         else:
@@ -2554,7 +2554,7 @@ class Actor(SafeJSON, MotionManager):
         """ delay processing the next event for this actor """
         self.busy += 1
         if logging:
-            log.info("%s has started on_idle, so increment %s.busy to %i." % (
+            log.debug("%s has started on_idle, so increment %s.busy to %i." % (
                 self.name, self.name, self.busy))
 
         def finish_idle(dt, start):
@@ -2728,7 +2728,7 @@ class Actor(SafeJSON, MotionManager):
             self.game.immediate_wait()  # make all other events wait too.
             self.opacity_target_block = True
             if logging:
-                log.info("%s fade has requested block, so increment busy to %i" % (self.name, self.busy))
+                log.debug("%s fade has requested block, so increment busy to %i" % (self.name, self.busy))
 
     @queue_method
     def fade_in(self, action=None, seconds=3, block=False):  # actor.fade_in
@@ -3064,7 +3064,7 @@ class Actor(SafeJSON, MotionManager):
 
         self.busy += 1
         if logging:
-            log.info("%s has started _calculate_goto, so incrementing self.busy to %s." % (
+            log.debug("%s has started _calculate_goto, so incrementing self.busy to %s." % (
                 self.name, self.busy))
         if block:
             if logging:

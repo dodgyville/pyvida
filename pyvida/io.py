@@ -165,8 +165,11 @@ def load_game(game, fname):
         restore_object_json(game, obj)
         obj.set_game(game)  # also takes care of walkareas
 
-    if game.get_player():
-        game.get_player().load_assets(game)
+    restore_object(game, new_game.menu)  # MenuManager
+    restore_object(game, new_game.camera)  # MenuManager
+
+    if new_game.get_player():
+        new_game.get_player().load_assets(game)
     return new_game
 
 

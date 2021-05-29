@@ -79,13 +79,13 @@ class Action:
 
     def _load_montage(self, filename):
         fname = os.path.splitext(filename)[0]
-        montage_fname = get_safe_path(fname + ".montage", self.game.working_directory if self.game else '')
+        montage_fname = get_safe_path(fname + ".montage", self.game.data_directory if self.game else '')
 
         if not os.path.isfile(montage_fname):
-            if not os.path.isfile(get_safe_path(filename, self.game.working_directory if self.game else '')):
+            if not os.path.isfile(get_safe_path(filename, self.game.data_directory if self.game else '')):
                 w, h = 0, 0
             else:
-                w, h = get_image_size(get_safe_path(filename, self.game.working_directory if self.game else ''))
+                w, h = get_image_size(get_safe_path(filename, self.game.data_directory if self.game else ''))
             num = 1  # single frame animation
         else:
             with open(montage_fname, "r") as f:
@@ -105,12 +105,12 @@ class Action:
         self.actor = actor_obj.name if actor_obj else self.actor  # keep existing actor if new actor not found
         self.game = game
         try:
-            self._image = get_relative_path(filename, game.working_directory if game else '')
+            self._image = get_relative_path(filename, game.data_directory if game else '')
         except ValueError:  # if relpath fails due to cx_Freeze expecting different mounts
             self._image = filename
         w, h, num = self._load_montage(filename)
         fname = os.path.splitext(filename)[0]
-        dfname = get_safe_path(fname + ".defaults", game.working_directory if game else '')
+        dfname = get_safe_path(fname + ".defaults", game.data_directory if game else '')
         load_defaults(game, self, "%s - %s" % (actor.name, self.name), dfname)
         set_resource(self.resource_name, w=w, h=h)
         #        self.load_assets(game)

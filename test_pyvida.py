@@ -7,6 +7,7 @@ from pathlib import Path
 import pyglet
 import pytest
 import tempfile
+import os
 from time import sleep
 from unittest.mock import MagicMock
 
@@ -75,7 +76,7 @@ RESOLUTION = (RESOLUTION_X, RESOLUTION_Y)
 def create_basic_scene(resolution=(1680, 1050), with_update=False):
     game = Game("Test", "1.0", "1.0", "testpyvida", fps=16, afps=16, resolution=resolution)
     game.autoscale = False
-    game.working_directory = "/home/luke/Projects/pyvida/test_data"
+    game.data_directory = "/home/luke/Projects/pyvida/test_data"
     game.init()
     game.smart()
     game.queue_load_state("title", "initial")
@@ -101,7 +102,7 @@ class TestUtils:
         # '../../../../../Projects/pyvida/test_data/data/actors/Adam/idle.montage'
         game = Game() if use_game else None
         if game:
-            game.working_directory = working_dir
+            game.data_directory = working_dir
 
         f = get_best_file(game, fname)
         assert expected in f
@@ -500,7 +501,7 @@ class TestSmart:
     def test_smart_basic(self):
         game = Game("Test", "1.0", "1.0", "testpyvida", fps=16, afps=16, resolution=(100, 100))
         game.autoscale = False
-        game.working_directory = TEST_PATH
+        game.data_directory = TEST_PATH
         game.immediate_smart()
         assert len(game.items) == 2
         assert len(game.actors) == 4
@@ -554,7 +555,8 @@ class TestActor:
     def test_smart(self):
         game = Game(resolution=(100, 100))
         game.autoscale = False
-        game.working_directory = "/home/luke/Projects/pyvida/test_data"
+        game.data_directory = "/home/luke/Projects/pyvida/test_data"
+        game.base_directory = os.getcwd()
         a = Actor("Adam")
         a.smart(game)
 
@@ -564,7 +566,8 @@ class TestActor:
     def test_load_assets(self):
         game = Game(resolution=(100, 100))
         game.autoscale = False
-        game.working_directory = "/home/luke/Projects/pyvida/test_data"
+        game.data_directory = "/home/luke/Projects/pyvida/test_data"
+        game.base_directory = os.getcwd()
         a = Actor("Adam")
         a.smart(game)
         a.load_assets(game)
@@ -677,7 +680,7 @@ class TestScene:
 
     def test_layers_game(self):
         game = Game()
-        game.working_directory = "/home/luke/Projects/pyvida/test_data"
+        game.data_directory = "/home/luke/Projects/pyvida/test_data"
         s = Scene("testscene")
         game.immediate_add(s)
         s._load_layer("scenes/title/background.png")
@@ -687,7 +690,7 @@ class TestScene:
     def test_scene_with_item(self):
         game = Game("Test", "1.0", "1.0", "testpyvida", fps=16, afps=16, resolution=(1680, 1050))
         game.autoscale = False
-        game.working_directory = "/home/luke/Projects/pyvida/test_data"
+        game.data_directory = "/home/luke/Projects/pyvida/test_data"
         game.init()
         game.smart()
         game.queue_load_state("title", "initial")
@@ -705,7 +708,7 @@ class TestScene:
     def test_scene_with_menu(self):
         game = Game("Test", "1.0", "1.0", "testpyvida", fps=16, afps=16, resolution=(1680, 1050))
         game.autoscale = False
-        game.working_directory = "/home/luke/Projects/pyvida/test_data"
+        game.data_directory = "/home/luke/Projects/pyvida/test_data"
         mx, my = game.resolution[0] / 2 - 100, 140  # game.resolution[1]-50
         game.add(MenuFactory("menu", (mx, my)))
 
@@ -1236,8 +1239,6 @@ class TestMotion:
         assert scale == 5
 
 
-
-
 class TestPathplanning:
     def test_getgoto_action_motion(self):
         a = Actor("astronaut").smart(None, using=Path(TEST_PATH, "data/actors/astronaut").as_posix())
@@ -1271,8 +1272,6 @@ class TestPathplanning:
 
         # TODO: This is not actually testing it
         assert len(a.goto_deltas) == 9
-
-
 
 
 class TestMotionManager:
@@ -1510,3 +1509,23 @@ class TestStorage:
         assert result.custom["to_be_kept"] == {"arcade": [1,2,3,4, {"fire": "reflektor"}]}
 
 
+# IO (savegames)
+
+class TestIO:
+    def test_storage(self):
+        pass
+
+    def test_storage_custom(self):
+        pass
+
+    def test_reset_asset_loads(self):
+        """ make sure save game objects's loaded flag is set to false """
+        pass
+
+    def test_readd_game_object(self):
+        """ make sure save game objects's have game object """
+        pass
+
+    def test_scheduler_events(self):
+        """ make sure game events are not screwed up """
+        pass

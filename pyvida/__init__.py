@@ -180,7 +180,7 @@ def get_best_directory(game, d_raw_name):
             else:
                 directories = [d]
         for directory in directories:
-            safe_dir = get_safe_path(directory, game.working_directory)
+            safe_dir = get_safe_path(directory, game.data_directory)
             if os.path.isdir(safe_dir):
                 return safe_dir
     return None

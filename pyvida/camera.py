@@ -410,7 +410,7 @@ class Camera:  # the view manager
         self.overlay_fx = FX_FADE_OUT
         self.busy += 1
         if logging:
-            logger.info("%s has started on_fade_out, so increment %s.busy to %i." % (
+            logger.debug("%s has started on_fade_out, so increment %s.busy to %i." % (
                 self.name, self.name, self.busy))
         if block:
             self.game.immediate_wait()
@@ -435,7 +435,7 @@ class Camera:  # the view manager
         self.overlay_fx = FX_FADE_IN
         self.busy += 1
         if logging:
-            logger.info("%s has started on_fade_in, so increment %s.busy to %i." % (
+            logger.debug("%s has started on_fade_in, so increment %s.busy to %i." % (
                 self.name, self.name, self.busy))
         if block:
             self.game.immediate_wait()
@@ -588,7 +588,7 @@ class Camera:  # the view manager
         self.goto_dy = y * d
         self.busy += 1
         if logging:
-            log.info("Camera %s has started _goto, so increment self.busy to %s and game.waiting to True." % (
+            log.debug("Camera %s has started _goto, so increment self.busy to %s and game.waiting to True." % (
                 self.name, self.busy))
         self.game.immediate_wait()
 
