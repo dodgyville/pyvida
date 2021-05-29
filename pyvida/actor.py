@@ -1074,7 +1074,8 @@ class Actor(SafeJSON, MotionManager):
                     return
             else:
                 allowed_fns = ["option_answer_callback", "new_game_fn"]
-                if self.interact.__name__ not in allowed_fns and "debug" not in self.interact.__name__:
+                fn_name = self.interact.__name__
+                if fn_name not in allowed_fns and "debug" not in fn_name:
                     log.warning(f"Not a script name (won't save well): {self.interact}")
                     if ENABLE_SET_TRACE:
                         import pdb; pdb.set_trace()
@@ -1122,10 +1123,14 @@ class Actor(SafeJSON, MotionManager):
             else:
                 # warn if using default vida interact
                 from .portal import Portal  # XXX circular, want to remove this import
-                if not isinstance(self, Portal):
+                from .collection import Collection
+                if not isinstance(self, Portal) and isinstance(self, Collection):
                     if logging:
                         log.warning("No interact script for %s (write a def %s(game, %s, player): function)" % (
                             self.name, basic, slugify(self.name)))
+                        #if ENABLE_SET_TRACE:
+                        #    import pdb; pdb.set_trace()
+
                 script = None  # self.interact_default
                 self._interact_default(self.game, self, self.game.get_player() if self.game else None)
 
@@ -1988,14 +1993,16 @@ class Actor(SafeJSON, MotionManager):
         #        label.fullscreen(True)
         label.x, label.y = self.x + self.tx, self.y - self.ty
         label.z = 100
+        label.load_assets(self.game)
+
         #        self.busy += 1
         self.game.immediate_add(label)
         self.game.get_scene().immediate_add(label.name)
-        return label
+        return label.name
 
-    @queue_method
-    def continues(self, text, delay=0.01, step=3, duration=None):
+    def immediate_continues(self, text, delay=0.01, step=3, duration=None):
         """
+        I think this is like Actor.says but within the scene
         duration: auto-clear after <duration> seconds or if duration == None, use user input.
         """
         kwargs = self._get_text_details()
@@ -2016,14 +2023,21 @@ class Actor(SafeJSON, MotionManager):
                     self.name, text, self.name, self.busy))
 
         label.interact = _close_on_continues
+        label.load_assets(self.game)
+
         self.busy += 1
         self.game.immediate_add(label)
+
         if not duration:
             self.game.modals.append(label.name)
             if self.game.is_headless():  # headless mode skips sound and visuals
                 label.trigger_interact()  # auto-close the on_says
         else:
             log.error("on_continues clearing after duration not complete yet")
+
+    @queue_method
+    def continues(self, text, delay=0.01, step=3, duration=None):
+        self.immediate_continues(text, delay, step, duration)
 
     @queue_method
     def says(self, text, *args, **kwargs):  # actor.says

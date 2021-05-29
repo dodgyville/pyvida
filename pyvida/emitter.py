@@ -93,7 +93,7 @@ class Emitter(Item):
 
     def __post_init__(self):
         self.alpha_delta = (self.alpha_end - self.alpha_start) / self.frames
-        self._editable =  (("emitter area", "solid_area", "_solid_area", Rect), )
+        self._editable = (("emitter area", "solid_area", "_solid_area", Rect), )
 
     @property
     def summary(self):
@@ -179,7 +179,8 @@ class Emitter(Item):
         p.y -= self.acceleration[1] * p.index
         p.alpha = self.alpha_start + self.alpha_delta * p.index
         #        p.scale = self.size_start + ((self.size_end-self.size_start)/self.frames) * p.index
-        if p.alpha < 0: p.alpha = 0
+        if p.alpha < 0:
+            p.alpha = 0
 
         #        p.alpha += self.alpha_delta
         #        if p.alpha < 0: p.alpha = 0
@@ -197,7 +198,7 @@ class Emitter(Item):
             #            print("RESET PARTICLE", self.frames, p.index)
             self.reset_particle(p)
             p.hidden = False
-            if p.terminate == True:
+            if p.terminate:
                 self.particles.remove(p)
 
         # if self.resource:
