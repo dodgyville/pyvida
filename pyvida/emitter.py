@@ -348,6 +348,7 @@ class Emitter(Item):
             self.speed_spawn_min = speed_spawn_min
         if speed_spawn_max:
             self.speed_spawn_max = speed_spawn_max
+        is_headless = self.game and self.game.is_headless()
         for x in range(0, num):
             d = self.get_a_direction()
             scale = self.get_a_scale()
@@ -358,7 +359,7 @@ class Emitter(Item):
                                            scale))
             p = self.particles[-1]
             self.reset_particle(p)
-            if self.behaviour == BEHAVIOUR_CYCLE:
+            if self.behaviour == BEHAVIOUR_CYCLE and not is_headless:
                 # fast forward particle through one full cycle so they are
                 # mid-stream when they start
                 for j in range(0, self.frames):

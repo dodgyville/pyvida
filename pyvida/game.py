@@ -2248,6 +2248,7 @@ class Game(SafeJSON, Graphics):
                 walkthrough_target = get_safe_path(
                     os.path.join(self.save_directory, "%s.savegame" % self.walkthrough_target_name))
                 save_game(self, walkthrough_target)
+                self.camera.immediate_screenshot(Path(walkthrough_target).with_suffix(".png"))
             return
         # if this walkthrough has a human readable name, we might be wanting to
         # create an autosave here.
