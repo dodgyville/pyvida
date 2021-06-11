@@ -310,15 +310,16 @@ class Graphics:
             d = os.path.join(self.directory_screencast, "%s.png" % now)
             pyglet.image.get_buffer_manager().get_color_buffer().save(d)
 
-    def pyglet_draw(self):  # game.draw
+    def pyglet_draw(self, force=False):  # game.draw
         """ Draw the game's scene  """
         #        dt = pyglet.clock.tick()
         self.draw_clear_colour()
 
         scene = self.get_scene()
 
-        if not scene or self.is_headless() or self.walkthrough_auto:
-            return
+        if not force:
+            if not scene or self.is_headless() or self.walkthrough_auto:
+                return
 
         pop_matrix = self.start_draw_transform()
 

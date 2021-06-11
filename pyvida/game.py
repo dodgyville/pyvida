@@ -1289,9 +1289,9 @@ class Game(SafeJSON, Graphics):
             self._map_joystick = 0  # finished remap
             # return
         if button == self.settings.joystick_interact:
-            self.immediate_mouse_release(x, y, pyglet.window.mouse.LEFT, modifiers)
+            self.on_mouse_release(x, y, pyglet.window.mouse.LEFT, modifiers)
         elif button == self.settings.joystick_look:
-            self.immediate_mouse_release(x, y, pyglet.window.mouse.RIGHT, modifiers)
+            self.on_mouse_release(x, y, pyglet.window.mouse.RIGHT, modifiers)
         # print(self.joystick.__dict__)
         # print(button, self.settings.joystick_interact, self.settings.joystick_look)
 
@@ -2248,6 +2248,9 @@ class Game(SafeJSON, Graphics):
                 walkthrough_target = get_safe_path(
                     os.path.join(self.save_directory, "%s.savegame" % self.walkthrough_target_name))
                 save_game(self, walkthrough_target)
+                from time import sleep
+                self.combined_update(0, force=True)  # force a draw
+                sleep(0.5)
                 self.camera.immediate_screenshot(Path(walkthrough_target).with_suffix(".png"))
             return
         # if this walkthrough has a human readable name, we might be wanting to
@@ -2272,7 +2275,7 @@ class Game(SafeJSON, Graphics):
 
         options = self.parser.parse_args()
 
-        if options.imagereactor == True and "screenshot" in extras:
+        if options.imagereactor and "screenshot" in extras:
             """ save a screenshot as requested by walkthrough """
             if self.is_headless() is True:
                 print("WARNING, ART REACTOR CAN'T RUN IN HEADLESS MODE")
@@ -2406,8 +2409,10 @@ class Game(SafeJSON, Graphics):
             fname = get_safe_path(savefile.with_suffix(".savegame"))
             save_game(self, fname, human_readable_name)
             if ENABLE_DEBUG_SAVES:
+                from time import sleep
+                self.combined_update(0, force=True)
+                sleep(0.5)
                 self.camera.immediate_screenshot(savefile.with_suffix(".png"))
-
 
     def _handle_events(self):
         """ Handle game events """
@@ -2557,7 +2562,7 @@ class Game(SafeJSON, Graphics):
             if x > self.resolution[0] * self._scale:
                 x = self.resolution[0] * self._scale
 
-            self.immediate_mouse_motion(x, y, dx=0, dy=0)  # XXX dx, dy are zero
+            self.on_mouse_motion(x, y, dx=0, dy=0)  # XXX dx, dy are zero
 
     def get_scene_objects_to_update(self, dt):
         scene_objects = []
@@ -2655,10 +2660,10 @@ class Game(SafeJSON, Graphics):
             #if not self._generator:  # don't process walkthrough if a generator is running (eg loading a save game)
             self._process_walkthrough()
 
-    def combined_update(self, dt):
+    def combined_update(self, dt, force=False):
         """ do the update and the draw in one """
         self.update(dt)
-        self.pyglet_draw()
+        self.pyglet_draw(force=force)
         if self.window_editor:
             self.pyglet_editor_draw()
             self.window_editor.flip()
@@ -2785,6 +2790,7 @@ class Game(SafeJSON, Graphics):
         self.mouse_cursors[key] = image
 
     def add_font(self, filename, fontname):
+        """ Load a font into the pyglet font engine and also link it to the fontname in pyvida engine """
         if language:
             d = os.path.join("data/locale/%s" % language, filename)
             if os.path.exists(d):
@@ -2793,7 +2799,7 @@ class Game(SafeJSON, Graphics):
                 d = filename
         else:
             d = filename
-        # font = get_font(self, d, fontname)
+        get_font(self, d, fontname)  # load into pyglet engine?
         _pyglet_fonts[filename] = fontname
 
     def add_modal(self, modal):

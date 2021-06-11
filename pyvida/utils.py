@@ -1202,14 +1202,15 @@ def load_defaults(game, obj, name, filename):
 
 # fonts
 def get_font(_game, filename, fontname):
+    """ Load a filename into the pyglet font engine
+        We must maintain the name of the font elsewhere though.
+        Used by game.add_font
+    """
     # XXX should fallback to pyvida subdirectories if not in game subdirectory
     font = None
     try:
         pyglet.font.add_file(get_safe_path(filename))
         font = pyglet.font.load(fontname)
-    # fonts = [x[0].lower() for x in font._memory_fonts.keys()] if font.name.lower() not in fonts: log.error("Font %s
-    # appears not be in our font dictionary, fontname must match name in TTF file. Real name might be in: %s"%(
-    # fontname, font._memory_fonts.keys()))
     except FileNotFoundError:
         font = None
     except AttributeError:
@@ -1258,7 +1259,7 @@ def fonts_smart(game, _pyglet_fonts):
                 if filename in _pyglet_fonts:
                     log.warning("OVERRIDING font %s with %s (%s)" % (filename, f, name))
                 _pyglet_fonts[filename] = name
-
+                game.add_font(filename, name)
 
 # scene portal planning (used by test runner)
 scene_path = []
