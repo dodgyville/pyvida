@@ -2247,7 +2247,7 @@ class Game(SafeJSON, Graphics):
             if self.walkthrough_target_name:
                 walkthrough_target = get_safe_path(
                     os.path.join(self.save_directory, "%s.savegame" % self.walkthrough_target_name))
-                save_game(self, walkthrough_target)
+                save_game(self, walkthrough_target, autosave=True)
                 from time import sleep
                 self.combined_update(0, force=True)  # force a draw
                 sleep(0.5)
@@ -2407,7 +2407,7 @@ class Game(SafeJSON, Graphics):
         if human_readable_name and not self.walkthrough_quick:
             savefile = Path(os.path.join(self.save_directory, human_readable_name))
             fname = get_safe_path(savefile.with_suffix(".savegame"))
-            save_game(self, fname, human_readable_name)
+            save_game(self, fname, human_readable_name, autosave=True)
             if ENABLE_DEBUG_SAVES:
                 from time import sleep
                 self.combined_update(0, force=True)
@@ -3055,11 +3055,11 @@ class Game(SafeJSON, Graphics):
         return scene
 
     @queue_method
-    def save_game(self, fname):
-        self.immediate_save_game(fname)
+    def save_game(self, fname, autosave=False):
+        self.immediate_save_game(fname, autosave)
 
-    def immediate_save_game(self, fname):
-        save_game(self, fname)
+    def immediate_save_game(self, fname, autosave=False):
+        save_game(self, fname, autosave=autosave)
 
     @queue_method
     def load_game(self, fname):
@@ -3152,7 +3152,7 @@ class Game(SafeJSON, Graphics):
         game = self
         fname = fname if fname else datetime.now().strftime("%Y%m%d_%H%M%S")
         directory = directory_override if directory_override else self.save_directory
-        save_game(game, get_safe_path(os.path.join(directory, "%s.savegame" % fname)))
+        save_game(game, get_safe_path(os.path.join(directory, "%s.savegame" % fname)), autosave=True)
         for i in exclude_from_screenshot:
             obj = get_object(game, i)
             obj.hide()

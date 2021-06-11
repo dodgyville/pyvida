@@ -56,6 +56,8 @@ class Storage:
     created: datetime = field(default_factory=datetime.now, metadata=iso_datetime)
     hint: str = ''
     universe_seed: int = 0
+    loaded_from_autosave: bool = False  # was this created by an autosave, useful for restoring player menus etc
+    loaded_from_save: bool = False  # was this created by an autosave, useful for restoring player menus etc
     custom: CatchAll = field(default_factory=dict)  # specific to the game
 
 

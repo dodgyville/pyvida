@@ -113,12 +113,14 @@ def check_json_safe(game):
                 json_object(v)
 
 
-def save_game_json(game, fname, title=None):
+def save_game_json(game, fname, title=None, autosave=False):
     logger.info("Save game to %s" % fname)
     # time since game created or loaded
     dt = datetime.now() - game.storage.last_load_time
     game.storage.total_time_in_game += dt.total_seconds()
     game.storage.last_save_time = game.storage.last_load_time = datetime.now()
+    game.storage.loaded_from_save = True
+    game.storage.loaded_from_autosave = autosave
     with open(fname, 'w') as f:
         # check_json_safe(game)
         result = game.to_json(indent=4)
@@ -132,8 +134,8 @@ def save_game_json(game, fname, title=None):
         f.write(json.dumps(metadata))
 
 
-def save_game(game, fname, title=None):
-    save_game_json(game, fname, title)
+def save_game(game, fname, title=None, autosave=False):
+    save_game_json(game, fname, title, autosave)
 
 
 def load_game(game, fname):

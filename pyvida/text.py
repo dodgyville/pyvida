@@ -117,7 +117,7 @@ class HTMLLabel(DocumentLabel):
 class Label(Item):
     name: str = ''
     pos: any = (0, 0)
-    display_text: str = None
+    display_text: Optional[str] = None
     colour: any = (255, 255, 255, 255)
     font: str = ''  # the filepath to the font
     font_name: str = "Times New Roman"
