@@ -1,5 +1,5 @@
 euclid3
-pyglet==1.5.11
+pyglet==2.0.10
 babel
 fonttools
 pytest-cov

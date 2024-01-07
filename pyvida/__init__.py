@@ -57,7 +57,7 @@ import pyglet.clock
 
 
 VERSION_SAVE = 5  # save/load version, only change on incompatible changes
-__version__ = "6.2.0"
+__version__ = "6.3.0"  # 6.3.x is the classic branch (for keeping older games running on new machines)
 
 # major incompatibilities, backwards compat (can run same scripts), patch number
 VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH = [int(x) for x in __version__.split(".")]
@@ -1946,7 +1946,8 @@ class Motion(object):
         delta_index = index if index else self.index
         d = self.deltas[delta_index % num_deltas]
         dx, dy, z, r, scale, frame_index, alpha = d
-        pyglet.gl.glScalef(scale, scale, 1)
+        # TODO: disabled for classic
+        # self._window.view.scale((scale, scale, 1))
         #        import pdb; pdb.set_trace()
         if index is None:
             self.index += 1
@@ -3974,7 +3975,7 @@ class Actor(MotionManager, metaclass=use_on_events):
     def pyglet_draw_sprite(self, sprite, absolute=None, window=None):
         # called by pyglet_draw
         if sprite and self.allow_draw:
-            glPushMatrix()
+            #glPushMatrix()
             x, y = self.pyglet_draw_coords(absolute, window, sprite.height)
 
             # if action mode is manual (static), force the frame index to the manual frame
@@ -3985,33 +3986,40 @@ class Actor(MotionManager, metaclass=use_on_events):
 
             #            if self.name == "lbrain": import pdb; pdb.set_trace()
             if self._rotate:
-                glTranslatef((sprite.width / 2) + self.x, hh - self.y - sprite.height / 2,
-                             0)  # move to middle of sprite
-                glRotatef(-self._rotate, 0.0, 0.0, 1.0)
-                glTranslatef(-((sprite.width / 2) + self.x), -(hh - self.y - sprite.height / 2), 0)
+                window.view = window.view.translate(
+                    ((sprite.width / 2) + self.x, hh - self.y - sprite.height / 2, 0)
+                ) # move to middle of sprite
+                #glTranslatef()
+                window.view = window.view.rotate((-self._rotate, 0.0, 0.0, 1.0))
+                window.view = window.view.translate(
+                    (-((sprite.width / 2) + self.x), -(hh - self.y - sprite.height / 2), 0
+                     )
+                )
 
             if self._fx_sway != 0:
-                #                import pdb; pdb.set_trace()
-                glTranslatef((sprite.width / 2) + self.x, hh - self.y,
-                             0)  # hh-self.y-sprite.height, 0) #move to base of sprite
-                angle = math.sin(self._fx_sway_index) * self._fx_sway_angle
-                skew = math.tan(math.radians(angle))
-                # A 4D transformation matrix that does nothing but apply a skew in the x-axis
-                skew_matrix = (c_float * 16)(1, 0, 0, 0, skew, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
-                glMultMatrixf(skew_matrix)
-                glTranslatef(-((sprite.width / 2) + self.x), -(hh - self.y), 0)  # (hh-self.y-sprite.height ), 0)
-                self._fx_sway_index += self._fx_sway
+                pass
+                # SWAY DISABLED IN CLASSIC PYVIDA
+                # self._window.view = self._window.view.translate((sprite.width / 2) + self.x, hh - self.y,
+                #              0)  # hh-self.y-sprite.height, 0) #move to base of sprite
+                # angle = math.sin(self._fx_sway_index) * self._fx_sway_angle
+                # skew = math.tan(math.radians(angle))
+                # # A 4D transformation matrix that does nothing but apply a skew in the x-axis
+                # skew_matrix = (c_float * 16)(1, 0, 0, 0, skew, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
+                # # glMultMatrixf(skew_matrix)
+                # print("Sway m")
+                # self._window.view = self._window.view.translate(-((sprite.width / 2) + self.x), -(hh - self.y), 0)  # (hh-self.y-sprite.height ), 0)
+                # self._fx_sway_index += self._fx_sway
 
-            pyglet.gl.glTranslatef(self._scroll_dx, 0.0, 0.0)
+            window.view = window.view.translate((self._scroll_dx, 0.0, 0.0))
             #            sprite.position = (int(x), int(y))
             original_scale = self.scale
             if self._flip_horizontal:
-                glScalef(-1.0, 1.0, 1.0)
+                window.view = window.view.scale((-1.0, 1.0, 1.0))
                 x = -x
                 x -= sprite.width
 
             if self._flip_vertical:
-                glScalef(1.0, -1.0, 1.0)
+                window.view = window.view.scale((1.0, -1.0, 1.0))
                 y = -y
                 y -= sprite.height
 
@@ -4119,7 +4127,7 @@ class Actor(MotionManager, metaclass=use_on_events):
                     self.scale = self.scale * z
             # elif total_distances==1:
 
-            sprite.position = (x, y)
+            sprite.position = (x, y, 0)
             if self._scroll_dx != 0 and self._scroll_dx + self.w < self.game.resolution[0]:
                 sprite.position = (int(x + self.w), int(y))
             if self._scroll_dx != 0 and x > 0:
@@ -4139,7 +4147,7 @@ class Actor(MotionManager, metaclass=use_on_events):
             #                glTranslatef((sprite.width/2)+self.x, hh-self.y-sprite.height/2, 0)
             #                glRotatef(self._rotate, 0.0, 0.0, 1.0)
             #                glTranslatef(-((sprite.width/2)+self.x), -(hh-self.y-sprite.height/2 ), 0)
-            glPopMatrix();
+            #glPopMatrix();
 
     def pyglet_draw(self, absolute=False, force=False, window=None):  # actor.draw
         if self.game and self.game._headless and not force:
@@ -5785,7 +5793,7 @@ class Emitter(Item, metaclass=use_on_events):
         for i, p in enumerate(self.particles):
             self._update_particle(dt, p)
 
-    def pyglet_draw(self, absolute=False, force=False):  # emitter.draw
+    def pyglet_draw(self, absolute=False, force=False, window=None):  # emitter.draw
         #        if self.resource and self._allow_draw: return
         if self.game and self.game._headless and not force:
             return
@@ -6280,7 +6288,7 @@ class WalkAreaManager(metaclass=use_on_events):
         safe = True if inside_polygon and outside_solids else False
         return safe
 
-    def _pyglet_draw(self, debug=False):
+    def _pyglet_draw(self, debug=False, window=None):
         ypts = [self.game.resolution[1] - y for y in self._polygon_y]
         pts = [item for sublist in zip(self._polygon_x, ypts) for item in sublist]
         #        polygon(self.game, pts)
@@ -6308,8 +6316,8 @@ class WalkAreaManager(metaclass=use_on_events):
                             if self.collide(*pt):
                                 crosshair(self.game, pt, colour)
 
-    def pyglet_draw(self):  # walkareamanager.draw
-        self._pyglet_draw()
+    def pyglet_draw(self, window=None):  # walkareamanager.draw
+        self._pyglet_draw(window=window)
 
     def debug_pyglet_draw(self):
         self._pyglet_draw(debug=True)
@@ -6798,7 +6806,7 @@ class Scene(MotionManager, metaclass=use_on_events):
     def _update(self, dt, obj=None):  # scene._update can be useful in subclassing
         pass
 
-    def pyglet_draw(self, absolute=False):  # scene.draw (not used)
+    def pyglet_draw(self, absolute=False, window=None):  # scene.draw (not used)
         pass
 
 
@@ -7052,7 +7060,7 @@ class Text(Item, metaclass=use_on_events):
         if self.resource_offset:
             self.resource_offset.text = self._animated_text
 
-    def pyglet_draw(self, absolute=False):  # text.draw 
+    def pyglet_draw(self, absolute=False, window=None):  # text.draw
         if self.game and self.game._headless:
             return
 
@@ -7069,7 +7077,7 @@ class Text(Item, metaclass=use_on_events):
                 "Unable to draw Text %s without a self.game object" % self.name)
             return
 
-        x, y = self.pyglet_draw_coords(absolute, None, 0)  # self.resource.content_height)
+        x, y = self.pyglet_draw_coords(absolute, window, 0)  # self.resource.content_height)
 
         alignment = getattr(self, "align", LEFT)  # check for attr to make backwards compat
 
@@ -7232,12 +7240,12 @@ class Collection(Item, pyglet.event.EventDispatcher, metaclass=use_on_events):
             cb(self.game, self, self.game.player)
 
     # collection.draw, by default uses screen values
-    def pyglet_draw(self, absolute=True):
+    def pyglet_draw(self, absolute=True, window=None):
         if self.game and self.game._headless:
             return
         if not self.resource: return
 
-        super().pyglet_draw(absolute=absolute)  # actor.draw
+        super().pyglet_draw(absolute=absolute, window=window)  # actor.draw
         # , self.y #self.padding[0], self.padding[1] #item padding
         #        x, y = self.resource.x + \
         #           self.padding[0], self.resource.y + \
@@ -7574,14 +7582,14 @@ class Camera(metaclass=use_on_events):  # the view manager
             zz = self._zoom_factor
             ww, hh = self._zoom_target
             hh = self.game.resolution[1] - hh
-            glTranslatef(ww, hh, 0)
-            glScalef(zz, zz, 1)
-            glTranslatef(-ww, -hh, 0)
+            self._window.view = self._window.view.translate((ww, hh, 0))
+            self._window.view = self._window.view.scale((zz, zz, 1))
+            self._window.view = self._window.view.translate((-ww, -hh, 0))
             self._zoom_steps -= 1
             if self._zoom_steps <= 0:
                 self._zoom_steps = None
                 self.busy -= 1
-                glPopMatrix()  # undo the zoom effect
+                #glPopMatrix()  # undo the zoom effect
 
         """
         Just a fun little experiment in quick cutting between scenes
@@ -7716,15 +7724,15 @@ class Camera(metaclass=use_on_events):  # the view manager
         self._scene(self.game.player.scene)
 
     def on_zoom(self, start, factor, steps=40, target=None, block=False):
-        glPushMatrix()
+        #glPushMatrix()
         self._zoom_start = start
         zz = self._zoom_factor = factor
         ww, hh = self._zoom_target = target
         hh = self.game.resolution[1] - hh
         self._zoom_steps = steps
-        glTranslatef(ww, hh, 0)
-        glScalef(start, start, 1)
-        glTranslatef(-ww, -hh, 0)
+        self._window.view = self._window.view.translate((ww, hh, 0))
+        self._window.view = self._window.view.scale((start, start, 1))
+        self._window.view = self._window.view.translate((-ww, -hh, 0))
         self.busy += 1
         if block == True:
             self.game.on_wait()  # make all other events wait too.
@@ -7857,13 +7865,14 @@ class Camera(metaclass=use_on_events):  # the view manager
         # im = ImageGrab.grab()
         # im.save(filename)
         pyglet.image.get_buffer_manager().get_color_buffer().save(filename)
-        from PIL import Image
-        img = Image.open(filename)
-        img = img.convert('RGB')  # remove alpha
-        fname, ext = os.path.splitext(filename)
-        if size:
-            img.thumbnail(size, Image.ANTIALIAS)
-        img.save(fname + ".png")
+        print("Screenshot disabled on classic pyvida")
+        # from PIL import Image
+        # img = Image.open(filename)
+        # img = img.convert('RGB')  # remove alpha
+        # fname, ext = os.path.splitext(filename)
+        # if size:
+        #     img.thumbnail(size, Image.ANTIALIAS)
+        # img.save(fname + ".png")
 
     def on_relocate(self, position):  # camera.relocate
         self.game.scene.x, self.game.scene.y = position
@@ -7943,8 +7952,10 @@ class PlayerPygletSFX:
             self._player.pause()
         try:
             self._sound = pyglet.media.load(fname, streaming=False)
-        except pyglet.media.sources.riff.WAVEFormatException:
-            log.warning("AVbin is required to decode compressed media. Unable to load %s" % fname)
+        except:
+            print("UNable to load ", fname)
+            #    pyglet.media.sources.riff.WAVEFormatException:
+            #log.warning("AVbin is required to decode compressed media. Unable to load %s" % fname)
         new_volume = volume
         self.volume(new_volume)
 
@@ -8008,8 +8019,10 @@ class PlayerPygletMusic:
     def load(self, fname, v=1):
         try:
             self._music = pyglet.media.load(fname)
-        except pyglet.media.sources.riff.WAVEFormatException:
-            print("AVbin is required to decode compressed media. Unable to load ", fname)
+        except:
+            print("Unable to load for some reason", fname)
+        #except pyglet.media.sources.riff.WAVEFormatException:
+        #    print("AVbin is required to decode compressed media. Unable to load ", fname)
 
     def play(self, loops=-1, start=0):
         #        pygame.mixer.music.stop() #reset counter
@@ -11416,11 +11429,11 @@ class Game(metaclass=use_on_events):
             # rotate scene before we add menu and modals
             # translate scene to middle
             popMatrix = True
-            glPushMatrix();
+            #glPushMatrix();
             ww, hh = self.resolution
-            glTranslatef(ww / 2, hh / 2, 0)
+            self._window.view = self._window.view.translate((ww / 2, hh / 2, 0))
             if self.scene._rotate:
-                glRotatef(-self.scene._rotate, 0.0, 0.0, 1.0)
+                self._window.view = self._window.view.rotate((-self.scene._rotate, 0.0, 0.0, 1.0))
             # apply motions
             remove_motions = []
             for motion in self.scene._applied_motions:
@@ -11430,21 +11443,21 @@ class Game(metaclass=use_on_events):
                 self.scene._applied_motions.remove(motion)
 
             if self.scene._flip_vertical is True:
-                glScalef(1, -1, 1)
+                self._window.view = self._window.view.scale((1, -1, 1))
 
             if self.scene._flip_horizontal is True:
-                glScalef(-1, 1, 1)
+                self._window.view = self._window.view.scale((-1, 1, 1))
 
-            glTranslatef(-ww / 2, -hh / 2, 0)
+            self._window.view = self._window.view.translate((-ww / 2, -hh / 2, 0))
 
-        pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0)
+#        pyglet.gl.glColor4f(1.0, 1.0, 1.0, 1.0)
         # draw scene backgroundsgrounds (layers with z equal or less than 1.0)
         background_obj = None
         for item in self.scene._layer:
             background_obj = get_object(self, item)
             background_obj.game = self
             if background_obj.z <= 1.0:
-                background_obj.pyglet_draw(absolute=False)
+                background_obj.pyglet_draw(absolute=False, window=self._window)
             else:
                 break
 
@@ -11454,7 +11467,7 @@ class Game(metaclass=use_on_events):
 
             # dim the entire background only if scene allows.
             if getattr(self.scene, "_ignore_highcontrast", False) is False and self._contrast:
-                self._contrast.pyglet_draw(absolute=True)
+                self._contrast.pyglet_draw(absolute=True, window=self._window)
 
                 # now brighten areas of interest that have no sprite
                 for obj_name in self.scene._objects:
@@ -11478,7 +11491,7 @@ class Game(metaclass=use_on_events):
             if self.scene.walkarea._editing:
                 self.scene.walkarea.debug_pyglet_draw()
             elif self.scene.walkarea._fill_colour is not None:
-                self.scene.walkarea.pyglet_draw()
+                self.scene.walkarea.pyglet_draw(window=self._window)
 
         scene_objects = []
         if self.scene:
@@ -11495,7 +11508,7 @@ class Game(metaclass=use_on_events):
             pdb.set_trace()
         portals = []
         for item in objects:
-            item.pyglet_draw(absolute=False)
+            item.pyglet_draw(absolute=False, window=self._window)
             if isinstance(item, Portal):
                 portals.append(item)
 
@@ -11506,7 +11519,7 @@ class Game(metaclass=use_on_events):
         for item in self.scene._layer:
             obj = get_object(self, item)
             if obj.z > 1.0:
-                obj.pyglet_draw(absolute=False)
+                obj.pyglet_draw(absolute=False, window=self._window)
 
         if self.settings and self.settings.show_portals:
             for item in portals:
@@ -11516,15 +11529,16 @@ class Game(metaclass=use_on_events):
                     if not item._icon.action._loaded:
                         item._icon.load_assets(self)
                     item._icon.x, item._icon.y = item.clickable_area.centre
-                    item._icon.pyglet_draw()
+                    item._icon.pyglet_draw(window=self._window)
 
         if popMatrix is True:
-            glPopMatrix()  # finish the scene draw
+            pass
+            #glPopMatrix()  # finish the scene draw
 
         for item_name in self._menu:
             item = get_object(self, item_name)
             item.game = self
-            item.pyglet_draw(absolute=True)
+            item.pyglet_draw(absolute=True, window=self._window)
 
         for name in self._modals:
             modal = get_object(self, name)
@@ -11533,7 +11547,7 @@ class Game(metaclass=use_on_events):
                 pdb.set_trace()
             #            if modal:
             modal.game = self
-            modal.pyglet_draw(absolute=True)
+            modal.pyglet_draw(absolute=True, window=self._window)
 
         self._gui_batch.draw()
 
@@ -11551,7 +11565,7 @@ class Game(metaclass=use_on_events):
             self._message_object.x, self._message_object.y = mx, my
             self._message_object.y -= self._message_object.h * len(self.messages)
 
-            self._message_object.pyglet_draw(absolute=True)
+            self._message_object.pyglet_draw(absolute=True, window=self._window)
             # self._message_object._update(dt)
 
         # and hasattr(self._mouse_object, "pyglet_draw"):
@@ -11561,10 +11575,10 @@ class Game(metaclass=use_on_events):
             #            self._mouse_object.y -= self._mouse_object._ay #cancel out anchor
             #            self._mouse_object.x -= self._mouse_object.w//2
             #            self._mouse_object.y -= self._mouse_object.h//2
-            self._mouse_object.pyglet_draw()
+            self._mouse_object.pyglet_draw(window=self._window)
 
         if self._info_object.display_text != "":
-            self._info_object.pyglet_draw(absolute=False)
+            self._info_object.pyglet_draw(absolute=False, window=self._window)
 
         if self.editor:  # draw mouse coords at mouse pos
             x, y = self.mouse_position
@@ -11593,7 +11607,7 @@ class Game(metaclass=use_on_events):
                 cursor.x, cursor.y = x - cursor.w / 2, y - cursor.h / 2
                 cursor.scale = 1.0
 
-                cursor.pyglet_draw(absolute=True)
+                cursor.pyglet_draw(absolute=True, window=self._window)
             # image.blit(x-image.width,self.resolution[1]-y+image.height)
 
         #        self.fps_clock.draw()
@@ -12048,18 +12062,18 @@ class Game(metaclass=use_on_events):
         # reset scale
         if self._old_scale:
             s = self._old_scale  # math.sqrt(self._old_scale)
-            glTranslatef(-self._old_pos_x, -self._old_pos_y, 0)  # shift back
-            pyglet.gl.glScalef(1.0 / s, 1.0 / s, 1.0 / s)
+            self._window.view = self._window.view.translate((-self._old_pos_x, -self._old_pos_y, 0))  # shift back
+            self._window.view.scale((1.0 / s, 1.0 / s, 1.0 / s))
 
         self._old_pos_x, self._old_pos_y = dx , dy
 
         # fullscreen, no need to translate, as pyglet is doing that for us.
         if not self.fullscreen:
-            glTranslatef(self._old_pos_x, self._old_pos_y, 0)  # move to middle of screen
+            self._window.view = self._window.view.translate((self._old_pos_x, self._old_pos_y, 0))  # move to middle of screen
 
         # set new scale
         if scale != 1.0:
-            pyglet.gl.glScalef(scale, scale, scale)
+            self._window.view.scale((scale, scale, scale))
             self._old_scale = scale
 
 
