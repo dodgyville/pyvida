@@ -1,6 +1,10 @@
-pyvida
+pyvida-classic
 ======
 #### an easy-to-use fully-featured cross platform point-and-click adventure game engine ####
+
+Pyvida Classic is a stable branch of pyvida for use with older games on newer computers. For example, My Ex-Boyfriend the Space Tyrant on silicon macs.
+
+It is stored in the "classic" branch of the pyvida repo.
 
 ### Features ###
 
